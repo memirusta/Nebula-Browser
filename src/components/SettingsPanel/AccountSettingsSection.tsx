@@ -20,6 +20,8 @@ import {
 } from '../../platform/browserPasswordImport'
 import { isTauri } from '../../platform/runtime'
 import { usePasswordVault } from '../../hooks/usePasswordVault'
+import { tf } from '../../core/locale'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
 
 interface AccountSettingsSectionProps {
@@ -43,6 +45,7 @@ export function AccountSettingsSection({
   onOpenBrowseUrl,
   openBrowseInBackground = true,
 }: AccountSettingsSectionProps) {
+  const { locale, t } = useLocale()
   const [localName, setLocalName] = useState(userDisplayName)
   const [googleStarting, setGoogleStarting] = useState(false)
   const [googleError, setGoogleError] = useState<string | null>(null)
@@ -74,9 +77,9 @@ export function AccountSettingsSection({
         setGoogleConfigHint(null)
         return
       }
-      setGoogleConfigHint(`Google secret eksik: ${status.appdataEnvPath}`)
+      setGoogleConfigHint(tf(locale, 'accountGoogleSecretMissing', { path: status.appdataEnvPath }))
     })
-  }, [])
+  }, [locale])
 
   const handleGoogleSignIn = useCallback(() => {
     setGoogleStarting(true)
@@ -85,7 +88,7 @@ export function AccountSettingsSection({
     void signInWithGoogleProfile().then(({ claims, error }) => {
       setGoogleStarting(false)
       if (!claims) {
-        setGoogleError(error ?? 'Google girişi tamamlanamadı.')
+        setGoogleError(error ?? t('accountGoogleFailed'))
         return
       }
       const next = nebulaAccountFromGoogleClaims(claims)
@@ -96,18 +99,16 @@ export function AccountSettingsSection({
         setGoogleSetupEmail(next.email)
       }
     })
-  }, [account?.provider, onAccountChange, onDisplayNameChange])
+  }, [account?.provider, onAccountChange, onDisplayNameChange, t])
 
   const openGoogleBrowseUrl = useCallback(
     (url: string) => {
       onOpenBrowseUrl?.(url)
       if (openBrowseInBackground) {
-        setSessionLinkMessage(
-          'Google oturumu arka planda bağlanıyor. Giriş tamamlanınca sekme kendiliğinden kapanır; ayarlarda kalabilirsin.',
-        )
+        setSessionLinkMessage(t('accountSessionBackground'))
       }
     },
-    [onOpenBrowseUrl, openBrowseInBackground],
+    [onOpenBrowseUrl, openBrowseInBackground, t],
   )
 
   const handleSignOut = useCallback(() => {
@@ -185,18 +186,24 @@ export function AccountSettingsSection({
               password: item.password,
             })),
           )
-          setImportMessage(`${imported.length} şifre ${displayName} kaynağından kasaya eklendi.`)
+          setImportMessage(
+            tf(locale, 'accountImportBrowserDone', { count: imported.length, browser: displayName }),
+          )
         })
         .catch((error: unknown) => {
           const message =
-            error instanceof Error ? error.message : typeof error === 'string' ? error : 'Şifre aktarımı başarısız.'
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : t('accountImportFailed')
           setImportError(message)
         })
         .finally(() => {
           setImportingPasswords(false)
         })
     },
-    [mergeEntries],
+    [locale, mergeEntries, t],
   )
 
   const handleCsvSelected = useCallback(
@@ -211,7 +218,7 @@ export function AccountSettingsSection({
         const text = await file.text()
         const imported = parsePasswordCsv(text)
         if (imported.length === 0) {
-          setImportError('CSV dosyasında geçerli şifre satırı bulunamadı.')
+          setImportError(t('accountCsvEmpty'))
           return
         }
         mergeEntries(
@@ -222,15 +229,16 @@ export function AccountSettingsSection({
             password: item.password,
           })),
         )
-        setImportMessage(`${imported.length} şifre CSV'den eklendi.`)
+        setImportMessage(tf(locale, 'accountCsvImported', { count: imported.length }))
       } catch {
-        setImportError('CSV dosyası okunamadı.')
+        setImportError(t('accountCsvReadError'))
       }
     },
-    [mergeEntries],
+    [locale, mergeEntries, t],
   )
 
   const hasGoogle = isGoogleSignInSupported()
+  const sessionLinked = loadGoogleBrowserSession()?.email === account?.email
 
   return (
     <>
@@ -246,8 +254,8 @@ export function AccountSettingsSection({
           <div className={styles.accountName}>{account?.displayName ?? userDisplayName}</div>
           <div className={styles.accountHint}>
             {account?.provider === 'google'
-              ? account.email ?? 'Google hesabı'
-              : 'Yerel profil'}
+              ? account.email ?? t('accountGoogleAccount')
+              : t('accountLocalProfile')}
           </div>
         </div>
       </div>
@@ -261,11 +269,13 @@ export function AccountSettingsSection({
             disabled={googleStarting}
           >
             <span className={styles.googleMark} aria-hidden="true">G</span>
-            {googleStarting ? 'Google açılıyor…' : account?.provider === 'google' ? 'Google hesabını değiştir' : 'Google ile giriş yap'}
+            {googleStarting
+              ? t('accountGoogleSigningIn')
+              : account?.provider === 'google'
+                ? t('accountChangeGoogle')
+                : t('accountGoogleSignIn')}
           </button>
-          {isTauri && (
-            <p className={styles.accountNote}>Sistem tarayıcında Google açılır; girişten sonra bu pencereye dön.</p>
-          )}
+          {isTauri && <p className={styles.accountNote}>{t('googleReturnHintTauri')}</p>}
           {googleConfigHint && <p className={styles.accountNote}>{googleConfigHint}</p>}
           {googleError && <p className={styles.accountError}>{googleError}</p>}
         </>
@@ -273,32 +283,30 @@ export function AccountSettingsSection({
 
       <div className={styles.fieldGroup}>
         <label className={styles.fieldLabel}>
-          Görünen ad
+          {t('accountDisplayName')}
           <input
             className={styles.fieldInput}
             value={localName}
             onChange={(event) => setLocalName(event.target.value)}
             maxLength={48}
-            placeholder="Adın"
+            placeholder={t('displayNamePlaceholder')}
           />
         </label>
         <button type="button" className={styles.actionBtn} onClick={handleSaveLocalName}>
-          Adı kaydet
+          {t('accountSaveName')}
         </button>
       </div>
 
       {account?.provider === 'google' && onOpenBrowseUrl && (
         <div className={styles.row}>
           <div className={styles.rowText}>
-            <div className={styles.rowLabel}>Site oturumu</div>
+            <div className={styles.rowLabel}>{t('accountSiteSession')}</div>
             <div className={styles.rowHint}>
-              {loadGoogleBrowserSession()?.email === account.email
-                ? 'Google oturumu site sekmelerine bağlandı'
-                : 'Gmail ve Google ile giriş yapan sitelerde oturum aç'}
+              {sessionLinked ? t('accountLinked') : t('accountSiteSessionHint')}
             </div>
           </div>
           <button type="button" className={styles.actionBtn} onClick={handleLinkGoogleSession}>
-            {loadGoogleBrowserSession()?.email === account.email ? 'Yenile' : 'Bağla'}
+            {sessionLinked ? t('accountRefresh') : t('accountLink')}
           </button>
         </div>
       )}
@@ -307,31 +315,29 @@ export function AccountSettingsSection({
       {account?.provider === 'google' && (
         <div className={styles.row}>
           <div className={styles.rowText}>
-            <div className={styles.rowLabel}>Nebula profilinden çık</div>
-            <div className={styles.rowHint}>Google profil bilgisini kaldır, yerel isimle devam et</div>
+            <div className={styles.rowLabel}>{t('accountSignOutTitle')}</div>
+            <div className={styles.rowHint}>{t('accountSignOutHint')}</div>
           </div>
           <button type="button" className={styles.dangerBtn} onClick={handleSignOut}>
-            Çıkış yap
+            {t('accountSignOut')}
           </button>
         </div>
       )}
 
       <div className={styles.row}>
         <div className={styles.rowText}>
-          <div className={styles.rowLabel}>Kurulum sihirbazı</div>
-          <div className={styles.rowHint}>Yer işareti aktarımı ve profil adımını tekrar aç</div>
+          <div className={styles.rowLabel}>{t('accountReopenSetup')}</div>
+          <div className={styles.rowHint}>{t('accountReopenSetupHint')}</div>
         </div>
         <button type="button" className={styles.actionBtn} onClick={onReopenOnboarding}>
-          Aç
+          {t('accountOpen')}
         </button>
       </div>
 
       <div className={styles.sectionDivider} />
 
-      <h3 className={styles.subsectionTitle}>Kayıtlı şifreler</h3>
-      <p className={styles.accountNote}>
-        Site giriş bilgilerini bu cihazda sakla. Otomatik doldurma henüz yok; kopyalayıp yapıştırabilirsin.
-      </p>
+      <h3 className={styles.subsectionTitle}>{t('accountPasswords')}</h3>
+      <p className={styles.accountNote}>{t('accountPasswordsHint')}</p>
 
       <div className={styles.vaultImportRow}>
         {isTauri &&
@@ -343,7 +349,9 @@ export function AccountSettingsSection({
               onClick={() => handleImportBrowserPasswords(source.browser, source.displayName)}
               disabled={importingPasswords}
             >
-              {importingPasswords ? 'Aktarılıyor…' : `${source.displayName} şifrelerini aktar`}
+              {importingPasswords
+                ? t('accountImporting')
+                : tf(locale, 'accountImportChrome', { browser: source.displayName })}
             </button>
           ))}
         <button
@@ -351,7 +359,7 @@ export function AccountSettingsSection({
           className={styles.actionBtn}
           onClick={() => csvInputRef.current?.click()}
         >
-          CSV içe aktar
+          {t('accountImportCsv')}
         </button>
         <input
           ref={csvInputRef}
@@ -364,14 +372,11 @@ export function AccountSettingsSection({
       {importMessage && <p className={styles.accountSuccess}>{importMessage}</p>}
       {importError && <p className={styles.accountError}>{importError}</p>}
       {isTauri && passwordSources.length > 0 && (
-        <p className={styles.accountNote}>
-          Google hesabıyla kayıtlı şifreler ayrı dosyada tutulur; otomatik aktarım bunu da tarar.
-          Yine de olmazsa chrome://password-manager/passwords → ⚙️ → Dışa aktar (CSV).
-        </p>
+        <p className={styles.accountNote}>{t('accountChromeVaultNote')}</p>
       )}
 
       {entries.length === 0 && !showAddPassword && (
-        <p className={styles.accountNote}>Henüz kayıtlı şifre yok.</p>
+        <p className={styles.accountNote}>{t('accountNoPasswords')}</p>
       )}
 
       {entries.map((entry) => (
@@ -388,13 +393,13 @@ export function AccountSettingsSection({
           </div>
           <div className={styles.vaultItemActions}>
             <button type="button" className={styles.actionBtn} onClick={() => toggleReveal(entry.id)}>
-              {revealedIds.has(entry.id) ? 'Gizle' : 'Göster'}
+              {revealedIds.has(entry.id) ? t('accountHide') : t('accountShow')}
             </button>
             <button type="button" className={styles.actionBtn} onClick={() => void copyText(entry.password)}>
-              Kopyala
+              {t('accountCopy')}
             </button>
             <button type="button" className={styles.dangerBtn} onClick={() => removeEntry(entry.id)}>
-              Sil
+              {t('accountDelete')}
             </button>
           </div>
         </div>
@@ -403,33 +408,43 @@ export function AccountSettingsSection({
       {showAddPassword ? (
         <div className={styles.vaultForm}>
           <label className={styles.fieldLabel}>
-            Site / uygulama
-            <input className={styles.fieldInput} value={pwLabel} onChange={(e) => setPwLabel(e.target.value)} placeholder="Örn. GitHub" />
+            {t('accountLabel')}
+            <input
+              className={styles.fieldInput}
+              value={pwLabel}
+              onChange={(e) => setPwLabel(e.target.value)}
+              placeholder={t('accountLabelPlaceholder')}
+            />
           </label>
           <label className={styles.fieldLabel}>
-            URL (isteğe bağlı)
-            <input className={styles.fieldInput} value={pwUrl} onChange={(e) => setPwUrl(e.target.value)} placeholder="https://..." />
+            {t('accountUrl')}
+            <input
+              className={styles.fieldInput}
+              value={pwUrl}
+              onChange={(e) => setPwUrl(e.target.value)}
+              placeholder="https://..."
+            />
           </label>
           <label className={styles.fieldLabel}>
-            Kullanıcı adı
+            {t('accountUsername')}
             <input className={styles.fieldInput} value={pwUsername} onChange={(e) => setPwUsername(e.target.value)} />
           </label>
           <label className={styles.fieldLabel}>
-            Şifre
+            {t('accountPassword')}
             <input className={styles.fieldInput} type="password" value={pwSecret} onChange={(e) => setPwSecret(e.target.value)} />
           </label>
           <div className={styles.vaultFormActions}>
             <button type="button" className={styles.actionBtn} onClick={() => setShowAddPassword(false)}>
-              İptal
+              {t('cancel')}
             </button>
             <button type="button" className={styles.actionBtn} onClick={handleAddPassword}>
-              Kaydet
+              {t('save')}
             </button>
           </div>
         </div>
       ) : (
         <button type="button" className={styles.actionBtn} onClick={() => setShowAddPassword(true)}>
-          Şifre ekle
+          {t('accountAddPassword')}
         </button>
       )}
 

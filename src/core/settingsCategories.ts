@@ -1,3 +1,5 @@
+import { t, type NebulaLocale } from './locale'
+
 export type SettingsCategoryId =
   | 'appearance'
   | 'home'
@@ -14,47 +16,52 @@ export interface SettingsCategory {
   description: string
 }
 
-export const SETTINGS_CATEGORIES: SettingsCategory[] = [
-  {
-    id: 'appearance',
-    label: 'Görünüm',
-    icon: '◐',
-    description: 'Duvar kağıdı, tema ve cam efektleri',
-  },
-  {
-    id: 'home',
-    label: 'Ana Sayfa',
-    icon: '⌂',
-    description: 'Widget\'lar ve başlangıç düzeni',
-  },
-  {
-    id: 'semi-lunar',
-    label: 'Semi-Lunar',
-    icon: '◠',
-    description: 'Üst menü ve kısayol davranışı',
-  },
-  {
-    id: 'account',
-    label: 'Hesap',
-    icon: '◎',
-    description: 'Profil, Google girişi ve kayıtlı şifreler',
-  },
-  {
-    id: 'privacy',
-    label: 'Gizlilik',
-    icon: '⛨',
-    description: 'Takip engelleme ve veri koruması',
-  },
-  {
-    id: 'notifications',
-    label: 'Bildirimler',
-    icon: '🔔',
-    description: 'Uyarılar ve odak bildirimleri',
-  },
-  {
-    id: 'about',
-    label: 'Hakkında',
-    icon: '✦',
-    description: 'Sürüm ve yol haritası',
-  },
-]
+export function getSettingsCategories(locale: NebulaLocale): SettingsCategory[] {
+  return [
+    {
+      id: 'appearance',
+      label: t(locale, 'catAppearance'),
+      icon: '◐',
+      description: t(locale, 'catAppearanceDesc'),
+    },
+    {
+      id: 'home',
+      label: t(locale, 'catHome'),
+      icon: '⌂',
+      description: t(locale, 'catHomeDesc'),
+    },
+    {
+      id: 'semi-lunar',
+      label: t(locale, 'catSemiLunar'),
+      icon: '◠',
+      description: t(locale, 'catSemiLunarDesc'),
+    },
+    {
+      id: 'account',
+      label: t(locale, 'catAccount'),
+      icon: '◎',
+      description: t(locale, 'catAccountDesc'),
+    },
+    {
+      id: 'privacy',
+      label: t(locale, 'catPrivacy'),
+      icon: '⛨',
+      description: t(locale, 'catPrivacyDesc'),
+    },
+    {
+      id: 'notifications',
+      label: t(locale, 'catNotifications'),
+      icon: '🔔',
+      description: t(locale, 'catNotificationsDesc'),
+    },
+    {
+      id: 'about',
+      label: t(locale, 'catAbout'),
+      icon: '✦',
+      description: t(locale, 'catAboutDesc'),
+    },
+  ]
+}
+
+/** @deprecated Use getSettingsCategories(locale) */
+export const SETTINGS_CATEGORIES: SettingsCategory[] = getSettingsCategories('tr')

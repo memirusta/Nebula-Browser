@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Shortcut } from '../../core/types'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './ShortcutContextMenu.module.css'
 
 interface ShortcutContextMenuProps {
@@ -36,6 +37,7 @@ export function ShortcutContextMenu({
   onMouseLeave,
   onLayout,
 }: ShortcutContextMenuProps) {
+  const { t, tf } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export function ShortcutContextMenu({
       className={styles.menu}
       style={{ left: x, top: y }}
       role="menu"
-      aria-label={`${shortcut.label} menüsü`}
+      aria-label={tf('shortcutMenuAria', { label: shortcut.label })}
       data-semi-lunar-safe=""
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -92,7 +94,7 @@ export function ShortcutContextMenu({
           onClose()
         }}
       >
-        Yeni sekmede aç
+        {t('ctxOpenNewTab')}
       </button>
       {onTogglePin && (
         <button
@@ -106,7 +108,7 @@ export function ShortcutContextMenu({
             onClose()
           }}
         >
-          {isPinned ? 'Sabitlemeyi kaldır' : canPinMore ? 'Ana sayfaya sabitle' : 'Sabitleme dolu (max 12)'}
+          {isPinned ? t('ctxUnpin') : canPinMore ? t('ctxPin') : t('ctxPinFull')}
         </button>
       )}
       <button
@@ -118,7 +120,7 @@ export function ShortcutContextMenu({
           onClose()
         }}
       >
-        {isMuted ? 'Sesi aç' : 'Sessize al'}
+        {isMuted ? t('ctxUnmute') : t('ctxMute')}
       </button>
       <div className={styles.separator} role="separator" />
       <button
@@ -130,7 +132,7 @@ export function ShortcutContextMenu({
           onClose()
         }}
       >
-        Kapat
+        {t('ctxClose')}
       </button>
     </div>,
     document.body,

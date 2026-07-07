@@ -44,11 +44,13 @@ import {
   resumeGoogleSignInFromRedirect,
 } from '../../core/googleSignIn'
 import { useNebulaAccount } from '../../hooks/useNebulaAccount'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './BrowserShell.module.css'
 
 type ViewMode = 'home' | 'browsing' | 'overlay'
 
 export function BrowserShell() {
+  const { t } = useLocale()
   const stats = useSystemStats()
   const { wallpaper, pickWallpaper, resetWallpaper } = useWallpaper()
   const { visibleShortcuts, allShortcuts, toggleMute, removeShortcut, addVisitedShortcut, isMuted, resetShortcuts, applyImportedShortcuts } =
@@ -145,7 +147,7 @@ export function BrowserShell() {
 
   const handleAccountSignOut = useCallback(() => {
     clearGoogleBrowserSession()
-    const name = settings.home.userDisplayName.trim() || 'Kullanıcı'
+    const name = settings.home.userDisplayName.trim() || t('userFallback')
     setAccount({ provider: 'local', displayName: name })
   }, [setAccount, settings.home.userDisplayName])
 
@@ -981,14 +983,14 @@ export function BrowserShell() {
               .filter(Boolean)
               .join(' ')}
             onClick={dismissOverlay}
-            aria-label="Return to browsing"
+            aria-label={t('returnBrowsing')}
           />
           <div className={styles.overlayHome}>
             <button
               type="button"
               className={styles.overlayDismiss}
               onClick={dismissOverlay}
-              aria-label="Close overlay"
+              aria-label={t('closeOverlay')}
             >
               ✕
             </button>
@@ -998,8 +1000,8 @@ export function BrowserShell() {
                 type="button"
                 className={styles.overlayMainMenu}
                 onClick={goHome}
-                title="Ana sayfa"
-                aria-label="Ana sayfa — ana ekrana dön"
+                title={t('homeTitle')}
+                aria-label={t('homeAria')}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 3L4 9v12h5v-7h6v7h5V9l-8-6z" />

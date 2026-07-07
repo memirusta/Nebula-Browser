@@ -1,3 +1,4 @@
+import { useLocale } from '../../hooks/useLocale'
 import styles from './HomeEditBar.module.css'
 
 interface HomeEditBarProps {
@@ -6,14 +7,16 @@ interface HomeEditBarProps {
 }
 
 export function HomeEditBar({ onSave, onCancel }: HomeEditBarProps) {
+  const { t } = useLocale()
+
   return (
-    <div className={styles.bar} role="toolbar" aria-label="Arayüz düzenleme">
-      <span className={styles.title}>Arayüzü düzenle</span>
+    <div className={styles.bar} role="toolbar" aria-label={t('editBarAria')}>
+      <span className={styles.title}>{t('editUi')}</span>
       <button type="button" className={styles.btn} onClick={onCancel}>
-        İptal
+        {t('cancel')}
       </button>
       <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={onSave}>
-        Bitti
+        {t('editDone')}
       </button>
     </div>
   )

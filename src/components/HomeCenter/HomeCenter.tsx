@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { buildSearchUrl, type SearchEngine } from '../../core/nebulaSettings'
+import { useLocale } from '../../hooks/useLocale'
 import type { HomeLayout, ModuleOffset, ModuleSize } from '../../core/homeLayout'
 import type { BrowseSession } from '../../core/browseSession'
 import { SEARCH_SIZE_WIDTH } from '../../core/homeLayout'
@@ -72,6 +73,7 @@ export function HomeCenter({
   editLayout,
   onEditLayoutChange,
 }: HomeCenterProps) {
+  const { t } = useLocale()
   const [query, setQuery] = useState('')
   const [isEditing, setIsEditing] = useState(false)
 
@@ -118,7 +120,7 @@ export function HomeCenter({
         size={pinnedStripSize}
       />
     ) : editMode ? (
-      <div className={styles.emptyPinPlaceholder}>Sabitlenmiş site yok</div>
+      <div className={styles.emptyPinPlaceholder}>{t('noPinnedSites')}</div>
     ) : null
 
   const searchBar = (
@@ -138,7 +140,7 @@ export function HomeCenter({
       <input
         type="text"
         className={styles.searchInput}
-        placeholder="Search or type URL..."
+        placeholder={t('searchPlaceholder')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onFocus={(e) => {
@@ -174,7 +176,9 @@ export function HomeCenter({
           </div>
         </div>
         {showGreeting && (
-          <p className={styles.greeting}>Tekrar hoş geldin {userDisplayName}</p>
+          <p className={styles.greeting}>
+            {t('welcomeBack')} {userDisplayName}
+          </p>
         )}
       </div>
     ) : null
@@ -194,7 +198,7 @@ export function HomeCenter({
         <div className={styles.pinFullBleed}>
           {editMode && editLayout && onEditLayoutChange ? (
             <EditModuleChrome
-              label="Pin şeridi"
+              label={t('pinStrip')}
               visible={editLayout.pinnedStrip.visible}
               onToggleVisible={() =>
                 onEditLayoutChange({
@@ -228,7 +232,7 @@ export function HomeCenter({
       >
         {editMode && editLayout && onEditLayoutChange ? (
           <EditModuleChrome
-            label="Arama"
+            label={t('search')}
             size={editLayout.search.size}
             onSizeChange={(size) =>
               onEditLayoutChange({
@@ -253,7 +257,7 @@ export function HomeCenter({
       {profileSection &&
         (editMode && editLayout && onEditLayoutChange ? (
           <EditModuleChrome
-            label="Profil"
+            label={t('profile')}
             visible={editLayout.profile.visible}
             onToggleVisible={() =>
               onEditLayoutChange({

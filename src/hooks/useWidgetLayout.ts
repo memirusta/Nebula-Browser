@@ -2,15 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Layout } from 'react-grid-layout/legacy'
 import {
   WIDGET_DEFAULT_SIZES,
-  WIDGET_LABELS,
   WIDGET_LAYOUT_KEY,
   filterLayoutForPanes,
   filterPanesBySettings,
+  getWidgetLabel,
   loadWidgetLayout,
   normalizeWidgetLayout,
   type WidgetPane,
   type WidgetType,
 } from '../core/widgets'
+import { loadLocale } from '../core/locale'
 
 interface HomeWidgetSettings {
   showRamWidget: boolean
@@ -74,7 +75,7 @@ export function useWidgetLayout(homeSettings: HomeWidgetSettings) {
         const newPane: WidgetPane = {
           id,
           widgetType: type,
-          title: WIDGET_LABELS[type],
+          title: getWidgetLabel(loadLocale(), type),
           active: false,
         }
 

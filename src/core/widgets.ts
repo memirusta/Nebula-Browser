@@ -1,3 +1,5 @@
+import { t, type NebulaLocale } from './locale'
+
 export type WidgetType = 'ram' | 'cpu' | 'clock' | 'blank' | 'notes'
 
 export const WIDGET_TYPES: WidgetType[] = ['ram', 'cpu', 'clock', 'blank', 'notes']
@@ -5,6 +7,22 @@ export const WIDGET_TYPES: WidgetType[] = ['ram', 'cpu', 'clock', 'blank', 'note
 /** Widget types offered in the add picker (clock is sidebar-only). */
 export const ADDABLE_WIDGET_TYPES: WidgetType[] = ['ram', 'cpu', 'blank', 'notes']
 
+export function getWidgetLabel(locale: NebulaLocale, type: WidgetType): string {
+  switch (type) {
+    case 'ram':
+      return 'RAM'
+    case 'cpu':
+      return 'CPU'
+    case 'clock':
+      return t(locale, 'widgetClock')
+    case 'blank':
+      return t(locale, 'widgetBlank')
+    case 'notes':
+      return t(locale, 'widgetNotes')
+  }
+}
+
+/** @deprecated Use getWidgetLabel(locale, type) */
 export const WIDGET_LABELS: Record<WidgetType, string> = {
   ram: 'RAM',
   cpu: 'CPU',

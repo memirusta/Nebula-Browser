@@ -1,3 +1,4 @@
+import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
 
 export function SettingToggleRow({
@@ -178,6 +179,8 @@ export function SettingResetRow({
   hint: string
   onReset: () => void
 }) {
+  const { t } = useLocale()
+
   return (
     <div className={styles.row}>
       <div className={styles.rowText}>
@@ -185,7 +188,7 @@ export function SettingResetRow({
         <div className={styles.rowHint}>{hint}</div>
       </div>
       <button type="button" className={styles.actionBtn} onClick={onReset}>
-        Sıfırla
+        {t('reset')}
       </button>
     </div>
   )
@@ -195,7 +198,7 @@ export function SettingDangerRow({
   label,
   hint,
   confirmMessage,
-  buttonLabel = 'Sıfırla',
+  buttonLabel,
   onConfirm,
 }: {
   label: string
@@ -204,6 +207,9 @@ export function SettingDangerRow({
   buttonLabel?: string
   onConfirm: () => void
 }) {
+  const { t } = useLocale()
+  const resolvedButtonLabel = buttonLabel ?? t('reset')
+
   return (
     <div className={styles.row}>
       <div className={styles.rowText}>
@@ -217,20 +223,22 @@ export function SettingDangerRow({
           if (window.confirm(confirmMessage)) onConfirm()
         }}
       >
-        {buttonLabel}
+        {resolvedButtonLabel}
       </button>
     </div>
   )
 }
 
 export function SettingSoonRow({ label, hint }: { label: string; hint: string }) {
+  const { t } = useLocale()
+
   return (
     <div className={styles.row}>
       <div className={styles.rowText}>
         <div className={styles.rowLabel}>{label}</div>
         <div className={styles.rowHint}>{hint}</div>
       </div>
-      <span className={styles.badgeSoon}>Gecko sonrası</span>
+      <span className={styles.badgeSoon}>{t('geckoSoon')}</span>
     </div>
   )
 }

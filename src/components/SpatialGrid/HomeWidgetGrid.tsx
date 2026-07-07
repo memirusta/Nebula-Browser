@@ -4,6 +4,7 @@ import 'react-grid-layout/css/styles.css'
 import { HOME_GRID_COLS, HOME_GRID_ROW_HEIGHT } from '../../core/widgets'
 import type { WidgetPane } from '../../core/widgets'
 import type { SystemStats } from '../../core/types'
+import { useLocale } from '../../hooks/useLocale'
 import { GridCell } from './GridCell'
 import styles from './HomeWidgetGrid.module.css'
 
@@ -24,6 +25,7 @@ export function HomeWidgetGrid({
   onFocusPane,
   onClosePane,
 }: HomeWidgetGridProps) {
+  const { t } = useLocale()
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [localLayout, setLocalLayout] = useState(layout)
@@ -65,8 +67,8 @@ export function HomeWidgetGrid({
   if (panes.length === 0) {
     return (
       <div className={styles.emptyArea} ref={containerRef}>
-        <p className={styles.emptyText}>Henüz widget yok</p>
-        <p className={styles.emptyHint}>Sol panelden + ile ekleyin</p>
+        <p className={styles.emptyText}>{t('widgetsEmpty')}</p>
+        <p className={styles.emptyHint}>{t('widgetsEmptyHint')}</p>
       </div>
     )
   }

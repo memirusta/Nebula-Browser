@@ -2,10 +2,11 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ADDABLE_WIDGET_TYPES,
-  WIDGET_LABELS,
+  getWidgetLabel,
   isWidgetTypeEnabled,
   type WidgetType,
 } from '../../core/widgets'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './WidgetPickerModal.module.css'
 
 interface HomeWidgetSettings {
@@ -36,6 +37,8 @@ export function WidgetPickerModal({
   activeTypes,
   settings,
 }: WidgetPickerModalProps) {
+  const { t, tf, locale } = useLocale()
+
   useEffect(() => {
     if (!open) return
 
@@ -51,15 +54,16 @@ export function WidgetPickerModal({
   return createPortal(
     <>
       <div className={styles.backdrop} onClick={onClose} aria-hidden="true" />
-      <div className={styles.panel} role="dialog" aria-modal="true" aria-label="Widget ekle">
+      <div className={styles.panel} role="dialog" aria-modal="true" aria-label={t('widgetPickerAria')}>
         <header className={styles.header}>
-          <h2 className={styles.title}>Widget Ekle</h2>
-          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Kapat">
+          <h2 className={styles.title}>{t('widgetPickerTitle')}</h2>
+          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label={t('titleClose')}>
             ✕
           </button>
         </header>
         <ul className={styles.list}>
           {ADDABLE_WIDGET_TYPES.map((type) => {
+            const label = getWidgetLabel(locale, type)
             const enabled = isWidgetTypeEnabled(type, settings)
             const singleton = type === 'ram' || type === 'cpu'
             const alreadyAdded = singleton && activeTypes.has(type)
@@ -77,17 +81,17 @@ export function WidgetPickerModal({
                   }}
                   title={
                     !enabled
-                      ? 'Ayarlardan kapalı'
+                      ? t('widgetDisabledSettings')
                       : alreadyAdded
-                        ? 'Zaten eklendi'
-                        : `${WIDGET_LABELS[type]} ekle`
+                        ? t('widgetAlreadyAdded')
+                        : tf('widgetAddTitle', { name: label })
                   }
                 >
                   <span className={styles.optionIcon} aria-hidden="true">
                     {WIDGET_ICONS[type]}
                   </span>
-                  <span className={styles.optionLabel}>{WIDGET_LABELS[type]}</span>
-                  {alreadyAdded && <span className={styles.optionBadge}>Eklendi</span>}
+                  <span className={styles.optionLabel}>{label}</span>
+                  {alreadyAdded && <span className={styles.optionBadge}>{t('widgetAddedBadge')}</span>}
                 </button>
               </li>
             )

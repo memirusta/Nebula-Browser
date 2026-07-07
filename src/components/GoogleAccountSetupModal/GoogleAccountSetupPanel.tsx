@@ -5,6 +5,8 @@ import {
   markGoogleBrowserSessionLinked,
 } from '../../core/googleBrowserSession'
 import type { SavedPassword } from '../../core/passwordVault'
+import { tf } from '../../core/locale'
+import { useLocale } from '../../hooks/useLocale'
 import { isTauri } from '../../platform/runtime'
 import styles from './GoogleAccountSetupModal.module.css'
 
@@ -27,6 +29,7 @@ export function GoogleAccountSetupPanel({
   showSkip = false,
   onSkip,
 }: GoogleAccountSetupPanelProps) {
+  const { locale, t } = useLocale()
   const [importPasswords, setImportPasswords] = useState(true)
   const [linkBrowserSession, setLinkBrowserSession] = useState(true)
   const [working, setWorking] = useState(false)
@@ -75,9 +78,9 @@ export function GoogleAccountSetupPanel({
     if (linkBrowserSession && isTauri) {
       markGoogleBrowserSessionLinked(email)
       onOpenBrowseUrl(buildGoogleBrowserSignInUrl(email))
-      messages.push('Google oturumu arka planda bağlanıyor; giriş bitince sekme kapanır.')
+      messages.push(t('gsSessionBackground'))
     } else if (linkBrowserSession) {
-      messages.push('Google oturumu web sürümünde sekme açma desteklenmiyor.')
+      messages.push(t('gsWebUnsupported'))
     }
 
     setStatusMessage(messages.join(' '))
@@ -86,14 +89,11 @@ export function GoogleAccountSetupPanel({
     if (!csvNeeded) {
       window.setTimeout(() => onApplied?.(), 400)
     }
-  }, [email, importPasswords, linkBrowserSession, onApplied, onMergePasswords, onOpenBrowseUrl])
+  }, [email, importPasswords, linkBrowserSession, onApplied, onMergePasswords, onOpenBrowseUrl, t])
 
   return (
     <div className={styles.inlinePanel}>
-      <p className={styles.lead}>
-        <strong>{email}</strong> hesabını Nebula&apos;ya bağla: şifreleri kasaya aktar ve site
-        sekmelerinde Google oturumunu açık tut.
-      </p>
+      <p className={styles.lead}>{tf(locale, 'gsLead', { email })}</p>
 
       <div className={styles.body}>
         <label className={styles.option}>
@@ -104,10 +104,8 @@ export function GoogleAccountSetupPanel({
             disabled={working}
           />
           <span className={styles.optionText}>
-            Kayıtlı şifreleri kasaya aktar
-            <span className={styles.optionHint}>
-              Chrome&apos;daki şifreler okunamazsa CSV dışa aktarma adımına yönlendiririz.
-            </span>
+            {t('gsImportPasswords')}
+            <span className={styles.optionHint}>{t('gsImportPasswordsHint')}</span>
           </span>
         </label>
 
@@ -119,10 +117,8 @@ export function GoogleAccountSetupPanel({
             disabled={working || !isTauri}
           />
           <span className={styles.optionText}>
-            Google oturumunu site sekmelerinde açık tut
-            <span className={styles.optionHint}>
-              Gmail, YouTube ve &quot;Google ile giriş&quot; kullanan sitelerde oturum açık kalır.
-            </span>
+            {t('gsLinkSession')}
+            <span className={styles.optionHint}>{t('gsLinkSessionHint')}</span>
           </span>
         </label>
 
@@ -138,7 +134,7 @@ export function GoogleAccountSetupPanel({
 
         {needsCsv && onRequestCsvImport && (
           <button type="button" className={styles.ghostBtn} onClick={onRequestCsvImport}>
-            CSV dosyası seç
+            {t('gsCsvPick')}
           </button>
         )}
       </div>
@@ -146,11 +142,11 @@ export function GoogleAccountSetupPanel({
       <div className={styles.inlineActions}>
         {showSkip && onSkip && (
           <button type="button" className={styles.ghostBtn} onClick={onSkip} disabled={working}>
-            Şimdilik atla
+            {t('gsSkip')}
           </button>
         )}
         <button type="button" className={styles.primaryBtn} onClick={() => void handleApply()} disabled={working}>
-          {working ? 'Bağlanıyor…' : 'Bağla'}
+          {working ? t('gsApplying') : t('gsApply')}
         </button>
       </div>
     </div>

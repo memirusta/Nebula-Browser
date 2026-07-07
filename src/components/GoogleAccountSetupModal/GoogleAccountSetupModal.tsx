@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import type { SavedPassword } from '../../core/passwordVault'
+import { useLocale } from '../../hooks/useLocale'
 import { GoogleAccountSetupPanel } from './GoogleAccountSetupPanel'
 import styles from './GoogleAccountSetupModal.module.css'
 
@@ -20,6 +21,8 @@ export function GoogleAccountSetupModal({
   onMergePasswords,
   onRequestCsvImport,
 }: GoogleAccountSetupModalProps) {
+  const { t } = useLocale()
+
   if (!open) return null
 
   return createPortal(
@@ -33,7 +36,7 @@ export function GoogleAccountSetupModal({
       >
         <header className={styles.header}>
           <h2 id="google-setup-title" className={styles.title}>
-            Google hesabını bağla
+            {t('googleLinkTitle')}
           </h2>
         </header>
 

@@ -1,5 +1,6 @@
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { loadLocale, t } from './locale'
 import { isTauri } from '../platform/runtime'
 
 export type AppUpdatePhase =
@@ -35,7 +36,7 @@ export function isAppUpdateDismissed(version: string): boolean {
 function updaterErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
   if (typeof error === 'string') return error
-  return 'Güncelleme kontrol edilemedi.'
+  return t(loadLocale(), 'updateErrorCheck')
 }
 
 export async function checkForAppUpdate(): Promise<{
@@ -47,7 +48,7 @@ export async function checkForAppUpdate(): Promise<{
       update: null,
       status: {
         phase: 'error',
-        message: 'Güncelleme yalnızca masaüstü uygulamasında kullanılabilir.',
+        message: t(loadLocale(), 'updateErrorDesktop'),
       },
     }
   }
@@ -108,7 +109,10 @@ export async function installAppUpdate(
   } catch (error) {
     return {
       phase: 'error',
-      message: error instanceof Error ? error.message : 'Güncelleme yüklenemedi.',
+      message:
+        error instanceof Error && error.message
+          ? error.message
+          : t(loadLocale(), 'updateErrorInstall'),
     }
   }
 }

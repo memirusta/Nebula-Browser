@@ -10,11 +10,14 @@ import {
   isAppUpdaterAvailable,
   type AppUpdateStatus,
 } from '../../core/appUpdater'
+import { tf } from '../../core/locale'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './AppUpdatePrompt.module.css'
 
 const STARTUP_CHECK_DELAY_MS = 2000
 
 export function AppUpdatePrompt() {
+  const { locale, t } = useLocale()
   const [open, setOpen] = useState(false)
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
   const [status, setStatus] = useState<AppUpdateStatus>({ phase: 'idle' })
@@ -72,10 +75,13 @@ export function AppUpdatePrompt() {
       >
         <header className={styles.header}>
           <h2 id="app-update-title" className={styles.title}>
-            Güncelleme mevcut
+            {t('updatePromptTitle')}
           </h2>
           <p className={styles.lead}>
-            Nebula v{APP_VERSION} kullanıyorsun. v{pendingUpdate.version} yayınlandı.
+            {tf(locale, 'updatePromptLead', {
+              current: APP_VERSION,
+              version: pendingUpdate.version,
+            })}
           </p>
           {pendingUpdate.body?.trim() ? (
             <div className={styles.notes}>{pendingUpdate.body.trim()}</div>
@@ -83,7 +89,9 @@ export function AppUpdatePrompt() {
         </header>
 
         {status.phase === 'downloading' && (
-          <p className={styles.status}>İndiriliyor… %{status.progress ?? 0}</p>
+          <p className={styles.status}>
+            {tf(locale, 'updateDownloading', { progress: status.progress ?? 0 })}
+          </p>
         )}
         {status.phase === 'error' && (
           <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
@@ -96,7 +104,7 @@ export function AppUpdatePrompt() {
             onClick={handleDismiss}
             disabled={busy}
           >
-            Şimdi değil
+            {t('updateDismiss')}
           </button>
           <button
             type="button"
@@ -104,7 +112,7 @@ export function AppUpdatePrompt() {
             onClick={() => void handleInstall()}
             disabled={busy}
           >
-            {busy ? 'Yükleniyor…' : 'Yükle ve yeniden başlat'}
+            {busy ? t('updateInstalling') : t('updateInstall')}
           </button>
         </footer>
       </div>

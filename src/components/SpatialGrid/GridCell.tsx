@@ -1,5 +1,6 @@
 import type { WidgetPane } from '../../core/widgets'
 import type { SystemStats } from '../../core/types'
+import { useLocale } from '../../hooks/useLocale'
 import { WidgetRenderer } from '../widgets/WidgetRenderer'
 import styles from './GridCell.module.css'
 
@@ -12,6 +13,8 @@ interface GridCellProps {
 }
 
 export function GridCell({ pane, isActive, stats, onFocus, onClose }: GridCellProps) {
+  const { t } = useLocale()
+
   return (
     <div className={`${styles.cell} ${isActive ? styles.cellActive : ''}`}>
       <div className={`${styles.chrome} chrome`} data-widget-drag-handle>
@@ -27,7 +30,7 @@ export function GridCell({ pane, isActive, stats, onFocus, onClose }: GridCellPr
               e.stopPropagation()
               onClose()
             }}
-            aria-label="Widget'ı kaldır"
+            aria-label={t('widgetRemove')}
           >
             ×
           </button>

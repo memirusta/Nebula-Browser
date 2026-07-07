@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Shortcut, ShortcutFolder } from '../../core/types'
 import { DRAG_THRESHOLD } from '../../core/shortcutLayout'
+import { useLocale } from '../../hooks/useLocale'
 import { ShortcutFolderIcon } from './ShortcutFolderIcon'
 import styles from './SemiLunarMenu.module.css'
 
@@ -35,6 +36,7 @@ export function DockFolderItem({
   onDragEnd,
   onDragMove,
 }: DockFolderItemProps) {
+  const { tf } = useLocale()
   const [isDragging, setIsDragging] = useState(false)
   const [dragPos, setDragPos] = useState({ x, y })
   const dragState = useRef({
@@ -200,7 +202,7 @@ export function DockFolderItem({
         onPointerMove={(e) => processPointerMove(e.clientX, e.clientY)}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        title={`${folder.name} klasörü`}
+        title={tf('folderTitle', { name: folder.name })}
         tabIndex={-1}
       >
         <ShortcutFolderIcon

@@ -1,4 +1,5 @@
 import { persistLocalStorage } from './storageSync'
+import { loadLocale, tf, type NebulaLocale } from './locale'
 
 export const BROWSE_SESSIONS_KEY = 'nebula-browse-sessions-v2'
 
@@ -81,16 +82,19 @@ export function formatSessionPath(url: string): string {
   }
 }
 
-export function formatRelativeVisitTime(updatedAt: number): string {
+export function formatRelativeVisitTime(
+  updatedAt: number,
+  locale: NebulaLocale = loadLocale(),
+): string {
   const diffMs = Date.now() - updatedAt
   const minutes = Math.floor(diffMs / 60_000)
-  if (minutes < 1) return 'Az önce'
-  if (minutes < 60) return `${minutes} dk önce`
+  if (minutes < 1) return tf(locale, 'timeJustNow', {})
+  if (minutes < 60) return tf(locale, 'timeMinutesAgo', { n: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} saat önce`
+  if (hours < 24) return tf(locale, 'timeHoursAgo', { n: hours })
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days} gün önce`
-  return new Date(updatedAt).toLocaleDateString('tr-TR')
+  if (days < 7) return tf(locale, 'timeDaysAgo', { n: days })
+  return new Date(updatedAt).toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US')
 }
 
 /** Open the last visited page for this host when returning via a shortcut. */

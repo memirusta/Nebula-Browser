@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Shortcut } from '../../core/types'
 import { DRAG_THRESHOLD } from '../../core/shortcutLayout'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './FolderExpandPanel.module.css'
 
 interface FolderExpandPanelProps {
@@ -242,6 +243,7 @@ export function FolderExpandPanel({
   onPreviewShow,
   onPreviewHide,
 }: FolderExpandPanelProps) {
+  const { t, tf } = useLocale()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(folderName)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -311,7 +313,7 @@ export function FolderExpandPanel({
         className={styles.panel}
         style={{ left: `${left}px`, top: `${anchorY + 28}px` }}
         role="dialog"
-        aria-label={`${folderName} klasörü`}
+        aria-label={tf('folderTitle', { name: folderName })}
         data-semi-lunar-safe=""
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
@@ -333,14 +335,14 @@ export function FolderExpandPanel({
                 cancelRename()
               }
             }}
-            aria-label="Klasör adı"
+            aria-label={t('folderNameLabel')}
           />
         ) : (
           <button
             type="button"
             className={styles.title}
             onClick={() => setIsEditing(true)}
-            title="Yeniden adlandır"
+            title={t('folderRename')}
           >
             {folderName}
           </button>

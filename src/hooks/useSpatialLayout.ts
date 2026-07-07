@@ -3,7 +3,8 @@ import type { Layout } from 'react-grid-layout/legacy'
 import { DEFAULT_LAYOUT, DEFAULT_PANES } from '../core/spatial'
 import type { GridPane } from '../core/spatial'
 import type { WidgetType } from '../core/widgets'
-import { WIDGET_DEFAULT_SIZES, WIDGET_LABELS } from '../core/widgets'
+import { WIDGET_DEFAULT_SIZES, getWidgetLabel } from '../core/widgets'
+import { loadLocale } from '../core/locale'
 
 export function useSpatialLayout() {
   const [panes, setPanes] = useState<GridPane[]>(DEFAULT_PANES)
@@ -20,7 +21,7 @@ export function useSpatialLayout() {
     const newPane: GridPane = {
       id,
       widgetType,
-      title: WIDGET_LABELS[widgetType],
+      title: getWidgetLabel(loadLocale(), widgetType),
       active: false,
     }
     setPanes((prev) => [...prev, newPane])

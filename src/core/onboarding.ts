@@ -2,7 +2,7 @@ export const ONBOARDING_COMPLETE_KEY = 'nebula-onboarding-complete-v1'
 export const ONBOARDING_IMPORTED_SHORTCUTS_KEY = 'nebula-onboarding-imported-shortcuts'
 export const ONBOARDING_RESUME_STEP_KEY = 'nebula-onboarding-resume-step'
 
-export type OnboardingStep = 'welcome' | 'bookmarks' | 'profile' | 'googleLink' | 'done'
+export type OnboardingStep = 'language' | 'welcome' | 'bookmarks' | 'profile' | 'googleLink' | 'done'
 
 export function isOnboardingComplete(): boolean {
   try {
@@ -22,7 +22,7 @@ export function saveOnboardingResumeStep(step: OnboardingStep): void {
 
 export function peekOnboardingResumeStep(): OnboardingStep | null {
   const value = sessionStorage.getItem(ONBOARDING_RESUME_STEP_KEY)
-  if (value === 'welcome' || value === 'bookmarks' || value === 'profile' || value === 'googleLink' || value === 'done') {
+  if (value === 'language' || value === 'welcome' || value === 'bookmarks' || value === 'profile' || value === 'googleLink' || value === 'done') {
     return value
   }
   return null

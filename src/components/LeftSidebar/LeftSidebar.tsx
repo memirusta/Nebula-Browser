@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import type { HomeSettings } from '../../core/nebulaSettings'
 import type { WidgetType } from '../../core/widgets'
+import { useLocale } from '../../hooks/useLocale'
 import { EditModuleChrome } from '../HomeEdit/EditModuleChrome'
 import { SidebarClock } from './SidebarClock'
 import { WidgetPickerModal } from './WidgetPickerModal'
@@ -43,6 +44,7 @@ export function LeftSidebar({
   onEditToggleWidgets,
   onEditToggleClock,
 }: LeftSidebarProps) {
+  const { t } = useLocale()
   const [pickerOpen, setPickerOpen] = useState(false)
 
   if (!editMode) {
@@ -52,8 +54,8 @@ export function LeftSidebar({
           type="button"
           className={styles.addBtn}
           onClick={() => setPickerOpen(true)}
-          aria-label="Widget ekle"
-          title="Widget ekle"
+          aria-label={t('widgetPickerAria')}
+          title={t('widgetPickerAria')}
         >
           +
         </button>
@@ -76,7 +78,7 @@ export function LeftSidebar({
   return (
     <aside className={styles.root}>
       <EditModuleChrome
-        label="Widget'lar"
+        label={t('systemWidgets')}
         visible={editWidgetsVisible}
         onToggleVisible={onEditToggleWidgets}
         reorderHint
@@ -86,7 +88,7 @@ export function LeftSidebar({
       </EditModuleChrome>
 
       <EditModuleChrome
-        label="Saat"
+        label={t('widgetClock')}
         visible={editClockVisible}
         onToggleVisible={onEditToggleClock}
         hidden={!editClockVisible}

@@ -6,6 +6,7 @@ import {
   type BrowseSession,
 } from '../../core/browseSession'
 import type { Shortcut } from '../../core/types'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './ShortcutPreviewOverlay.module.css'
 
 interface ShortcutPreviewOverlayProps {
@@ -21,6 +22,8 @@ export function ShortcutPreviewOverlay({
   activeUrl = null,
   session = null,
 }: ShortcutPreviewOverlayProps) {
+  const { t, locale } = useLocale()
+
   if (!visible || !shortcut) return null
 
   const isLive =
@@ -40,7 +43,7 @@ export function ShortcutPreviewOverlay({
       {isLive ? (
         <div className={styles.liveBadge}>
           <span className={styles.liveDot} />
-          Kaldığınız yer
+          {t('previewLiveBadge')}
         </div>
       ) : (
         <div className={styles.card}>
@@ -60,22 +63,17 @@ export function ShortcutPreviewOverlay({
 
           {resumeSession ? (
             <div className={styles.sessionBlock}>
-              <p className={styles.sessionLabel}>Son kaldığınız yer</p>
+              <p className={styles.sessionLabel}>{t('previewLastSession')}</p>
               <p className={styles.sessionPath}>{formatSessionPath(resumeSession.url)}</p>
               <p className={styles.sessionMeta}>
-                {formatRelativeVisitTime(resumeSession.updatedAt)}
+                {formatRelativeVisitTime(resumeSession.updatedAt, locale)}
               </p>
             </div>
           ) : (
-            <p className={styles.sessionEmpty}>
-              Bu site için henüz kayıtlı bir oturum yok. Tıklayınca açılır.
-            </p>
+            <p className={styles.sessionEmpty}>{t('previewNoSession')}</p>
           )}
 
-          <p className={styles.hint}>
-            Siteler güvenlik nedeniyle küçük önizleme penceresinde açılamaz; son
-            konumunuz burada gösterilir.
-          </p>
+          <p className={styles.hint}>{t('previewSecurityHint')}</p>
         </div>
       )}
     </div>,

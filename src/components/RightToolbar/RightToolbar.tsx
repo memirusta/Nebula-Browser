@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { EditModuleChrome } from '../HomeEdit/EditModuleChrome'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './RightToolbar.module.css'
 
 export interface ToolbarAnchor {
@@ -16,12 +17,9 @@ interface RightToolbarProps {
   onEditToggleToolbar?: () => void
 }
 
-const ACTIONS = [
-  { id: 'settings', label: 'Settings' },
-  { id: 'notifications', label: 'Notifications', hasBadge: true },
-] as const
+const ACTION_IDS = ['settings', 'notifications'] as const
 
-function ToolbarIcon({ id }: { id: (typeof ACTIONS)[number]['id'] }) {
+function ToolbarIcon({ id }: { id: (typeof ACTION_IDS)[number] }) {
   switch (id) {
     case 'settings':
       return (
@@ -46,9 +44,15 @@ export function RightToolbar({
   editToolbarVisible = true,
   onEditToggleToolbar,
 }: RightToolbarProps) {
+  const { t } = useLocale()
   const settingsRef = useRef<HTMLButtonElement>(null)
 
-  const handlers: Record<string, () => void> = {
+  const actionLabels: Record<(typeof ACTION_IDS)[number], string> = {
+    settings: t('settings'),
+    notifications: t('notifications'),
+  }
+
+  const handlers: Record<(typeof ACTION_IDS)[number], () => void> = {
     settings: () => {
       if (editMode) return
       const el = settingsRef.current
@@ -64,10 +68,10 @@ export function RightToolbar({
   const toolbar = (
     <aside className={variant === 'overlay' ? styles.rootOverlay : styles.root}>
       <div className={styles.actions}>
-        {ACTIONS.map((action) => (
+        {ACTION_IDS.map((id) => (
           <button
-            key={action.id}
-            ref={action.id === 'settings' ? settingsRef : undefined}
+            key={id}
+            ref={id === 'settings' ? settingsRef : undefined}
             type="button"
             className={[
               styles.actionBtn,
@@ -75,15 +79,15 @@ export function RightToolbar({
             ]
               .filter(Boolean)
               .join(' ')}
-            onClick={handlers[action.id]}
-            title={action.label}
-            aria-label={action.label}
+            onClick={handlers[id]}
+            title={actionLabels[id]}
+            aria-label={actionLabels[id]}
             tabIndex={editMode ? -1 : undefined}
           >
             <span className={styles.actionIcon}>
-              <ToolbarIcon id={action.id} />
+              <ToolbarIcon id={id} />
             </span>
-            {'hasBadge' in action && action.hasBadge && notificationBadge > 0 && (
+            {id === 'notifications' && notificationBadge > 0 && (
               <span className={styles.badge}>{notificationBadge}</span>
             )}
           </button>
@@ -96,7 +100,7 @@ export function RightToolbar({
 
   return (
     <EditModuleChrome
-      label="Araç çubuğu"
+      label={t('toolbarLabel')}
       visible={editToolbarVisible}
       onToggleVisible={onEditToggleToolbar}
       hidden={!editToolbarVisible}

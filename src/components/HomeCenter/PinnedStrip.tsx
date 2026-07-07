@@ -7,6 +7,7 @@ import type { Shortcut } from '../../core/types'
 import { ShortcutContextMenu } from '../SemiLunarMenu/ShortcutContextMenu'
 import { ShortcutPreviewOverlay } from '../SemiLunarMenu/ShortcutPreviewOverlay'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './PinnedStrip.module.css'
 
 const HOLD_MS = 1000
@@ -84,6 +85,7 @@ export function PinnedStrip({
   editMode = false,
   size = 'm',
 }: PinnedStripProps) {
+  const { t, tf } = useLocale()
   const listRef = useRef<HTMLUListElement>(null)
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -385,7 +387,7 @@ export function PinnedStrip({
           document.body,
         )}
 
-      <nav className={styles.strip} aria-label="Sabitlenen siteler" style={sizeStyle}>
+      <nav className={styles.strip} aria-label={t('pinnedSites')} style={sizeStyle}>
         <ul
           ref={listRef}
           className={[
@@ -444,8 +446,11 @@ export function PinnedStrip({
                   onMouseLeave={handlePinLeave}
                   onClick={() => handleOpen(shortcut.url)}
                   onContextMenu={(e) => handleContextMenu(shortcut, e)}
-                  aria-label={`${shortcut.label} — sabitlenmiş${isPreviewing ? ', önizleniyor' : ''}`}
-                  title={isHolding ? 'Sürüklemek için basılı tut…' : shortcut.label}
+                  aria-label={tf('pinnedShortcutAria', {
+                    label: shortcut.label,
+                    suffix: isPreviewing ? t('pinnedPreviewSuffix') : '',
+                  })}
+                  title={isHolding ? t('holdToDrag') : shortcut.label}
                 >
                   <span className={styles.iconShell}>
                     {isHolding && (

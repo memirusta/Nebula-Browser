@@ -1,9 +1,11 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../../platform/runtime'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './TitleBar.module.css'
 
 export function TitleBar() {
+  const { t } = useLocale()
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export function TitleBar() {
           type="button"
           className={styles.control}
           onMouseDown={onMinimize}
-          aria-label="Küçült"
+          aria-label={t('titleMinimize')}
         >
           <svg viewBox="0 0 10 10" aria-hidden="true">
             <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
@@ -89,7 +91,7 @@ export function TitleBar() {
           type="button"
           className={[styles.control, styles.controlMax].join(' ')}
           onMouseDown={onToggleMaximize}
-          aria-label={maximized ? 'Geri yükle' : 'Büyüt'}
+          aria-label={maximized ? t('titleRestore') : t('titleMaximize')}
         >
           {maximized ? (
             <svg viewBox="0 0 10 10" aria-hidden="true">
@@ -118,7 +120,7 @@ export function TitleBar() {
           type="button"
           className={[styles.control, styles.controlClose].join(' ')}
           onMouseDown={onClose}
-          aria-label="Kapat"
+          aria-label={t('titleClose')}
         >
           <svg viewBox="0 0 10 10" aria-hidden="true">
             <path

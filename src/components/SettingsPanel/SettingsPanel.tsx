@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  SETTINGS_CATEGORIES,
+  getSettingsCategories,
   type SettingsCategoryId,
 } from '../../core/settingsCategories'
+import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import type { NebulaSettings } from '../../core/nebulaSettings'
 import {
   SettingColorRow,
@@ -81,42 +82,53 @@ function CategoryContent({
   onReopenOnboarding: () => void
   onOpenBrowseUrl?: (url: string) => void
 }) {
+  const { t, locale, setLocale } = useLocale()
   const { appearance, home, semiLunar, browsing, privacy, notifications } = settings
 
   switch (categoryId) {
     case 'appearance':
       return (
         <>
+          <SettingSelectRow
+            label={t('settingsLanguage')}
+            hint={t('settingsLanguageHint')}
+            value={locale}
+            options={[
+              { value: 'tr', label: t('languageTurkish') },
+              { value: 'en', label: t('languageEnglish') },
+            ]}
+            onChange={(value) => setLocale(value as NebulaLocale)}
+          />
           <div className={styles.row}>
             <div className={styles.rowText}>
-              <div className={styles.rowLabel}>Duvar kağıdı</div>
-              <div className={styles.rowHint}>Kendi görselini yükle</div>
+              <div className={styles.rowLabel}>{t('wallpaper')}</div>
+              <div className={styles.rowHint}>{t('wallpaperHint')}</div>
             </div>
             <div className={styles.rowActions}>
               <button type="button" className={styles.actionBtn} onClick={onPickWallpaper}>
-                Seç…
+                {t('select')}
               </button>
               <button type="button" className={styles.actionBtn} onClick={onResetWallpaper}>
-                Sıfırla
+                {t('reset')}
               </button>
             </div>
           </div>
           <SettingSelectRow
-            label="Tema"
-            hint="Arayüz renk paleti"
+            label={t('theme')}
+            hint={t('themeHint')}
             value={appearance.theme}
             options={[
-              { value: 'forest', label: 'Forest (varsayılan)' },
-              { value: 'dark', label: 'Koyu' },
-              { value: 'light', label: 'Açık' },
+              { value: 'forest', label: t('themeForest') },
+              { value: 'dark', label: t('themeDark') },
+              { value: 'light', label: t('themeLight') },
             ]}
             onChange={(v) =>
               onUpdate('appearance', 'theme', v as NebulaSettings['appearance']['theme'])
             }
           />
           <SettingRangeRow
-            label="Cam blur"
-            hint="Panel ve widget bulanıklığı"
+            label={t('glassBlur')}
+            hint={t('glassBlurHint')}
             value={appearance.glassBlurPx}
             min={0}
             max={80}
@@ -125,8 +137,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('appearance', 'glassBlurPx', v)}
           />
           <SettingRangeRow
-            label="Cam opaklığı"
-            hint="Yarı saydam cam yüzey yoğunluğu"
+            label={t('glassOpacity')}
+            hint={t('glassOpacityHint')}
             value={appearance.glassOpacity}
             min={0}
             max={40}
@@ -135,8 +147,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('appearance', 'glassOpacity', v)}
           />
           <SettingRangeRow
-            label="Cam doygunluk"
-            hint="Backdrop saturate çarpanı"
+            label={t('glassSaturate')}
+            hint={t('glassSaturateHint')}
             value={Math.round(appearance.glassSaturate * 10)}
             min={5}
             max={30}
@@ -145,20 +157,20 @@ function CategoryContent({
             onChange={(v) => onUpdate('appearance', 'glassSaturate', v / 10)}
           />
           <SettingColorRow
-            label="Accent rengi"
-            hint="Vurgu ve odak renkleri"
+            label={t('accentColor')}
+            hint={t('accentColorHint')}
             value={appearance.accentColor}
             onChange={(v) => onUpdate('appearance', 'accentColor', v)}
           />
           <SettingColorRow
-            label="Altın rengi"
-            hint="İkon ve vurgu detayları"
+            label={t('goldColor')}
+            hint={t('goldColorHint')}
             value={appearance.goldColor}
             onChange={(v) => onUpdate('appearance', 'goldColor', v)}
           />
           <SettingRangeRow
-            label="Semi-lunar cam blur"
-            hint="Üst menü cam bulanıklığı"
+            label={t('lunarGlassBlur')}
+            hint={t('lunarGlassBlurHint')}
             value={appearance.lunarGlassBlurPx}
             min={0}
             max={160}
@@ -167,8 +179,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('appearance', 'lunarGlassBlurPx', v)}
           />
           <SettingRangeRow
-            label="Semi-lunar opaklık"
-            hint="Üst menü cam yoğunluğu"
+            label={t('lunarGlassOpacity')}
+            hint={t('lunarGlassOpacityHint')}
             value={appearance.lunarGlassOpacity}
             min={20}
             max={100}
@@ -177,8 +189,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('appearance', 'lunarGlassOpacity', v)}
           />
           <SettingResetRow
-            label="Görünüm varsayılanları"
-            hint="Tema ve cam ayarlarını sıfırla"
+            label={t('appearanceReset')}
+            hint={t('appearanceResetHint')}
             onReset={() => onResetCategory('appearance')}
           />
         </>
@@ -188,50 +200,48 @@ function CategoryContent({
         <>
           <div className={styles.row}>
             <div className={styles.rowText}>
-              <div className={styles.rowLabel}>Arayüzü düzenle</div>
-              <div className={styles.rowHint}>
-                Ana sayfa modüllerini sürükleyerek ve boyutlandırarak özelleştir
-              </div>
+              <div className={styles.rowLabel}>{t('editUi')}</div>
+              <div className={styles.rowHint}>{t('editUiHint')}</div>
             </div>
             <button type="button" className={styles.actionBtn} onClick={onEnterHomeEdit}>
-              Düzenle…
+              {t('editBtn')}
             </button>
           </div>
           <SettingToggleRow
-            label="Sağ araç çubuğu"
-            hint="Ayarlar ve bildirim ikonları"
+            label={t('toolbar')}
+            hint={t('toolbarHint')}
             checked={home.showToolbar}
             onChange={() => onUpdate('home', 'showToolbar', !home.showToolbar)}
           />
           <SettingToggleRow
-            label="Sistem widget'ları"
-            hint="Sol kenar çubuğunu göster"
+            label={t('systemWidgets')}
+            hint={t('systemWidgetsHint')}
             checked={home.showSystemWidgets}
             onChange={() => onUpdate('home', 'showSystemWidgets', !home.showSystemWidgets)}
           />
           <SettingToggleRow
-            label="RAM widget"
-            hint="Bellek kullanım grafiği"
+            label={t('ramWidget')}
+            hint={t('ramWidgetHint')}
             checked={home.showRamWidget}
             onChange={() => onUpdate('home', 'showRamWidget', !home.showRamWidget)}
           />
           <SettingToggleRow
-            label="CPU widget"
-            hint="İşlemci kullanım grafiği"
+            label={t('cpuWidget')}
+            hint={t('cpuWidgetHint')}
             checked={home.showCpuWidget}
             onChange={() => onUpdate('home', 'showCpuWidget', !home.showCpuWidget)}
           />
           <SettingToggleRow
-            label="Saat"
-            hint="Sol altta saat ve tarih"
+            label={t('clock')}
+            hint={t('clockHint')}
             checked={home.showClock}
             onChange={() => onUpdate('home', 'showClock', !home.showClock)}
           />
           {home.showClock && (
             <>
               <SettingRangeRow
-                label="Saat yazı boyutu"
-                hint="Sol alttaki saat metni"
+                label={t('clockFontSize')}
+                hint={t('clockFontSizeHint')}
                 value={home.clockFontSize}
                 min={24}
                 max={72}
@@ -240,66 +250,66 @@ function CategoryContent({
                 onChange={(v) => onUpdate('home', 'clockFontSize', v)}
               />
               <SettingSelectRow
-                label="Saat yazı kalınlığı"
-                hint="Font weight değeri"
+                label={t('clockFontWeight')}
+                hint={t('clockFontWeightHint')}
                 value={String(home.clockFontWeight)}
                 options={[
-                  { value: '300', label: 'İnce (300)' },
-                  { value: '400', label: 'Normal (400)' },
-                  { value: '500', label: 'Orta (500)' },
-                  { value: '600', label: 'Kalın (600)' },
+                  { value: '300', label: t('clockFontWeight300') },
+                  { value: '400', label: t('clockFontWeight400') },
+                  { value: '500', label: t('clockFontWeight500') },
+                  { value: '600', label: t('clockFontWeight600') },
                 ]}
                 onChange={(v) => onUpdate('home', 'clockFontWeight', Number(v))}
               />
               <SettingSelectRow
-                label="Saat yazı tipi"
-                hint="Saat metni font ailesi"
+                label={t('clockFontFamily')}
+                hint={t('clockFontFamilyHint')}
                 value={home.clockFontFamily}
                 options={[
-                  { value: 'system', label: 'Sistem' },
-                  { value: 'light', label: 'İnce sans' },
-                  { value: 'serif', label: 'Serif' },
-                  { value: 'mono', label: 'Monospace' },
+                  { value: 'system', label: t('clockFontSystem') },
+                  { value: 'light', label: t('clockFontLight') },
+                  { value: 'serif', label: t('clockFontSerif') },
+                  { value: 'mono', label: t('clockFontMono') },
                 ]}
                 onChange={(v) =>
                   onUpdate('home', 'clockFontFamily', v as NebulaSettings['home']['clockFontFamily'])
                 }
               />
               <SettingToggleRow
-                label="Tarih göster"
-                hint="Saatin altında tarih satırı"
+                label={t('clockShowDate')}
+                hint={t('clockShowDateHint')}
                 checked={home.clockShowDate}
                 onChange={() => onUpdate('home', 'clockShowDate', !home.clockShowDate)}
               />
             </>
           )}
           <SettingToggleRow
-            label="Sabitlenen siteler"
-            hint="Arama çubuğunun üstündeki pin şeridi"
+            label={t('pinnedSites')}
+            hint={t('pinnedSitesHint')}
             checked={home.showPinnedStrip}
             onChange={() => onUpdate('home', 'showPinnedStrip', !home.showPinnedStrip)}
           />
           <SettingToggleRow
-            label="Karşılama mesajı"
-            hint="Ana sayfada hoş geldin metni"
+            label={t('greeting')}
+            hint={t('greetingHint')}
             checked={home.showGreeting}
             onChange={() => onUpdate('home', 'showGreeting', !home.showGreeting)}
           />
           <SettingToggleRow
-            label="Profil avatarı"
-            hint="Arama altında profil alanı"
+            label={t('profileAvatar')}
+            hint={t('profileAvatarHint')}
             checked={home.showProfile}
             onChange={() => onUpdate('home', 'showProfile', !home.showProfile)}
           />
           <SettingTextRow
-            label="Kullanıcı adı"
-            hint="Karşılama mesajında görünen isim"
+            label={t('username')}
+            hint={t('usernameHint')}
             value={home.userDisplayName}
             onChange={(v) => onUpdate('home', 'userDisplayName', v)}
           />
           <SettingSelectRow
-            label="Arama motoru"
-            hint="URL olmayan aramalar için"
+            label={t('searchEngine')}
+            hint={t('searchEngineHint')}
             value={home.searchEngine}
             options={[
               { value: 'google', label: 'Google' },
@@ -312,16 +322,16 @@ function CategoryContent({
           />
           <div className={styles.row}>
             <div className={styles.rowText}>
-              <div className={styles.rowLabel}>Kısayolları sıfırla</div>
-              <div className={styles.rowHint}>Semi-lunar ikonlarını varsayılana döndür</div>
+              <div className={styles.rowLabel}>{t('resetShortcuts')}</div>
+              <div className={styles.rowHint}>{t('resetShortcutsHint')}</div>
             </div>
             <button type="button" className={styles.actionBtn} onClick={onResetShortcuts}>
-              Sıfırla
+              {t('reset')}
             </button>
           </div>
           <SettingResetRow
-            label="Ana sayfa varsayılanları"
-            hint="Widget ve arama ayarlarını sıfırla"
+            label={t('homeReset')}
+            hint={t('homeResetHint')}
             onReset={() => onResetCategory('home')}
           />
         </>
@@ -330,22 +340,22 @@ function CategoryContent({
       return (
         <>
           <SettingToggleRow
-            label="Ana sayfada her zaman açık"
-            hint="Home modunda menü sürekli açık kalır"
+            label={t('slHomeAlwaysOpen')}
+            hint={t('slHomeAlwaysOpenHint')}
             checked={semiLunar.homeAlwaysOpen}
             onChange={() => onUpdate('semiLunar', 'homeAlwaysOpen', !semiLunar.homeAlwaysOpen)}
           />
           <SettingToggleRow
-            label="Browsing'de hover ile aç"
-            hint="Site gezerken üste gelince menü açılır"
+            label={t('slBrowsingHover')}
+            hint={t('slBrowsingHoverHint')}
             checked={semiLunar.browsingHoverOpen}
             onChange={() =>
               onUpdate('semiLunar', 'browsingHoverOpen', !semiLunar.browsingHoverOpen)
             }
           />
           <SettingRangeRow
-            label="Browsing hover açılış gecikmesi"
-            hint="Üst şeritte bu süre kadar bekleyince menü açılır"
+            label={t('slBrowsingDelay')}
+            hint={t('slBrowsingDelayHint')}
             value={semiLunar.browsingOpenDelayMs}
             min={0}
             max={5000}
@@ -355,20 +365,20 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'browsingOpenDelayMs', v)}
           />
           <SettingToggleRow
-            label="Hover önizleme"
-            hint="Kısayol üzerinde bekleyince site önizlemesi"
+            label={t('slPreviewHover')}
+            hint={t('slPreviewHoverHint')}
             checked={semiLunar.previewOnHover}
             onChange={onTogglePreviewOnHover}
           />
           <SettingToggleRow
-            label="Animasyonları azalt"
-            hint="Menü geçişlerini neredeyse anında yap"
+            label={t('slReducedMotion')}
+            hint={t('slReducedMotionHint')}
             checked={semiLunar.reducedMotion}
             onChange={() => onUpdate('semiLunar', 'reducedMotion', !semiLunar.reducedMotion)}
           />
           <SettingRangeRow
-            label="Önizleme gecikmesi"
-            hint="Hover sonrası önizlemenin başlaması"
+            label={t('slPreviewDelay')}
+            hint={t('slPreviewDelayHint')}
             value={semiLunar.previewDelayMs}
             min={200}
             max={3000}
@@ -377,8 +387,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'previewDelayMs', v)}
           />
           <SettingRangeRow
-            label="Kapanma gecikmesi"
-            hint="Menüden çıkınca bekleme süresi"
+            label={t('slCloseDelay')}
+            hint={t('slCloseDelayHint')}
             value={semiLunar.closeDelayMs}
             min={0}
             max={800}
@@ -387,8 +397,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'closeDelayMs', v)}
           />
           <SettingRangeRow
-            label="Açılış animasyonu"
-            hint="Menünün büyüme süresi"
+            label={t('slOpenDuration')}
+            hint={t('slOpenDurationHint')}
             value={semiLunar.openDurationMs}
             min={0}
             max={600}
@@ -397,8 +407,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'openDurationMs', v)}
           />
           <SettingRangeRow
-            label="Kapanış animasyonu"
-            hint="Menünün küçülme süresi"
+            label={t('slCloseDuration')}
+            hint={t('slCloseDurationHint')}
             value={semiLunar.closeDurationMs}
             min={0}
             max={400}
@@ -407,8 +417,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'closeDurationMs', v)}
           />
           <SettingRangeRow
-            label="Açılış scale X"
-            hint="Başlangıç genişlik oranı"
+            label={t('slScaleX')}
+            hint={t('slScaleXHint')}
             value={Math.round(semiLunar.scaleX * 100)}
             min={5}
             max={50}
@@ -417,8 +427,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'scaleX', v / 100)}
           />
           <SettingRangeRow
-            label="Açılış scale Y"
-            hint="Başlangıç yükseklik oranı"
+            label={t('slScaleY')}
+            hint={t('slScaleYHint')}
             value={Math.round(semiLunar.scaleY * 100)}
             min={5}
             max={50}
@@ -427,8 +437,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'scaleY', v / 100)}
           />
           <SettingRangeRow
-            label="Kapat butonu gecikmesi"
-            hint="Kısayol üzerinde ✕ görünmesi"
+            label={t('slCloseBtnDelay')}
+            hint={t('slCloseBtnDelayHint')}
             value={semiLunar.closeBtnDelayMs}
             min={0}
             max={1200}
@@ -437,8 +447,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'closeBtnDelayMs', v)}
           />
           <SettingRangeRow
-            label="Klasör birleştirme"
-            hint="İki ikonu üst üste tutma süresi"
+            label={t('slFolderMerge')}
+            hint={t('slFolderMergeHint')}
             value={semiLunar.folderMergeHoldMs}
             min={200}
             max={2000}
@@ -447,8 +457,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'folderMergeHoldMs', v)}
           />
           <SettingRangeRow
-            label="Birleştirme animasyonu"
-            hint="Klasör oluşurken animasyon süresi"
+            label={t('slMergeAnim')}
+            hint={t('slMergeAnimHint')}
             value={semiLunar.mergeAnimMs}
             min={100}
             max={1200}
@@ -457,8 +467,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'mergeAnimMs', v)}
           />
           <SettingRangeRow
-            label="İkon boyutu"
-            hint="Dock kısayol çapı"
+            label={t('slIconSize')}
+            hint={t('slIconSizeHint')}
             value={semiLunar.iconSizePx}
             min={32}
             max={64}
@@ -467,8 +477,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'iconSizePx', v)}
           />
           <SettingRangeRow
-            label="Hilal genişliği"
-            hint="Semi-lunar menü genişliği"
+            label={t('slLunarWidth')}
+            hint={t('slLunarWidthHint')}
             value={semiLunar.lunarWidthPx}
             min={600}
             max={1400}
@@ -477,8 +487,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'lunarWidthPx', v)}
           />
           <SettingRangeRow
-            label="Hilal yüksekliği"
-            hint="Semi-lunar menü yüksekliği"
+            label={t('slLunarHeight')}
+            hint={t('slLunarHeightHint')}
             value={semiLunar.lunarHeightPx}
             min={100}
             max={220}
@@ -487,8 +497,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('semiLunar', 'lunarHeightPx', v)}
           />
           <SettingRangeRow
-            label="Overlay blur"
-            hint="Hızlı menüde arka plan bulanıklığı"
+            label={t('overlayBlur')}
+            hint={t('overlayBlurHint')}
             value={browsing.overlayBlurPx}
             min={0}
             max={40}
@@ -497,8 +507,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('browsing', 'overlayBlurPx', v)}
           />
           <SettingRangeRow
-            label="Overlay parlaklık"
-            hint="Bulanık arka plan karartma"
+            label={t('overlayBrightness')}
+            hint={t('overlayBrightnessHint')}
             value={browsing.overlayBrightnessPercent}
             min={20}
             max={100}
@@ -507,8 +517,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('browsing', 'overlayBrightnessPercent', v)}
           />
           <SettingResetRow
-            label="Semi-Lunar varsayılanları"
-            hint="Menü ve kısayol davranışlarını sıfırla"
+            label={t('slReset')}
+            hint={t('slResetHint')}
             onReset={() => onResetCategory('semiLunar')}
           />
         </>
@@ -529,26 +539,26 @@ function CategoryContent({
       return (
         <>
           <SettingToggleRow
-            label="Takip engelleme"
-            hint="Bilinen izleyicileri engelle (Gecko sonrası)"
+            label={t('blockTrackers')}
+            hint={t('blockTrackersHint')}
             checked={privacy.blockTrackers}
             onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
           />
           <SettingToggleRow
-            label="Sıkı çerez politikası"
-            hint="Üçüncü taraf çerezleri kısıtla"
+            label={t('strictCookies')}
+            hint={t('strictCookiesHint')}
             checked={privacy.strictCookies}
             onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
           />
           <SettingToggleRow
-            label="HTTPS zorunlu"
-            hint="Güvensiz bağlantıları engelle"
+            label={t('httpsOnly')}
+            hint={t('httpsOnlyHint')}
             checked={privacy.httpsOnly}
             onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
           />
           <SettingResetRow
-            label="Gizlilik varsayılanları"
-            hint="Gizlilik tercihlerini sıfırla"
+            label={t('privacyReset')}
+            hint={t('privacyResetHint')}
             onReset={() => onResetCategory('privacy')}
           />
         </>
@@ -557,32 +567,32 @@ function CategoryContent({
       return (
         <>
           <SettingToggleRow
-            label="Odak modu uyarıları"
-            hint="Dikkat dağıtıcı bildirimleri filtrele"
+            label={t('focusAlerts')}
+            hint={t('focusAlertsHint')}
             checked={notifications.focusModeAlerts}
             onChange={() =>
               onUpdate('notifications', 'focusModeAlerts', !notifications.focusModeAlerts)
             }
           />
           <SettingToggleRow
-            label="Site bildirimleri"
-            hint="Web push bildirimlerine izin ver"
+            label={t('siteNotifications')}
+            hint={t('siteNotificationsHint')}
             checked={notifications.siteNotifications}
             onChange={() =>
               onUpdate('notifications', 'siteNotifications', !notifications.siteNotifications)
             }
           />
           <SettingToggleRow
-            label="Toolbar rozeti"
-            hint="Bildirim ikonunda sayı göster"
+            label={t('toolbarBadge')}
+            hint={t('toolbarBadgeHint')}
             checked={notifications.showToolbarBadge}
             onChange={() =>
               onUpdate('notifications', 'showToolbarBadge', !notifications.showToolbarBadge)
             }
           />
           <SettingRangeRow
-            label="Rozet sayısı"
-            hint="Sağ toolbar bildirim sayısı"
+            label={t('badgeCount')}
+            hint={t('badgeCountHint')}
             value={notifications.toolbarBadgeCount}
             min={0}
             max={99}
@@ -591,8 +601,8 @@ function CategoryContent({
             onChange={(v) => onUpdate('notifications', 'toolbarBadgeCount', v)}
           />
           <SettingResetRow
-            label="Bildirim varsayılanları"
-            hint="Bildirim tercihlerini sıfırla"
+            label={t('notificationsReset')}
+            hint={t('notificationsResetHint')}
             onReset={() => onResetCategory('notifications')}
           />
         </>
@@ -602,10 +612,10 @@ function CategoryContent({
         <>
           <AboutUpdateSection />
           <SettingDangerRow
-            label="Uygulamayı sıfırla"
-            hint="Profil, kurulum, yer işaretleri, ayarlar ve duvar kağıdı — ilk yükleme haline döner"
-            confirmMessage="Tüm Nebula verileri silinecek ve kurulum baştan başlayacak. Emin misin?"
-            buttonLabel="Tamamen sıfırla"
+            label={t('factoryReset')}
+            hint={t('factoryResetHint')}
+            confirmMessage={t('factoryResetConfirm')}
+            buttonLabel={t('factoryResetBtn')}
             onConfirm={onFactoryReset}
           />
         </>
@@ -634,6 +644,7 @@ export function SettingsPanel({
   onReopenOnboarding,
   onOpenBrowseUrl,
 }: SettingsPanelProps) {
+  const { t, locale } = useLocale()
   const [activeId, setActiveId] = useState<SettingsCategoryId>('appearance')
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
@@ -641,7 +652,8 @@ export function SettingsPanel({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasOpenRef = useRef(false)
 
-  const activeCategory = SETTINGS_CATEGORIES.find((c) => c.id === activeId)!
+  const settingsCategories = getSettingsCategories(locale)
+  const activeCategory = settingsCategories.find((c) => c.id === activeId)!
 
   const requestClose = useCallback(() => {
     if (closing) return
@@ -720,20 +732,20 @@ export function SettingsPanel({
         className={`${styles.panel} ${panelAnimClass}`}
         role="dialog"
         aria-modal="true"
-        aria-label="Ayarlar"
+        aria-label={t('settingsTitle')}
       >
         <button
           type="button"
           className={styles.closeBtn}
           onClick={requestClose}
-          aria-label="Ayarları kapat"
+          aria-label={t('settingsClose')}
         >
           ✕
         </button>
 
-        <nav className={styles.nav} aria-label="Ayar kategorileri">
-          <p className={styles.navTitle}>Ayarlar</p>
-          {SETTINGS_CATEGORIES.map((cat) => (
+        <nav className={styles.nav} aria-label={t('settingsNavAria')}>
+          <p className={styles.navTitle}>{t('settingsTitle')}</p>
+          {settingsCategories.map((cat) => (
             <button
               key={cat.id}
               type="button"

@@ -25,6 +25,7 @@ import type { ShellViewMode } from '../../core/nebulaBridge'
 import { isTauri } from '../../platform/runtime'
 import { debounce } from '../../platform/debounce'
 import { expandShellHitRegionToFitBottom, syncChromeShellLayout } from '../../platform/tauriShell'
+import { useLocale } from '../../hooks/useLocale'
 import { ShortcutContextMenu } from './ShortcutContextMenu'
 import { ShortcutPreviewOverlay } from './ShortcutPreviewOverlay'
 import { DockFolderItem } from './DockFolderItem'
@@ -121,6 +122,7 @@ export function SemiLunarMenu({
   activeUrl = null,
   getSession,
 }: SemiLunarMenuProps) {
+  const { t, tf } = useLocale()
   const isHome = mode === 'home'
   const isBrowsing = mode === 'browsing'
   const [stage, setStage] = useState<MenuStage>(
@@ -740,7 +742,7 @@ export function SemiLunarMenu({
   const nav = (
     <nav
       className={rootClass}
-      aria-label="Quick access"
+      aria-label={t('quickAccess')}
       style={
         {
           '--lunar-width': `${lunarWidthPx}px`,
@@ -835,8 +837,8 @@ export function SemiLunarMenu({
                     event.stopPropagation()
                     onBackClick?.()
                   }}
-                  title="Geri"
-                  aria-label="Geri — önceki sayfaya dön"
+                  title={t('goBack')}
+                  aria-label={t('goBackAria')}
                 >
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path
@@ -856,8 +858,8 @@ export function SemiLunarMenu({
                   event.stopPropagation()
                   handleMenuClick()
                 }}
-                title="Hızlı menü"
-                aria-label="Hızlı menü"
+                title={t('quickMenu')}
+                aria-label={t('quickMenu')}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z" />
@@ -943,7 +945,9 @@ export function SemiLunarMenu({
                         : undefined
                     }
                     closeAriaLabel={
-                      tabIsOpen ? `${hoverTitle} sekmesini kapat` : `${item.label} kısayolunu kaldır`
+                      tabIsOpen
+                        ? tf('closeTabAria', { title: hoverTitle })
+                        : tf('removeShortcutAria', { label: item.label })
                     }
                     isTabActive={tabIsActive}
                     displayFavicon={displayFavicon}
@@ -1147,7 +1151,7 @@ function DraggableShortcut({
   onMove,
   onNavigate,
   onRemove,
-  closeAriaLabel = 'Kapat',
+  closeAriaLabel,
   isTabActive = false,
   displayFavicon,
   displayTitle,
@@ -1173,7 +1177,7 @@ function DraggableShortcut({
   onMove: (x: number, y: number, finalize: boolean) => void
   onNavigate: () => void
   onRemove?: () => void
-  closeAriaLabel?: string
+  closeAriaLabel: string
   isTabActive?: boolean
   displayFavicon?: string
   displayTitle?: string
@@ -1188,6 +1192,7 @@ function DraggableShortcut({
   previewDelayMs: number
   closeBtnDelayMs: number
 }) {
+  const { tf } = useLocale()
   const [isDragging, setIsDragging] = useState(false)
   const [dragPos, setDragPos] = useState({ x, y })
   const [isShortcutHovered, setIsShortcutHovered] = useState(false)
@@ -1472,7 +1477,7 @@ function DraggableShortcut({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onContextMenu={handleContextMenu}
-        aria-label={`${item.label} — sürükle veya tıkla`}
+        aria-label={tf('shortcutAria', { label: item.label })}
         tabIndex={-1}
       >
         {resolvedFavicon ? (

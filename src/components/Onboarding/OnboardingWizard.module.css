@@ -190,6 +190,37 @@
   cursor: wait;
 }
 
+.languageGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.languageBtn {
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f7f5;
+  padding: 18px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.languageBtn:hover {
+  border-color: rgba(126, 200, 227, 0.55);
+  background: rgba(126, 200, 227, 0.08);
+}
+
+.languageBtnActive {
+  border-color: var(--nebula-accent);
+  background: rgba(126, 200, 227, 0.14);
+}
+
 .footer {
   display: flex;
   align-items: center;

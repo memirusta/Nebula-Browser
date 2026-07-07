@@ -8,6 +8,9 @@ import {
   takePendingGoogleClaims,
 } from '../../core/googleSignIn'
 import { loadNebulaAccount, type NebulaAccount } from '../../core/nebulaAccount'
+import { tf } from '../../core/locale'
+import type { NebulaLocale } from '../../hooks/useLocale'
+import { useLocale } from '../../hooks/useLocale'
 import {
   isOAuthReturnUrl,
   peekOnboardingImportedShortcuts,
@@ -42,10 +45,11 @@ interface OnboardingWizardProps {
 
 type Step = OnboardingStep
 
-const STEPS: Step[] = ['welcome', 'bookmarks', 'profile', 'googleLink', 'done']
+const STEPS: Step[] = ['language', 'welcome', 'bookmarks', 'profile', 'googleLink', 'done']
 
 export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, onComplete, onOpenBrowseUrl }: OnboardingWizardProps) {
-  const [step, setStep] = useState<Step>(initialStep ?? 'welcome')
+  const { locale, setLocale, t } = useLocale()
+  const [step, setStep] = useState<Step>(initialStep ?? 'language')
   const [browserInfo, setBrowserInfo] = useState<BrowserInfo | null>(null)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
@@ -61,7 +65,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
 
   const handleGoogleClaims = useCallback(
     (claims: { name?: string; email?: string; picture?: string }) => {
-      const name = claims.name?.trim() || claims.email?.split('@')[0] || 'Kullanıcı'
+      const name = claims.name?.trim() || claims.email?.split('@')[0] || t('userFallback')
       setDisplayName(name)
       accountRef.current = {
         provider: 'google',
@@ -70,7 +74,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
         avatarUrl: claims.picture,
       }
     },
-    [],
+    [t],
   )
 
   useEffect(() => {
@@ -110,7 +114,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
       handleGoogleClaims(pendingClaims)
     }
 
-    setStep('welcome')
+    setStep('language')
     setBrowserInfo(null)
     setImporting(false)
     setImportError(null)
@@ -136,13 +140,13 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
           handleGoogleClaims(claims)
           return
         }
-        setGoogleError(error ?? 'Google girişi tamamlanamadı. Tekrar dene veya ismini yaz.')
+        setGoogleError(error ?? t('googleSignInFailed'))
       })
       return
     }
 
     void signInWithGoogleProfile('onboarding-profile')
-  }, [step, handleGoogleClaims])
+  }, [step, handleGoogleClaims, t])
 
   useEffect(() => {
     if (!open || step !== 'profile' || !isTauri) return
@@ -151,16 +155,19 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
         setGoogleConfigHint(null)
         return
       }
-      setGoogleConfigHint(
-        `Kurulu surumde Google secret gerekli. Dosya: ${status.appdataEnvPath}`,
-      )
+      setGoogleConfigHint(tf(locale, 'accountGoogleSecretMissing', { path: status.appdataEnvPath }))
     })
-  }, [open, step])
+  }, [open, step, locale])
 
   useEffect(() => {
     if (!open || step !== 'bookmarks') return
     void detectDefaultBrowser().then(setBrowserInfo)
   }, [open, step])
+
+  const handleSelectLocale = useCallback((next: NebulaLocale) => {
+    setLocale(next)
+    setStep('welcome')
+  }, [setLocale])
 
   const handleImportBookmarks = useCallback(async () => {
     setImporting(true)
@@ -174,14 +181,14 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
         saveOnboardingImportedShortcuts(shortcuts)
       }
       if (shortcuts.length === 0) {
-        setImportError('İçe aktarılacak yer işareti bulunamadı.')
+        setImportError(t('bookmarksNone'))
       }
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'İçe aktarma başarısız.')
+      setImportError(error instanceof Error ? error.message : t('bookmarksFailed'))
     } finally {
       setImporting(false)
     }
-  }, [])
+  }, [t])
 
   const finish = useCallback(() => {
     const trimmed = displayName.trim()
@@ -232,7 +239,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
       const text = await file.text()
       const imported = parsePasswordCsv(text)
       if (imported.length === 0) {
-        setGoogleLinkMessage('CSV dosyasında geçerli şifre satırı bulunamadı.')
+        setGoogleLinkMessage(t('accountCsvEmpty'))
         return
       }
       mergeImportedPasswords(
@@ -243,20 +250,20 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
           password: item.password,
         })),
       )
-      setGoogleLinkMessage(`${imported.length} şifre CSV'den kasaya eklendi.`)
+      setGoogleLinkMessage(tf(locale, 'accountCsvImported', { count: imported.length }))
     } catch {
-      setGoogleLinkMessage('CSV dosyası okunamadı.')
+      setGoogleLinkMessage(t('accountCsvReadError'))
     }
-  }, [])
+  }, [locale, t])
 
   const skipGoogleLink = useCallback(() => {
     setStep('done')
   }, [])
 
   const completeGoogleLink = useCallback(() => {
-    setGoogleLinkMessage('Google hesabın bağlandı.')
+    setGoogleLinkMessage(t('googleLinked'))
     setStep('done')
-  }, [])
+  }, [t])
 
   const goBack = useCallback(() => {
     const index = STEPS.indexOf(step)
@@ -278,7 +285,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
         aria-labelledby="onboarding-title"
       >
         <header className={styles.header}>
-          <p className={styles.kicker}>Kurulum</p>
+          <p className={styles.kicker}>{t('onboardingKicker')}</p>
           <div className={styles.progress} aria-hidden="true">
             {STEPS.map((item, index) => (
               <span
@@ -295,33 +302,66 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
         </header>
 
         <div className={styles.body}>
+          {step === 'language' && (
+            <>
+              <h1 id="onboarding-title" className={styles.title}>
+                {t('chooseLanguageTitle')}
+              </h1>
+              <p className={styles.lead}>{t('chooseLanguageLead')}</p>
+              <div className={styles.languageGrid}>
+                <button
+                  type="button"
+                  className={[
+                    styles.languageBtn,
+                    locale === 'en' ? styles.languageBtnActive : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => handleSelectLocale('en')}
+                >
+                  {t('languageEnglish')}
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    styles.languageBtn,
+                    locale === 'tr' ? styles.languageBtnActive : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => handleSelectLocale('tr')}
+                >
+                  {t('languageTurkish')}
+                </button>
+              </div>
+            </>
+          )}
+
           {step === 'welcome' && (
             <>
               <h1 id="onboarding-title" className={styles.title}>
-                Nebula&apos;ya hoş geldin
+                {t('welcomeTitle')}
               </h1>
-              <p className={styles.lead}>
-                Birkaç adımda tarayıcını kişiselleştirelim: yer işaretleri, Google hesabı ve şifreler.
-              </p>
+              <p className={styles.lead}>{t('welcomeLead')}</p>
             </>
           )}
 
           {step === 'bookmarks' && (
             <>
-              <h2 className={styles.title}>Yer işaretlerini aktar</h2>
+              <h2 className={styles.title}>{t('bookmarksTitle')}</h2>
               <p className={styles.lead}>
                 {isTauri
                   ? browserInfo
                     ? browserInfo.bookmarksAvailable
-                      ? `${browserInfo.displayName} yer işaretlerini semi-lunar menüne ekleyebiliriz.`
-                      : `${browserInfo.displayName} için yer işaretleri bulunamadı. Bu adımı atlayabilirsin.`
-                    : 'Varsayılan tarayıcı aranıyor…'
-                  : 'Yer işareti içe aktarma masaüstü uygulamasında kullanılabilir. Şimdilik bu adımı atlayabilirsin.'}
+                      ? `${browserInfo.displayName} ${t('bookmarksCanImport')}`
+                      : `${browserInfo.displayName} ${t('bookmarksUnavailable')}`
+                    : t('bookmarksSearching')
+                  : t('bookmarksWebOnly')}
               </p>
 
               {importedCount > 0 && (
                 <p className={styles.success}>
-                  {importedCount} site hazır — devam edince menüye eklenecek.
+                  {importedCount} {t('bookmarksReady')}
                 </p>
               )}
               {importError && <p className={styles.error}>{importError}</p>}
@@ -333,7 +373,9 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
                   onClick={() => void handleImportBookmarks()}
                   disabled={importing}
                 >
-                  {importing ? 'Aktarılıyor…' : `${browserInfo.displayName} yer işaretlerini aktar`}
+                  {importing
+                    ? t('bookmarksImporting')
+                    : `${browserInfo.displayName} ${t('bookmarksImportBtn')}`}
                 </button>
               )}
             </>
@@ -341,11 +383,8 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
 
           {step === 'profile' && (
             <>
-              <h2 className={styles.title}>Profilini ayarla</h2>
-              <p className={styles.lead}>
-                Google ile giriş yaparsan bir sonraki adımda şifreleri ve site oturumunu bağlarız.
-                İstersen sadece ismini de yazabilirsin.
-              </p>
+              <h2 className={styles.title}>{t('profileTitle')}</h2>
+              <p className={styles.lead}>{t('profileLead')}</p>
 
               {hasGoogleClient ? (
                 <>
@@ -358,37 +397,33 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
                     <span className={styles.googleMark} aria-hidden="true">G</span>
                     {googleStarting
                       ? isTauri
-                        ? 'Tarayıcıda Google açılıyor…'
-                        : 'Google\'a yönlendiriliyor…'
-                      : 'Google ile giriş yap'}
+                        ? t('googleOpeningTauri')
+                        : t('googleRedirecting')
+                      : t('googleSignIn')}
                   </button>
                   {isTauri ? (
-                    <p className={styles.redirectHint}>
-                      Sistem tarayıcında Google açılır; girişten sonra bu pencereye dön.
-                    </p>
+                    <p className={styles.redirectHint}>{t('googleReturnHintTauri')}</p>
                   ) : (
                     <p className={styles.redirectHint}>
-                      Google Console redirect URI:
+                      {t('googleRedirectUri')}
                       <code>{redirectUri}</code>
                     </p>
                   )}
                   {googleConfigHint && <p className={styles.hint}>{googleConfigHint}</p>}
                   {googleError && <p className={styles.error}>{googleError}</p>}
-                  <p className={styles.divider}>veya</p>
+                  <p className={styles.divider}>{t('orDivider')}</p>
                 </>
               ) : (
-                <p className={styles.hint}>
-                  Google girişi için geliştirici yapılandırması gerekir; şimdilik isim girebilirsin.
-                </p>
+                <p className={styles.hint}>{t('googleConfigMissing')}</p>
               )}
 
               <label className={styles.fieldLabel}>
-                Görünen ad
+                {t('displayNameLabel')}
                 <input
                   className={styles.textInput}
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
-                  placeholder="Adın"
+                  placeholder={t('displayNamePlaceholder')}
                   maxLength={48}
                   autoComplete="nickname"
                 />
@@ -398,7 +433,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
 
           {step === 'googleLink' && googleEmail && (
             <>
-              <h2 className={styles.title}>Google hesabını bağla</h2>
+              <h2 className={styles.title}>{t('googleLinkTitle')}</h2>
               <GoogleAccountSetupPanel
                 email={googleEmail}
                 onOpenBrowseUrl={(url) => onOpenBrowseUrl?.(url)}
@@ -421,44 +456,42 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
 
           {step === 'googleLink' && !googleEmail && (
             <>
-              <h2 className={styles.title}>Google hesabını bağla</h2>
-              <p className={styles.lead}>
-                Bu adım için önce Google ile giriş yapman gerekir. Geri dönüp profil adımında giriş
-                yapabilirsin.
-              </p>
+              <h2 className={styles.title}>{t('googleLinkTitle')}</h2>
+              <p className={styles.lead}>{t('googleLinkNeedSignIn')}</p>
             </>
           )}
 
           {step === 'done' && (
             <>
-              <h2 className={styles.title}>Hazırsın</h2>
+              <h2 className={styles.title}>{t('doneTitle')}</h2>
               <p className={styles.lead}>
                 {importedCount > 0
-                  ? `${importedCount} yer işareti menüye eklenecek.`
-                  : 'Semi-lunar menü ziyaret ettikçe dolacak.'}
+                  ? `${importedCount} ${t('doneBookmarks')}`
+                  : t('doneEmptyMenu')}
                 {displayName.trim()
-                  ? ` Hoş geldin, ${displayName.trim()}.`
-                  : ' İstediğin zaman ayarlardan profilini değiştirebilirsin.'}
+                  ? ` ${t('doneWelcome')}, ${displayName.trim()}.`
+                  : ` ${t('doneProfileLater')}`}
               </p>
             </>
           )}
         </div>
 
+        {step !== 'language' && (
         <footer className={styles.footer}>
           {stepIndex > 0 && step !== 'done' && step !== 'googleLink' && (
             <button type="button" className={styles.ghostBtn} onClick={goBack}>
-              Geri
+              {t('back')}
             </button>
           )}
           <div className={styles.footerSpacer} />
           {step === 'bookmarks' && (
             <button type="button" className={styles.ghostBtn} onClick={goNext}>
-              Atla
+              {t('skip')}
             </button>
           )}
           {step === 'googleLink' && (
             <button type="button" className={styles.ghostBtn} onClick={skipGoogleLink}>
-              Atla
+              {t('skip')}
             </button>
           )}
           {step !== 'googleLink' && (
@@ -467,10 +500,11 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
               className={styles.primaryBtn}
               onClick={step === 'done' ? finish : goNext}
             >
-              {step === 'done' ? 'Başla' : 'Devam'}
+              {step === 'done' ? t('start') : t('continue')}
             </button>
           )}
         </footer>
+        )}
       </div>
     </div>,
     document.body,

@@ -138,7 +138,7 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
   semiLunar: {
     homeAlwaysOpen: true,
     browsingHoverOpen: true,
-    browsingOpenDelayMs: 3000,
+    browsingOpenDelayMs: 500,
     previewOnHover: true,
     closeDelayMs: 200,
     previewDelayMs: 1000,

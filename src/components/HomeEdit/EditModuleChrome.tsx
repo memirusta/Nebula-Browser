@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ReactNode } from 'react'
 import { clampModuleOffset, type ModuleOffset, type ModuleSize } from '../../core/homeLayout'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './EditModuleChrome.module.css'
 
 const SIZES: ModuleSize[] = ['s', 'm', 'l']
@@ -33,6 +34,7 @@ export function EditModuleChrome({
   hidden = false,
   children,
 }: EditModuleChromeProps) {
+  const { t } = useLocale()
   const dragRef = useRef<{
     startX: number
     startY: number
@@ -107,7 +109,7 @@ export function EditModuleChrome({
             onPointerMove={handleLabelPointerMove}
             onPointerUp={handleLabelPointerUp}
             onPointerCancel={handleLabelPointerUp}
-            title={isDraggable ? 'Sürükleyerek taşı' : undefined}
+            title={isDraggable ? t('editDragMove') : undefined}
           >
             {isDraggable && <span className={styles.dragGrip} aria-hidden="true" />}
             {label}
@@ -124,7 +126,7 @@ export function EditModuleChrome({
               onClick={onToggleVisible}
               aria-pressed={visible}
             >
-              {visible ? 'Görünür' : 'Gizli'}
+              {visible ? t('editVisible') : t('editHidden')}
             </button>
           )}
           {onSizeChange &&
@@ -144,8 +146,8 @@ export function EditModuleChrome({
         </div>
         <div className={styles.frameInner}>{children}</div>
       </div>
-      {reorderHint && <span className={styles.hint}>Sürükleyerek sırala</span>}
-      {positionHint && <span className={styles.hint}>Etiketten tutup sürükle</span>}
+      {reorderHint && <span className={styles.hint}>{t('editReorderHint')}</span>}
+      {positionHint && <span className={styles.hint}>{t('editPositionHint')}</span>}
     </div>
   )
 }
