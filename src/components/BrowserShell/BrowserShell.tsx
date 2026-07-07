@@ -45,6 +45,8 @@ import {
 } from '../../core/googleSignIn'
 import { useNebulaAccount } from '../../hooks/useNebulaAccount'
 import { useLocale } from '../../hooks/useLocale'
+import { usePasswordVault } from '../../hooks/usePasswordVault'
+import { usePasswordBridge } from '../../hooks/usePasswordBridge'
 import styles from './BrowserShell.module.css'
 
 type ViewMode = 'home' | 'browsing' | 'overlay'
@@ -80,6 +82,7 @@ export function BrowserShell() {
   const { account, displayName: accountDisplayName, setAccount } = useNebulaAccount(
     settings.home.userDisplayName,
   )
+  const { entries: passwordEntries, reload: reloadPasswordVault } = usePasswordVault()
   const widgetLayout = useWidgetLayout({
     showRamWidget: settings.home.showRamWidget,
     showCpuWidget: settings.home.showCpuWidget,
@@ -599,6 +602,14 @@ export function BrowserShell() {
   const isHome = viewMode === 'home'
   const isBrowsing = viewMode === 'browsing'
   const isOverlay = viewMode === 'overlay'
+
+  usePasswordBridge({
+    enabled: isBrowsing && isTauri,
+    activeTabId,
+    activeUrl,
+    entries: passwordEntries,
+    onVaultChange: reloadPasswordVault,
+  })
   const showBrowser = (isBrowsing || isOverlay) && activeTabId !== null
 
   useEffect(() => {

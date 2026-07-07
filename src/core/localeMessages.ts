@@ -393,8 +393,8 @@ export const LOCALE_MESSAGES = {
   accountReopenSetup: { tr: 'Kurulum sihirbazı', en: 'Setup wizard' },
   accountPasswords: { tr: 'Kayıtlı şifreler', en: 'Saved passwords' },
   accountPasswordsHint: {
-    tr: 'Site giriş bilgilerini bu cihazda sakla. Otomatik doldurma henüz yok; kopyalayıp yapıştırabilirsin.',
-    en: 'Store site credentials on this device. Autofill is not available yet; copy and paste for now.',
+    tr: 'Site giriş bilgileri bu cihazda saklanır. Giriş sayfalarında otomatik doldurma ve yeni şifre kaydetme önerilir.',
+    en: 'Site credentials are stored on this device. Login pages offer autofill and save prompts for new passwords.',
   },
   accountImportChrome: { tr: '{browser} şifrelerini aktar', en: 'Import {browser} passwords' },
   accountImporting: { tr: 'Aktarılıyor…', en: 'Importing…' },
@@ -612,6 +612,21 @@ export const LOCALE_MESSAGES = {
   timeMinutesAgo: { tr: '{n} dk önce', en: '{n} min ago' },
   timeHoursAgo: { tr: '{n} saat önce', en: '{n} h ago' },
   timeDaysAgo: { tr: '{n} gün önce', en: '{n} d ago' },
+
+  // ── Password autofill bridge ────────────────────────────────────────────────
+  pwdFillTitle: { tr: 'Kayıtlı şifre', en: 'Saved password' },
+  pwdFillLead: {
+    tr: '{site} için kayıtlı giriş bilgisi var.',
+    en: 'Saved sign-in for {site}.',
+  },
+  pwdFillBtn: { tr: 'Doldur', en: 'Fill' },
+  pwdSaveTitle: { tr: 'Şifreyi kaydet?', en: 'Save password?' },
+  pwdSaveLead: {
+    tr: '{site} için {user} girişini kaydedelim mi?',
+    en: 'Save sign-in for {user} on {site}?',
+  },
+  pwdSaveBtn: { tr: 'Kaydet', en: 'Save' },
+  pwdDismiss: { tr: 'Hayır', en: 'No' },
 } as const
 
 export type LocaleMessageKey = keyof typeof LOCALE_MESSAGES

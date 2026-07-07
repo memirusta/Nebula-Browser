@@ -1,8 +1,20 @@
 mod browser_bookmarks;
 mod browser_passwords;
 mod google_oauth;
+mod password_webview;
 mod system_stats;
 mod tab_error_page;
+
+#[tauri::command]
+async fn webview_execute_script(
+    app: tauri::AppHandle,
+    label: String,
+    script: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || password_webview::execute_script(&app, &label, &script))
+        .await
+        .map_err(|error| error.to_string())?
+}
 
 #[tauri::command]
 fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result<(), String> {
@@ -629,6 +641,7 @@ pub fn run() {
             webview_set_chrome_hit_region,
             webview_set_shell_hit_region,
             webview_setup_tab_error_pages,
+            webview_execute_script,
             system_stats::get_system_stats,
       browser_bookmarks::detect_default_browser,
       browser_bookmarks::import_default_browser_bookmarks,

@@ -60,3 +60,35 @@ export function removePasswordEntry(id: string): SavedPassword[] {
   savePasswordVault(next)
   return next
 }
+
+export function upsertPasswordEntry(
+  draft: Omit<SavedPassword, 'id' | 'updatedAt'>,
+): SavedPassword[] {
+  const vault = loadPasswordVault()
+  const normalizedUser = draft.username.trim().toLowerCase()
+  const draftUrl = draft.url?.trim().toLowerCase() ?? ''
+
+  const existingIndex = vault.findIndex((entry) => {
+    const sameUser = entry.username.trim().toLowerCase() === normalizedUser
+    const sameUrl = (entry.url?.trim().toLowerCase() ?? '') === draftUrl
+    return sameUser && sameUrl
+  })
+
+  if (existingIndex >= 0) {
+    const existing = vault[existingIndex]
+    const updated: SavedPassword = {
+      ...existing,
+      label: draft.label,
+      url: draft.url,
+      username: draft.username,
+      password: draft.password,
+      updatedAt: Date.now(),
+    }
+    const next = [...vault]
+    next[existingIndex] = updated
+    savePasswordVault(next)
+    return next
+  }
+
+  return addPasswordEntry(draft)
+}

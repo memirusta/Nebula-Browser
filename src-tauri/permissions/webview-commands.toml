@@ -13,6 +13,7 @@ commands.allow = [
   "webview_set_chrome_hit_region",
   "webview_set_shell_hit_region",
   "webview_setup_tab_error_pages",
+  "webview_execute_script",
   "get_system_stats",
   "detect_default_browser",
   "import_default_browser_bookmarks",

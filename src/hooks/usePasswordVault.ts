@@ -30,5 +30,5 @@ export function usePasswordVault() {
     setEntries(removePasswordEntry(id))
   }, [])
 
-  return { entries, addEntry, mergeEntries, removeEntry }
+  return { entries, addEntry, mergeEntries, removeEntry, reload }
 }
