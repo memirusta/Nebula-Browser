@@ -1,0 +1,91 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 13000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.panel {
+  width: min(420px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(28, 34, 30, 0.98), rgba(18, 22, 20, 0.98));
+  color: #e8efe9;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+.header {
+  padding: 22px 22px 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.lead {
+  margin: 10px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: rgba(232, 239, 233, 0.78);
+}
+
+.notes {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: rgba(232, 239, 233, 0.88);
+  white-space: pre-wrap;
+}
+
+.status {
+  margin: 14px 22px 0;
+  font-size: 0.86rem;
+  color: rgba(232, 239, 233, 0.72);
+}
+
+.statusError {
+  color: #ff9f9f;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px 22px 22px;
+}
+
+.ghostBtn,
+.primaryBtn {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.ghostBtn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: #e8efe9;
+}
+
+.primaryBtn {
+  border: none;
+  background: #3d7a57;
+  color: #fff;
+}
+
+.primaryBtn:disabled,
+.ghostBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

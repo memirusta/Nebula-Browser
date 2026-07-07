@@ -1,0 +1,58 @@
+.bar {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(18, 26, 22, 0.9);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 28px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--nebula-text-muted);
+  margin-right: 8px;
+  letter-spacing: 0.02em;
+}
+
+.btn {
+  padding: 8px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--nebula-text);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.btnPrimary {
+  background: rgba(126, 200, 227, 0.22);
+  border-color: rgba(126, 200, 227, 0.5);
+  color: var(--nebula-accent);
+}
+
+.btnPrimary:hover {
+  background: rgba(126, 200, 227, 0.32);
+  border-color: rgba(126, 200, 227, 0.65);
+}

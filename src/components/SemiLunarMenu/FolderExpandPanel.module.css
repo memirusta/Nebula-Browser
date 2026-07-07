@@ -1,0 +1,152 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10190;
+  background: transparent;
+}
+
+.panel {
+  position: fixed;
+  z-index: 10195;
+  width: 220px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--nebula-glass-border);
+  background: rgba(100, 100, 105, 0.94);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  animation: folderExpand 380ms var(--ease-spring) both;
+  transform-origin: top center;
+}
+
+@keyframes folderExpand {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) translateY(-8px);
+  }
+  60% {
+    transform: scale(1.04) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.title {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nebula-text-muted);
+  text-align: center;
+  cursor: text;
+}
+
+.title:hover {
+  color: var(--nebula-text);
+}
+
+.titleInput {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nebula-text);
+  text-align: center;
+  outline: none;
+  box-shadow: none;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--nebula-text);
+  transition: background var(--duration-fast);
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.itemDragging {
+  opacity: 0.35;
+}
+
+.item img,
+.item > span:first-child {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.label {
+  font-size: 10px;
+  color: var(--nebula-text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dragGhost {
+  position: fixed;
+  z-index: 320;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(20, 28, 24, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.dragGhost img,
+.dragGhost > span {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

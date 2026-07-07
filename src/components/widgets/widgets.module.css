@@ -1,0 +1,110 @@
+.widget {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 12px;
+  gap: 4px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+  flex-shrink: 0;
+}
+
+.value {
+  font-size: 11px;
+  color: var(--nebula-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chart svg {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+
+.clock {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  padding: 8px 12px;
+  gap: 4px;
+}
+
+.time {
+  font-size: clamp(24px, 5vw, 36px);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--nebula-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.date {
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+  text-transform: capitalize;
+}
+
+.blank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--nebula-text-muted);
+  text-align: center;
+  padding: 12px;
+}
+
+.blankIcon {
+  font-size: 24px;
+  opacity: 0.5;
+}
+
+.blankText {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.notesLabel {
+  font-size: 11px;
+  color: var(--nebula-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.notesStub {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+  border: 1px dashed var(--nebula-glass-border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  line-height: 1.5;
+}

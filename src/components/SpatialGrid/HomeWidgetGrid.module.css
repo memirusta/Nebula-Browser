@@ -1,0 +1,61 @@
+.gridArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.gridAreaDragging {
+  overflow: hidden;
+  touch-action: none;
+}
+
+.grid {
+  min-height: 100%;
+}
+
+.gridItem {
+  transition: box-shadow var(--duration-normal);
+}
+
+.grid :global(.react-resizable-handle) {
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.gridItem:hover :global(.react-resizable-handle) {
+  opacity: 1;
+}
+
+.grid :global(.react-resizable-handle::after) {
+  border-color: var(--nebula-accent-dim) !important;
+}
+
+.grid :global(.react-grid-placeholder) {
+  background: var(--nebula-accent-dim) !important;
+  border-radius: var(--glass-radius);
+  opacity: 0.25 !important;
+}
+
+.emptyArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 12px;
+  min-height: 120px;
+}
+
+.emptyText {
+  font-size: 13px;
+  color: var(--nebula-text-muted);
+}
+
+.emptyHint {
+  font-size: 11px;
+  color: var(--nebula-text-muted);
+  opacity: 0.7;
+}

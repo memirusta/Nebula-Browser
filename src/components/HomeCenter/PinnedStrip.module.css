@@ -1,0 +1,322 @@
+.strip {
+  width: 100%;
+  --pin-scale: 1;
+}
+
+.list {
+  display: flex;
+  align-items: flex-start;
+  justify-content: safe center;
+  gap: calc(10px * var(--pin-scale));
+  margin: 0;
+  padding: 0 20px 8px;
+  list-style: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) rgba(255, 255, 255, 0.06);
+}
+
+.list::-webkit-scrollbar {
+  height: 5px;
+}
+
+.list::-webkit-scrollbar-track {
+  margin: 0 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+}
+
+.list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+}
+
+.item {
+  flex-shrink: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-expo),
+    visibility var(--duration-fast),
+    transform 240ms var(--ease-spring);
+}
+
+.listPreviewActive .item:not(.itemPreviewing) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0.9);
+}
+
+.itemPreviewing {
+  position: relative;
+  z-index: 2;
+}
+
+.listDragging .item {
+  transition: transform 240ms var(--ease-spring);
+}
+
+.itemPlaceholder {
+  pointer-events: none;
+}
+
+.placeholderSlot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6px * var(--pin-scale));
+  width: calc(68px * var(--pin-scale));
+}
+
+.placeholderIcon {
+  width: calc(46px * var(--pin-scale));
+  height: calc(46px * var(--pin-scale));
+  border-radius: calc(14px * var(--pin-scale));
+  border: 2px dashed rgba(126, 200, 227, 0.45);
+  animation: placeholderPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes placeholderPulse {
+  0%,
+  100% {
+    border-color: rgba(126, 200, 227, 0.35);
+  }
+  50% {
+    border-color: rgba(126, 200, 227, 0.65);
+  }
+}
+
+.pinBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6px * var(--pin-scale));
+  width: calc(68px * var(--pin-scale));
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: grab;
+  font-family: inherit;
+  color: inherit;
+  touch-action: none;
+  transition: transform var(--duration-fast) var(--ease-spring);
+}
+
+.pinBtn:hover:not(.pinBtnHolding):not(.pinBtnIdleWhileDrag) {
+  transform: translateY(-2px);
+}
+
+.pinBtnHolding {
+  cursor: progress;
+}
+
+.pinBtnHolding .iconWrap {
+  transform: scale(0.94);
+  border-color: var(--nebula-accent-dim);
+}
+
+.pinBtnUnlock .iconWrap {
+  animation: pinUnlock 420ms var(--ease-spring) forwards;
+}
+
+.pinBtnIdleWhileDrag {
+  cursor: default;
+}
+
+.pinBtnMuted {
+  opacity: 0.5;
+}
+
+.pinBtnPreviewing {
+  opacity: 0.68;
+  transform: translateY(-2px);
+}
+
+.pinBtnPreviewing .iconWrap {
+  border-color: rgba(126, 200, 227, 0.55);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.28),
+    0 0 0 2px rgba(126, 200, 227, 0.5),
+    0 0 14px rgba(126, 200, 227, 0.35);
+  transform: scale(1.02);
+}
+
+.pinBtnPreviewing .label {
+  color: var(--nebula-text-muted);
+  opacity: 0.85;
+}
+
+.dragGhost {
+  position: fixed;
+  z-index: 320;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(20, 28, 24, 0.94);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.06);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 24px var(--nebula-accent-glow);
+}
+
+.dragGhost img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.dragGhost > span {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--nebula-accent);
+}
+
+.iconShell {
+  position: relative;
+  width: calc(46px * var(--pin-scale));
+  height: calc(46px * var(--pin-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.holdRing {
+  position: absolute;
+  inset: calc(-3px * var(--pin-scale));
+  width: calc(52px * var(--pin-scale));
+  height: calc(52px * var(--pin-scale));
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+
+.holdRingTrack {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 2.5;
+}
+
+.holdRingProgress {
+  fill: none;
+  stroke: var(--nebula-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 144.5;
+  stroke-dashoffset: 144.5;
+  filter: drop-shadow(0 0 4px var(--nebula-accent-glow));
+  animation: holdRingFill 1s linear forwards;
+}
+
+.unlockBurst {
+  position: absolute;
+  inset: -6px;
+  border-radius: 18px;
+  border: 2px solid var(--nebula-accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: unlockBurst 420ms var(--ease-out-expo) forwards;
+}
+
+.iconWrap {
+  position: relative;
+  z-index: 1;
+  width: calc(46px * var(--pin-scale));
+  height: calc(46px * var(--pin-scale));
+  border-radius: calc(14px * var(--pin-scale));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nebula-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--nebula-glass-border);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast),
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.pinBtn:hover:not(.pinBtnHolding):not(.pinBtnIdleWhileDrag) .iconWrap {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.favicon {
+  width: calc(24px * var(--pin-scale));
+  height: calc(24px * var(--pin-scale));
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.fallback {
+  font-size: calc(16px * var(--pin-scale));
+  font-weight: 500;
+  color: var(--nebula-accent);
+}
+
+.label {
+  max-width: calc(68px * var(--pin-scale));
+  font-size: calc(11px * var(--pin-scale));
+  line-height: 1.2;
+  color: var(--nebula-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  transition: color var(--duration-fast);
+}
+
+.pinBtn:hover .label,
+.pinBtnHolding .label {
+  color: var(--nebula-text);
+}
+
+.pinBtnHolding .label {
+  color: var(--nebula-accent);
+}
+
+@keyframes holdRingFill {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pinUnlock {
+  0% {
+    transform: scale(0.94);
+    box-shadow: var(--glass-shadow);
+  }
+  45% {
+    transform: scale(1.14);
+    box-shadow:
+      0 0 32px var(--nebula-accent-glow),
+      0 8px 28px rgba(0, 0, 0, 0.32);
+  }
+  100% {
+    transform: scale(1.05);
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.35),
+      0 0 20px rgba(126, 200, 227, 0.35);
+  }
+}
+
+@keyframes unlockBurst {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.88);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}

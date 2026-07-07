@@ -1,0 +1,26 @@
+[[permission]]
+identifier = "allow-nebula-webview-commands"
+description = "Allow Nebula custom webview commands"
+commands.allow = [
+  "webview_navigate",
+  "webview_close_tab",
+  "webview_current_url",
+  "webview_go_back",
+  "webview_document_title",
+  "webview_raise_ui",
+  "webview_raise_overlay",
+  "webview_raise_chrome",
+  "webview_set_chrome_hit_region",
+  "webview_set_shell_hit_region",
+  "webview_setup_tab_error_pages",
+  "get_system_stats",
+  "detect_default_browser",
+  "import_default_browser_bookmarks",
+  "detect_browser_passwords",
+  "list_chromium_password_sources",
+  "inspect_browser_passwords",
+  "import_default_browser_passwords",
+  "exchange_google_oauth_token",
+  "google_oauth_sign_in_loopback",
+  "google_oauth_status"
+]

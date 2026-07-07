@@ -1,0 +1,80 @@
+.folder {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.folderMerging {
+  animation: folderPop 480ms var(--ease-spring) both;
+}
+
+.folderDropHover {
+  border-color: rgba(126, 200, 227, 0.55);
+  box-shadow: 0 0 0 2px rgba(126, 200, 227, 0.25);
+}
+
+.folderDropTarget .grid {
+  transform: scale(0.65);
+  transition: transform 650ms var(--ease-out-expo);
+}
+
+@keyframes folderPop {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.4;
+  }
+  55% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  78% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 14px);
+  grid-template-rows: repeat(2, 14px);
+  gap: 3px;
+  transition: transform 0.2s var(--ease-out-expo);
+}
+
+.mini {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: var(--nebula-text);
+}
+
+.mini img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.more {
+  position: absolute;
+  bottom: 3px;
+  right: 4px;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--nebula-text-muted);
+}
