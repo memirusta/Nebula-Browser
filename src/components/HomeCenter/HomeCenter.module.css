@@ -1,0 +1,158 @@
+.root {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(0);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  z-index: 10;
+  width: min(520px, 92vw);
+  pointer-events: auto;
+}
+
+.rootPinPreview {
+  z-index: 290;
+}
+
+.centerStack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.pinFullBleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  margin-bottom: 4px;
+}
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 22px;
+  background: rgba(20, 30, 24, 0.55);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 40px;
+  box-shadow: var(--glass-shadow);
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.searchBar:focus-within {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.searchIcon {
+  width: 18px;
+  height: 18px;
+  color: var(--nebula-text-muted);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--nebula-text);
+  font-size: 15px;
+  font-family: inherit;
+  user-select: text;
+  text-overflow: ellipsis;
+}
+
+.searchBarOverlay {
+  background: rgba(12, 18, 14, 0.28);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+}
+
+:global(html[data-nebula-overlay-tauri]) .searchBarOverlay {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
+    rgba(16, 22, 30, 0.78);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.searchInput::placeholder {
+  color: var(--nebula-text-muted);
+}
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatarRing {
+  padding: 3px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--nebula-accent), #4a90c2);
+  box-shadow: 0 0 24px var(--nebula-accent-glow);
+}
+
+.avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #5ba3d9 0%, #2d6a9f 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.avatar svg {
+  width: 36px;
+  height: 36px;
+}
+
+.avatarImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.greeting {
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  color: var(--nebula-gold);
+  text-shadow: 0 0 20px var(--nebula-gold-glow);
+}
+
+.chromeHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-expo),
+    visibility var(--duration-fast);
+}
+
+.rootEditMode {
+  z-index: 50;
+}
+
+.emptyPinPlaceholder {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+}

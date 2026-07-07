@@ -1,0 +1,88 @@
+.root {
+  position: fixed;
+  right: 24px;
+  top: calc(24px + var(--title-bar-height, 0));
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.rootOverlay {
+  position: relative;
+  right: auto;
+  top: auto;
+  z-index: auto;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.actionBtn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--nebula-glass-border);
+  background: var(--nebula-glass);
+  color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--duration-fast) var(--ease-spring),
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+  transform: translateZ(0);
+}
+
+.actionBtn:hover {
+  transform: scale(1.1) translateZ(0);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.actionBtnOverlay {
+  background: rgba(12, 18, 14, 0.28);
+}
+
+.actionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+}
+
+.actionIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--nebula-accent);
+  color: #0a1420;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

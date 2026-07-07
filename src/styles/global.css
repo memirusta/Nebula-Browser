@@ -1,0 +1,59 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--nebula-text);
+  background: var(--nebula-void);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+.glass-panel {
+  background: var(--nebula-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-shadow);
+  transform: var(--gpu-layer);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--nebula-accent-dim);
+  border-radius: 3px;
+}
+
+[data-theme='dark'] {
+  --nebula-void: #000000;
+  --nebula-deep: rgba(6, 10, 8, 0.82);
+}
+
+[data-theme='light'] {
+  --nebula-void: #e4ebe6;
+  --nebula-deep: rgba(255, 255, 255, 0.72);
+  --nebula-text: #141814;
+  --nebula-text-muted: rgba(20, 24, 20, 0.55);
+  --nebula-glass-border: rgba(0, 0, 0, 0.12);
+  --nebula-glass-highlight: rgba(255, 255, 255, 0.5);
+}

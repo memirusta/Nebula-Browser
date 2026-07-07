@@ -1,0 +1,34 @@
+.gridWrapper {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  transform: translateZ(0);
+}
+
+.grid {
+  min-height: 100%;
+}
+
+.gridItem {
+  transition: box-shadow var(--duration-normal);
+}
+
+/* Override react-grid-layout resize handle */
+.grid :global(.react-resizable-handle) {
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.gridItem:hover :global(.react-resizable-handle) {
+  opacity: 1;
+}
+
+.grid :global(.react-resizable-handle::after) {
+  border-color: var(--nebula-accent-dim) !important;
+}
+
+.grid :global(.react-grid-placeholder) {
+  background: var(--nebula-accent-dim) !important;
+  border-radius: var(--glass-radius);
+  opacity: 0.25 !important;
+}

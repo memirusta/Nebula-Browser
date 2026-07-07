@@ -1,0 +1,220 @@
+.shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.shellTauri {
+  background: transparent;
+}
+
+.shellTauriOverlay {
+  background: transparent;
+}
+
+.browserFullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  animation: fadeIn 0.35s var(--ease-out-expo);
+  transform: translateZ(0);
+  transition: filter 0.4s var(--ease-out-expo);
+}
+
+.browserNative {
+  background: transparent;
+  pointer-events: none;
+}
+
+.browserBlurred {
+  pointer-events: none;
+}
+
+.browserBehindOverlay {
+  background: transparent;
+  pointer-events: none;
+  z-index: 200;
+  filter: blur(6px) brightness(0.92);
+}
+
+.browserHiddenDuringPreview {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.browserFrame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+.overlayBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  border: none;
+  background: rgba(0, 0, 0, calc(0.06 + (1 - var(--overlay-brightness, 0.55)) * 0.35));
+  backdrop-filter: blur(var(--overlay-blur, 12px)) brightness(var(--overlay-brightness, 0.55));
+  -webkit-backdrop-filter: blur(var(--overlay-blur, 12px)) brightness(var(--overlay-brightness, 0.55));
+  cursor: default;
+  animation: fadeIn 0.3s var(--ease-out-expo);
+}
+
+.overlayBackdropTauri {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.04) 22%,
+      transparent 46%
+    ),
+    rgba(8, 12, 20, var(--overlay-frost, 0.68));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.overlayHome {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.overlayChrome {
+  position: absolute;
+  top: calc(20px + var(--title-bar-height, 0));
+  right: 24px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.overlayMainMenu {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--nebula-glass-border);
+  background: rgba(12, 18, 14, 0.28);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  color: var(--nebula-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform var(--duration-fast) var(--ease-spring),
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+  transform: translateZ(0);
+}
+
+.overlayMainMenu svg {
+  width: 18px;
+  height: 18px;
+}
+
+.overlayMainMenu:hover {
+  transform: scale(1.1) translateZ(0);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.overlayDismiss {
+  position: absolute;
+  top: calc(20px + var(--title-bar-height, 0));
+  left: 24px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--nebula-glass-border);
+  background: rgba(12, 18, 14, 0.28);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  color: var(--nebula-text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast),
+    border-color var(--duration-fast);
+}
+
+.overlayDismiss:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--nebula-text);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.widgetColumn {
+  position: fixed;
+  left: 24px;
+  top: calc(var(--lunar-height, 152px) + var(--semi-lunar-hit-zone-height, 14px));
+  bottom: 24px;
+  width: var(--widget-width, 220px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+
+.homeChromeHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-expo),
+    visibility var(--duration-fast);
+}
+
+.semiLunarHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-expo),
+    visibility var(--duration-fast);
+}
+
+.editDimOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.editElevated {
+  position: relative;
+  z-index: 50;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}

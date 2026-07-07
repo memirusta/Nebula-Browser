@@ -1,0 +1,34 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+
+# Rust / Tauri
+src-tauri/target/
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Installers (publish via GitHub Releases)
+release/*.exe
+release/*.zip
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.sw?
+
+# Local-only folders
+.video-frames/

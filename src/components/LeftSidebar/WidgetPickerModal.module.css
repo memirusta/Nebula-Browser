@@ -1,0 +1,137 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.2s var(--ease-out-expo);
+}
+
+.panel {
+  position: fixed;
+  left: 24px;
+  top: calc(var(--lunar-height, 152px) + 40px);
+  z-index: 401;
+  width: min(240px, calc(100vw - 48px));
+  padding: 12px;
+  background: var(--nebula-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-shadow);
+  animation: slideIn 0.25s var(--ease-out-expo);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--nebula-text);
+  margin: 0;
+}
+
+.closeBtn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nebula-text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.closeBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--nebula-text);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--glass-radius) - 4px);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--nebula-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    opacity var(--duration-fast);
+}
+
+.option:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.optionIcon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+  color: var(--nebula-accent);
+  flex-shrink: 0;
+}
+
+.optionLabel {
+  flex: 1;
+}
+
+.optionBadge {
+  font-size: 10px;
+  color: var(--nebula-text-muted);
+  letter-spacing: 0.04em;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

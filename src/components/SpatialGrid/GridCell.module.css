@@ -1,0 +1,165 @@
+.cell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--nebula-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-normal);
+}
+
+.cellActive {
+  border-color: var(--nebula-accent-dim);
+  box-shadow:
+    0 0 24px rgba(92, 225, 255, 0.12),
+    var(--glass-shadow);
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(8, 10, 18, 0.5);
+  border-bottom: 1px solid var(--nebula-glass-border);
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.chrome:active {
+  cursor: grabbing;
+}
+
+.tabInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tabDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nebula-text-muted);
+  flex-shrink: 0;
+  transition: background var(--duration-fast);
+}
+
+.tabDot[data-active='true'] {
+  background: var(--nebula-accent);
+  box-shadow: 0 0 8px var(--nebula-accent-glow);
+}
+
+.tabTitle {
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cellActive .tabTitle {
+  color: var(--nebula-text);
+}
+
+.chromeActions {
+  display: flex;
+  gap: 4px;
+}
+
+.chromeBtn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nebula-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.chromeBtn:hover {
+  background: rgba(255, 107, 138, 0.15);
+  color: var(--nebula-danger);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: transparent;
+}
+
+.iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+.internalPage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(92, 225, 255, 0.04) 0%,
+    transparent 70%
+  );
+}
+
+.nebulaLogo {
+  font-size: 48px;
+  color: var(--nebula-accent);
+  text-shadow: 0 0 40px var(--nebula-accent-glow);
+  margin-bottom: 12px;
+  animation: pulse 4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.internalTitle {
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.internalDesc {
+  font-size: 13px;
+  color: var(--nebula-text-muted);
+  max-width: 280px;
+  line-height: 1.5;
+}

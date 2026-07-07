@@ -1,0 +1,602 @@
+.root {
+  position: fixed;
+  top: var(--title-bar-height, 0);
+  left: 50%;
+  transform: translateX(-50%) translateZ(0);
+  z-index: 300;
+  width: var(--lunar-width);
+  max-width: 98vw;
+  height: 18px;
+  pointer-events: auto;
+  transition:
+    height var(--lunar-duration-close) var(--lunar-ease-close),
+    width 360ms var(--lunar-ease-open);
+}
+
+.rootExpanded {
+  height: calc(var(--lunar-height) + 12px);
+  overflow: visible;
+  transition:
+    height 360ms var(--lunar-ease-open),
+    width 360ms var(--lunar-ease-open);
+}
+
+.rootBrowsing {
+  z-index: 10050;
+}
+
+.browsingChrome {
+  position: fixed;
+  left: 0;
+  right: 0;
+  min-height: var(--semi-lunar-hit-zone-height, 14px);
+  z-index: 10050;
+  pointer-events: auto;
+  overflow: visible;
+}
+
+.browsingChromeWeb {
+  top: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.browsingChromeTauri.browsingChromeWeb {
+  pointer-events: auto;
+}
+
+.browsingChromeTauri {
+  top: var(--title-bar-height);
+}
+
+.browsingChromeCollapsed {
+  min-height: var(--semi-lunar-hit-zone-height, 14px);
+}
+
+.browsingChromeWeb.browsingChromeCollapsed {
+  min-height: 0;
+}
+
+.browsingChromeTauri.browsingChromeCollapsed {
+  min-height: var(--semi-lunar-hit-zone-height, 14px);
+}
+
+.browsingChromeOverlayHidden {
+  z-index: 200;
+  pointer-events: none;
+}
+
+.browsingChromeOverlayHidden .lunarGlass,
+.browsingChromeOverlayHidden .browsingHoverBridge {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.browsingChromeCollapsed .lunarGlass {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-50%) scale(var(--lunar-scale-x), 0.22);
+}
+
+.browsingChromeExpanded {
+  min-height: calc(var(--lunar-height, 152px) + 12px);
+  overflow: visible;
+}
+
+.browsingChromeTauri .glassFill {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(var(--lunar-glass-rgb, 235, 242, 250), var(--lunar-glass-fill, 0.75)) 48%,
+    rgba(var(--lunar-glass-rgb, 235, 242, 250), calc(var(--lunar-glass-fill, 0.75) * 0.88)) 100%
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.browsingChromeTauri .glassFrost {
+  opacity: 1;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(14, 18, 28, calc(var(--lunar-glass-fill, 0.75) * 0.78)) 52%,
+      rgba(8, 10, 16, calc(var(--lunar-glass-fill, 0.75) * 0.92)) 100%
+    ),
+    radial-gradient(130% 90% at 50% -10%, rgba(255, 255, 255, 0.18), transparent 65%);
+}
+
+.browsingChromeTauri.browsingChromeCollapsed .glassFrost {
+  opacity: 0;
+}
+
+.browsingRoot {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%) translateZ(0);
+  z-index: 2;
+  width: var(--lunar-width);
+  max-width: 98vw;
+  height: var(--semi-lunar-hit-zone-height, 14px);
+  pointer-events: auto;
+  transition:
+    height var(--lunar-duration-close) var(--lunar-ease-close),
+    width 360ms var(--lunar-ease-open);
+}
+
+.browsingChromeCollapsed .browsingRoot {
+  pointer-events: none;
+}
+
+.browsingChromeCollapsed .browsingRoot .triggerZone {
+  pointer-events: auto;
+}
+
+.browsingHoverBridge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--semi-lunar-hit-zone-height, 14px);
+  z-index: 3;
+  pointer-events: auto;
+  cursor: default;
+  background: transparent;
+  border-bottom: none;
+}
+
+.browsingHoverBridgeChrome {
+  background: rgba(0, 0, 0, 0.92);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.browsingHoverBridgeWeb {
+  background: transparent;
+  border-bottom: none;
+}
+
+.browsingChrome .browsingRoot {
+  pointer-events: auto;
+}
+
+.lunarDomeBrowsing {
+  clip-path: ellipse(50% 100% at 50% 0%);
+}
+
+.iconAnchorBrowsing {
+  clip-path: ellipse(50% 100% at 50% 0%);
+}
+
+.triggerZoneBrowsing {
+  height: var(--semi-lunar-hit-zone-height, 14px);
+}
+
+.triggerZone {
+  width: 100%;
+  height: 18px;
+  cursor: default;
+}
+
+.lunarDome {
+  position: absolute;
+  inset: 0;
+  clip-path: ellipse(50% 112% at 50% -16%);
+  transform: translateZ(0);
+  overflow: hidden;
+}
+
+.lunarGlass {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--lunar-width);
+  max-width: 98vw;
+  height: var(--lunar-height);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) scale(var(--lunar-scale-x), var(--lunar-scale-y));
+  transform-origin: top center;
+  pointer-events: none;
+  transition:
+    opacity var(--lunar-duration-close) var(--lunar-ease-close),
+    transform var(--lunar-duration-close) var(--lunar-ease-close),
+    width var(--lunar-duration-open) var(--lunar-ease-open),
+    height var(--lunar-duration-open) var(--lunar-ease-open),
+    visibility 0ms linear var(--lunar-duration-close);
+  will-change: opacity, transform;
+  overflow: visible;
+  backface-visibility: hidden;
+}
+
+.lunarGlass.visible.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(-50%) scale(1);
+  transition:
+    opacity var(--lunar-duration-open) var(--lunar-ease-open),
+    transform var(--lunar-duration-open) var(--lunar-ease-open),
+    width var(--lunar-duration-open) var(--lunar-ease-open),
+    height var(--lunar-duration-open) var(--lunar-ease-open),
+    visibility 0ms linear 0ms;
+}
+
+.glassFill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(var(--lunar-glass-rgb, 235, 242, 250), var(--lunar-glass-fill, 0.38)) 48%,
+    rgba(var(--lunar-glass-rgb, 235, 242, 250), calc(var(--lunar-glass-fill, 0.38) * 0.82)) 100%
+  );
+  backdrop-filter: blur(var(--lunar-glass-blur, 160px)) saturate(var(--lunar-glass-saturate, 1.75));
+  -webkit-backdrop-filter: blur(var(--lunar-glass-blur, 160px)) saturate(var(--lunar-glass-saturate, 1.75));
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    background var(--lunar-duration-open) var(--lunar-ease-open),
+    box-shadow var(--lunar-duration-open) var(--lunar-ease-open),
+    backdrop-filter var(--lunar-duration-open) var(--lunar-ease-open),
+    -webkit-backdrop-filter var(--lunar-duration-open) var(--lunar-ease-open);
+}
+
+.glassFrost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.92;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(12, 16, 22, calc(var(--lunar-glass-fill, 0.38) * 0.55)) 100%
+    ),
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.12), transparent 70%);
+}
+
+.browsingChromeTauri .glassFrost {
+  opacity: 1;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(14, 18, 26, calc(var(--lunar-glass-fill, 0.38) * 0.72)) 55%,
+      rgba(10, 12, 18, calc(var(--lunar-glass-fill, 0.38) * 0.88)) 100%
+    ),
+    radial-gradient(130% 90% at 50% -10%, rgba(255, 255, 255, 0.16), transparent 65%);
+}
+
+.arcStroke {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
+}
+
+.collapsedEvBtnColumn {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+.evBtnColumn {
+  position: absolute;
+  top: 14px;
+  left: 62px;
+  z-index: 10;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.evBtn {
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 28, 24, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--nebula-gold);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.evBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.evBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.iconAnchor {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  clip-path: ellipse(50% 112% at 50% -16%);
+  overflow: hidden;
+}
+
+.iconAnchorDragging {
+  clip-path: none;
+  overflow: visible;
+  z-index: 200;
+}
+
+.shortcutWrap {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 1;
+  transition:
+    left 360ms var(--lunar-ease-open),
+    top 360ms var(--lunar-ease-open);
+}
+
+.shortcutWrapDragging {
+  z-index: 201;
+  transition: none;
+}
+
+.shortcutWrapHovered {
+  z-index: 4;
+}
+
+.shortcut {
+  position: absolute;
+  width: var(--shortcut-icon-size, 44px);
+  height: var(--shortcut-icon-size, 44px);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 28, 24, 0.88);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  pointer-events: auto;
+  touch-action: none;
+  overflow: hidden;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color var(--lunar-duration) var(--lunar-ease),
+    transform var(--lunar-duration) var(--lunar-ease);
+}
+
+.shortcut:active {
+  cursor: grabbing;
+  transition: none;
+}
+
+.shortcutTabActive {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+}
+
+.shortcutWithClose {
+  overflow: visible;
+}
+
+.shortcutDragging {
+  cursor: grabbing;
+  transition: none;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.shortcutHovered {
+  border-color: rgba(255, 255, 255, 0.35);
+  z-index: 3;
+}
+
+.shortcutHoverLabel {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  transform: translate(-4px, -100%);
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: rgba(12, 12, 12, 0.94);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 12;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.shortcutMuted {
+  opacity: 0.5;
+}
+
+.mutedStrike {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 100, 100, 0.7);
+  pointer-events: none;
+}
+
+.mutedStrike::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: rgba(255, 100, 100, 0.85);
+  transform: rotate(-45deg);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(calc(-50% + 15px), calc(-50% - 15px));
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: none;
+  background: #e53935;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--duration-fast),
+    background var(--duration-fast),
+    opacity var(--duration-fast);
+  z-index: 10;
+}
+
+.closeBtn:hover {
+  background: #ff5252;
+  transform: translate(calc(-50% + 15px), calc(-50% - 15px)) scale(1.08);
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.favicon {
+  width: calc(var(--shortcut-icon-size, 44px) * 0.59);
+  height: calc(var(--shortcut-icon-size, 44px) * 0.59);
+  border-radius: 50%;
+  object-fit: contain;
+  transition: transform var(--lunar-duration) var(--lunar-ease);
+}
+
+.fallback {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--nebula-text);
+  transition: transform var(--lunar-duration) var(--lunar-ease);
+}
+
+.shortcutFolder {
+  padding: 4px;
+  background: rgba(30, 36, 40, 0.92);
+}
+
+.shortcutDropHover {
+  border-color: rgba(126, 200, 227, 0.65) !important;
+}
+
+.shortcutDropTarget .favicon,
+.shortcutDropTarget .fallback {
+  transform: scale(0.65);
+  transition: transform 650ms var(--ease-out-expo);
+}
+
+.shortcutWrapMerging {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mergeLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 250;
+  pointer-events: none;
+}
+
+.mergeGhost {
+  position: absolute;
+  width: var(--shortcut-icon-size, 44px);
+  height: var(--shortcut-icon-size, 44px);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 28, 24, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  animation: mergeToCenter 420ms var(--ease-spring) forwards;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.mergeGhost img {
+  width: calc(var(--shortcut-icon-size, 44px) * 0.59);
+  height: calc(var(--shortcut-icon-size, 44px) * 0.59);
+  border-radius: 50%;
+  object-fit: contain;
+}
+
+.mergeGhostFolder {
+  border-radius: 14px;
+  animation: mergeFolderForm 420ms var(--ease-spring) forwards;
+}
+
+@keyframes mergeToCenter {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--merge-dx, 0px)), calc(-50% + var(--merge-dy, 0px))) scale(0.35);
+    opacity: 0.6;
+  }
+}
+
+@keyframes mergeFolderForm {
+  0% {
+    transform: translate(-50%, -50%) scale(0.35);
+    opacity: 0.5;
+  }
+  55% {
+    transform: translate(-50%, -50%) scale(1.14);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
