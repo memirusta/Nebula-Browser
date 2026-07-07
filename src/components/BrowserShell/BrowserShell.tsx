@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { isTauri } from '../../platform/runtime'
 import { listenChromeActions, emitActiveUrl, emitTabCatalog, emitViewMode } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
+import type { BrowserShortcutId } from '../../core/browserShortcuts'
 import { syncTauriViewMode, applyTauriViewModeNow } from '../../platform/tauriBrowsingMode'
 import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
 import { DEFAULT_SHORTCUTS } from '../../core/constants'
@@ -10,9 +11,20 @@ import { loadBrowseSessions } from '../../core/browseSession'
 import { resolveShortcutForOpen } from '../../core/navigateShortcut'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
 import { clearGoogleBrowserSession, isGoogleBrowserSignInUrl, isGoogleSessionHelperTerminalUrl } from '../../core/googleBrowserSession'
-import { closeBrowseTab, navigateBrowseTabBack, prepareBrowseTabInBackground, readTabWebviewUrl, snapshotTabWebview } from '../../platform/tauriBrowser'
+import {
+  closeBrowseTab,
+  navigateBrowseTabBack,
+  navigateBrowseTabForward,
+  openBrowseTabDevTools,
+  prepareBrowseTabInBackground,
+  readTabWebviewUrl,
+  reloadBrowseTab,
+  snapshotTabWebview,
+  zoomBrowseTab,
+} from '../../platform/tauriBrowser'
 import { useBrowserTabs } from '../../hooks/useBrowserTabs'
-import { shortcutFromTab } from '../../core/browserTab'
+import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
+import { shortcutFromTab, type BrowserTab } from '../../core/browserTab'
 import { computeAdaptiveLunarSize } from '../../core/lunarSizing'
 import { homeLayoutFromSettings, type HomeLayout } from '../../core/homeLayout'
 import { HomeCenter } from '../HomeCenter/HomeCenter'
@@ -180,7 +192,9 @@ export function BrowserShell() {
   )
   const googleResumeStartedRef = useRef(false)
   const googleSessionHelperTabIdsRef = useRef<Set<string>>(new Set())
+  const closedTabsRef = useRef<BrowserTab[]>([])
   const [googleSessionWatchToken, setGoogleSessionWatchToken] = useState(0)
+  const [focusSearchRequest, setFocusSearchRequest] = useState(0)
 
   useEffect(() => {
     if (googleResumeStartedRef.current) return
@@ -495,6 +509,11 @@ export function BrowserShell() {
 
   const handleCloseTab = useCallback(
     async (shortcutId: string) => {
+      const closing = tabsRef.current.find((tab) => tab.shortcutId === shortcutId)
+      if (closing) {
+        closedTabsRef.current = [closing, ...closedTabsRef.current].slice(0, 25)
+      }
+
       const remaining = tabsRef.current.filter((tab) => tab.shortcutId !== shortcutId)
       const goingHome = remaining.length === 0
 
@@ -588,6 +607,218 @@ export function BrowserShell() {
   const goHome = useCallback(() => {
     setViewMode('home')
   }, [])
+
+  const openNewBlankTab = useCallback(() => {
+    const id = `tab-${crypto.randomUUID()}`
+    const shortcut: Shortcut = {
+      id,
+      label: t('newTab'),
+      url: 'about:blank',
+    }
+
+    setTabSwitchHistory((history) => {
+      const current = activeTabIdRef.current
+      if (current && current !== id) {
+        return [...history, current]
+      }
+      return history
+    })
+
+    pendingBrowseTargetRef.current = {
+      tabId: id,
+      url: shortcut.url,
+      forceNavigate: true,
+    }
+
+    openOrSwitchTab(shortcut)
+    setTauriBrowseSyncToken((token) => token + 1)
+    setViewMode('browsing')
+  }, [activeTabIdRef, openOrSwitchTab, t])
+
+  const reopenLastClosedTab = useCallback(() => {
+    const closed = closedTabsRef.current.shift()
+    if (!closed) return
+
+    const shortcut = shortcutFromTab(closed)
+    setTabSwitchHistory((history) => {
+      const current = activeTabIdRef.current
+      if (current && current !== closed.shortcutId) {
+        return [...history, current]
+      }
+      return history
+    })
+
+    pendingBrowseTargetRef.current = {
+      tabId: closed.shortcutId,
+      url: closed.url,
+      forceNavigate: true,
+    }
+
+    openOrSwitchTab(shortcut, { reload: true })
+    setTauriBrowseSyncToken((token) => token + 1)
+    setViewMode('browsing')
+  }, [activeTabIdRef, openOrSwitchTab])
+
+  const cycleTab = useCallback(
+    (direction: 1 | -1) => {
+      const ids = tabsRef.current.map((tab) => tab.shortcutId)
+      if (ids.length === 0) return
+      const current = activeTabIdRef.current
+      const index = current ? ids.indexOf(current) : -1
+      const nextIndex = (index + direction + ids.length) % ids.length
+      switchToExistingBrowseTab(ids[nextIndex]!)
+    },
+    [activeTabIdRef, switchToExistingBrowseTab, tabsRef],
+  )
+
+  const switchToTabByIndex = useCallback(
+    (index: number) => {
+      const ids = tabsRef.current.map((tab) => tab.shortcutId)
+      if (index < 0 || index >= ids.length) return
+      switchToExistingBrowseTab(ids[index]!)
+    },
+    [switchToExistingBrowseTab, tabsRef],
+  )
+
+  const goBackInPage = useCallback(() => {
+    if (viewModeRef.current === 'overlay') {
+      dismissOverlay()
+      return
+    }
+
+    if (isTauri && activeTabIdRef.current) {
+      void navigateBrowseTabBack(activeTabIdRef.current).then((wentBack) => {
+        if (!wentBack && viewModeRef.current === 'browsing') {
+          setViewMode('home')
+        }
+      })
+      return
+    }
+
+    if (viewModeRef.current === 'browsing') {
+      setViewMode('home')
+    }
+  }, [activeTabIdRef, dismissOverlay])
+
+  const goForwardInPage = useCallback(() => {
+    if (!isTauri || !activeTabIdRef.current) return
+    void navigateBrowseTabForward(activeTabIdRef.current)
+  }, [activeTabIdRef])
+
+  const reloadActiveTab = useCallback(() => {
+    const tabId = activeTabIdRef.current
+    if (!tabId) return
+    if (isTauri) {
+      void reloadBrowseTab(tabId)
+      return
+    }
+    const tab = getTab(tabId)
+    if (!tab) return
+    openOrSwitchTab({ id: tab.shortcutId, label: tab.title, url: tab.url, favicon: tab.favicon }, { reload: true })
+  }, [activeTabIdRef, getTab, openOrSwitchTab])
+
+  const focusAddressBar = useCallback(() => {
+    if (viewModeRef.current === 'home') {
+      setFocusSearchRequest((token) => token + 1)
+      return
+    }
+    openOverlay()
+    setFocusSearchRequest((token) => token + 1)
+  }, [openOverlay])
+
+  const handleBrowserShortcut = useCallback(
+    (action: BrowserShortcutId) => {
+      if (settingsOpen || onboardingOpen) return
+
+      switch (action) {
+        case 'new-tab':
+          openNewBlankTab()
+          break
+        case 'close-tab':
+          if (activeTabIdRef.current) {
+            void handleCloseTab(activeTabIdRef.current)
+          }
+          break
+        case 'reopen-tab':
+          reopenLastClosedTab()
+          break
+        case 'next-tab':
+          cycleTab(1)
+          break
+        case 'prev-tab':
+          cycleTab(-1)
+          break
+        case 'switch-tab-1':
+        case 'switch-tab-2':
+        case 'switch-tab-3':
+        case 'switch-tab-4':
+        case 'switch-tab-5':
+        case 'switch-tab-6':
+        case 'switch-tab-7':
+        case 'switch-tab-8':
+          switchToTabByIndex(Number(action.slice(-1)) - 1)
+          break
+        case 'switch-tab-last': {
+          const count = tabsRef.current.length
+          if (count > 0) switchToTabByIndex(count - 1)
+          break
+        }
+        case 'reload':
+          reloadActiveTab()
+          break
+        case 'focus-url-bar':
+          focusAddressBar()
+          break
+        case 'go-back':
+          goBackInPage()
+          break
+        case 'go-forward':
+          goForwardInPage()
+          break
+        case 'go-home':
+          goHome()
+          break
+        case 'zoom-in':
+        case 'zoom-out':
+        case 'zoom-reset':
+          if (activeTabIdRef.current && isTauri) {
+            const zoomAction = action === 'zoom-in' ? 'in' : action === 'zoom-out' ? 'out' : 'reset'
+            void zoomBrowseTab(activeTabIdRef.current, zoomAction)
+          }
+          break
+        case 'devtools':
+          if (activeTabIdRef.current && isTauri) {
+            void openBrowseTabDevTools(activeTabIdRef.current)
+          }
+          break
+        case 'close-overlay':
+          if (viewModeRef.current === 'overlay') dismissOverlay()
+          break
+      }
+    },
+    [
+      activeTabIdRef,
+      cycleTab,
+      dismissOverlay,
+      focusAddressBar,
+      goBackInPage,
+      goForwardInPage,
+      goHome,
+      handleCloseTab,
+      onboardingOpen,
+      openNewBlankTab,
+      reloadActiveTab,
+      reopenLastClosedTab,
+      settingsOpen,
+      switchToTabByIndex,
+      tabsRef,
+    ],
+  )
+
+  useBrowserShortcuts({
+    onAction: handleBrowserShortcut,
+    enabled: !onboardingOpen,
+  })
 
   useEffect(() => {
     if (viewMode !== 'overlay') return
@@ -881,6 +1112,7 @@ export function BrowserShell() {
             onShortcutInteractionChange={setPinShortcutInteraction}
             activeUrl={activeUrl}
             getSession={getSession}
+            focusSearchRequest={focusSearchRequest}
             hideChrome={hideHomeChrome}
             pinPreviewActive={pinShortcutInteraction}
             editMode={homeEditMode}
@@ -1038,6 +1270,7 @@ export function BrowserShell() {
               previewDelayMs={semiLunar.previewDelayMs}
               activeUrl={activeUrl}
               getSession={getSession}
+              focusSearchRequest={focusSearchRequest}
             />
           </div>
         </>

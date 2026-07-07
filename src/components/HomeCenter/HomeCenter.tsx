@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { buildSearchUrl, type SearchEngine } from '../../core/nebulaSettings'
 import { useLocale } from '../../hooks/useLocale'
 import type { HomeLayout, ModuleOffset, ModuleSize } from '../../core/homeLayout'
@@ -40,6 +40,7 @@ interface HomeCenterProps {
   editMode?: boolean
   editLayout?: HomeLayout
   onEditLayoutChange?: (patch: Partial<HomeLayout>) => void
+  focusSearchRequest?: number
 }
 
 export function HomeCenter({
@@ -72,10 +73,20 @@ export function HomeCenter({
   editMode = false,
   editLayout,
   onEditLayoutChange,
+  focusSearchRequest = 0,
 }: HomeCenterProps) {
   const { t } = useLocale()
   const [query, setQuery] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!focusSearchRequest) return
+    const input = searchInputRef.current
+    if (!input) return
+    input.focus()
+    input.select()
+  }, [focusSearchRequest])
 
   useEffect(() => {
     if (isEditing) return
@@ -138,6 +149,7 @@ export function HomeCenter({
         <path d="M16 16l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
       <input
+        ref={searchInputRef}
         type="text"
         className={styles.searchInput}
         placeholder={t('searchPlaceholder')}

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.5"
+version = "0.1.6"
 description = "Nebula Browser"
 authors = ["Nebula"]
 license = ""
@@ -38,3 +38,4 @@ aes-gcm = "0.10"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
+tauri-plugin-global-shortcut = "2"

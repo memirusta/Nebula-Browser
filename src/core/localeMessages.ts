@@ -539,6 +539,7 @@ export const LOCALE_MESSAGES = {
   goBack: { tr: 'Geri', en: 'Back' },
   quickMenu: { tr: 'Hızlı menü', en: 'Quick menu' },
   closeTab: { tr: 'Sekmeyi kapat', en: 'Close tab' },
+  newTab: { tr: 'Yeni sekme', en: 'New tab' },
   removeShortcut: { tr: 'Kısayolu kaldır', en: 'Remove shortcut' },
   shortcutDrag: { tr: 'Sürükle veya tıkla', en: 'Drag or click' },
   searchPlaceholder: { tr: 'Ara veya URL yaz…', en: 'Search or type URL…' },

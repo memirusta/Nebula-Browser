@@ -4,6 +4,7 @@ mod google_oauth;
 mod password_webview;
 mod system_stats;
 mod tab_error_page;
+mod webview_controls;
 
 #[tauri::command]
 async fn webview_execute_script(
@@ -620,6 +621,11 @@ pub fn run() {
         .setup(|app| {
             load_runtime_env();
 
+            #[cfg(desktop)]
+            {
+                app.handle().plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -634,6 +640,10 @@ pub fn run() {
             webview_close_tab,
             webview_current_url,
             webview_go_back,
+            webview_controls::webview_go_forward,
+            webview_controls::webview_reload,
+            webview_controls::webview_zoom,
+            webview_controls::webview_open_devtools,
             webview_document_title,
             webview_raise_ui,
             webview_raise_overlay,

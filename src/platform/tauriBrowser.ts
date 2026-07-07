@@ -278,6 +278,60 @@ export async function navigateBrowseTabBack(shortcutId: string): Promise<boolean
   }
 }
 
+export async function navigateBrowseTabForward(shortcutId: string): Promise<boolean> {
+  if (!isTauri) return false
+
+  try {
+    return await invoke<boolean>('webview_go_forward', {
+      label: tabWebviewLabel(shortcutId),
+    })
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_go_forward failed', error)
+    }
+    return false
+  }
+}
+
+export async function reloadBrowseTab(shortcutId: string): Promise<void> {
+  if (!isTauri) return
+
+  try {
+    await invoke('webview_reload', { label: tabWebviewLabel(shortcutId) })
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_reload failed', error)
+    }
+  }
+}
+
+export async function zoomBrowseTab(
+  shortcutId: string,
+  action: 'in' | 'out' | 'reset',
+): Promise<void> {
+  if (!isTauri) return
+
+  try {
+    await invoke('webview_zoom', { label: tabWebviewLabel(shortcutId), action })
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_zoom failed', error)
+    }
+  }
+}
+
+export async function openBrowseTabDevTools(shortcutId: string): Promise<void> {
+  if (!isTauri) return
+
+  try {
+    await invoke('webview_open_devtools', { label: tabWebviewLabel(shortcutId) })
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_open_devtools failed', error)
+    }
+  }
+}
+
 export async function readTabWebviewUrl(shortcutId: string): Promise<string | null> {
   if (!isTauri) return null
 
