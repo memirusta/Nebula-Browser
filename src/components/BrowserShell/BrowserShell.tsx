@@ -5,6 +5,7 @@ import { listenChromeActions, emitActiveUrl, emitTabCatalog, emitViewMode } from
 import type { ShellViewMode } from '../../core/nebulaBridge'
 import type { BrowserShortcutId } from '../../core/browserShortcuts'
 import { syncTauriViewMode, applyTauriViewModeNow } from '../../platform/tauriBrowsingMode'
+import { initSiteFullscreenBridge, forceExitSiteFullscreen } from '../../platform/tauriSiteFullscreen'
 import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
 import { DEFAULT_SHORTCUTS } from '../../core/constants'
 import { loadBrowseSessions } from '../../core/browseSession'
@@ -518,6 +519,7 @@ export function BrowserShell() {
       const goingHome = remaining.length === 0
 
       if (isTauri) {
+        await forceExitSiteFullscreen()
         await closeBrowseTab(shortcutId)
         if (goingHome) {
           await applyTauriViewModeNow('home', null)
@@ -605,7 +607,10 @@ export function BrowserShell() {
   }, [])
 
   const goHome = useCallback(() => {
-    setViewMode('home')
+    void (async () => {
+      await forceExitSiteFullscreen()
+      setViewMode('home')
+    })()
   }, [])
 
   const openNewBlankTab = useCallback(() => {
@@ -842,6 +847,11 @@ export function BrowserShell() {
     onVaultChange: reloadPasswordVault,
   })
   const showBrowser = (isBrowsing || isOverlay) && activeTabId !== null
+
+  useEffect(() => {
+    if (!isTauri) return
+    return initSiteFullscreenBridge()
+  }, [])
 
   useEffect(() => {
     if (!isTauri) return

@@ -1,6 +1,6 @@
-import { TITLE_BAR_HEIGHT } from '../core/windowChrome'
+import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 
-const DEFAULT_CHROME_LOGICAL = TITLE_BAR_HEIGHT
+const DEFAULT_CHROME_LOGICAL = SEMI_LUNAR_HIT_ZONE_HEIGHT
 
 let chromeLogicalHeight = DEFAULT_CHROME_LOGICAL
 
@@ -9,7 +9,7 @@ export function getBrowsingChromeLogicalHeight(): number {
 }
 
 export function setBrowsingChromeLogicalHeight(logicalHeight: number): void {
-  chromeLogicalHeight = Math.max(TITLE_BAR_HEIGHT, logicalHeight)
+  chromeLogicalHeight = Math.max(SEMI_LUNAR_HIT_ZONE_HEIGHT, logicalHeight)
 }
 
 export function resetBrowsingChromeLogicalHeight(): void {

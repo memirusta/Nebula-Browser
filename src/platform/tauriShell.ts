@@ -1,14 +1,18 @@
 import { invoke } from '@tauri-apps/api/core'
-import { TITLE_BAR_HEIGHT, browsingChromeBelowTitlePx } from '../core/windowChrome'
+import { browsingChromeBelowTitlePx } from '../core/windowChrome'
 import { isTauri } from './runtime'
-import { getActiveBrowseTabId, syncTauriBrowserBounds } from './tauriBrowser'
-import { setChromeWebviewHeight, syncChromeWebviewBounds } from './tauriChromeWebview'
+import { syncTauriBrowserBounds } from './tauriBrowser'
 import { setBrowsingChromeLogicalHeight } from './browsingLayout'
-import { stackBrowsingChromeAboveBrowser } from './tauriWebviewStack'
 
 export type ShellHitRegion =
   | null
-  | { logicalTop?: number; logicalHeight: number }
+  | {
+      logicalTop?: number
+      logicalHeight: number
+      /** When set, limits horizontal hit-testing (expanded semi-lunar width). */
+      logicalLeft?: number
+      logicalWidth?: number
+    }
 
 /** Limit main shell webview hit-testing to a screen strip. */
 export async function setShellHitRegion(region: ShellHitRegion): Promise<void> {
@@ -18,6 +22,8 @@ export async function setShellHitRegion(region: ShellHitRegion): Promise<void> {
     await invoke('webview_set_shell_hit_region', {
       logicalTop: null,
       logicalHeight: null,
+      logicalLeft: null,
+      logicalWidth: null,
     })
     return
   }
@@ -25,36 +31,52 @@ export async function setShellHitRegion(region: ShellHitRegion): Promise<void> {
   await invoke('webview_set_shell_hit_region', {
     logicalTop: region.logicalTop ?? 0,
     logicalHeight: region.logicalHeight,
+    logicalLeft: region.logicalLeft ?? null,
+    logicalWidth: region.logicalWidth ?? null,
   })
 }
 
-/** Title bar chrome + semi-lunar on main shell (web-like overlay). */
+function centeredLunarStrip(
+  lunarWidthPx: number,
+): { logicalLeft: number; logicalWidth: number } {
+  const logicalWidth = Math.min(lunarWidthPx, window.innerWidth * 0.98)
+  const logicalLeft = Math.max(0, (window.innerWidth - logicalWidth) / 2)
+  return { logicalLeft, logicalWidth }
+}
+
+/** Semi-lunar chrome on main shell — frameless, no separate title-bar webview. */
 export async function syncChromeShellLayout(
   isExpanded: boolean,
   lunarHeightPx: number,
   folderOpen: boolean,
   _previewActive = false,
+  lunarWidthPx?: number,
 ): Promise<void> {
   if (!isTauri) return
 
-  const lunarStrip = browsingChromeBelowTitlePx(
-    isExpanded,
-    lunarHeightPx,
-    folderOpen,
-  )
+  const lunarStrip = browsingChromeBelowTitlePx(isExpanded, lunarHeightPx, folderOpen)
 
-  setBrowsingChromeLogicalHeight(TITLE_BAR_HEIGHT)
-  setChromeWebviewHeight(TITLE_BAR_HEIGHT)
-  await syncChromeWebviewBounds()
-  await invoke('webview_set_chrome_hit_region', { logicalHeight: TITLE_BAR_HEIGHT })
-
+  setBrowsingChromeLogicalHeight(lunarStrip)
   await syncTauriBrowserBounds()
 
+  const horizontal =
+    isExpanded && lunarWidthPx
+      ? centeredLunarStrip(lunarWidthPx)
+      : { logicalLeft: undefined, logicalWidth: undefined }
+
   await setShellHitRegion({
-    logicalTop: TITLE_BAR_HEIGHT,
+    logicalTop: 0,
     logicalHeight: lunarStrip,
+    ...horizontal,
   })
-  await stackBrowsingChromeAboveBrowser(getActiveBrowseTabId())
+
+  try {
+    await invoke('webview_raise_ui')
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_raise_ui failed', error)
+    }
+  }
 }
 
 export async function resetBrowsingChromeLayout(): Promise<void> {
@@ -69,14 +91,20 @@ export async function expandShellHitRegionToFitBottom(
   isExpanded: boolean,
   lunarHeightPx: number,
   folderOpen: boolean,
+  lunarWidthPx?: number,
 ): Promise<void> {
   if (!isTauri) return
 
-  const baseStrip = browsingChromeBelowTitlePx(
-    isExpanded,
-    lunarHeightPx,
-    folderOpen,
-  )
-  const needed = Math.max(baseStrip, bottomLogicalPx - TITLE_BAR_HEIGHT + 8)
-  await setShellHitRegion({ logicalTop: TITLE_BAR_HEIGHT, logicalHeight: needed })
+  const baseStrip = browsingChromeBelowTitlePx(isExpanded, lunarHeightPx, folderOpen)
+  const needed = Math.max(baseStrip, bottomLogicalPx + 8)
+  const horizontal =
+    isExpanded && lunarWidthPx
+      ? centeredLunarStrip(lunarWidthPx)
+      : { logicalLeft: undefined, logicalWidth: undefined }
+
+  await setShellHitRegion({
+    logicalTop: 0,
+    logicalHeight: needed,
+    ...horizontal,
+  })
 }

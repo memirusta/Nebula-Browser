@@ -525,6 +525,8 @@ export const LOCALE_MESSAGES = {
 
   // ── Shell ─────────────────────────────────────────────────────────────────
   titleMinimize: { tr: 'Küçült', en: 'Minimize' },
+  windowDragHint: { tr: 'Pencereyi taşımak için sürükle (çift tık: büyüt)', en: 'Drag to move window (double-click to maximize)' },
+  windowDragAria: { tr: 'Pencereyi taşı', en: 'Move window' },
   titleMaximize: { tr: 'Büyüt', en: 'Maximize' },
   titleRestore: { tr: 'Geri yükle', en: 'Restore' },
   titleClose: { tr: 'Kapat', en: 'Close' },

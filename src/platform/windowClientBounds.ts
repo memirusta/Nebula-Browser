@@ -1,6 +1,5 @@
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { getBrowsingChromeLogicalHeight } from './browsingLayout'
 
 /** Client area in physical pixels (avoids logical round-trip gaps on Windows). */
 export async function windowClientPhysicalSize(): Promise<PhysicalSize> {
@@ -14,23 +13,26 @@ export function logicalHeightToPhysical(
   return Math.ceil(logicalHeight * scaleFactor)
 }
 
-/** Site webview sits below the chrome strip (title bar + semi-lunar). */
+/** Site webview fills the client area; semi-lunar overlays on the shell webview. */
 export async function browserWebviewPhysicalBounds(): Promise<{
   position: PhysicalPosition
   size: PhysicalSize
 }> {
-  const appWindow = getCurrentWindow()
-  const [windowSize, scale] = await Promise.all([
-    windowClientPhysicalSize(),
-    appWindow.scaleFactor(),
-  ])
-  const topOffset = logicalHeightToPhysical(getBrowsingChromeLogicalHeight(), scale)
-
+  const size = await windowClientPhysicalSize()
   return {
-    position: new PhysicalPosition(0, topOffset),
-    size: new PhysicalSize(
-      windowSize.width,
-      Math.max(1, windowSize.height - topOffset),
-    ),
+    position: new PhysicalPosition(0, 0),
+    size,
+  }
+}
+
+/** Full client area for HTML5 site fullscreen (no chrome offset). */
+export async function browserWebviewFullscreenPhysicalBounds(): Promise<{
+  position: PhysicalPosition
+  size: PhysicalSize
+}> {
+  const size = await windowClientPhysicalSize()
+  return {
+    position: new PhysicalPosition(0, 0),
+    size,
   }
 }

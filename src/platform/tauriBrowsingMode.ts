@@ -1,21 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
-import { TITLE_BAR_HEIGHT, SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
+import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 import { isTauri } from './runtime'
 import { activateBrowseTab, hideAllBrowseTabs, syncTauriBrowserBounds } from './tauriBrowser'
-import {
-  hideChromeWebview,
-  ensureChromeWebviewVisible,
-  setChromeWebviewHeight,
-  showChromeWebview,
-  syncChromeWebviewBounds,
-} from './tauriChromeWebview'
+import { hideChromeWebview } from './tauriChromeWebview'
 import { showMainWebview } from './tauriMainWebview'
+import { forceExitSiteFullscreen, isSiteFullscreenActive } from './tauriSiteFullscreen'
 import { setShellHitRegion, resetBrowsingChromeLayout } from './tauriShell'
 import {
   cancelScheduledStack,
   setBrowsingChromeExpected,
   setOverlayModeActive,
-  stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
 
 export type TauriViewMode = 'home' | 'browsing' | 'overlay'
@@ -41,6 +35,7 @@ async function applyHomeMode(): Promise<void> {
   cancelScheduledStack()
 
   try {
+    await forceExitSiteFullscreen()
     try {
       await hideAllBrowseTabs()
     } catch (error) {
@@ -85,35 +80,44 @@ async function applyHomeMode(): Promise<void> {
 
 async function applyBrowsingMode(tab: BrowsingTabTarget): Promise<void> {
   setOverlayModeActive(false)
-
   setBrowsingChromeExpected(true)
-  setChromeWebviewHeight(TITLE_BAR_HEIGHT)
+
+  if (isSiteFullscreenActive()) {
+    await forceExitSiteFullscreen()
+  }
+
+  try {
+    await hideChromeWebview()
+  } catch {
+    // legacy chrome webview may not exist
+  }
+
   await activateBrowseTab(tab.tabId, tab.url, { forceNavigate: tab.forceNavigate })
   await syncTauriBrowserBounds()
-  await showChromeWebview(TITLE_BAR_HEIGHT)
-  await syncChromeWebviewBounds()
   await setShellHitRegion({
-    logicalTop: TITLE_BAR_HEIGHT,
+    logicalTop: 0,
     logicalHeight: SEMI_LUNAR_HIT_ZONE_HEIGHT,
   })
   cancelScheduledStack()
-  await stackBrowsingChromeAboveBrowser(tab.tabId)
+  try {
+    await invoke('webview_raise_ui')
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_raise_ui failed', error)
+    }
+  }
 }
 
 async function applyOverlayMode(): Promise<void> {
   setOverlayModeActive(true)
-
   setBrowsingChromeExpected(true)
   cancelScheduledStack()
-  setChromeWebviewHeight(TITLE_BAR_HEIGHT)
 
   await showMainWebview()
-  await ensureChromeWebviewVisible()
-  await syncChromeWebviewBounds()
   await setShellHitRegion({ logicalTop: 0, logicalHeight: window.innerHeight })
 
   try {
-    await invoke('webview_raise_overlay', { chromeLogicalHeight: TITLE_BAR_HEIGHT })
+    await invoke('webview_raise_overlay', { chromeLogicalHeight: null })
   } catch (error) {
     if (import.meta.env.DEV) {
       console.warn('[nebula] webview_raise_overlay failed', error)

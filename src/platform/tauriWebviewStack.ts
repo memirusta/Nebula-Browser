@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getBrowsingChromeLogicalHeight } from './browsingLayout'
-import { tabWebviewLabel } from '../core/browserTab'
 import { isTauri } from './runtime'
 
 let stackTimer: ReturnType<typeof setTimeout> | null = null
@@ -13,11 +12,6 @@ export function setOverlayModeActive(active: boolean): void {
 
 export function isOverlayModeActive(): boolean {
   return overlayModeActive
-}
-
-function activeTabLabel(activeTabId?: string | null): string | null {
-  if (!activeTabId) return null
-  return tabWebviewLabel(activeTabId)
 }
 
 export function setBrowsingChromeExpected(expected: boolean): void {
@@ -44,9 +38,9 @@ export function cancelScheduledStack(): void {
   stackTimer = null
 }
 
-/** Keep chrome above the site while letting clicks pass through to the tab below. */
+/** Keep main shell above tab webview for semi-lunar interactions. */
 export async function stackBrowsingChromeAboveBrowser(
-  activeTabId?: string | null,
+  _activeTabId?: string | null,
 ): Promise<void> {
   if (!isTauri || !browsingChromeExpected) return
 
@@ -58,13 +52,10 @@ export async function stackBrowsingChromeAboveBrowser(
       return
     }
 
-    await invoke('webview_raise_chrome', {
-      activeTabLabel: activeTabLabel(activeTabId),
-      chromeLogicalHeight: getBrowsingChromeLogicalHeight(),
-    })
+    await invoke('webview_raise_ui')
   } catch (error) {
     if (import.meta.env.DEV) {
-      console.warn('[nebula] webview_raise_chrome failed', error)
+      console.warn('[nebula] stackBrowsingChromeAboveBrowser failed', error)
     }
   }
 }

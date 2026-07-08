@@ -25,12 +25,17 @@ import type { ShellViewMode } from '../../core/nebulaBridge'
 import { isTauri } from '../../platform/runtime'
 import { debounce } from '../../platform/debounce'
 import { expandShellHitRegionToFitBottom, syncChromeShellLayout } from '../../platform/tauriShell'
+import { SITE_FULLSCREEN_EXIT_EVENT } from '../../platform/tauriSiteFullscreen'
+import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useLocale } from '../../hooks/useLocale'
 import { ShortcutContextMenu } from './ShortcutContextMenu'
 import { ShortcutPreviewOverlay } from './ShortcutPreviewOverlay'
 import { DockFolderItem } from './DockFolderItem'
 import { FolderExpandPanel } from './FolderExpandPanel'
 import { ShortcutFolderIcon } from './ShortcutFolderIcon'
+import { LunarWindowDrag } from '../WindowChrome/LunarWindowDrag'
+import { WindowControls } from '../WindowChrome/WindowControls'
 import styles from './SemiLunarMenu.module.css'
 
 type MenuMode = 'home' | 'browsing' | 'overlay'
@@ -162,6 +167,7 @@ export function SemiLunarMenu({
   const folderPanelHoverRef = useRef(false)
   const folderOpenRef = useRef(false)
   const anchorRef = useRef<HTMLDivElement>(null)
+  const shellLayoutResyncRef = useRef<() => void>(() => {})
 
   const lunarMetrics = useMemo(
     () => createLunarMetrics(lunarWidthPx, lunarHeightPx),
@@ -627,6 +633,65 @@ export function SemiLunarMenu({
     stage === 'expanded' ||
     (isHome && homeAlwaysOpen)
 
+  shellLayoutResyncRef.current = () => {
+    if (!isBrowsing || !isTauri || isChromeShell() || shellViewMode === 'overlay') return
+    if (contextMenu) return
+    void syncChromeShellLayout(
+      isExpanded,
+      lunarHeightPx,
+      Boolean(openFolderId),
+      previewShortcut !== null,
+      lunarWidthPx,
+    )
+  }
+
+  useEffect(() => {
+    if (!isBrowsing || !isTauri || isChromeShell() || shellViewMode === 'overlay') return
+
+    let disposed = false
+    let unlistenFocus: (() => void) | undefined
+
+    void getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (!focused || disposed) return
+        shellLayoutResyncRef.current()
+      })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten()
+          return
+        }
+        unlistenFocus = unlisten
+      })
+
+    return () => {
+      disposed = true
+      unlistenFocus?.()
+    }
+  }, [isBrowsing, shellViewMode])
+
+  useEffect(() => {
+    if (!isBrowsing || !isTauri || isChromeShell()) return
+
+    let unlisten: (() => void) | undefined
+    let cancelled = false
+
+    void listen(SITE_FULLSCREEN_EXIT_EVENT, () => {
+      shellLayoutResyncRef.current()
+    }).then((dispose) => {
+      if (cancelled) {
+        dispose()
+        return
+      }
+      unlisten = dispose
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [isBrowsing])
+
   const handleContextMenuLayout = useCallback(
     (rect: DOMRect) => {
       if (!contextMenu || !isBrowsing || !isTauri || isChromeShell()) return
@@ -635,9 +700,10 @@ export function SemiLunarMenu({
         isExpanded,
         lunarHeightPx,
         Boolean(openFolderId),
+        lunarWidthPx,
       )
     },
-    [contextMenu, isBrowsing, isExpanded, lunarHeightPx, openFolderId],
+    [contextMenu, isBrowsing, isExpanded, lunarHeightPx, lunarWidthPx, openFolderId],
   )
 
   useEffect(() => {
@@ -650,6 +716,7 @@ export function SemiLunarMenu({
       isExpanded,
       lunarHeightPx,
       Boolean(openFolderId),
+      lunarWidthPx,
     )
 
     return () => {
@@ -658,6 +725,7 @@ export function SemiLunarMenu({
         lunarHeightPx,
         Boolean(openFolderId),
         previewShortcut !== null,
+        lunarWidthPx,
       )
     }
   }, [
@@ -666,6 +734,7 @@ export function SemiLunarMenu({
     shellViewMode,
     isExpanded,
     lunarHeightPx,
+    lunarWidthPx,
     openFolderId,
     previewShortcut,
   ])
@@ -682,6 +751,7 @@ export function SemiLunarMenu({
         lunarHeightPx,
         Boolean(openFolderId),
         previewShortcut !== null,
+        lunarWidthPx,
       )
       return
     }
@@ -700,6 +770,7 @@ export function SemiLunarMenu({
         lunarHeightPx,
         Boolean(openFolderId),
         previewShortcut !== null,
+        lunarWidthPx,
       )
     }
   }, [
@@ -708,6 +779,7 @@ export function SemiLunarMenu({
     isBrowsing,
     stage,
     lunarHeightPx,
+    lunarWidthPx,
     openFolderId,
     previewShortcut,
     contextMenu,
@@ -724,11 +796,12 @@ export function SemiLunarMenu({
         lunarHeightPx,
         Boolean(openFolderId),
         previewShortcut !== null,
+        lunarWidthPx,
       )
     }, 150)
 
     applyLayout()
-  }, [mode, isBrowsing, isExpanded, lunarHeightPx, openFolderId, previewShortcut, contextMenu])
+  }, [mode, isBrowsing, isExpanded, lunarHeightPx, lunarWidthPx, openFolderId, previewShortcut, contextMenu])
 
   if (mode === 'overlay') return null
 
@@ -777,6 +850,9 @@ export function SemiLunarMenu({
               .filter(Boolean)
               .join(' ')}
           >
+            {isTauri && isExpanded && (
+              <LunarWindowDrag className={styles.lunarDragCap} />
+            )}
             <div className={styles.glassFill}>
               <div className={styles.glassFrost} aria-hidden="true" />
             </div>
@@ -865,6 +941,12 @@ export function SemiLunarMenu({
                   <path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z" />
                 </svg>
               </button>
+            </div>
+          )}
+
+          {isTauri && isExpanded && (
+            <div className={styles.windowBtnColumn}>
+              <WindowControls buttonClassName={styles.evBtn} />
             </div>
           )}
 
@@ -1109,21 +1191,28 @@ export function SemiLunarMenu({
           style={
             {
               '--lunar-height': `${lunarHeightPx}px`,
+              '--lunar-width': `${lunarWidthPx}px`,
             } as React.CSSProperties
           }
         >
-          <div
-            className={[
-              styles.browsingHoverBridge,
-              isTauri ? '' : styles.browsingHoverBridgeWeb,
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            aria-hidden="true"
-            onMouseEnter={handleEnter}
-            onMouseLeave={scheduleClose}
-            onClick={handleEnterImmediate}
-          />
+          {isTauri && !isExpanded ? (
+            <div
+              className={styles.lunarHoverCapCollapsed}
+              aria-hidden="true"
+              onMouseEnter={handleEnter}
+              onClick={handleEnterImmediate}
+            />
+          ) : !isTauri ? (
+            <div
+              className={[styles.browsingHoverBridge, styles.browsingHoverBridgeWeb]
+                .filter(Boolean)
+                .join(' ')}
+              aria-hidden="true"
+              onMouseEnter={handleEnter}
+              onMouseLeave={scheduleClose}
+              onClick={handleEnterImmediate}
+            />
+          ) : null}
           {nav}
         </div>
         {overlays}

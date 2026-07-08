@@ -4,6 +4,8 @@ mod google_oauth;
 mod password_webview;
 mod system_stats;
 mod tab_error_page;
+mod site_fullscreen_window;
+mod tab_fullscreen;
 mod webview_controls;
 
 #[tauri::command]
@@ -19,7 +21,8 @@ async fn webview_execute_script(
 
 #[tauri::command]
 fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result<(), String> {
-    tab_error_page::setup_tab_error_page(&app, &label)
+    tab_error_page::setup_tab_error_page(&app, &label)?;
+    tab_fullscreen::setup_tab_fullscreen(&app, &label)
 }
 
 #[tauri::command]
@@ -38,6 +41,8 @@ fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result
 #[tauri::command]
 async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), String> {
     use tauri::Manager;
+
+    tab_fullscreen::teardown_tab_fullscreen(&app, &label);
 
     let webview = app
         .get_webview(&label)
@@ -480,6 +485,151 @@ fn stack_overlay_mode(
     Ok(())
 }
 
+/// Parent window client area in physical pixels.
+#[cfg(target_os = "windows")]
+fn main_client_physical_rect(app: &tauri::AppHandle) -> Result<(i32, i32, i32, i32), String> {
+    use tauri::Manager;
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| format!("main window not found ({})", debug_labels(app)))?;
+    let parent_hwnd = window.hwnd().map_err(|error| error.to_string())?;
+
+    unsafe {
+        let mut rect = RECT::default();
+        GetClientRect(parent_hwnd, &mut rect).map_err(|error| error.to_string())?;
+        let width = (rect.right - rect.left).max(1);
+        let height = (rect.bottom - rect.top).max(1);
+        Ok((0, 0, width, height))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn layout_webview_hwnd(
+    hwnd: windows::Win32::Foundation::HWND,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    z: Option<windows::Win32::Foundation::HWND>,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE};
+
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            z,
+            x,
+            y,
+            width,
+            height,
+            SWP_NOACTIVATE,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+/// Raise a tab webview above shell/chrome for HTML5 fullscreen video.
+#[cfg(target_os = "windows")]
+fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), String> {
+    use windows::Win32::Graphics::Gdi::SetWindowRgn;
+    use windows::Win32::UI::WindowsAndMessaging::{HWND_BOTTOM, HWND_TOP};
+
+    let (x, y, width, height) = main_client_physical_rect(app)?;
+
+    if let Ok(ui_hwnd) = resolve_webview_hwnd(app, "main") {
+        unsafe {
+            SetWindowRgn(ui_hwnd, None, true);
+        }
+    }
+
+    for label in ["main", "nebula-chrome"] {
+        if let Ok(hwnd) = resolve_webview_hwnd(app, label) {
+            layout_webview_hwnd(hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
+        }
+    }
+
+    if let Ok(tab_hwnd) = resolve_webview_hwnd(app, tab_label) {
+        layout_webview_hwnd(tab_hwnd, x, y, width, height, Some(HWND_TOP))?;
+    }
+
+    force_redraw(app);
+
+    Ok(())
+}
+
+/// Reset tab + shell HWND geometry after leaving site fullscreen.
+#[cfg(target_os = "windows")]
+fn restore_browsing_webview_layout(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    use windows::Win32::Graphics::Gdi::SetWindowRgn;
+    use windows::Win32::UI::WindowsAndMessaging::{HWND_BOTTOM, HWND_TOP};
+
+    let (x, y, width, height) = main_client_physical_rect(app)?;
+
+    for (label, _) in app.webviews() {
+        if label.starts_with("nebula-tab-") || label == "nebula-browser" {
+            if let Ok(tab_hwnd) = resolve_webview_hwnd(app, &label) {
+                layout_webview_hwnd(tab_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
+            }
+        }
+    }
+
+    if let Ok(main_hwnd) = resolve_webview_hwnd(app, "main") {
+        unsafe {
+            SetWindowRgn(main_hwnd, None, true);
+        }
+        layout_webview_hwnd(main_hwnd, x, y, width, height, Some(HWND_TOP))?;
+    }
+
+    if let Some(main) = app.get_webview("main") {
+        let _ = main.show();
+    }
+
+    force_redraw(app);
+
+    Ok(())
+}
+
+#[tauri::command]
+fn window_enter_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
+    site_fullscreen_window::enter_site_fullscreen_window(&app)
+}
+
+#[tauri::command]
+fn window_exit_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
+    site_fullscreen_window::exit_site_fullscreen_window(&app)
+}
+
+#[tauri::command]
+fn webview_restore_browsing_layout(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        restore_browsing_webview_layout(&app)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn webview_raise_tab_fullscreen(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        stack_tab_fullscreen(&app, &label)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label);
+        Ok(())
+    }
+}
+
 #[tauri::command]
 fn webview_raise_overlay(
     app: tauri::AppHandle,
@@ -548,6 +698,8 @@ fn set_shell_hit_region(
     app: &tauri::AppHandle,
     logical_top: Option<f64>,
     logical_height: Option<f64>,
+    logical_left: Option<f64>,
+    logical_width: Option<f64>,
 ) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn};
@@ -571,7 +723,23 @@ fn set_shell_hit_region(
                     .round()
                     .clamp(physical_top as f64 + 1.0, size.height as f64)
                     as i32;
-                let rgn = CreateRectRgn(0, physical_top, size.width as i32, physical_bottom);
+                let physical_left = logical_left
+                    .map(|left| (left * scale).round().clamp(0.0, size.width as f64) as i32)
+                    .unwrap_or(0);
+                let physical_right = logical_width
+                    .map(|width| {
+                        ((physical_left as f64 + width * scale)
+                            .round()
+                            .clamp(physical_left as f64 + 1.0, size.width as f64))
+                            as i32
+                    })
+                    .unwrap_or(size.width as i32);
+                let rgn = CreateRectRgn(
+                    physical_left,
+                    physical_top,
+                    physical_right,
+                    physical_bottom,
+                );
                 if SetWindowRgn(ui_hwnd, Some(rgn), true) == 0 {
                     return Err("SetWindowRgn failed".to_string());
                 }
@@ -587,14 +755,28 @@ fn webview_set_shell_hit_region(
     app: tauri::AppHandle,
     logical_top: Option<f64>,
     logical_height: Option<f64>,
+    logical_left: Option<f64>,
+    logical_width: Option<f64>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        set_shell_hit_region(&app, logical_top, logical_height)
+        set_shell_hit_region(
+            &app,
+            logical_top,
+            logical_height,
+            logical_left,
+            logical_width,
+        )
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, logical_top, logical_height);
+        let _ = (
+            app,
+            logical_top,
+            logical_height,
+            logical_left,
+            logical_width,
+        );
         Ok(())
     }
 }
@@ -648,6 +830,10 @@ pub fn run() {
             webview_raise_ui,
             webview_raise_overlay,
             webview_raise_chrome,
+            webview_raise_tab_fullscreen,
+            window_enter_site_fullscreen,
+            window_exit_site_fullscreen,
+            webview_restore_browsing_layout,
             webview_set_chrome_hit_region,
             webview_set_shell_hit_region,
             webview_setup_tab_error_pages,

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nebula",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.nebula.browser",
   "build": {
     "frontendDist": "../dist",
@@ -20,7 +20,7 @@
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
-        "backgroundColor": "#000000",
+        "backgroundColor": "#00000000",
         "dragDropEnabled": false
       }
     ],

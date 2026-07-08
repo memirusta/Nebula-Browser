@@ -1,5 +1,5 @@
-/** Custom title bar height (px). */
-export const TITLE_BAR_HEIGHT = 36
+/** Frameless shell — semi-lunar is the only top chrome. */
+export const TITLE_BAR_HEIGHT = 0
 
 /** Hover strip below title bar for semi-lunar trigger in browsing mode. */
 export const SEMI_LUNAR_HIT_ZONE_HEIGHT = 10
@@ -26,8 +26,11 @@ export function browsingChromeBelowTitlePx(
   return chrome
 }
 
-export function shellHitRegionHeightBelowTitle(
-  chromeBelowTitlePx: number,
-): number {
-  return TITLE_BAR_HEIGHT + chromeBelowTitlePx
+export function shellHitRegionHeight(chromePx: number): number {
+  return chromePx
+}
+
+/** @deprecated Use shellHitRegionHeight */
+export function shellHitRegionHeightBelowTitle(chromeBelowTopPx: number): number {
+  return shellHitRegionHeight(chromeBelowTopPx)
 }

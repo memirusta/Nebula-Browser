@@ -1,6 +1,6 @@
 import { LEGACY_PREVIEW_ON_HOVER_KEY, SEMI_LUNAR_SETTINGS_KEY } from './semiLunarSettings'
 import { isTauri } from '../platform/runtime'
-import { TITLE_BAR_HEIGHT, SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
+import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
 
 export const NEBULA_SETTINGS_KEY = 'nebula-settings-v1'
 
@@ -407,7 +407,7 @@ export function applyNebulaCssVars(settings: NebulaSettings): void {
   const openMs = motion ? 0 : s.openDurationMs
   const closeMs = motion ? 0 : s.closeDurationMs
 
-  root.style.setProperty('--title-bar-height', isTauri ? `${TITLE_BAR_HEIGHT}px` : '0px')
+  root.style.setProperty('--title-bar-height', '0px')
   root.style.setProperty('--semi-lunar-hit-zone-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.style.setProperty('--browsing-chrome-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.dataset.theme = a.theme

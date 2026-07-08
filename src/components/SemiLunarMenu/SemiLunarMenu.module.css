@@ -1,6 +1,6 @@
 .root {
   position: fixed;
-  top: var(--title-bar-height, 0);
+  top: 0;
   left: 50%;
   transform: translateX(-50%) translateZ(0);
   z-index: 300;
@@ -29,6 +29,7 @@
   position: fixed;
   left: 0;
   right: 0;
+  top: 0;
   min-height: var(--semi-lunar-hit-zone-height, 14px);
   z-index: 10050;
   pointer-events: auto;
@@ -46,7 +47,13 @@
 }
 
 .browsingChromeTauri {
-  top: var(--title-bar-height);
+  top: 0;
+  pointer-events: none;
+}
+
+.browsingChromeTauri .browsingRoot,
+.browsingChromeTauri .lunarHoverCapCollapsed {
+  pointer-events: auto;
 }
 
 .browsingChromeCollapsed {
@@ -80,35 +87,12 @@
 }
 
 .browsingChromeExpanded {
-  min-height: calc(var(--lunar-height, 152px) + 12px);
+  min-height: 0;
   overflow: visible;
 }
 
-.browsingChromeTauri .glassFill {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.34) 0%,
-    rgba(var(--lunar-glass-rgb, 235, 242, 250), var(--lunar-glass-fill, 0.75)) 48%,
-    rgba(var(--lunar-glass-rgb, 235, 242, 250), calc(var(--lunar-glass-fill, 0.75) * 0.88)) 100%
-  );
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.browsingChromeTauri .glassFrost {
-  opacity: 1;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.22) 0%,
-      rgba(14, 18, 28, calc(var(--lunar-glass-fill, 0.75) * 0.78)) 52%,
-      rgba(8, 10, 16, calc(var(--lunar-glass-fill, 0.75) * 0.92)) 100%
-    ),
-    radial-gradient(130% 90% at 50% -10%, rgba(255, 255, 255, 0.18), transparent 65%);
-}
-
-.browsingChromeTauri.browsingChromeCollapsed .glassFrost {
-  opacity: 0;
+.browsingChromeTauri.browsingChromeExpanded {
+  min-height: 0;
 }
 
 .browsingRoot {
@@ -261,16 +245,8 @@
     radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.12), transparent 70%);
 }
 
-.browsingChromeTauri .glassFrost {
-  opacity: 1;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.2) 0%,
-      rgba(14, 18, 26, calc(var(--lunar-glass-fill, 0.38) * 0.72)) 55%,
-      rgba(10, 12, 18, calc(var(--lunar-glass-fill, 0.38) * 0.88)) 100%
-    ),
-    radial-gradient(130% 90% at 50% -10%, rgba(255, 255, 255, 0.16), transparent 65%);
+.browsingChromeTauri.browsingChromeCollapsed .glassFrost {
+  opacity: 0;
 }
 
 .arcStroke {
@@ -340,6 +316,62 @@
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.3);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.lunarDragCap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  z-index: 6;
+  cursor: grab;
+  clip-path: ellipse(50% 100% at 50% 0%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.02) 50%,
+    transparent 100%
+  );
+  border-bottom: none;
+}
+
+.lunarDragCap:active {
+  cursor: grabbing;
+}
+
+.lunarHoverCapCollapsed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--semi-lunar-hit-zone-height, 10px);
+  z-index: 6;
+  cursor: default;
+  background: transparent;
+  border: none;
+}
+
+.windowBtnColumn {
+  position: absolute;
+  top: 14px;
+  right: 62px;
+  z-index: 11;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.windowBtnColumn .evBtn svg {
+  width: 11px;
+  height: 11px;
+}
+
+.windowBtnColumn .evBtn:last-child:hover {
+  background: #e81123;
+  border-color: #e81123;
+  color: #fff;
 }
 
 .iconAnchor {

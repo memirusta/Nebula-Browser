@@ -47,7 +47,7 @@
 }
 
 html[data-nebula-titlebar] {
-  --title-bar-height: 36px;
+  --title-bar-height: 0px;
   --semi-lunar-hit-zone-height: 10px;
   --browsing-chrome-height: 14px;
 }

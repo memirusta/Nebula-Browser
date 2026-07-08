@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.6"
+version = "0.1.7"
 description = "Nebula Browser"
 authors = ["Nebula"]
 license = ""
@@ -24,7 +24,7 @@ log = "0.4"
 tauri = { version = "2.11.3", features = ["unstable"] }
 tauri-plugin-log = "2"
 url = "2.5"
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 windows-core = "0.61"
 sysinfo = "0.33"
 webview2-com = "0.38"

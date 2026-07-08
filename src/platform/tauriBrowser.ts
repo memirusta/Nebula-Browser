@@ -8,7 +8,10 @@ import {
   scheduleStackBrowsingChromeAboveBrowser,
   stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
-import { browserWebviewPhysicalBounds } from './windowClientBounds'
+import {
+  browserWebviewFullscreenPhysicalBounds,
+  browserWebviewPhysicalBounds,
+} from './windowClientBounds'
 
 const LEGACY_BROWSER_LABEL = 'nebula-browser'
 const BROWSER_WEBVIEW_BG = '#000000'
@@ -21,13 +24,30 @@ const createdTabs = new Set<string>()
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
 let lastBrowserBoundsKey: string | null = null
+let siteFullscreenBounds = false
+
+export function isSiteFullscreenBoundsActive(): boolean {
+  return siteFullscreenBounds
+}
+
+export function setSiteFullscreenBoundsMode(active: boolean): void {
+  siteFullscreenBounds = active
+  lastBrowserBoundsKey = null
+}
+
+async function currentBrowserPhysicalBounds() {
+  if (siteFullscreenBounds) {
+    return browserWebviewFullscreenPhysicalBounds()
+  }
+  return browserWebviewPhysicalBounds()
+}
 
 function boundsKey(x: number, y: number, width: number, height: number): string {
   return `${x},${y},${width},${height}`
 }
 
 async function syncBrowserBounds(webview: Webview): Promise<boolean> {
-  const { position, size } = await browserWebviewPhysicalBounds()
+  const { position, size } = await currentBrowserPhysicalBounds()
   const key = boundsKey(position.x, position.y, size.width, size.height)
   if (lastBrowserBoundsKey === key) return false
 
@@ -52,7 +72,8 @@ async function bindBrowserResize(webview: Webview): Promise<void> {
 
   const onLayoutChange = debounce(() => {
     void syncBrowserBounds(webview).then((changed) => {
-      if (changed) scheduleStackBrowsingChromeAboveBrowser(activeTabId)
+      if (!changed || siteFullscreenBounds) return
+      scheduleStackBrowsingChromeAboveBrowser(activeTabId)
     })
   }, LAYOUT_DEBOUNCE_MS)
 
@@ -210,6 +231,15 @@ export async function syncTauriBrowserBounds(): Promise<void> {
 
   const changed = await syncBrowserBounds(activeWebview)
   if (changed) scheduleStackBrowsingChromeAboveBrowser(activeTabId)
+}
+
+/** Force tab HWND + Tauri bounds to match the window after layout transitions. */
+export async function forceSyncActiveTabBounds(): Promise<void> {
+  if (!isTauri || !activeWebview) return
+
+  lastBrowserBoundsKey = null
+  await syncBrowserBounds(activeWebview)
+  await stackBrowsingChromeAboveBrowser(activeTabId)
 }
 
 export async function hideBrowseTabById(shortcutId: string): Promise<void> {
@@ -478,6 +508,21 @@ export async function closeBrowseTab(shortcutId: string): Promise<void> {
   } catch {
     // ignore sweep errors
   }
+}
+
+export async function syncTabWebviewFullscreenBounds(shortcutId: string): Promise<void> {
+  if (!isTauri) return
+
+  const webview = await resolveTabWebview(shortcutId)
+  if (!webview) return
+
+  const { position, size } = await browserWebviewFullscreenPhysicalBounds()
+  lastBrowserBoundsKey = boundsKey(position.x, position.y, size.width, size.height)
+  await webview.setPosition(position)
+  await webview.setSize(size)
+  await webview.setAutoResize(false)
+  await webview.show()
+  await invoke('webview_raise_tab_fullscreen', { label: tabWebviewLabel(shortcutId) })
 }
 
 export function getActiveBrowseTabId(): string | null {
