@@ -12,7 +12,8 @@ mod imp {
     use windows::Win32::UI::Shell::ITaskbarList2;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowPlacement, SetForegroundWindow, SetWindowPlacement, SetWindowPos, WINDOWPLACEMENT,
-        HWND_TOP, SWP_FRAMECHANGED, SWP_SHOWWINDOW,
+        HWND_NOTOPMOST, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_SHOWWINDOW,
     };
 
     const CLSID_TASKBARLIST: GUID = GUID::from_values(
@@ -22,8 +23,11 @@ mod imp {
         [0x95, 0x8A, 0x00, 0x60, 0x97, 0xC9, 0xA0, 0x90],
     );
 
-    static SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
+    static SITE_SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
         LazyLock::new(|| Mutex::new(None));
+    static USER_SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
+        LazyLock::new(|| Mutex::new(None));
+    static USER_MONITOR_COVER_ACTIVE: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
     fn main_window_hwnd(app: &AppHandle) -> Result<HWND, String> {
         let window = app
@@ -45,20 +49,18 @@ mod imp {
         Ok(())
     }
 
-    /// Cover the entire monitor (including taskbar area) and push the taskbar behind.
-    pub fn enter_site_fullscreen_window(app: &AppHandle) -> Result<(), String> {
-        let hwnd = main_window_hwnd(app)?;
-
+    fn cover_monitor(
+        hwnd: HWND,
+        saved: &Mutex<Option<WINDOWPLACEMENT>>,
+    ) -> Result<(), String> {
         unsafe {
-            let mut placement = WINDOWPLACEMENT {
-                length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
-                ..Default::default()
-            };
-            GetWindowPlacement(hwnd, &mut placement).map_err(|e| e.to_string())?;
-
-            {
-                let mut saved = SAVED_PLACEMENT.lock().map_err(|e| e.to_string())?;
-                *saved = Some(placement);
+            if saved.lock().map_err(|e| e.to_string())?.is_none() {
+                let mut placement = WINDOWPLACEMENT {
+                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                    ..Default::default()
+                };
+                GetWindowPlacement(hwnd, &mut placement).map_err(|e| e.to_string())?;
+                *saved.lock().map_err(|e| e.to_string())? = Some(placement);
             }
 
             let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
@@ -76,7 +78,7 @@ mod imp {
 
             SetWindowPos(
                 hwnd,
-                Some(HWND_TOP),
+                Some(HWND_TOPMOST),
                 rect.left,
                 rect.top,
                 width,
@@ -92,15 +94,26 @@ mod imp {
         Ok(())
     }
 
-    pub fn exit_site_fullscreen_window(app: &AppHandle) -> Result<(), String> {
-        let hwnd = main_window_hwnd(app)?;
-
+    fn uncover_monitor(
+        hwnd: HWND,
+        saved: &Mutex<Option<WINDOWPLACEMENT>>,
+    ) -> Result<(), String> {
         unsafe {
             mark_taskbar_fullscreen(hwnd, false)?;
 
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_NOTOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+
             let placement = {
-                let mut saved = SAVED_PLACEMENT.lock().map_err(|e| e.to_string())?;
-                saved.take()
+                let mut slot = saved.lock().map_err(|e| e.to_string())?;
+                slot.take()
             };
 
             if let Some(mut placement) = placement {
@@ -111,10 +124,48 @@ mod imp {
 
         Ok(())
     }
+
+    /// Cover the entire monitor for HTML5 site fullscreen.
+    pub fn enter_site_fullscreen_window(app: &AppHandle) -> Result<(), String> {
+        let hwnd = main_window_hwnd(app)?;
+        cover_monitor(hwnd, &SITE_SAVED_PLACEMENT)
+    }
+
+    pub fn exit_site_fullscreen_window(app: &AppHandle) -> Result<(), String> {
+        let hwnd = main_window_hwnd(app)?;
+        uncover_monitor(hwnd, &SITE_SAVED_PLACEMENT)
+    }
+
+    pub fn toggle_monitor_maximize(app: &AppHandle) -> Result<bool, String> {
+        let hwnd = main_window_hwnd(app)?;
+        let mut active = USER_MONITOR_COVER_ACTIVE
+            .lock()
+            .map_err(|e| e.to_string())?;
+
+        if *active {
+            uncover_monitor(hwnd, &USER_SAVED_PLACEMENT)?;
+            *active = false;
+            Ok(false)
+        } else {
+            cover_monitor(hwnd, &USER_SAVED_PLACEMENT)?;
+            *active = true;
+            Ok(true)
+        }
+    }
+
+    pub fn is_monitor_maximized() -> bool {
+        USER_MONITOR_COVER_ACTIVE
+            .lock()
+            .map(|active| *active)
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{enter_site_fullscreen_window, exit_site_fullscreen_window};
+pub use imp::{
+    enter_site_fullscreen_window, exit_site_fullscreen_window, is_monitor_maximized,
+    toggle_monitor_maximize,
+};
 
 #[cfg(not(target_os = "windows"))]
 pub fn enter_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), String> {
@@ -124,4 +175,14 @@ pub fn enter_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), Strin
 #[cfg(not(target_os = "windows"))]
 pub fn exit_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn toggle_monitor_maximize(_app: &tauri::AppHandle) -> Result<bool, String> {
+    Ok(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_monitor_maximized() -> bool {
+    false
 }

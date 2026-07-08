@@ -605,6 +605,16 @@ fn window_exit_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn window_toggle_monitor_maximize(app: tauri::AppHandle) -> Result<bool, String> {
+    site_fullscreen_window::toggle_monitor_maximize(&app)
+}
+
+#[tauri::command]
+fn window_is_monitor_maximized() -> bool {
+    site_fullscreen_window::is_monitor_maximized()
+}
+
+#[tauri::command]
 fn webview_restore_browsing_layout(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -833,6 +843,8 @@ pub fn run() {
             webview_raise_tab_fullscreen,
             window_enter_site_fullscreen,
             window_exit_site_fullscreen,
+            window_toggle_monitor_maximize,
+            window_is_monitor_maximized,
             webview_restore_browsing_layout,
             webview_set_chrome_hit_region,
             webview_set_shell_hit_region,

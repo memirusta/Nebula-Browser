@@ -2,6 +2,10 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../../platform/runtime'
 import { useLocale } from '../../hooks/useLocale'
+import {
+  isMonitorCoverMaximized,
+  toggleMonitorCoverMaximize,
+} from '../../platform/windowMonitorCover'
 
 interface WindowControlsProps {
   buttonClassName: string
@@ -20,7 +24,7 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
 
     const syncMaximized = async () => {
       if (disposed) return
-      setMaximized(await appWindow.isMaximized())
+      setMaximized(await isMonitorCoverMaximized())
     }
 
     void syncMaximized()
@@ -70,7 +74,7 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
         className={buttonClassName}
         onMouseDown={(event) => {
           stop(event)
-          void appWindow.toggleMaximize()
+          void toggleMonitorCoverMaximize().then(setMaximized)
         }}
         aria-label={maximized ? t('titleRestore') : t('titleMaximize')}
         title={maximized ? t('titleRestore') : t('titleMaximize')}

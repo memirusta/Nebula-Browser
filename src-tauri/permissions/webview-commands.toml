@@ -17,6 +17,8 @@ commands.allow = [
   "webview_raise_tab_fullscreen",
   "window_enter_site_fullscreen",
   "window_exit_site_fullscreen",
+  "window_toggle_monitor_maximize",
+  "window_is_monitor_maximized",
   "webview_restore_browsing_layout",
   "webview_set_chrome_hit_region",
   "webview_set_shell_hit_region",

@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../../platform/runtime'
 import { useLocale } from '../../hooks/useLocale'
+import { toggleMonitorCoverMaximize } from '../../platform/windowMonitorCover'
 
 interface LunarWindowDragProps {
   className?: string
@@ -33,7 +34,7 @@ export function LunarWindowDrag({
   const onDoubleClick = (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-    void appWindow.toggleMaximize()
+    void toggleMonitorCoverMaximize()
   }
 
   return (
