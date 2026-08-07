@@ -11,7 +11,8 @@ import {
 } from '../platform/tauriPasswordBridge'
 import { isTauri } from '../platform/runtime'
 
-const POLL_MS = 2500
+const ACTIVE_POLL_MS = 2000
+const IDLE_POLL_MS = 6000
 const DISMISS_FILL_MS = 5 * 60_000
 const STARTUP_DELAY_MS = 800
 
@@ -32,7 +33,7 @@ interface UsePasswordBridgeOptions {
   activeTabId: string | null
   activeUrl: string | null
   entries: SavedPassword[]
-  onVaultChange: () => void
+  onVaultChange: () => void | Promise<void>
 }
 
 function isHttpUrl(url: string | null): url is string {
@@ -53,6 +54,7 @@ export function usePasswordBridge({
   const dismissedFillRef = useRef<Map<string, number>>(new Map())
   const handledPendingRef = useRef<Set<string>>(new Set())
   const tickInFlightRef = useRef(false)
+  const pollDelayRef = useRef(IDLE_POLL_MS)
   const saveDraftRef = useRef<{ pageUrl: string; username: string; password: string } | null>(null)
   const entriesRef = useRef(entries)
   const activeTabIdRef = useRef(activeTabId)
@@ -113,14 +115,14 @@ export function usePasswordBridge({
   }, [clearOffer])
 
   const acceptSave = useCallback(
-    (draft: { pageUrl: string; username: string; password: string; label: string }) => {
-      upsertPasswordEntry({
+    async (draft: { pageUrl: string; username: string; password: string; label: string }) => {
+      await upsertPasswordEntry({
         label: draft.label,
         url: draft.pageUrl,
         username: draft.username,
         password: draft.password,
       })
-      onVaultChange()
+      await onVaultChange()
       clearOffer(activeTabIdRef.current ?? undefined)
     },
     [clearOffer, onVaultChange],
@@ -131,6 +133,7 @@ export function usePasswordBridge({
     handledPendingRef.current.clear()
     saveDraftRef.current = null
     offerRef.current = null
+    pollDelayRef.current = IDLE_POLL_MS
     setOffer(null)
   }, [activeTabId, activeUrl])
 
@@ -164,7 +167,13 @@ export function usePasswordBridge({
         }
 
         const poll = await tickPasswordBridge(tabId, locale, buildPrompt(nextOffer))
-        if (cancelled || !poll) return
+        if (cancelled || !poll) {
+          pollDelayRef.current = IDLE_POLL_MS
+          return
+        }
+        pollDelayRef.current = poll.hasForm || nextOffer || poll.pending
+          ? ACTIVE_POLL_MS
+          : IDLE_POLL_MS
 
         const pageUrl = poll.href && isHttpUrl(poll.href) ? poll.href : tabUrl
 
@@ -188,7 +197,7 @@ export function usePasswordBridge({
 
         if (poll.action?.type === 'save' && saveDraftRef.current) {
           const draft = saveDraftRef.current
-          acceptSave({
+          await acceptSave({
             pageUrl: draft.pageUrl,
             username: draft.username,
             password: draft.password,
@@ -252,20 +261,35 @@ export function usePasswordBridge({
         }
         offerRef.current = fillOffer
         setOffer(fillOffer)
+      } catch (error) {
+        console.error('Password bridge polling failed', error)
       } finally {
         tickInFlightRef.current = false
       }
     }
 
-    const startupTimer = window.setTimeout(() => {
-      void tick()
-    }, STARTUP_DELAY_MS)
-
-    const id = window.setInterval(() => void tick(), POLL_MS)
+    let pollTimer: number | undefined
+    const run = async () => {
+      if (cancelled) return
+      if (!document.hidden) {
+        await tick()
+      }
+      if (cancelled) return
+      if (pollTimer) window.clearTimeout(pollTimer)
+      pollTimer = window.setTimeout(() => void run(), pollDelayRef.current)
+    }
+    const startupTimer = window.setTimeout(() => void run(), STARTUP_DELAY_MS)
+    const onVisibility = () => {
+      if (document.hidden) return
+      if (pollTimer) window.clearTimeout(pollTimer)
+      void run()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
-      window.clearInterval(id)
+      if (pollTimer) window.clearTimeout(pollTimer)
       window.clearTimeout(startupTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [enabled, activeTabId, activeUrl, locale, buildPrompt, acceptFill, acceptSave, clearOffer])
 
@@ -275,16 +299,20 @@ export function usePasswordBridge({
     acceptFill: (entry: SavedPassword) => {
       const current = offerRef.current
       if (!current) return
-      void acceptFill(entry, current.shortcutId, current.pageUrl)
+      void acceptFill(entry, current.shortcutId, current.pageUrl).catch((error) => {
+        console.error('Password fill failed', error)
+      })
     },
     acceptSave: () => {
       const current = offerRef.current
       if (!current || current.mode !== 'save') return
-      acceptSave({
+      void acceptSave({
         pageUrl: current.pageUrl,
         username: current.username,
         password: current.password,
         label: current.label,
+      }).catch((error) => {
+        console.error('Password save failed', error)
       })
     },
   }

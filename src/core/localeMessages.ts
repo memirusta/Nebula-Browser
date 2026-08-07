@@ -410,8 +410,8 @@ export const LOCALE_MESSAGES = {
   accountDelete: { tr: 'Sil', en: 'Delete' },
   accountNoPasswords: { tr: 'Henüz kayıtlı şifre yok.', en: 'No saved passwords yet.' },
   accountGoogleSecretMissing: {
-    tr: 'Google secret eksik: {path}',
-    en: 'Google secret missing: {path}',
+    tr: 'Google istemci kimliği eksik: {path}',
+    en: 'Google client ID missing: {path}',
   },
   accountCsvEmpty: {
     tr: 'CSV dosyasında geçerli şifre satırı bulunamadı.',

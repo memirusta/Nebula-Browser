@@ -2,8 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": ["main"],
-  "webviews": ["main", "nebula-browser", "nebula-chrome", "nebula-tab-*"],
+  "webviews": ["main", "nebula-chrome"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -27,9 +26,6 @@
     "core:webview:allow-webview-close",
     "core:webview:allow-get-all-webviews",
     "allow-nebula-webview-commands",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
-    "global-shortcut:allow-unregister-all",
-    "global-shortcut:allow-is-registered"
+    "core:event:allow-listen"
   ]
 }

@@ -1,11 +1,14 @@
 #[cfg(target_os = "windows")]
 mod imp {
-    use std::collections::HashSet;
+    use std::cell::RefCell;
+    use std::collections::{HashMap, HashSet};
     use std::sync::{LazyLock, Mutex};
 
     use tauri::AppHandle;
     use tauri::Manager;
-    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2, ICoreWebView2NavigationCompletedEventHandler,
+    };
     use webview2_com::NavigationCompletedEventHandler;
     use windows::core::PCWSTR;
     use windows::core::PWSTR;
@@ -14,6 +17,12 @@ mod imp {
 
     static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
+    static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, i64>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    thread_local! {
+        static HANDLERS: RefCell<HashMap<String, ICoreWebView2NavigationCompletedEventHandler>> =
+            RefCell::new(HashMap::new());
+    }
 
     fn data_url_for_html(html: &str) -> String {
         let encoded: String = html
@@ -47,8 +56,7 @@ mod imp {
         let retry_js = retry_url
             .replace('\\', "\\\\")
             .replace('\'', "\\'")
-            .replace('\n', "")
-            .replace('\r', "");
+            .replace(['\n', '\r'], "");
 
         let html = format!(
             r#"<!DOCTYPE html>
@@ -129,25 +137,24 @@ mod imp {
     }
 
     pub fn setup_tab_error_page(app: &AppHandle, label: &str) -> Result<(), String> {
-        if !label.starts_with("nebula-tab-") {
-            return Ok(());
+        if !crate::webview_branding::is_nebula_webview_label(label) {
+            return Err(format!("error-page setup is not allowed for '{label}'"));
         }
 
         {
-            let mut configured = CONFIGURED_LABELS
+            let configured = CONFIGURED_LABELS
                 .lock()
                 .map_err(|error| error.to_string())?;
             if configured.contains(label) {
                 return Ok(());
             }
-            configured.insert(label.to_string());
         }
 
         let webview = app
             .get_webview(label)
             .ok_or_else(|| format!("webview '{label}' not found"))?;
 
-        let label_for_closure = label.to_string();
+        let label_for_store = label.to_string();
 
         webview
             .with_webview(move |inner| unsafe {
@@ -159,7 +166,6 @@ mod imp {
                     let _ = settings.SetIsBuiltInErrorPageEnabled(false);
                 }
 
-                let tab_label = label_for_closure.clone();
                 let handler =
                     NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                         let Some(args) = args else {
@@ -192,7 +198,6 @@ mod imp {
 
                         let error_url = build_error_page_url(&failed_url);
                         navigate_webview(&webview, &error_url);
-                        let _ = tab_label;
                         Ok(())
                     }));
 
@@ -201,18 +206,57 @@ mod imp {
                     return;
                 }
 
-                let _ = Box::leak(Box::new(handler));
+                if let Ok(mut tokens) = HANDLER_TOKENS.lock() {
+                    tokens.insert(label_for_store.clone(), token);
+                }
+                HANDLERS.with(|handlers| {
+                    handlers
+                        .borrow_mut()
+                        .insert(label_for_store.clone(), handler);
+                });
             })
             .map_err(|error| error.to_string())?;
 
+        CONFIGURED_LABELS
+            .lock()
+            .map_err(|error| error.to_string())?
+            .insert(label.to_string());
+
         Ok(())
+    }
+
+    pub fn teardown_tab_error_page(app: &AppHandle, label: &str) {
+        let token = HANDLER_TOKENS
+            .lock()
+            .ok()
+            .and_then(|mut tokens| tokens.remove(label));
+        let label_for_handler = label.to_string();
+
+        if let Some(webview) = app.get_webview(label) {
+            let _ = webview.with_webview(move |inner| unsafe {
+                if let Ok(core) = inner.controller().CoreWebView2() {
+                    if let Some(token) = token {
+                        let _ = core.remove_NavigationCompleted(token);
+                    }
+                }
+                HANDLERS.with(|handlers| {
+                    handlers.borrow_mut().remove(&label_for_handler);
+                });
+            });
+        }
+        if let Ok(mut configured) = CONFIGURED_LABELS.lock() {
+            configured.remove(label);
+        }
     }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::setup_tab_error_page;
+pub use imp::{setup_tab_error_page, teardown_tab_error_page};
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_error_page(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
     Ok(())
 }
+
+#[cfg(not(target_os = "windows"))]
+pub fn teardown_tab_error_page(_app: &tauri::AppHandle, _label: &str) {}

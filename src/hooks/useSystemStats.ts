@@ -10,7 +10,7 @@ import {
 } from '../core/wallpaperStorage'
 
 const HISTORY_LEN = 40
-const POLL_MS = 1200
+const POLL_MS = 3000
 
 const MOCK_STATS: SystemStats = {
   ramPercent: 4,
@@ -46,32 +46,71 @@ function nextMockStats(prev: SystemStats): SystemStats {
   })
 }
 
-export function useSystemStats() {
+export function useSystemStats(enabled = true) {
   const [stats, setStats] = useState<SystemStats>(MOCK_STATS)
 
   useEffect(() => {
-    if (!isTauri) {
-      const interval = setInterval(() => {
-        setStats((prev) => nextMockStats(prev))
-      }, POLL_MS)
-      return () => clearInterval(interval)
-    }
+    if (!enabled) return
 
     let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const schedule = (poll: () => Promise<void>) => {
+      if (cancelled) return
+      timer = setTimeout(() => void poll(), POLL_MS)
+    }
+
+    if (!isTauri) {
+      const poll = async () => {
+        if (cancelled) return
+        if (!document.hidden) {
+          setStats((prev) => nextMockStats(prev))
+        }
+        schedule(poll)
+      }
+      const onVisibility = () => {
+        if (document.hidden) return
+        if (timer) clearTimeout(timer)
+        void poll()
+      }
+      timer = setTimeout(() => {
+        setStats((prev) => nextMockStats(prev))
+        schedule(poll)
+      }, POLL_MS)
+      document.addEventListener('visibilitychange', onVisibility)
+      return () => {
+        cancelled = true
+        if (timer) clearTimeout(timer)
+        document.removeEventListener('visibilitychange', onVisibility)
+      }
+    }
 
     const poll = async () => {
+      if (cancelled) return
+      if (document.hidden) {
+        schedule(poll)
+        return
+      }
       const snapshot = await fetchSystemStats()
-      if (cancelled || !snapshot) return
-      setStats((prev) => withHistory(prev, snapshot))
+      if (!cancelled && snapshot) {
+        setStats((prev) => withHistory(prev, snapshot))
+      }
+      schedule(poll)
     }
 
+    const onVisibility = () => {
+      if (document.hidden) return
+      if (timer) clearTimeout(timer)
+      void poll()
+    }
     void poll()
-    const interval = setInterval(() => void poll(), POLL_MS)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
-      clearInterval(interval)
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [])
+  }, [enabled])
 
   return stats
 }
@@ -80,8 +119,26 @@ export function useClock() {
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(interval)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const schedule = () => {
+      const delay = 60_050 - (Date.now() % 60_000)
+      timer = setTimeout(() => {
+        setNow(new Date())
+        schedule()
+      }, delay)
+    }
+    const onVisibility = () => {
+      if (document.hidden) return
+      setNow(new Date())
+      if (timer) clearTimeout(timer)
+      schedule()
+    }
+    schedule()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   const time = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })

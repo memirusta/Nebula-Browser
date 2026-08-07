@@ -1,33 +1,39 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   addPasswordEntry,
   loadPasswordVault,
-  PASSWORD_VAULT_KEY,
   removePasswordEntry,
+  PASSWORD_VAULT_CHANGED_EVENT,
   type SavedPassword,
 } from '../core/passwordVault'
 import { mergeImportedPasswords } from '../core/passwordImport'
-import { useStorageSync } from '../core/storageSync'
 
 export function usePasswordVault() {
-  const [entries, setEntries] = useState<SavedPassword[]>(() => loadPasswordVault())
+  const [entries, setEntries] = useState<SavedPassword[]>([])
 
-  const reload = useCallback(() => {
-    setEntries(loadPasswordVault())
+  const reload = useCallback(async () => {
+    setEntries(await loadPasswordVault())
   }, [])
 
-  useStorageSync(PASSWORD_VAULT_KEY, reload)
+  useEffect(() => {
+    const onChanged = () => {
+      void reload().catch(() => undefined)
+    }
+    void reload().catch(() => undefined)
+    window.addEventListener(PASSWORD_VAULT_CHANGED_EVENT, onChanged)
+    return () => window.removeEventListener(PASSWORD_VAULT_CHANGED_EVENT, onChanged)
+  }, [reload])
 
-  const addEntry = useCallback((draft: Omit<SavedPassword, 'id' | 'updatedAt'>) => {
-    setEntries(addPasswordEntry(draft))
+  const addEntry = useCallback(async (draft: Omit<SavedPassword, 'id' | 'updatedAt'>) => {
+    setEntries(await addPasswordEntry(draft))
   }, [])
 
-  const mergeEntries = useCallback((drafts: Array<Omit<SavedPassword, 'id' | 'updatedAt'>>) => {
-    setEntries(mergeImportedPasswords(drafts))
+  const mergeEntries = useCallback(async (drafts: Array<Omit<SavedPassword, 'id' | 'updatedAt'>>) => {
+    setEntries(await mergeImportedPasswords(drafts))
   }, [])
 
-  const removeEntry = useCallback((id: string) => {
-    setEntries(removePasswordEntry(id))
+  const removeEntry = useCallback(async (id: string) => {
+    setEntries(await removePasswordEntry(id))
   }, [])
 
   return { entries, addEntry, mergeEntries, removeEntry, reload }

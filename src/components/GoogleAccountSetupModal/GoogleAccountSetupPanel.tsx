@@ -13,7 +13,7 @@ import styles from './GoogleAccountSetupModal.module.css'
 interface GoogleAccountSetupPanelProps {
   email: string
   onOpenBrowseUrl: (url: string) => void
-  onMergePasswords: (entries: Array<Omit<SavedPassword, 'id' | 'updatedAt'>>) => void
+  onMergePasswords: (entries: Array<Omit<SavedPassword, 'id' | 'updatedAt'>>) => void | Promise<void>
   onRequestCsvImport?: () => void
   onApplied?: () => void
   showSkip?: boolean
@@ -58,7 +58,7 @@ export function GoogleAccountSetupPanel({
     if (importPasswords) {
       const result = await syncPasswordsFromBrowser('chrome')
       if (result.ok) {
-        onMergePasswords(
+        await onMergePasswords(
           result.imported.map((item) => ({
             label: item.label,
             url: item.url,

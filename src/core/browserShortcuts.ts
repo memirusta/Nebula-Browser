@@ -25,45 +25,6 @@ export type BrowserShortcutId =
   | 'devtools'
   | 'close-overlay'
 
-/** Tauri global-shortcut registration strings (Windows / Chrome defaults). */
-export const BROWSER_GLOBAL_SHORTCUTS: { id: BrowserShortcutId; accelerator: string }[] = [
-  { id: 'new-tab', accelerator: 'Control+T' },
-  { id: 'close-tab', accelerator: 'Control+W' },
-  { id: 'reopen-tab', accelerator: 'Control+Shift+T' },
-  { id: 'next-tab', accelerator: 'Control+Tab' },
-  { id: 'prev-tab', accelerator: 'Control+Shift+Tab' },
-  { id: 'switch-tab-1', accelerator: 'Control+1' },
-  { id: 'switch-tab-2', accelerator: 'Control+2' },
-  { id: 'switch-tab-3', accelerator: 'Control+3' },
-  { id: 'switch-tab-4', accelerator: 'Control+4' },
-  { id: 'switch-tab-5', accelerator: 'Control+5' },
-  { id: 'switch-tab-6', accelerator: 'Control+6' },
-  { id: 'switch-tab-7', accelerator: 'Control+7' },
-  { id: 'switch-tab-8', accelerator: 'Control+8' },
-  { id: 'switch-tab-last', accelerator: 'Control+9' },
-  { id: 'reload', accelerator: 'Control+R' },
-  { id: 'reload', accelerator: 'F5' },
-  { id: 'focus-url-bar', accelerator: 'Control+L' },
-  { id: 'focus-url-bar', accelerator: 'Alt+D' },
-  { id: 'go-back', accelerator: 'Alt+Left' },
-  { id: 'go-forward', accelerator: 'Alt+Right' },
-  { id: 'go-home', accelerator: 'Control+H' },
-  { id: 'zoom-in', accelerator: 'Control+Equal' },
-  { id: 'zoom-in', accelerator: 'Control+Plus' },
-  { id: 'zoom-out', accelerator: 'Control+Minus' },
-  { id: 'zoom-reset', accelerator: 'Control+0' },
-  { id: 'devtools', accelerator: 'Control+Shift+I' },
-  { id: 'devtools', accelerator: 'F12' },
-]
-
-const ACCELERATOR_TO_ID = new Map(
-  BROWSER_GLOBAL_SHORTCUTS.map((entry) => [entry.accelerator, entry.id] as const),
-)
-
-export function shortcutIdFromAccelerator(accelerator: string): BrowserShortcutId | null {
-  return ACCELERATOR_TO_ID.get(accelerator) ?? null
-}
-
 function isEditableElement(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true

@@ -191,9 +191,11 @@ export function SemiLunarMenu({
   }, [folders])
 
   const visibleDockItemIds = useMemo(() => {
-    if (!isBrowsing) return dockItemIds
+    // Open tabs are the canonical Semi-Lunar catalog in every shell view. An
+    // empty tab session must therefore produce an empty menu instead of
+    // reviving previously visited shortcuts from the persistent dock.
     return buildBrowsingVisibleDockItemIds(dockItemIds, openTabIds, folders, shortcutMap)
-  }, [isBrowsing, dockItemIds, openTabIds, folders, shortcutMap])
+  }, [dockItemIds, openTabIds, folders, shortcutMap])
 
   const { positions, moveShortcut, removePosition, setPosition, replacePositionId } =
     useShortcutPositions(visibleDockItemIds, iconSizePx, lunarWidthPx, lunarHeightPx)
@@ -387,6 +389,32 @@ export function SemiLunarMenu({
     contextMenuHoverRef.current = false
     onHomeClick?.()
   }, [clearTimers, onHomeClick])
+
+  const closeMenuImmediately = useCallback(() => {
+    clearTimers()
+    clearMergeHoldTimer()
+    folderOpenRef.current = false
+    folderPanelHoverRef.current = false
+    contextMenuOpenRef.current = false
+    contextMenuHoverRef.current = false
+    isDraggingRef.current = false
+    setOpenFolderId(null)
+    setContextMenu(null)
+    setPreviewShortcut(null)
+    setIsAnyDragging(false)
+    setStage('closed')
+  }, [clearMergeHoldTimer, clearTimers])
+
+  const handleNavigate = useCallback(
+    (url: string, shortcutId?: string) => {
+      // A tab activation resets the native shell hit region to the collapsed
+      // strip. Close the DOM menu in the same interaction so an expanded dome
+      // cannot remain clipped as a grey sliver at the top of the new tab.
+      closeMenuImmediately()
+      onNavigate(url, shortcutId)
+    },
+    [closeMenuImmediately, onNavigate],
+  )
 
   const shouldDeferClose = useCallback(() => {
     if (isDraggingRef.current) return true
@@ -621,6 +649,14 @@ export function SemiLunarMenu({
       setStage('closed')
     }
   }, [mode, shellViewMode, homeAlwaysOpen, clearTimers])
+
+  const prevActiveTabIdRef = useRef(activeTabId)
+  useEffect(() => {
+    const previous = prevActiveTabIdRef.current
+    prevActiveTabIdRef.current = activeTabId
+    if (!isBrowsing || previous === activeTabId) return
+    closeMenuImmediately()
+  }, [activeTabId, closeMenuImmediately, isBrowsing])
 
   useEffect(() => {
     return () => {
@@ -1019,7 +1055,7 @@ export function SemiLunarMenu({
                     onMove={(x, y, finalize) => handleMoveShortcut(dockId, x, y, finalize)}
                     onNavigate={() => {
                       const targetTabId = resolveCloseTabId(dockId)
-                      onNavigate(item.url, targetTabId ?? item.id)
+                      handleNavigate(item.url, targetTabId ?? item.id)
                     }}
                     onRemove={
                       tabIsOpen || !isBrowsing
@@ -1130,7 +1166,9 @@ export function SemiLunarMenu({
             onRemoveShortcut?.(contextMenu.shortcut.id)
           }}
           onToggleMute={() => onToggleMute?.(contextMenu.shortcut.id)}
-          onOpenNewTab={() => onNavigate(contextMenu.shortcut.url, contextMenu.shortcut.id)}
+          onOpenNewTab={() =>
+            handleNavigate(contextMenu.shortcut.url, contextMenu.shortcut.id)
+          }
           onTogglePin={
             onTogglePin ? () => onTogglePin(contextMenu.shortcut.id) : undefined
           }
@@ -1156,7 +1194,7 @@ export function SemiLunarMenu({
             members={members}
             anchorX={anchor.left + pos.x}
             anchorY={anchor.top + pos.y}
-            onNavigate={onNavigate}
+            onNavigate={handleNavigate}
             onRenameFolder={onRenameFolder}
             onClose={handleFolderClose}
             onRemoveFromFolder={handleRemoveFromFolder}

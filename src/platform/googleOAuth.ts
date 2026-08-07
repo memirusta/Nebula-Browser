@@ -3,7 +3,6 @@ import type { GoogleProfileClaims } from '../core/googleSignIn'
 
 export interface GoogleOAuthStatus {
   clientIdConfigured: boolean
-  secretConfigured: boolean
   appdataEnvPath: string
 }
 

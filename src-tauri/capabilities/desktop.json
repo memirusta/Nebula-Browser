@@ -5,9 +5,7 @@
     "windows",
     "linux"
   ],
-  "windows": [
-    "main"
-  ],
+  "webviews": ["main"],
   "permissions": [
     "updater:default",
     "process:default"

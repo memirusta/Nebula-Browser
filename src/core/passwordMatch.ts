@@ -12,8 +12,7 @@ export function hostsMatchForPassword(siteUrl: string, entryUrl: string): boolea
   const siteHost = hostnameFromUrl(siteUrl)
   const entryHost = hostnameFromUrl(entryUrl)
   if (!siteHost || !entryHost) return false
-  if (siteHost === entryHost) return true
-  return siteHost.endsWith(`.${entryHost}`) || entryHost.endsWith(`.${siteHost}`)
+  return siteHost === entryHost
 }
 
 export interface PasswordMatchEntry {

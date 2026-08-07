@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isTauri } from '../../platform/runtime'
 import { listenChromeActions, emitActiveUrl, emitTabCatalog, emitViewMode } from '../../core/nebulaBridge'
@@ -18,9 +18,8 @@ import {
   navigateBrowseTabForward,
   openBrowseTabDevTools,
   prepareBrowseTabInBackground,
-  readTabWebviewUrl,
   reloadBrowseTab,
-  snapshotTabWebview,
+  listenTabWebviewSnapshots,
   zoomBrowseTab,
 } from '../../platform/tauriBrowser'
 import { useBrowserTabs } from '../../hooks/useBrowserTabs'
@@ -30,10 +29,8 @@ import { computeAdaptiveLunarSize } from '../../core/lunarSizing'
 import { homeLayoutFromSettings, type HomeLayout } from '../../core/homeLayout'
 import { HomeCenter } from '../HomeCenter/HomeCenter'
 import { LeftSidebar } from '../LeftSidebar/LeftSidebar'
-import { HomeWidgetGrid } from '../SpatialGrid/HomeWidgetGrid'
 import { RightToolbar } from '../RightToolbar/RightToolbar'
 import { SemiLunarMenu } from '../SemiLunarMenu/SemiLunarMenu'
-import { SettingsPanel } from '../SettingsPanel/SettingsPanel'
 import { HomeEditBar } from '../HomeEdit/HomeEditBar'
 import { WallpaperBackground } from '../WallpaperBackground/WallpaperBackground'
 import { usePinnedShortcuts } from '../../hooks/usePinnedShortcuts'
@@ -42,14 +39,11 @@ import { useShortcutFolders } from '../../hooks/useShortcutFolders'
 import { useNebulaSettings } from '../../hooks/useNebulaSettings'
 import { useBrowseSessions } from '../../hooks/useBrowseSessions'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
-import { useSystemStats, useWallpaper } from '../../hooks/useSystemStats'
+import { useWallpaper } from '../../hooks/useSystemStats'
 import type { ToolbarAnchor } from '../RightToolbar/RightToolbar'
 import type { Shortcut } from '../../core/types'
 import { TabbedBrowserContent } from './TabbedBrowserContent'
-import {
-  OnboardingWizard,
-  type OnboardingResult,
-} from '../Onboarding/OnboardingWizard'
+import type { OnboardingResult } from '../Onboarding/OnboardingWizard'
 import { completeOnboarding, isOAuthReturnUrl, isOnboardingComplete, onboardingStepAfterOAuthReturn, peekOnboardingResumeStep, takeOnboardingImportedShortcuts, takeOnboardingResumeStep, type OnboardingStep } from '../../core/onboarding'
 import { factoryResetNebulaApp } from '../../core/appReset'
 import {
@@ -64,9 +58,22 @@ import styles from './BrowserShell.module.css'
 
 type ViewMode = 'home' | 'browsing' | 'overlay'
 
+const HomeWidgetGrid = lazy(() =>
+  import('../SpatialGrid/HomeWidgetGrid').then((module) => ({ default: module.HomeWidgetGrid })),
+)
+const SettingsPanel = lazy(() =>
+  import('../SettingsPanel/SettingsPanel').then((module) => ({ default: module.SettingsPanel })),
+)
+const OnboardingWizard = lazy(() =>
+  import('../Onboarding/OnboardingWizard').then((module) => ({ default: module.OnboardingWizard })),
+)
+
 export function BrowserShell() {
   const { t } = useLocale()
-  const stats = useSystemStats()
+  const { settings, togglePreviewOnHover, updateCategory, resetCategory, applyHomeLayout } =
+    useNebulaSettings()
+  const [viewMode, setViewMode] = useState<ViewMode>('home')
+  const viewModeRef = useRef<ViewMode>('home')
   const { wallpaper, pickWallpaper, resetWallpaper } = useWallpaper()
   const { visibleShortcuts, allShortcuts, toggleMute, removeShortcut, addVisitedShortcut, isMuted, resetShortcuts, applyImportedShortcuts } =
     useShortcutPreferences(DEFAULT_SHORTCUTS)
@@ -90,8 +97,6 @@ export function BrowserShell() {
     renameFolder,
     resetFolders,
   } = useShortcutFolders(visibleShortcuts)
-  const { settings, togglePreviewOnHover, updateCategory, resetCategory, applyHomeLayout } =
-    useNebulaSettings()
   const { account, displayName: accountDisplayName, setAccount } = useNebulaAccount(
     settings.home.userDisplayName,
   )
@@ -158,29 +163,27 @@ export function BrowserShell() {
   )
 
   const handleFactoryReset = useCallback(() => {
-    factoryResetNebulaApp()
+    void factoryResetNebulaApp()
   }, [])
 
   const handleAccountSignOut = useCallback(() => {
     clearGoogleBrowserSession()
     const name = settings.home.userDisplayName.trim() || t('userFallback')
     setAccount({ provider: 'local', displayName: name })
-  }, [setAccount, settings.home.userDisplayName])
+  }, [setAccount, settings.home.userDisplayName, t])
 
   const [activeUrl, setActiveUrl] = useState<string | null>(null)
   const [, setTabSwitchHistory] = useState<string[]>([])
-  const pollTickRef = useRef(0)
   const pendingBrowseTargetRef = useRef<{ tabId: string; url: string; forceNavigate?: boolean } | null>(
     null,
   )
   const overlayDismissGuardRef = useRef(0)
   const [tauriBrowseSyncToken, setTauriBrowseSyncToken] = useState(0)
-  const [viewMode, setViewMode] = useState<ViewMode>('home')
-  const viewModeRef = useRef<ViewMode>('home')
   const [shortcutInteractionActive, setShortcutInteractionActive] = useState(false)
   const [lunarShortcutInteraction, setLunarShortcutInteraction] = useState(false)
   const [pinShortcutInteraction, setPinShortcutInteraction] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsActivated, setSettingsActivated] = useState(false)
   const [settingsAnchor, setSettingsAnchor] = useState<ToolbarAnchor | null>(null)
   const [homeEditMode, setHomeEditMode] = useState(false)
   const [draftLayout, setDraftLayout] = useState<HomeLayout | null>(null)
@@ -193,8 +196,8 @@ export function BrowserShell() {
   )
   const googleResumeStartedRef = useRef(false)
   const googleSessionHelperTabIdsRef = useRef<Set<string>>(new Set())
+  const closingTabIdsRef = useRef<Set<string>>(new Set())
   const closedTabsRef = useRef<BrowserTab[]>([])
-  const [googleSessionWatchToken, setGoogleSessionWatchToken] = useState(0)
   const [focusSearchRequest, setFocusSearchRequest] = useState(0)
 
   useEffect(() => {
@@ -285,7 +288,6 @@ export function BrowserShell() {
   const registerGoogleSessionHelperTab = useCallback((shortcutId: string, url: string) => {
     if (!isGoogleBrowserSignInUrl(url)) return
     googleSessionHelperTabIdsRef.current.add(shortcutId)
-    setGoogleSessionWatchToken((token) => token + 1)
   }, [])
 
   const dismissGoogleSessionHelperTab = useCallback(
@@ -308,46 +310,43 @@ export function BrowserShell() {
         delete document.documentElement.dataset.nebulaOverlayTauri
       }
     },
-    [closeTab],
+    [activeTabIdRef, closeTab],
   )
 
   useEffect(() => {
-    if (!isTauri || viewMode !== 'browsing' || tabs.length === 0) return
+    if (!isTauri) return
 
-    const poll = async () => {
-      pollTickRef.current += 1
-      const tick = pollTickRef.current
-
-      for (const tab of tabsRef.current) {
-        const isActive = tab.shortcutId === activeTabIdRef.current
-        if (!isActive && tick % 4 !== 0) continue
-
-        const snapshot = await snapshotTabWebview(tab.shortcutId)
-        if (!snapshot) continue
-
-        if (
-          googleSessionHelperTabIdsRef.current.has(tab.shortcutId) &&
-          isGoogleSessionHelperTerminalUrl(snapshot.url)
-        ) {
-          void dismissGoogleSessionHelperTab(tab.shortcutId)
-          continue
-        }
-
-        applyTabSnapshot(tab.shortcutId, snapshot.url, snapshot.title)
-        if (isActive) {
-          const current = tabsRef.current.find((t) => t.shortcutId === tab.shortcutId)
-          if (!current || current.url !== snapshot.url) {
-            recordVisit(snapshot.url)
-            setActiveUrl(snapshot.url)
-          }
-        }
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    void listenTabWebviewSnapshots((snapshot) => {
+      if (!tabsRef.current.some((tab) => tab.shortcutId === snapshot.shortcutId)) return
+      if (
+        googleSessionHelperTabIdsRef.current.has(snapshot.shortcutId) &&
+        isGoogleSessionHelperTerminalUrl(snapshot.url)
+      ) {
+        void dismissGoogleSessionHelperTab(snapshot.shortcutId)
+        return
       }
-    }
 
-    void poll()
-    const id = window.setInterval(() => void poll(), 4000)
-    return () => clearInterval(id)
-  }, [viewMode, tabs.length, applyTabSnapshot, recordVisit, activeTabIdRef, tabsRef, dismissGoogleSessionHelperTab])
+      applyTabSnapshot(snapshot.shortcutId, snapshot.url, snapshot.title)
+      if (activeTabIdRef.current !== snapshot.shortcutId) return
+      const current = tabsRef.current.find((tab) => tab.shortcutId === snapshot.shortcutId)
+      if (!current || current.url !== snapshot.url) {
+        setActiveUrl(snapshot.url)
+      }
+    }).then((dispose) => {
+      if (cancelled) {
+        dispose()
+        return
+      }
+      unlisten = dispose
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [activeTabIdRef, applyTabSnapshot, dismissGoogleSessionHelperTab, tabsRef])
 
   useEffect(() => {
     if (!isTauri) return
@@ -362,6 +361,7 @@ export function BrowserShell() {
   const openSettings = useCallback((anchor: ToolbarAnchor) => {
     setOverlayModeActive(false)
     setViewMode('home')
+    setSettingsActivated(true)
     setSettingsAnchor(anchor)
     setSettingsOpen(true)
   }, [])
@@ -434,7 +434,10 @@ export function BrowserShell() {
 
       const openInBackground = () => {
         addVisitedShortcut(launchShortcut.url)
-        openOrSwitchTab(launchShortcut, { reload: forceLoad && tabExists })
+        openOrSwitchTab(launchShortcut, {
+          reload: forceLoad && tabExists,
+          activate: false,
+        })
         pendingBrowseTargetRef.current = null
         setViewMode('home')
         setTauriBrowseSyncToken((token) => token + 1)
@@ -510,57 +513,67 @@ export function BrowserShell() {
 
   const handleCloseTab = useCallback(
     async (shortcutId: string) => {
+      if (closingTabIdsRef.current.has(shortcutId)) return
+      closingTabIdsRef.current.add(shortcutId)
+
       const closing = tabsRef.current.find((tab) => tab.shortcutId === shortcutId)
       if (closing) {
         closedTabsRef.current = [closing, ...closedTabsRef.current].slice(0, 25)
       }
 
-      const remaining = tabsRef.current.filter((tab) => tab.shortcutId !== shortcutId)
+      const remaining = tabsRef.current.filter(
+        (tab) => !closingTabIdsRef.current.has(tab.shortcutId),
+      )
       const goingHome = remaining.length === 0
 
-      if (isTauri) {
-        await forceExitSiteFullscreen()
-        await closeBrowseTab(shortcutId)
-        if (goingHome) {
-          await applyTauriViewModeNow('home', null)
-          delete document.documentElement.dataset.nebulaBrowsingTauri
-          delete document.documentElement.dataset.nebulaOverlayTauri
-        }
-      }
-
+      // Update the shell first so rapid consecutive closes cannot leave it in
+      // browsing mode with no active tab.
       closeTab(shortcutId)
       setTabSwitchHistory((history) => history.filter((id) => id !== shortcutId))
 
       if (goingHome) {
+        setOverlayModeActive(false)
         setActiveUrl(null)
         setViewMode('home')
+        delete document.documentElement.dataset.nebulaBrowsingTauri
+        delete document.documentElement.dataset.nebulaOverlayTauri
+      }
+
+      try {
+        if (isTauri) {
+          await forceExitSiteFullscreen()
+          // Keep the main webview visible while the final child webview is
+          // destroyed; otherwise the native window can appear to close.
+          if (goingHome) {
+            await applyTauriViewModeNow('home', null)
+          }
+          await closeBrowseTab(shortcutId)
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.warn(`[nebula] close tab ${shortcutId} failed`, error)
+        }
+      } finally {
+        closingTabIdsRef.current.delete(shortcutId)
       }
     },
     [closeTab, tabsRef],
   )
 
+  // Invariant fallback for concurrent close actions: an empty tab catalog can
+  // never remain in browsing/overlay mode.
   useEffect(() => {
-    if (!isTauri || googleSessionHelperTabIdsRef.current.size === 0) return
+    if (tabs.length !== 0 || viewMode === 'home') return
 
-    const poll = async () => {
-      for (const tabId of [...googleSessionHelperTabIdsRef.current]) {
-        const exists = tabsRef.current.some((tab) => tab.shortcutId === tabId)
-        if (!exists) {
-          googleSessionHelperTabIdsRef.current.delete(tabId)
-          continue
-        }
-
-        const url = await readTabWebviewUrl(tabId)
-        if (!url || !isGoogleSessionHelperTerminalUrl(url)) continue
-
-        await dismissGoogleSessionHelperTab(tabId)
-      }
+    setOverlayModeActive(false)
+    setActiveUrl(null)
+    setViewMode('home')
+    delete document.documentElement.dataset.nebulaBrowsingTauri
+    delete document.documentElement.dataset.nebulaOverlayTauri
+    if (isTauri) {
+      void applyTauriViewModeNow('home', null)
     }
-
-    void poll()
-    const id = window.setInterval(() => void poll(), 800)
-    return () => clearInterval(id)
-  }, [googleSessionWatchToken, tabs.length, dismissGoogleSessionHelperTab, tabsRef])
+  }, [tabs.length, viewMode])
 
   const goBack = useCallback(() => {
     if (viewModeRef.current === 'overlay') {
@@ -592,7 +605,7 @@ export function BrowserShell() {
 
       return history
     })
-  }, [setActiveTabId, tabsRef])
+  }, [activeTabIdRef, setActiveTabId, tabsRef])
 
   const openOverlay = useCallback(() => {
     overlayDismissGuardRef.current = performance.now() + 450
@@ -792,7 +805,7 @@ export function BrowserShell() {
           }
           break
         case 'devtools':
-          if (activeTabIdRef.current && isTauri) {
+          if (import.meta.env.DEV && activeTabIdRef.current && isTauri) {
             void openBrowseTabDevTools(activeTabIdRef.current)
           }
           break
@@ -971,16 +984,6 @@ export function BrowserShell() {
       }
     : home
 
-  const homeAdaptiveLunar = useMemo(
-    () =>
-      computeAdaptiveLunarSize(
-        visibleShortcuts.length,
-        semiLunar.lunarWidthPx,
-        semiLunar.lunarHeightPx,
-      ),
-    [visibleShortcuts.length, semiLunar.lunarWidthPx, semiLunar.lunarHeightPx],
-  )
-
   const browsingLunarCount = Math.max(openTabIds.length, 1)
 
   const browsingAdaptiveLunar = useMemo(
@@ -1060,8 +1063,8 @@ export function BrowserShell() {
     ...semiLunarShared,
     mode: (isHome ? 'home' : 'browsing') as 'home' | 'browsing',
     shellViewMode: viewMode as ShellViewMode,
-    lunarWidthPx: isHome ? homeAdaptiveLunar.width : browsingAdaptiveLunar.width,
-    lunarHeightPx: isHome ? homeAdaptiveLunar.height : browsingAdaptiveLunar.height,
+    lunarWidthPx: browsingAdaptiveLunar.width,
+    lunarHeightPx: browsingAdaptiveLunar.height,
     onHomeClick: isHome ? undefined : openOverlay,
     onBackClick: isHome ? undefined : goBack,
   }
@@ -1166,14 +1169,16 @@ export function BrowserShell() {
                   }
                 >
                   {effectiveHome.showSystemWidgets && (
-                    <HomeWidgetGrid
-                      panes={widgetLayout.visiblePanes}
-                      layout={widgetLayout.visibleLayout}
-                      stats={stats}
-                      onLayoutChange={widgetLayout.onLayoutChange}
-                      onFocusPane={widgetLayout.focusWidget}
-                      onClosePane={widgetLayout.removeWidget}
-                    />
+                    <Suspense fallback={null}>
+                      <HomeWidgetGrid
+                        panes={widgetLayout.visiblePanes}
+                        layout={widgetLayout.visibleLayout}
+                        statsEnabled={home.showRamWidget || home.showCpuWidget}
+                        onLayoutChange={widgetLayout.onLayoutChange}
+                        onFocusPane={widgetLayout.focusWidget}
+                        onClosePane={widgetLayout.removeWidget}
+                      />
+                    </Suspense>
                   )}
                 </LeftSidebar>
               </div>
@@ -1286,33 +1291,41 @@ export function BrowserShell() {
         </>
       )}
 
-      <OnboardingWizard
-        open={onboardingOpen}
-        initialStep={onboardingInitialStep}
-        onApplyImportedShortcuts={handleApplyImportedShortcuts}
-        onComplete={handleOnboardingComplete}
-        onOpenBrowseUrl={(url) => openBrowseUrl(url, { activate: true })}
-      />
+      {onboardingOpen && (
+        <Suspense fallback={null}>
+          <OnboardingWizard
+            open
+            initialStep={onboardingInitialStep}
+            onApplyImportedShortcuts={handleApplyImportedShortcuts}
+            onComplete={handleOnboardingComplete}
+            onOpenBrowseUrl={(url) => openBrowseUrl(url, { activate: true })}
+          />
+        </Suspense>
+      )}
 
-      <SettingsPanel
-        open={settingsOpen}
-        anchor={settingsAnchor}
-        onClose={closeSettings}
-        onPickWallpaper={pickWallpaper}
-        onResetWallpaper={resetWallpaper}
-        onResetShortcuts={handleResetShortcuts}
-        settings={settings}
-        onUpdate={updateCategory}
-        onResetCategory={resetCategory}
-        onTogglePreviewOnHover={togglePreviewOnHover}
-        onEnterHomeEdit={enterHomeEditMode}
-        onFactoryReset={handleFactoryReset}
-        account={account}
-        onAccountChange={setAccount}
-        onAccountSignOut={handleAccountSignOut}
-        onReopenOnboarding={handleReopenOnboarding}
-        onOpenBrowseUrl={(url) => openBrowseUrl(url, { activate: false })}
-      />
+      {settingsActivated && (
+        <Suspense fallback={null}>
+          <SettingsPanel
+            open={settingsOpen}
+            anchor={settingsAnchor}
+            onClose={closeSettings}
+            onPickWallpaper={pickWallpaper}
+            onResetWallpaper={resetWallpaper}
+            onResetShortcuts={handleResetShortcuts}
+            settings={settings}
+            onUpdate={updateCategory}
+            onResetCategory={resetCategory}
+            onTogglePreviewOnHover={togglePreviewOnHover}
+            onEnterHomeEdit={enterHomeEditMode}
+            onFactoryReset={handleFactoryReset}
+            account={account}
+            onAccountChange={setAccount}
+            onAccountSignOut={handleAccountSignOut}
+            onReopenOnboarding={handleReopenOnboarding}
+            onOpenBrowseUrl={(url) => openBrowseUrl(url, { activate: false })}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

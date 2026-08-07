@@ -1,7 +1,10 @@
 # Nebula Release Build
 
-Kararlı sürüm kaynağı: **`C:\Users\mehme\Projects\nebula-released`**
+İmzalı Windows kurulum paketini ve Tauri updater manifestini proje kökünden üretin:
 
-Geliştirme bu klasörde (`nebula`) devam eder; dağıtım installer'ı `nebula-released` üzerinden alınır.
+```powershell
+.\scripts\publish-release.ps1 -Version 1.0.0 -Notes "Nebula'nın ilk kararlı sürümü"
+```
 
-Bkz. `../nebula-released/BUILD.md`
+Çıktılar `release/` klasörüne yazılır. Kurulum dosyaları Git tarafından izlenmez;
+`latest.json` ise updater istemcilerinin doğrulayabilmesi için sürüm commit'ine eklenir.

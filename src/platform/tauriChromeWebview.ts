@@ -179,9 +179,11 @@ export async function showChromeWebview(logicalHeight: number): Promise<void> {
         focus: false,
       })
       await waitForWebviewCreated(webview)
+      await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
     } catch {
       webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
       if (!webview) throw new Error('failed to create chrome webview')
+      await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
     }
     await bindChromeResize(webview)
   } else {

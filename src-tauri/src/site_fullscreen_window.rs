@@ -8,12 +8,14 @@ mod imp {
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    };
     use windows::Win32::UI::Shell::ITaskbarList2;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, SetForegroundWindow, SetWindowPlacement, SetWindowPos, WINDOWPLACEMENT,
+        GetWindowPlacement, SetForegroundWindow, SetWindowPlacement, SetWindowPos, ShowWindow,
         HWND_NOTOPMOST, HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SWP_SHOWWINDOW,
+        SWP_SHOWWINDOW, SW_RESTORE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT,
     };
 
     const CLSID_TASKBARLIST: GUID = GUID::from_values(
@@ -25,9 +27,6 @@ mod imp {
 
     static SITE_SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
         LazyLock::new(|| Mutex::new(None));
-    static USER_SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
-        LazyLock::new(|| Mutex::new(None));
-    static USER_MONITOR_COVER_ACTIVE: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
 
     fn main_window_hwnd(app: &AppHandle) -> Result<HWND, String> {
         let window = app
@@ -39,8 +38,8 @@ mod imp {
     fn mark_taskbar_fullscreen(hwnd: HWND, fullscreen: bool) -> Result<(), String> {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-            let taskbar: ITaskbarList2 =
-                CoCreateInstance(&CLSID_TASKBARLIST, None, CLSCTX_ALL).map_err(|e| e.to_string())?;
+            let taskbar: ITaskbarList2 = CoCreateInstance(&CLSID_TASKBARLIST, None, CLSCTX_ALL)
+                .map_err(|e| e.to_string())?;
             taskbar.HrInit().map_err(|e| e.to_string())?;
             taskbar
                 .MarkFullscreenWindow(hwnd, fullscreen)
@@ -49,18 +48,25 @@ mod imp {
         Ok(())
     }
 
-    fn cover_monitor(
-        hwnd: HWND,
-        saved: &Mutex<Option<WINDOWPLACEMENT>>,
-    ) -> Result<(), String> {
+    fn cover_monitor(hwnd: HWND, saved: &Mutex<Option<WINDOWPLACEMENT>>) -> Result<(), String> {
         unsafe {
+            let mut was_maximized = false;
             if saved.lock().map_err(|e| e.to_string())?.is_none() {
                 let mut placement = WINDOWPLACEMENT {
                     length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
                     ..Default::default()
                 };
                 GetWindowPlacement(hwnd, &mut placement).map_err(|e| e.to_string())?;
+                was_maximized = placement.showCmd == SW_SHOWMAXIMIZED.0 as u32;
                 *saved.lock().map_err(|e| e.to_string())? = Some(placement);
+            }
+
+            // A maximized Win32 window is constrained to the monitor work area,
+            // so resizing it directly leaves the taskbar visible. Temporarily
+            // restore it before covering rcMonitor; the saved placement restores
+            // the original maximized state when site fullscreen exits.
+            if was_maximized {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
             }
 
             let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
@@ -94,12 +100,12 @@ mod imp {
         Ok(())
     }
 
-    fn uncover_monitor(
-        hwnd: HWND,
-        saved: &Mutex<Option<WINDOWPLACEMENT>>,
-    ) -> Result<(), String> {
+    fn uncover_monitor(hwnd: HWND, saved: &Mutex<Option<WINDOWPLACEMENT>>) -> Result<(), String> {
         unsafe {
-            mark_taskbar_fullscreen(hwnd, false)?;
+            // Restoring the window is mandatory even when Explorer's taskbar API
+            // is temporarily unavailable. Report that error only after the window
+            // has been taken out of TOPMOST and its placement has been restored.
+            let taskbar_result = mark_taskbar_fullscreen(hwnd, false);
 
             let _ = SetWindowPos(
                 hwnd,
@@ -120,6 +126,8 @@ mod imp {
                 placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
                 SetWindowPlacement(hwnd, &placement).map_err(|e| e.to_string())?;
             }
+
+            taskbar_result?;
         }
 
         Ok(())
@@ -135,37 +143,10 @@ mod imp {
         let hwnd = main_window_hwnd(app)?;
         uncover_monitor(hwnd, &SITE_SAVED_PLACEMENT)
     }
-
-    pub fn toggle_monitor_maximize(app: &AppHandle) -> Result<bool, String> {
-        let hwnd = main_window_hwnd(app)?;
-        let mut active = USER_MONITOR_COVER_ACTIVE
-            .lock()
-            .map_err(|e| e.to_string())?;
-
-        if *active {
-            uncover_monitor(hwnd, &USER_SAVED_PLACEMENT)?;
-            *active = false;
-            Ok(false)
-        } else {
-            cover_monitor(hwnd, &USER_SAVED_PLACEMENT)?;
-            *active = true;
-            Ok(true)
-        }
-    }
-
-    pub fn is_monitor_maximized() -> bool {
-        USER_MONITOR_COVER_ACTIVE
-            .lock()
-            .map(|active| *active)
-            .unwrap_or(false)
-    }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{
-    enter_site_fullscreen_window, exit_site_fullscreen_window, is_monitor_maximized,
-    toggle_monitor_maximize,
-};
+pub use imp::{enter_site_fullscreen_window, exit_site_fullscreen_window};
 
 #[cfg(not(target_os = "windows"))]
 pub fn enter_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), String> {
@@ -175,14 +156,4 @@ pub fn enter_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), Strin
 #[cfg(not(target_os = "windows"))]
 pub fn exit_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn toggle_monitor_maximize(_app: &tauri::AppHandle) -> Result<bool, String> {
-    Ok(false)
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn is_monitor_maximized() -> bool {
-    false
 }

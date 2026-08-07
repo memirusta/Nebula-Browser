@@ -4,7 +4,7 @@ A distraction-free, privacy-first browser shell — cyber-neural focus space wit
 
 Built with **Tauri 2** (native shell) + **React 19** (UI). Uses the platform system WebView: **WebView2** on Windows, **WebKit** on macOS/Linux.
 
-## Features (demo)
+## Features
 
 - Frameless home screen with draggable widgets and pinned shortcuts
 - Semi-lunar radial dock for quick navigation (home, browsing, overlay)
@@ -64,7 +64,7 @@ npm install
 npm run tauri dev
 ```
 
-## Build & install (Windows demo)
+## Build & install (Windows)
 
 Generate app icons once (from the project logo):
 
@@ -82,8 +82,7 @@ npm run tauri:build:x86   # older 32-bit Windows
 Installer output:
 
 ```
-release/Nebula_0.1.1_x64-setup.exe   # 64-bit Windows 10/11
-release/Nebula_0.1.1_x86-setup.exe   # 32-bit Windows
+src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Nebula_1.0.0_x64-setup.exe
 ```
 
 **Which installer?** On the target PC open **Settings → System → About** and check **System type**:
@@ -96,17 +95,12 @@ If you see *“Bu uygulama bilgisayarınızda çalışamıyor”*, you likely ne
 
 WebView2 is required (usually preinstalled on Windows 11; Windows 10 may need the [Evergreen bootstrapper](https://developer.microsoft.com/microsoft-edge/webview2/)).
 
-## Project backup
-
-Latest integration snapshot: `C:\Users\mehme\Projects\nebula-backup-2026-07-07`  
-(Excludes `node_modules`, `src-tauri\target`, `dist`, `.git`)
-
 ## Known limitations
 
 - No persistent address bar while browsing (overlay search shows the active URL only)
 - Windows-first; macOS/Linux webview stacking is not fully implemented
-- Demo quality — expect rough edges in edge cases
+- Windows is the primary supported desktop platform for v1.0.0
 
 ## License
 
-Private / demo — not published to a package registry.
+Copyright (c) Nebula contributors. No package-registry publication is provided.

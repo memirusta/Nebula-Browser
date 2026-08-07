@@ -284,13 +284,13 @@ fn dpapi_decrypt(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
     unsafe {
-        let mut input = CRYPT_INTEGER_BLOB {
+        let input = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
         };
         let mut output = CRYPT_INTEGER_BLOB::default();
 
-        CryptUnprotectData(&mut input, None, None, None, None, 0, &mut output)
+        CryptUnprotectData(&input, None, None, None, None, 0, &mut output)
             .map_err(|error| error.to_string())?;
 
         let slice = std::slice::from_raw_parts(output.pbData, output.cbData as usize);
@@ -310,8 +310,7 @@ fn dpapi_decrypt(_data: &[u8]) -> Result<Vec<u8>, String> {
 fn chromium_master_key(user_data: &Path) -> Result<Vec<u8>, String> {
     let raw = std::fs::read_to_string(user_data.join("Local State"))
         .map_err(|error| error.to_string())?;
-    let json: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
     let encoded = json
         .get("os_crypt")
         .and_then(|value| value.get("encrypted_key"))
@@ -331,8 +330,8 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         let mut table = [255u8; 256];
         let mut index = 0u8;
         while index < 64 {
-            table[b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[index as usize]
-                as usize] = index;
+            table[b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+                [index as usize] as usize] = index;
             index += 1;
         }
         table
@@ -533,7 +532,9 @@ pub fn list_chromium_password_sources() -> Vec<ChromiumPasswordSource> {
 }
 
 #[tauri::command]
-pub fn inspect_browser_passwords(browser: Option<String>) -> Result<PasswordImportDiagnostics, String> {
+pub fn inspect_browser_passwords(
+    browser: Option<String>,
+) -> Result<PasswordImportDiagnostics, String> {
     let browser_id = browser.as_deref();
     let source = resolve_password_source_for(browser_id).ok_or_else(|| {
         if let Some(id) = browser_id {
@@ -613,8 +614,7 @@ fn import_failure_message(stats: &ImportStats) -> String {
         return format!(
             "{} kayıttan {} tanesi yeni app-bound şifrelemede; dışarıdan aktarılamıyor. \
              Kalanlar için CSV dışa aktarmayı dene.",
-            stats.total_rows,
-            stats.app_bound_skipped
+            stats.total_rows, stats.app_bound_skipped
         );
     }
 
@@ -679,8 +679,11 @@ fn import_from_user_data(
         if imported.len() >= limit {
             break;
         }
-        let (batch, batch_stats) =
-            read_password_rows(&login_data, master_key, limit.saturating_sub(imported.len()))?;
+        let (batch, batch_stats) = read_password_rows(
+            &login_data,
+            master_key,
+            limit.saturating_sub(imported.len()),
+        )?;
         stats.total_rows += batch_stats.total_rows;
         stats.decryptable += batch_stats.decryptable;
         stats.decrypt_failed += batch_stats.decrypt_failed;
@@ -725,7 +728,11 @@ fn read_password_stats(login_data: &Path, master_key: &[u8]) -> Result<ImportSta
             stats.total_rows += 1;
 
             let url = origin_url.trim();
-            let url = if url.is_empty() { action_url.trim() } else { url };
+            let url = if url.is_empty() {
+                action_url.trim()
+            } else {
+                url
+            };
             if url.is_empty() {
                 continue;
             }
@@ -806,7 +813,11 @@ fn read_password_rows(
             stats.total_rows += 1;
 
             let url = origin_url.trim();
-            let url = if url.is_empty() { action_url.trim() } else { url };
+            let url = if url.is_empty() {
+                action_url.trim()
+            } else {
+                url
+            };
             if url.is_empty() {
                 continue;
             }

@@ -2,11 +2,20 @@ mod browser_bookmarks;
 mod browser_passwords;
 mod google_oauth;
 mod password_webview;
+mod secure_password_vault;
+mod site_fullscreen_window;
 mod system_stats;
 mod tab_error_page;
-mod site_fullscreen_window;
 mod tab_fullscreen;
+mod tab_metadata;
+mod tab_shortcuts;
+mod webview_branding;
 mod webview_controls;
+
+#[cfg(all(not(debug_assertions), dev))]
+compile_error!(
+    "Nebula release builds must use `npm run tauri:build:binary` or `tauri build`; direct `cargo build --release` would load devUrl/localhost."
+);
 
 #[tauri::command]
 async fn webview_execute_script(
@@ -14,22 +23,44 @@ async fn webview_execute_script(
     label: String,
     script: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || password_webview::execute_script(&app, &label, &script))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        password_webview::execute_script(&app, &label, &script)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    webview_branding::setup_webview_branding(&app, &label)?;
     tab_error_page::setup_tab_error_page(&app, &label)?;
-    tab_fullscreen::setup_tab_fullscreen(&app, &label)
+    tab_fullscreen::setup_tab_fullscreen(&app, &label)?;
+    tab_shortcuts::setup_tab_shortcuts(&app, &label)?;
+    tab_metadata::setup_tab_metadata(&app, &label)
+}
+
+#[tauri::command]
+fn webview_setup_branding(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    webview_branding::setup_webview_branding(&app, &label)?;
+    tab_error_page::setup_tab_error_page(&app, &label)
 }
 
 #[tauri::command]
 fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result<(), String> {
     use tauri::Manager;
 
+    if !label.starts_with("nebula-tab-") {
+        return Err("navigation is limited to browser tabs".to_string());
+    }
     let parsed = url.parse::<url::Url>().map_err(|error| error.to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https" | "about")
+        || (parsed.scheme() == "about" && parsed.as_str() != "about:blank")
+    {
+        return Err(format!(
+            "navigation scheme '{}' is not allowed",
+            parsed.scheme()
+        ));
+    }
 
     let webview = app
         .get_webview(&label)
@@ -42,7 +73,14 @@ fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result
 async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), String> {
     use tauri::Manager;
 
+    if !label.starts_with("nebula-tab-") {
+        return Err("close is limited to browser tabs".to_string());
+    }
     tab_fullscreen::teardown_tab_fullscreen(&app, &label);
+    tab_error_page::teardown_tab_error_page(&app, &label);
+    tab_shortcuts::teardown_tab_shortcuts(&app, &label);
+    tab_metadata::teardown_tab_metadata(&app, &label);
+    webview_branding::teardown_webview_branding(&label);
 
     let webview = app
         .get_webview(&label)
@@ -65,6 +103,9 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
 fn webview_current_url(app: tauri::AppHandle, label: String) -> Result<String, String> {
     use tauri::Manager;
 
+    if !label.starts_with("nebula-tab-") {
+        return Err("URL reads are limited to browser tabs".to_string());
+    }
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
@@ -114,6 +155,9 @@ fn webview_current_url(app: tauri::AppHandle, label: String) -> Result<String, S
 fn webview_go_back(app: tauri::AppHandle, label: String) -> Result<bool, String> {
     use tauri::Manager;
 
+    if !label.starts_with("nebula-tab-") {
+        return Err("history navigation is limited to browser tabs".to_string());
+    }
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
@@ -155,6 +199,9 @@ fn webview_go_back(app: tauri::AppHandle, label: String) -> Result<bool, String>
 fn webview_document_title(app: tauri::AppHandle, label: String) -> Result<String, String> {
     use tauri::Manager;
 
+    if !label.starts_with("nebula-tab-") {
+        return Err("title reads are limited to browser tabs".to_string());
+    }
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
@@ -231,7 +278,7 @@ fn debug_labels(app: &tauri::AppHandle) -> String {
     use tauri::Manager;
 
     let windows: Vec<String> = app.webview_windows().keys().cloned().collect();
-    let webviews: Vec<String> = app.webviews().into_iter().map(|(label, _)| label).collect();
+    let webviews: Vec<String> = app.webviews().into_keys().collect();
 
     format!("windows={windows:?} webviews={webviews:?}")
 }
@@ -518,16 +565,8 @@ fn layout_webview_hwnd(
     use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE};
 
     unsafe {
-        SetWindowPos(
-            hwnd,
-            z,
-            x,
-            y,
-            width,
-            height,
-            SWP_NOACTIVATE,
-        )
-        .map_err(|error| error.to_string())?;
+        SetWindowPos(hwnd, z, x, y, width, height, SWP_NOACTIVATE)
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -605,16 +644,6 @@ fn window_exit_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn window_toggle_monitor_maximize(app: tauri::AppHandle) -> Result<bool, String> {
-    site_fullscreen_window::toggle_monitor_maximize(&app)
-}
-
-#[tauri::command]
-fn window_is_monitor_maximized() -> bool {
-    site_fullscreen_window::is_monitor_maximized()
-}
-
-#[tauri::command]
 fn webview_restore_browsing_layout(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -629,6 +658,9 @@ fn webview_restore_browsing_layout(app: tauri::AppHandle) -> Result<(), String> 
 
 #[tauri::command]
 fn webview_raise_tab_fullscreen(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    if !label.starts_with("nebula-tab-") {
+        return Err("fullscreen is limited to browser tabs".to_string());
+    }
     #[cfg(target_os = "windows")]
     {
         stack_tab_fullscreen(&app, &label)
@@ -744,12 +776,8 @@ fn set_shell_hit_region(
                             as i32
                     })
                     .unwrap_or(size.width as i32);
-                let rgn = CreateRectRgn(
-                    physical_left,
-                    physical_top,
-                    physical_right,
-                    physical_bottom,
-                );
+                let rgn =
+                    CreateRectRgn(physical_left, physical_top, physical_right, physical_bottom);
                 if SetWindowRgn(ui_hwnd, Some(rgn), true) == 0 {
                     return Err("SetWindowRgn failed".to_string());
                 }
@@ -813,10 +841,10 @@ pub fn run() {
         .setup(|app| {
             load_runtime_env();
 
-            #[cfg(desktop)]
-            {
-                app.handle().plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
-            }
+            webview_branding::setup_webview_branding(app.handle(), "main")
+                .map_err(std::io::Error::other)?;
+            tab_error_page::setup_tab_error_page(app.handle(), "main")
+                .map_err(std::io::Error::other)?;
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -836,6 +864,7 @@ pub fn run() {
             webview_controls::webview_reload,
             webview_controls::webview_zoom,
             webview_controls::webview_open_devtools,
+            webview_controls::webview_set_memory_usage,
             webview_document_title,
             webview_raise_ui,
             webview_raise_overlay,
@@ -843,24 +872,26 @@ pub fn run() {
             webview_raise_tab_fullscreen,
             window_enter_site_fullscreen,
             window_exit_site_fullscreen,
-            window_toggle_monitor_maximize,
-            window_is_monitor_maximized,
             webview_restore_browsing_layout,
             webview_set_chrome_hit_region,
             webview_set_shell_hit_region,
             webview_setup_tab_error_pages,
+            webview_setup_branding,
             webview_execute_script,
+            secure_password_vault::password_vault_load,
+            secure_password_vault::password_vault_save,
+            secure_password_vault::password_vault_clear,
             system_stats::get_system_stats,
-      browser_bookmarks::detect_default_browser,
-      browser_bookmarks::import_default_browser_bookmarks,
-      browser_passwords::detect_browser_passwords,
-      browser_passwords::list_chromium_password_sources,
-      browser_passwords::inspect_browser_passwords,
-      browser_passwords::import_default_browser_passwords,
-      google_oauth::exchange_google_oauth_token,
-      google_oauth::google_oauth_sign_in_loopback,
-      google_oauth::google_oauth_status,
-    ])
+            browser_bookmarks::detect_default_browser,
+            browser_bookmarks::import_default_browser_bookmarks,
+            browser_passwords::detect_browser_passwords,
+            browser_passwords::list_chromium_password_sources,
+            browser_passwords::inspect_browser_passwords,
+            browser_passwords::import_default_browser_passwords,
+            google_oauth::exchange_google_oauth_token,
+            google_oauth::google_oauth_sign_in_loopback,
+            google_oauth::google_oauth_status,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

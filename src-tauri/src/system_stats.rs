@@ -1,7 +1,6 @@
 use serde::Serialize;
-use std::collections::HashSet;
 use std::sync::Mutex;
-use sysinfo::{Pid, ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,13 +51,8 @@ fn is_in_app_tree(sys: &System, pid: Pid, root: Pid) -> bool {
 fn nebula_process_usage(sys: &System, root: Pid) -> (u64, f32) {
     let mut memory_bytes = 0u64;
     let mut cpu_usage = 0f32;
-    let mut counted = HashSet::new();
-
     for (pid, process) in sys.processes() {
         if !is_in_app_tree(sys, *pid, root) {
-            continue;
-        }
-        if !counted.insert(*pid) {
             continue;
         }
 
@@ -76,7 +70,9 @@ pub fn get_system_stats() -> Result<SystemStatsPayload, String> {
         .map_err(|error| format!("system stats lock failed: {error}"))?;
 
     if guard.is_none() {
-        *guard = Some(System::new());
+        let mut system = System::new();
+        system.refresh_memory();
+        *guard = Some(system);
     }
 
     let sys = guard
@@ -85,9 +81,11 @@ pub fn get_system_stats() -> Result<SystemStatsPayload, String> {
 
     let root_pid = current_pid();
 
-    sys.refresh_cpu_all();
-    sys.refresh_processes(ProcessesToUpdate::All, false);
-    sys.refresh_memory();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_memory().with_cpu(),
+    );
 
     let system_total_bytes = sys.total_memory();
     let (app_memory_bytes, app_cpu_usage) = nebula_process_usage(sys, root_pid);
@@ -98,7 +96,9 @@ pub fn get_system_stats() -> Result<SystemStatsPayload, String> {
         0
     };
 
-    let cpu_cores = sys.cpus().len().max(1) as f32;
+    let cpu_cores = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1) as f32;
     let cpu_percent = ((app_cpu_usage / cpu_cores).clamp(0.0, 100.0)).round() as u32;
 
     Ok(SystemStatsPayload {

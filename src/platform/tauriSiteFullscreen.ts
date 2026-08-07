@@ -45,19 +45,28 @@ export function isSiteFullscreenActive(): boolean {
 
 async function waitForWindowLayoutSettle(appWindow: Window): Promise<void> {
   await new Promise<void>((resolve) => {
+    let settled = false
     let unlisten: (() => void) | undefined
-    const timeout = setTimeout(() => {
-      unlisten?.()
-      resolve()
-    }, 400)
-
-    void appWindow.onResized(() => {
+    let timeout: ReturnType<typeof setTimeout>
+    const finish = () => {
+      if (settled) return
+      settled = true
       clearTimeout(timeout)
       unlisten?.()
       resolve()
-    }).then((dispose) => {
-      unlisten = dispose
-    })
+    }
+    timeout = setTimeout(finish, 400)
+
+    void appWindow
+      .onResized(finish)
+      .then((dispose) => {
+        if (settled) {
+          dispose()
+          return
+        }
+        unlisten = dispose
+      })
+      .catch(finish)
   })
 }
 
@@ -104,13 +113,7 @@ async function enterSiteFullscreen(shortcutId: string): Promise<void> {
       // ignore
     }
 
-    try {
-      await invoke('window_enter_site_fullscreen')
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.warn('[nebula] window_enter_site_fullscreen failed', error)
-      }
-    }
+    await invoke('window_enter_site_fullscreen')
 
     await waitForWindowLayoutSettle(appWindow)
     await syncTabWebviewFullscreenBounds(shortcutId)

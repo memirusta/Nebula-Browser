@@ -22,7 +22,7 @@ export {
 
   MAX_PINNED_SHORTCUTS,
 
-  loadPinnedShortcutIds as loadPinnedShortcutIds,
+  loadPinnedShortcutIds,
 
 }
 
@@ -283,5 +283,4 @@ export function usePinnedShortcuts(
   }
 
 }
-
 

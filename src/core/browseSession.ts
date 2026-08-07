@@ -2,6 +2,7 @@ import { persistLocalStorage } from './storageSync'
 import { loadLocale, tf, type NebulaLocale } from './locale'
 
 export const BROWSE_SESSIONS_KEY = 'nebula-browse-sessions-v2'
+const MAX_BROWSE_SESSIONS = 250
 
 export interface BrowseSession {
   url: string
@@ -57,7 +58,7 @@ export function upsertBrowseSession(
   label: string,
 ): Record<string, BrowseSession> {
   const key = hostKeyFromUrl(url)
-  return {
+  const next = {
     ...sessions,
     [key]: {
       url,
@@ -65,6 +66,11 @@ export function upsertBrowseSession(
       updatedAt: Date.now(),
     },
   }
+  const entries = Object.entries(next)
+  if (entries.length <= MAX_BROWSE_SESSIONS) return next
+
+  entries.sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
+  return Object.fromEntries(entries.slice(0, MAX_BROWSE_SESSIONS))
 }
 
 export function persistBrowseSessions(sessions: Record<string, BrowseSession>): void {

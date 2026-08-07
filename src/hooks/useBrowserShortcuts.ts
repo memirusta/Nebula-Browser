@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut'
+import { listen } from '@tauri-apps/api/event'
 import {
-  BROWSER_GLOBAL_SHORTCUTS,
   matchBrowserShortcut,
   shouldIgnoreShellShortcut,
   type BrowserShortcutId,
@@ -24,31 +23,6 @@ export function useBrowserShortcuts({ onAction, enabled = true }: BrowserShortcu
       onActionRef.current(action)
     }
 
-    if (isTauri) {
-      void (async () => {
-        const seen = new Set<string>()
-        for (const entry of BROWSER_GLOBAL_SHORTCUTS) {
-          if (seen.has(entry.accelerator)) continue
-          seen.add(entry.accelerator)
-          const actionId = entry.id
-          try {
-            await register(entry.accelerator, (event) => {
-              if (event.state !== 'Pressed') return
-              dispatch(actionId)
-            })
-          } catch (error) {
-            if (import.meta.env.DEV) {
-              console.warn('[nebula] shortcut register failed', entry.accelerator, error)
-            }
-          }
-        }
-      })()
-
-      return () => {
-        void unregisterAll().catch(() => {})
-      }
-    }
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (shouldIgnoreShellShortcut(event)) return
       const action = matchBrowserShortcut(event)
@@ -58,6 +32,20 @@ export function useBrowserShortcuts({ onAction, enabled = true }: BrowserShortcu
     }
 
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    if (isTauri) {
+      void listen<BrowserShortcutId>('nebula-browser-shortcut', (event) => {
+        dispatch(event.payload)
+      }).then((dispose) => {
+        if (cancelled) dispose()
+        else unlisten = dispose
+      })
+    }
+    return () => {
+      cancelled = true
+      window.removeEventListener('keydown', onKeyDown)
+      unlisten?.()
+    }
   }, [enabled])
 }

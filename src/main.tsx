@@ -1,7 +1,5 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
-import { ChromeApp } from './ChromeApp.tsx'
 import { isChromeShell } from './core/nebulaBridge'
 import { DEFAULT_SHORTCUTS } from './core/constants'
 import { resetHomeMenuStorageOnce } from './core/homeMenuStorage'
@@ -24,12 +22,18 @@ if (isTauri && !isChromeShell()) {
   syncTauriViewMode('home', null)
 }
 
-const Root = isChromeShell() ? ChromeApp : App
+async function renderRoot() {
+  const Root = isChromeShell()
+    ? (await import('./ChromeApp.tsx')).ChromeApp
+    : (await import('./App.tsx')).default
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <LocaleProvider>
-      <Root />
-    </LocaleProvider>
-  </StrictMode>,
-)
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <LocaleProvider>
+        <Root />
+      </LocaleProvider>
+    </StrictMode>,
+  )
+}
+
+void renderRoot()

@@ -97,9 +97,18 @@ export function HomeCenter({
     if (editMode) return
     const trimmed = query.trim()
     if (!trimmed) return
-    const url = trimmed.includes('.') && !trimmed.includes(' ')
-      ? (trimmed.startsWith('http') ? trimmed : `https://${trimmed}`)
-      : buildSearchUrl(trimmed, searchEngine)
+    let url = buildSearchUrl(trimmed, searchEngine)
+    if (!trimmed.includes(' ')) {
+      const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+      try {
+        const parsed = new URL(candidate)
+        if (['http:', 'https:'].includes(parsed.protocol) && parsed.hostname.includes('.')) {
+          url = parsed.href
+        }
+      } catch {
+        // Keep the search URL for malformed input.
+      }
+    }
     ;(onSearchNavigate ?? onNavigate)(url)
     setIsEditing(false)
   }

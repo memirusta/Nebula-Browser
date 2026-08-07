@@ -1,6 +1,7 @@
 /** Injected into site tab webviews: hooks, in-page prompt UI, and state polling. */
 
-export const PASSWORD_HOOK_VERSION = 4
+export const PASSWORD_HOOK_VERSION = 5
+export const PASSWORD_BRIDGE_NEEDS_BOOTSTRAP = '__nebula_password_bridge_needs_bootstrap__'
 
 const LABELS = {
   tr: {
@@ -238,21 +239,41 @@ export function buildPasswordBridgeTickScript(
     document.documentElement.appendChild(root);
   }
 
-  try {
-    renderPrompt();
-    var pending = window.__nebulaPendingCreds || null;
-    if (pending) window.__nebulaPendingCreds = null;
-    var action = window.__nebulaPwdUserAction || null;
-    if (action) window.__nebulaPwdUserAction = null;
-    var hasForm = !!findLoginFields();
-    var href = location.href || '';
-    if (href.indexOf('http') !== 0) {
-      return JSON.stringify({ pending: null, hasForm: false, href: href, action: action });
+  window.__nebulaPasswordBridgeTick = function(nextPrompt, nextLabels) {
+    PROMPT_CFG = nextPrompt;
+    LABELS = nextLabels;
+    try {
+      renderPrompt();
+      var pending = window.__nebulaPendingCreds || null;
+      if (pending) window.__nebulaPendingCreds = null;
+      var action = window.__nebulaPwdUserAction || null;
+      if (action) window.__nebulaPwdUserAction = null;
+      var hasForm = !!findLoginFields();
+      var href = location.href || '';
+      if (href.indexOf('http') !== 0) {
+        return JSON.stringify({ pending: null, hasForm: false, href: href, action: action });
+      }
+      return JSON.stringify({ pending: pending, hasForm: hasForm, href: href, action: action });
+    } catch (error) {
+      return JSON.stringify({ error: String(error), href: location.href || '', hasForm: false, action: null });
     }
-    return JSON.stringify({ pending: pending, hasForm: hasForm, href: href, action: action });
-  } catch (error) {
-    return JSON.stringify({ error: String(error), href: location.href || '', hasForm: false, action: null });
+  };
+
+  return window.__nebulaPasswordBridgeTick(PROMPT_CFG, LABELS);
+})()
+`.trim()
+}
+
+export function buildPasswordBridgePollScript(
+  locale: 'tr' | 'en',
+  prompt: BridgePromptConfig | null,
+): string {
+  return `
+(function() {
+  if (window.__nebulaPwdHookV !== ${PASSWORD_HOOK_VERSION} || typeof window.__nebulaPasswordBridgeTick !== 'function') {
+    return ${JSON.stringify(PASSWORD_BRIDGE_NEEDS_BOOTSTRAP)};
   }
+  return window.__nebulaPasswordBridgeTick(${JSON.stringify(prompt)}, ${JSON.stringify(LABELS[locale])});
 })()
 `.trim()
 }
@@ -291,17 +312,6 @@ export function buildPasswordFillScript(username: string, password: string): str
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
     }
-  }
-
-  function armFillGuard(element, value) {
-    if (!element || element.__nebulaFillGuard) return;
-    element.__nebulaFillGuard = true;
-    function restore() {
-      if (element.value !== value) setReactFriendlyValue(element, value);
-    }
-    element.addEventListener('focus', restore);
-    element.addEventListener('blur', restore);
-    element.addEventListener('click', restore);
   }
 
   function isVisible(el) {
@@ -350,23 +360,12 @@ export function buildPasswordFillScript(username: string, password: string): str
 
     username.focus();
     setReactFriendlyValue(username, userValue);
-    armFillGuard(username, userValue);
     username.dispatchEvent(new Event('blur', { bubbles: true }));
 
     window.setTimeout(function() {
       setReactFriendlyValue(username, userValue);
       setReactFriendlyValue(password, passValue);
-      armFillGuard(password, passValue);
       password.focus();
-
-      window.setTimeout(function() {
-        if (username.value !== userValue) setReactFriendlyValue(username, userValue);
-      }, 100);
-
-      window.setTimeout(function() {
-        if (username.value !== userValue) setReactFriendlyValue(username, userValue);
-        if (password.value !== passValue) setReactFriendlyValue(password, passValue);
-      }, 350);
     }, 150);
 
     return true;

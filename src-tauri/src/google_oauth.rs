@@ -19,82 +19,67 @@ struct TokenResponse {
 }
 
 fn runtime_env(name: &str) -> Option<String> {
-  std::env::var(name)
-    .ok()
-    .map(|value| value.trim().to_string())
-    .filter(|value| !value.is_empty())
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn embedded_env(name: &str) -> Option<String> {
-  let value = match name {
-    "GOOGLE_CLIENT_SECRET" => option_env!("GOOGLE_CLIENT_SECRET")?,
-    "GOOGLE_CLIENT_ID" => option_env!("GOOGLE_CLIENT_ID")?,
-    "VITE_GOOGLE_CLIENT_ID" => option_env!("VITE_GOOGLE_CLIENT_ID")?,
-    _ => return None,
-  };
-  let trimmed = value.trim();
-  if trimmed.is_empty() {
-    None
-  } else {
-    Some(trimmed.to_string())
-  }
+    let value = match name {
+        "GOOGLE_CLIENT_ID" => option_env!("GOOGLE_CLIENT_ID")?,
+        "VITE_GOOGLE_CLIENT_ID" => option_env!("VITE_GOOGLE_CLIENT_ID")?,
+        _ => return None,
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn env_or_embedded(name: &str) -> Option<String> {
-  runtime_env(name).or_else(|| embedded_env(name))
-}
-
-fn google_client_secret() -> Result<String, String> {
-  env_or_embedded("GOOGLE_CLIENT_SECRET").ok_or_else(|| {
-    "Google OAuth yapilandirmasi eksik. Gelistirici release build sirasinda GOOGLE_CLIENT_SECRET tanimlamali."
-      .to_string()
-  })
+    runtime_env(name).or_else(|| embedded_env(name))
 }
 
 fn resolve_google_client_id(provided: &str) -> String {
-  env_or_embedded("GOOGLE_CLIENT_ID")
-    .or_else(|| env_or_embedded("VITE_GOOGLE_CLIENT_ID"))
-    .unwrap_or_else(|| provided.to_string())
-}
-
-fn google_secret_configured() -> bool {
-  env_or_embedded("GOOGLE_CLIENT_SECRET").is_some()
+    env_or_embedded("GOOGLE_CLIENT_ID")
+        .or_else(|| env_or_embedded("VITE_GOOGLE_CLIENT_ID"))
+        .unwrap_or_else(|| provided.to_string())
 }
 
 fn google_client_id_configured() -> bool {
-  env_or_embedded("GOOGLE_CLIENT_ID")
-    .or_else(|| env_or_embedded("VITE_GOOGLE_CLIENT_ID"))
-    .is_some()
+    env_or_embedded("GOOGLE_CLIENT_ID")
+        .or_else(|| env_or_embedded("VITE_GOOGLE_CLIENT_ID"))
+        .is_some()
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleOAuthStatus {
-  pub client_id_configured: bool,
-  pub secret_configured: bool,
-  pub appdata_env_path: String,
+    pub client_id_configured: bool,
+    pub appdata_env_path: String,
 }
 
 #[tauri::command]
 pub fn google_oauth_status() -> GoogleOAuthStatus {
-  let appdata_env_path = std::env::var_os("LOCALAPPDATA")
-    .map(|local| {
-      std::path::PathBuf::from(local)
-        .join("com.nebula.browser")
-        .join(".env")
-        .to_string_lossy()
-        .into_owned()
-    })
-    .unwrap_or_else(|| "%LOCALAPPDATA%\\com.nebula.browser\\.env".to_string());
+    let appdata_env_path = std::env::var_os("LOCALAPPDATA")
+        .map(|local| {
+            std::path::PathBuf::from(local)
+                .join("com.nebula.browser")
+                .join(".env")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .unwrap_or_else(|| "%LOCALAPPDATA%\\com.nebula.browser\\.env".to_string());
 
-  let client_id_configured = google_client_id_configured();
-  let secret_configured = google_secret_configured();
+    let client_id_configured = google_client_id_configured();
 
-  GoogleOAuthStatus {
-    client_id_configured,
-    secret_configured,
-    appdata_env_path,
-  }
+    GoogleOAuthStatus {
+        client_id_configured,
+        appdata_env_path,
+    }
 }
 
 fn decode_jwt_claims(id_token: &str) -> Option<GoogleProfileClaims> {
@@ -168,19 +153,17 @@ async fn fetch_userinfo(access_token: &str) -> Result<GoogleProfileClaims, Strin
 }
 
 async fn exchange_code_for_claims(
-  client_id: &str,
-  code: &str,
-  code_verifier: &str,
-  redirect_uri: &str,
+    client_id: &str,
+    code: &str,
+    code_verifier: &str,
+    redirect_uri: &str,
 ) -> Result<GoogleProfileClaims, String> {
-  let client_id = resolve_google_client_id(client_id);
-  let client_secret = google_client_secret()?;
+    let client_id = resolve_google_client_id(client_id);
     let client = reqwest::Client::new();
     let response = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
             ("client_id", client_id.as_str()),
-            ("client_secret", client_secret.as_str()),
             ("code", code),
             ("code_verifier", code_verifier),
             ("grant_type", "authorization_code"),
@@ -234,7 +217,7 @@ fn open_in_system_browser(url: &str) -> Result<(), String> {
             .args(["url.dll,FileProtocolHandler", url])
             .spawn()
             .map_err(|error| error.to_string())?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "macos")]
@@ -262,52 +245,65 @@ fn open_in_system_browser(url: &str) -> Result<(), String> {
     }
 }
 
-async fn wait_for_loopback_code(port: u16, expected_state: &str) -> Result<String, String> {
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
-        .await
-        .map_err(|error| error.to_string())?;
-
-    let (mut socket, _) = listener.accept().await.map_err(|error| error.to_string())?;
-
-    let mut buffer = vec![0u8; 16_384];
-    let read = socket
-        .read(&mut buffer)
-        .await
-        .map_err(|error| error.to_string())?;
-    let request = String::from_utf8_lossy(&buffer[..read]);
-
-    let request_line = request.lines().next().unwrap_or_default();
-    let path = request_line.split_whitespace().nth(1).unwrap_or_default();
-    let query = path.split('?').nth(1).unwrap_or_default();
-    let params = parse_query_params(query);
-
-    let success_html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Nebula</title></head><body style=\"font-family:sans-serif;text-align:center;padding:48px\"><h1>Giris basarili</h1><p>Nebula penceresine donebilirsin. Bu sekmeyi kapatabilirsin.</p></body></html>";
+async fn write_loopback_response(socket: &mut tokio::net::TcpStream, success: bool) {
+    let html = if success {
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Nebula</title></head><body style=\"font-family:sans-serif;text-align:center;padding:48px\"><h1>Giris basarili</h1><p>Nebula penceresine donebilirsin. Bu sekmeyi kapatabilirsin.</p></body></html>"
+    } else {
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Nebula</title></head><body style=\"font-family:sans-serif;text-align:center;padding:48px\"><h1>Giris tamamlanamadi</h1><p>Nebula penceresine donup tekrar deneyebilirsin.</p></body></html>"
+    };
     let response = format!(
-    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-    success_html.len(),
-    success_html
-  );
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{}",
+        html.len(), html
+    );
     let _ = socket.write_all(response.as_bytes()).await;
     let _ = socket.shutdown().await;
+}
 
-    if params.get("error").is_some() {
-        return Err(params
-            .get("error_description")
-            .cloned()
-            .unwrap_or_else(|| "Google sign-in was cancelled.".to_string()));
+async fn wait_for_loopback_code(
+    listener: TcpListener,
+    expected_state: &str,
+) -> Result<String, String> {
+    loop {
+        let (mut socket, _) = listener.accept().await.map_err(|error| error.to_string())?;
+        let mut buffer = vec![0u8; 16_384];
+        let read = socket
+            .read(&mut buffer)
+            .await
+            .map_err(|error| error.to_string())?;
+        let request = String::from_utf8_lossy(&buffer[..read]);
+        let request_line = request.lines().next().unwrap_or_default();
+        let path = request_line.split_whitespace().nth(1).unwrap_or_default();
+        let query = path
+            .split_once('?')
+            .map(|(_, query)| query)
+            .unwrap_or_default();
+        let params = parse_query_params(query);
+
+        if let Some(error) = params.get("error") {
+            write_loopback_response(&mut socket, false).await;
+            return Err(params
+                .get("error_description")
+                .cloned()
+                .unwrap_or_else(|| format!("Google sign-in failed: {error}")));
+        }
+
+        let Some(state) = params.get("state") else {
+            write_loopback_response(&mut socket, false).await;
+            continue;
+        };
+        if state != expected_state {
+            write_loopback_response(&mut socket, false).await;
+            continue;
+        }
+
+        let Some(code) = params.get("code").cloned() else {
+            write_loopback_response(&mut socket, false).await;
+            return Err("Google redirect did not include authorization code.".to_string());
+        };
+
+        write_loopback_response(&mut socket, true).await;
+        return Ok(code);
     }
-
-    let state = params
-        .get("state")
-        .ok_or_else(|| "Google redirect did not include state.".to_string())?;
-    if state != expected_state {
-        return Err("Google OAuth state mismatch.".to_string());
-    }
-
-    params
-        .get("code")
-        .cloned()
-        .ok_or_else(|| "Google redirect did not include authorization code.".to_string())
 }
 
 #[tauri::command]
@@ -322,12 +318,12 @@ pub async fn exchange_google_oauth_token(
 
 #[tauri::command]
 pub async fn google_oauth_sign_in_loopback(
-  client_id: String,
-  code_verifier: String,
-  code_challenge: String,
-  state: String,
+    client_id: String,
+    code_verifier: String,
+    code_challenge: String,
+    state: String,
 ) -> Result<GoogleProfileClaims, String> {
-  let client_id = resolve_google_client_id(&client_id);
+    let client_id = resolve_google_client_id(&client_id);
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|error| error.to_string())?;
@@ -335,8 +331,6 @@ pub async fn google_oauth_sign_in_loopback(
         .local_addr()
         .map_err(|error| error.to_string())?
         .port();
-    drop(listener);
-
     let redirect_uri = format!("http://127.0.0.1:{port}");
     let auth_url = format!(
     "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&code_challenge={}&code_challenge_method=S256&prompt=select_account",
@@ -351,10 +345,58 @@ pub async fn google_oauth_sign_in_loopback(
 
     let code = timeout(
         Duration::from_secs(180),
-        wait_for_loopback_code(port, &state),
+        wait_for_loopback_code(listener, &state),
     )
     .await
     .map_err(|_| "Google sign-in timed out. Try again.".to_string())??;
 
     exchange_code_for_claims(&client_id, &code, &code_verifier, &redirect_uri).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wait_for_loopback_code;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn request(port: u16, query: &str) -> String {
+        let mut stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("loopback connection should succeed");
+        let request = format!("GET /?{query} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .expect("request should be written");
+        let mut response = String::new();
+        stream
+            .read_to_string(&mut response)
+            .await
+            .expect("response should be read");
+        response
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn loopback_rejects_wrong_state_then_accepts_expected_state() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let port = listener.local_addr().expect("address should exist").port();
+        let receiver =
+            tokio::spawn(async move { wait_for_loopback_code(listener, "expected").await });
+
+        assert!(request(port, "code=bad&state=wrong")
+            .await
+            .contains("Giris tamamlanamadi"));
+        assert!(request(port, "code=good%20code&state=expected")
+            .await
+            .contains("Giris basarili"));
+        assert_eq!(
+            receiver
+                .await
+                .expect("receiver should finish")
+                .expect("valid callback should succeed"),
+            "good code"
+        );
+    }
 }

@@ -73,7 +73,7 @@ export function AccountSettingsSection({
   useEffect(() => {
     if (!isTauri) return
     void getGoogleOAuthStatus().then((status) => {
-      if (!status || status.secretConfigured) {
+      if (!status || status.clientIdConfigured) {
         setGoogleConfigHint(null)
         return
       }
@@ -132,11 +132,11 @@ export function AccountSettingsSection({
     }
   }, [account?.provider, localName, onAccountChange, onDisplayNameChange])
 
-  const handleAddPassword = useCallback(() => {
+  const handleAddPassword = useCallback(async () => {
     const label = pwLabel.trim()
     const username = pwUsername.trim()
     if (!label || !username || !pwSecret) return
-    addEntry({
+    await addEntry({
       label,
       url: pwUrl.trim() || undefined,
       username,
@@ -177,8 +177,8 @@ export function AccountSettingsSection({
       setImportError(null)
       setImportMessage(null)
       void importDefaultBrowserPasswords(200, browser)
-        .then((imported) => {
-          mergeEntries(
+        .then(async (imported) => {
+          await mergeEntries(
             imported.map((item) => ({
               label: item.label,
               url: item.url,
@@ -221,7 +221,7 @@ export function AccountSettingsSection({
           setImportError(t('accountCsvEmpty'))
           return
         }
-        mergeEntries(
+        await mergeEntries(
           imported.map((item) => ({
             label: item.label,
             url: item.url,
@@ -398,7 +398,15 @@ export function AccountSettingsSection({
             <button type="button" className={styles.actionBtn} onClick={() => void copyText(entry.password)}>
               {t('accountCopy')}
             </button>
-            <button type="button" className={styles.dangerBtn} onClick={() => removeEntry(entry.id)}>
+            <button
+              type="button"
+              className={styles.dangerBtn}
+              onClick={() => {
+                void removeEntry(entry.id).catch((error) => {
+                  console.error('Password removal failed', error)
+                })
+              }}
+            >
               {t('accountDelete')}
             </button>
           </div>
@@ -456,7 +464,9 @@ export function AccountSettingsSection({
           setGoogleSetupEmail(null)
           openGoogleBrowseUrl(url)
         }}
-        onMergePasswords={(entries) => mergeEntries(entries)}
+        onMergePasswords={async (entries) => {
+          await mergeEntries(entries)
+        }}
         onRequestCsvImport={() => csvInputRef.current?.click()}
       />
     </>

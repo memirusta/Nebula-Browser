@@ -124,7 +124,7 @@ export function useShortcutPositions(
 
   const reloadPositions = useCallback(() => {
     setPositions((prev) => mergePositionsFromStorage(shortcutIds, metrics, iconSizePx, prev))
-  }, [shortcutIdsKey, shortcutIds, iconSizePx, metrics])
+  }, [shortcutIds, iconSizePx, metrics])
 
   useStorageSync(SHORTCUT_POSITIONS_KEY, reloadPositions)
 
@@ -157,7 +157,7 @@ export function useShortcutPositions(
       if (activePositionsMatch(active, current)) return current
       return active
     })
-  }, [metrics.w, metrics.h, shortcutIdsKey, shortcutIds, iconSizePx])
+  }, [metrics, shortcutIdsKey, shortcutIds, iconSizePx])
 
   const persist = useCallback(
     (next: ShortcutPosition[]) => {

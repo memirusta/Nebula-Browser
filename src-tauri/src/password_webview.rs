@@ -15,9 +15,7 @@ mod imp {
             return Ok(String::new());
         }
 
-        let _guard = SCRIPT_MUTEX
-            .lock()
-            .map_err(|error| error.to_string())?;
+        let _guard = SCRIPT_MUTEX.lock().map_err(|error| error.to_string())?;
 
         let webview = app
             .get_webview(label)
@@ -29,9 +27,11 @@ mod imp {
         webview
             .with_webview(move |inner| unsafe {
                 let Ok(core) = inner.controller().CoreWebView2() else {
+                    let _ = tx.send(String::new());
                     return;
                 };
 
+                let failure_tx = tx.clone();
                 let handler = ExecuteScriptCompletedHandler::create(Box::new(
                     move |result: Result<(), windows_core::Error>, value: String| {
                         let out = if result.is_ok() { value } else { String::new() };
@@ -43,9 +43,9 @@ mod imp {
                 let script_h = HSTRING::from(script);
                 if core
                     .ExecuteScript(PCWSTR(script_h.as_ptr()), &handler)
-                    .is_ok()
+                    .is_err()
                 {
-                    std::mem::forget(handler);
+                    let _ = failure_tx.send(String::new());
                 }
             })
             .map_err(|error| error.to_string())?;

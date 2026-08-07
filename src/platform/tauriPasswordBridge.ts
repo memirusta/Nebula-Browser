@@ -2,8 +2,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { tabWebviewLabel } from '../core/browserTab'
 import {
   buildPasswordBridgeTickScript,
+  buildPasswordBridgePollScript,
   buildPasswordFillScript,
   buildPasswordPromptDismissScript,
+  PASSWORD_BRIDGE_NEEDS_BOOTSTRAP,
   parsePasswordBridgePoll,
   type BridgePromptConfig,
   type PasswordBridgePollResult,
@@ -47,10 +49,16 @@ export async function tickPasswordBridge(
   locale: 'tr' | 'en',
   prompt: BridgePromptConfig | null,
 ): Promise<PasswordBridgePollResult | null> {
-  const raw = await runTabScriptExclusive(
+  let raw = await runTabScriptExclusive(
     shortcutId,
-    buildPasswordBridgeTickScript(locale, prompt),
+    buildPasswordBridgePollScript(locale, prompt),
   )
+  if (raw?.includes(PASSWORD_BRIDGE_NEEDS_BOOTSTRAP)) {
+    raw = await runTabScriptExclusive(
+      shortcutId,
+      buildPasswordBridgeTickScript(locale, prompt),
+    )
+  }
   if (!raw) return null
   return parsePasswordBridgePoll(raw)
 }

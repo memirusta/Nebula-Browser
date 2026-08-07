@@ -32,17 +32,10 @@ function Import-ReleaseGoogleOAuth {
 
   $lines = Get-Content $EnvPath
   $clientId = Read-DotEnvValue -Lines $lines -Name "VITE_GOOGLE_CLIENT_ID"
-  $secret = Read-DotEnvValue -Lines $lines -Name "GOOGLE_CLIENT_SECRET"
 
   if ($clientId) {
     $env:VITE_GOOGLE_CLIENT_ID = $clientId
     $env:GOOGLE_CLIENT_ID = $clientId
-  }
-  if ($secret) {
-    $env:GOOGLE_CLIENT_SECRET = $secret
-    Write-Host "Google OAuth release build icin yuklendi (secret binary'ye gomulecek)."
-  } else {
-    Write-Warning "GOOGLE_CLIENT_SECRET .env icinde yok."
   }
 }
 
@@ -81,31 +74,39 @@ if ($PSBoundParameters.ContainsKey('KeyPassword')) {
   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $plain
 }
 
+$bundleDir = Join-Path $root "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis"
+$expectedName = "Nebula_${Version}_x64-setup.exe"
+$expectedPath = Join-Path $bundleDir $expectedName
+$expectedSigPath = "$expectedPath.sig"
+
 if (-not $SkipBuild) {
+  # Never allow an interrupted or older build of the same version to be reused.
+  Remove-Item -LiteralPath $expectedPath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $expectedSigPath -Force -ErrorAction SilentlyContinue
   Import-ReleaseGoogleOAuth -EnvPath (Join-Path $root ".env")
   Push-Location $root
   try {
     Write-Host "Building Nebula v$Version (x64)..."
     npm run tauri:build:x64
+    if ($LASTEXITCODE -ne 0) {
+      throw "Tauri release build failed with exit code $LASTEXITCODE"
+    }
   } finally {
     Pop-Location
   }
 }
 
-$bundleDir = Join-Path $root "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis"
-$expectedName = "Nebula_${Version}_x64-setup.exe"
-$setupExe = Get-Item (Join-Path $bundleDir $expectedName) -ErrorAction SilentlyContinue
+$setupExe = Get-Item $expectedPath -ErrorAction SilentlyContinue
 if (-not $setupExe) {
-  $setupExe = Get-ChildItem $bundleDir -Filter "*setup.exe" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
+  throw "Expected NSIS installer not found: $expectedPath"
 }
-if (-not $setupExe) {
-  throw "NSIS installer not found in $bundleDir"
+if ($setupExe.Length -le 0) {
+  throw "NSIS installer is empty: $expectedPath"
 }
 
 $sigPath = "$($setupExe.FullName).sig"
-if (-not (Test-Path $sigPath)) {
+$sigFile = Get-Item $sigPath -ErrorAction SilentlyContinue
+if (-not $sigFile -or $sigFile.Length -le 0) {
   throw "Signature file not found: $sigPath (createUpdaterArtifacts enabled?)"
 }
 

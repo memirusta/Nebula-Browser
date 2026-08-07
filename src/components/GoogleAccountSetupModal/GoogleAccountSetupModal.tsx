@@ -9,7 +9,7 @@ interface GoogleAccountSetupModalProps {
   email: string
   onClose: () => void
   onOpenBrowseUrl: (url: string) => void
-  onMergePasswords: (entries: Array<Omit<SavedPassword, 'id' | 'updatedAt'>>) => void
+  onMergePasswords: (entries: Array<Omit<SavedPassword, 'id' | 'updatedAt'>>) => void | Promise<void>
   onRequestCsvImport?: () => void
 }
 

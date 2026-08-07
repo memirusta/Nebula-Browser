@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { Webview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { tabWebviewLabel } from '../core/browserTab'
@@ -17,10 +18,37 @@ const LEGACY_BROWSER_LABEL = 'nebula-browser'
 const BROWSER_WEBVIEW_BG = '#000000'
 const LAYOUT_DEBOUNCE_MS = 120
 
+interface NativeTabSnapshotPayload {
+  label: string
+  url: string
+  title: string
+}
+
+export interface TabWebviewSnapshot {
+  shortcutId: string
+  url: string
+  title: string | null
+}
+
+export function listenTabWebviewSnapshots(
+  onSnapshot: (snapshot: TabWebviewSnapshot) => void,
+): Promise<UnlistenFn> {
+  return listen<NativeTabSnapshotPayload>('nebula-tab-snapshot', ({ payload }) => {
+    const prefix = 'nebula-tab-'
+    if (!payload.label.startsWith(prefix) || !payload.url || payload.url === 'about:blank') return
+    onSnapshot({
+      shortcutId: payload.label.slice(prefix.length),
+      url: payload.url,
+      title: payload.title.trim() || null,
+    })
+  })
+}
+
 let activeTabId: string | null = null
 let activeWebview: Webview | null = null
 const webviewCache = new Map<string, Webview>()
 const createdTabs = new Set<string>()
+const lowMemoryWebviews = new Set<string>()
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
 let lastBrowserBoundsKey: string | null = null
@@ -118,6 +146,24 @@ async function hideWebviewSafe(webview: Webview): Promise<void> {
   } catch {
     // already hidden or destroyed
   }
+  if (!lowMemoryWebviews.has(webview.label)) {
+    try {
+      await invoke('webview_set_memory_usage', { label: webview.label, low: true })
+      lowMemoryWebviews.add(webview.label)
+    } catch {
+      // Older WebView2 runtimes may not expose the memory target API.
+    }
+  }
+}
+
+async function restoreWebviewMemory(webview: Webview): Promise<void> {
+  if (!lowMemoryWebviews.has(webview.label)) return
+  try {
+    await invoke('webview_set_memory_usage', { label: webview.label, low: false })
+    lowMemoryWebviews.delete(webview.label)
+  } catch {
+    // Best-effort memory hint; showing the tab must still succeed.
+  }
 }
 
 async function getOrCreateTabWebview(
@@ -129,6 +175,7 @@ async function getOrCreateTabWebview(
   let webview = webviewCache.get(shortcutId) ?? (await Webview.getByLabel(label))
 
   if (!webview) {
+    lowMemoryWebviews.delete(label)
     const appWindow = getCurrentWindow()
     const { position, size } = await browserWebviewPhysicalBounds()
 
@@ -201,12 +248,14 @@ export async function activateBrowseTab(
   await hideOtherTabs(shortcutId)
 
   if (sameActiveTab && !forceNavigate) {
+    await restoreWebviewMemory(webview)
     await webview.show()
     await stackBrowsingChromeAboveBrowser(shortcutId)
     return
   }
 
   await bindBrowserResize(webview)
+  await restoreWebviewMemory(webview)
   await webview.show()
   await stackBrowsingChromeAboveBrowser(shortcutId)
 }
@@ -278,6 +327,7 @@ export async function showBrowseTabById(shortcutId: string): Promise<void> {
   activeTabId = shortcutId
   activeWebview = webview
 
+  await restoreWebviewMemory(webview)
   await syncBrowserBounds(webview)
   await webview.show()
   await stackBrowsingChromeAboveBrowser(shortcutId)
@@ -490,6 +540,7 @@ export async function closeBrowseTab(shortcutId: string): Promise<void> {
 
   webviewCache.delete(shortcutId)
   createdTabs.delete(shortcutId)
+  lowMemoryWebviews.delete(label)
 
   if (activeTabId === shortcutId) {
     activeTabId = null
@@ -517,6 +568,7 @@ export async function syncTabWebviewFullscreenBounds(shortcutId: string): Promis
   if (!webview) return
 
   const { position, size } = await browserWebviewFullscreenPhysicalBounds()
+  await restoreWebviewMemory(webview)
   lastBrowserBoundsKey = boundsKey(position.x, position.y, size.width, size.height)
   await webview.setPosition(position)
   await webview.setSize(size)

@@ -3,15 +3,15 @@ import GridLayout, { type Layout } from 'react-grid-layout/legacy'
 import 'react-grid-layout/css/styles.css'
 import { HOME_GRID_COLS, HOME_GRID_ROW_HEIGHT } from '../../core/widgets'
 import type { WidgetPane } from '../../core/widgets'
-import type { SystemStats } from '../../core/types'
 import { useLocale } from '../../hooks/useLocale'
+import { useSystemStats } from '../../hooks/useSystemStats'
 import { GridCell } from './GridCell'
 import styles from './HomeWidgetGrid.module.css'
 
 interface HomeWidgetGridProps {
   panes: WidgetPane[]
   layout: Layout
-  stats: SystemStats
+  statsEnabled: boolean
   onLayoutChange: (layout: Layout) => void
   onFocusPane: (id: string) => void
   onClosePane: (id: string) => void
@@ -20,12 +20,13 @@ interface HomeWidgetGridProps {
 export function HomeWidgetGrid({
   panes,
   layout,
-  stats,
+  statsEnabled,
   onLayoutChange,
   onFocusPane,
   onClosePane,
 }: HomeWidgetGridProps) {
   const { t } = useLocale()
+  const stats = useSystemStats(statsEnabled)
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [localLayout, setLocalLayout] = useState(layout)
@@ -39,7 +40,10 @@ export function HomeWidgetGrid({
     const el = containerRef.current
     if (!el) return
 
-    const measure = () => setWidth(el.clientWidth)
+    const measure = () => {
+      const nextWidth = el.clientWidth
+      setWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth))
+    }
     measure()
 
     const observer = new ResizeObserver(measure)

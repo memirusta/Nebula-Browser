@@ -8,6 +8,10 @@ where
 {
     use std::sync::mpsc::sync_channel;
 
+    if !label.starts_with("nebula-tab-") {
+        return Err("webview control is limited to browser tabs".to_string());
+    }
+
     let webview = app
         .get_webview(label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
@@ -29,7 +33,10 @@ pub fn webview_reload(app: AppHandle, label: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         with_webview_result(&app, &label, |inner| unsafe {
-            let core = inner.controller().CoreWebView2().map_err(|error| error.to_string())?;
+            let core = inner
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
             core.Reload().map_err(|error| error.to_string())
         })
     }
@@ -46,7 +53,10 @@ pub fn webview_go_forward(app: AppHandle, label: String) -> Result<bool, String>
     #[cfg(target_os = "windows")]
     {
         with_webview_result(&app, &label, |inner| unsafe {
-            let core = inner.controller().CoreWebView2().map_err(|error| error.to_string())?;
+            let core = inner
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
             let mut can_go_forward = windows_core::BOOL::default();
             core.CanGoForward(std::ptr::addr_of_mut!(can_go_forward))
                 .map_err(|error| error.to_string())?;
@@ -83,7 +93,9 @@ pub fn webview_zoom(app: AppHandle, label: String, action: String) -> Result<(),
                 "reset" => 1.0,
                 _ => return Err(format!("unknown zoom action '{zoom_action}'")),
             };
-            controller.SetZoomFactor(factor).map_err(|error| error.to_string())
+            controller
+                .SetZoomFactor(factor)
+                .map_err(|error| error.to_string())
         })
     }
 
@@ -96,10 +108,17 @@ pub fn webview_zoom(app: AppHandle, label: String, action: String) -> Result<(),
 
 #[tauri::command]
 pub fn webview_open_devtools(app: AppHandle, label: String) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("developer tools are disabled in release builds".to_string());
+    }
+
     #[cfg(target_os = "windows")]
     {
         with_webview_result(&app, &label, |inner| unsafe {
-            let core = inner.controller().CoreWebView2().map_err(|error| error.to_string())?;
+            let core = inner
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
             core.OpenDevToolsWindow().map_err(|error| error.to_string())
         })
     }
@@ -107,6 +126,39 @@ pub fn webview_open_devtools(app: AppHandle, label: String) -> Result<(), String
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (app, label);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn webview_set_memory_usage(app: AppHandle, label: String, low: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+        };
+        use windows_core::Interface;
+
+        with_webview_result(&app, &label, move |inner| unsafe {
+            let core = inner
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
+            let memory: ICoreWebView2_19 = core.cast().map_err(|error| error.to_string())?;
+            memory
+                .SetMemoryUsageTargetLevel(if low {
+                    COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+                } else {
+                    COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+                })
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label, low);
         Ok(())
     }
 }

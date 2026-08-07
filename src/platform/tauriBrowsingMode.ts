@@ -20,14 +20,8 @@ export interface BrowsingTabTarget {
   forceNavigate?: boolean
 }
 
-interface PendingViewMode {
-  mode: TauriViewMode
-  tab: BrowsingTabTarget | null
-}
-
-const queue: PendingViewMode[] = []
-let draining = false
 let activeTauriMode: TauriViewMode | null = null
+let transitionChain: Promise<void> = Promise.resolve()
 
 async function applyHomeMode(): Promise<void> {
   setOverlayModeActive(false)
@@ -127,10 +121,10 @@ async function applyOverlayMode(): Promise<void> {
 
 async function applyViewMode(mode: TauriViewMode, tab: BrowsingTabTarget | null): Promise<void> {
   const previous = activeTauriMode
-  activeTauriMode = mode
 
   if (mode === 'overlay' && (previous === 'browsing' || previous === 'overlay')) {
     await applyOverlayMode()
+    activeTauriMode = mode
     return
   }
 
@@ -146,35 +140,22 @@ async function applyViewMode(mode: TauriViewMode, tab: BrowsingTabTarget | null)
       await applyOverlayMode()
       break
   }
+  activeTauriMode = mode
 }
 
-async function drainViewModeQueue(): Promise<void> {
-  if (draining) return
-  draining = true
-
-  try {
-    while (queue.length > 0) {
-      const next = queue[queue.length - 1]
-      queue.length = 0
-      try {
-        await applyViewMode(next.mode, next.tab)
-      } catch (error) {
-        if (import.meta.env.DEV) {
-          console.warn('[nebula] tauri view mode transition failed', error)
-        }
-        try {
-          await showMainWebview()
-        } catch {
-          // last resort
-        }
-      }
+function enqueueViewMode(mode: TauriViewMode, tab: BrowsingTabTarget | null): Promise<void> {
+  const run = transitionChain.then(() => applyViewMode(mode, tab))
+  transitionChain = run.catch(async (error) => {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] tauri view mode transition failed', error)
     }
-  } finally {
-    draining = false
-    if (queue.length > 0) {
-      void drainViewModeQueue()
+    try {
+      await showMainWebview()
+    } catch {
+      // last resort
     }
-  }
+  })
+  return run
 }
 
 export function syncTauriViewMode(mode: TauriViewMode, tab: BrowsingTabTarget | null): void {
@@ -182,14 +163,7 @@ export function syncTauriViewMode(mode: TauriViewMode, tab: BrowsingTabTarget | 
 
   setOverlayModeActive(mode === 'overlay')
 
-  const pending = { mode, tab }
-  if (queue.length > 0) {
-    queue[queue.length - 1] = pending
-  } else {
-    queue.push(pending)
-  }
-
-  void drainViewModeQueue()
+  void enqueueViewMode(mode, tab).catch(() => undefined)
 }
 
 /** Await platform transition (e.g. last tab close → home). */
@@ -200,12 +174,8 @@ export async function applyTauriViewModeNow(
   if (!isTauri) return
 
   setOverlayModeActive(mode === 'overlay')
-  queue.length = 0
-  draining = false
-
   try {
-    await applyViewMode(mode, tab)
-    activeTauriMode = mode
+    await enqueueViewMode(mode, tab)
   } catch (error) {
     if (import.meta.env.DEV) {
       console.warn('[nebula] tauri view mode transition failed', error)

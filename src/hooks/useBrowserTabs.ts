@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   createBrowserTab,
   faviconForUrl,
@@ -17,7 +17,7 @@ export function useBrowserTabs() {
   activeTabIdRef.current = activeTabId
 
   const openOrSwitchTab = useCallback(
-    (shortcut: Shortcut, options?: { reload?: boolean }) => {
+    (shortcut: Shortcut, options?: { reload?: boolean; activate?: boolean }) => {
       setTabs((prev) => {
         const existing = prev.find((tab) => tab.shortcutId === shortcut.id)
         if (existing) {
@@ -40,7 +40,9 @@ export function useBrowserTabs() {
         return [...prev, createBrowserTab(shortcut)]
       })
 
-      setActiveTabId(shortcut.id)
+      if (options?.activate !== false) {
+        setActiveTabId(shortcut.id)
+      }
     },
     [],
   )
@@ -105,10 +107,11 @@ export function useBrowserTabs() {
     [],
   )
 
-  const activeTab =
-    tabs.find((tab) => tab.shortcutId === activeTabId) ?? null
-
-  const openTabIds = tabs.map((tab) => tab.shortcutId)
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.shortcutId === activeTabId) ?? null,
+    [tabs, activeTabId],
+  )
+  const openTabIds = useMemo(() => tabs.map((tab) => tab.shortcutId), [tabs])
 
   return {
     tabs,

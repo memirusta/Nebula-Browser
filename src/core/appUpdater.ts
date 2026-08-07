@@ -1,5 +1,4 @@
-import { check, type Update } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
+import type { Update } from '@tauri-apps/plugin-updater'
 import { loadLocale, t } from './locale'
 import { isTauri } from '../platform/runtime'
 
@@ -54,6 +53,7 @@ export async function checkForAppUpdate(): Promise<{
   }
 
   try {
+    const { check } = await import('@tauri-apps/plugin-updater')
     const update = await check()
     if (!update) {
       return { update: null, status: { phase: 'uptodate' } }
@@ -104,6 +104,7 @@ export async function installAppUpdate(
       }
     })
 
+    const { relaunch } = await import('@tauri-apps/plugin-process')
     await relaunch()
     return { phase: 'idle' }
   } catch (error) {

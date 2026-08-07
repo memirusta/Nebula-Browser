@@ -151,7 +151,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
   useEffect(() => {
     if (!open || step !== 'profile' || !isTauri) return
     void getGoogleOAuthStatus().then((status) => {
-      if (!status || status.secretConfigured) {
+      if (!status || status.clientIdConfigured) {
         setGoogleConfigHint(null)
         return
       }
@@ -242,7 +242,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
         setGoogleLinkMessage(t('accountCsvEmpty'))
         return
       }
-      mergeImportedPasswords(
+      await mergeImportedPasswords(
         imported.map((item) => ({
           label: item.label,
           url: item.url,
@@ -437,7 +437,9 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
               <GoogleAccountSetupPanel
                 email={googleEmail}
                 onOpenBrowseUrl={(url) => onOpenBrowseUrl?.(url)}
-                onMergePasswords={(entries) => mergeImportedPasswords(entries)}
+                onMergePasswords={async (entries) => {
+                  await mergeImportedPasswords(entries)
+                }}
                 onRequestCsvImport={() => csvInputRef.current?.click()}
                 onApplied={completeGoogleLink}
                 showSkip
