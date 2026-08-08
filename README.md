@@ -1,31 +1,46 @@
 <div align="center">
 
-# 🌌 Nebula Browser
+<h1>
+  <img src="src-tauri/icons/icon.png" alt="Nebula Browser Logo" width="42" />
+  Nebula Browser
+</h1>
 
-### A browser that gets out of your way.
+<h3>A browser that gets out of your way.</h3>
 
+<p>
 A Windows-first desktop browser built around a minimal, spatial interface instead of a traditional always-visible tab bar.
+</p>
 
-Built with **Tauri 2**, **React 19**, **TypeScript**, **Rust**, and **Microsoft WebView2**.
+<p>
+Built with <strong>Tauri 2</strong>, <strong>React 19</strong>, <strong>TypeScript</strong>, <strong>Rust</strong>, and <strong>Microsoft WebView2</strong>.
+</p>
 
-[![Version](https://img.shields.io/badge/version-1.1.1-7ec8e3?style=flat-square)](https://github.com/memirusta/Nebula-Browser/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white)](https://github.com/memirusta/Nebula-Browser/releases/latest)
-[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
-[![React](https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://react.dev/)
+<a href="https://github.com/memirusta/Nebula-Browser/releases">
+  <img src="https://img.shields.io/badge/version-1.1.1-7ec8e3?style=flat-square" alt="Version">
+</a>
+<a href="https://github.com/memirusta/Nebula-Browser/releases/latest">
+  <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white" alt="Windows">
+</a>
+<a href="https://tauri.app/">
+  <img src="https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white" alt="Tauri">
+</a>
+<a href="https://react.dev/">
+  <img src="https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=61DAFB" alt="React">
+</a>
 
-<br>
+<br><br>
 
-[**Download for Windows**](https://github.com/memirusta/Nebula-Browser/releases/latest) ·
-[**Watch the demo**](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)
+<a href="https://github.com/memirusta/Nebula-Browser/releases/latest"><strong>Download for Windows</strong></a>
+&nbsp;·&nbsp;
+<a href="https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing"><strong>Watch the demo</strong></a>
 
-<br>
+<br><br>
 
 <a href="https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing">
-  <img src="assets/demo-thumbnail.png" alt="Nebula Browser demo" width="100%">
+  <img src="src/assets/demo-thumbnail.png" alt="Nebula Browser demo" width="100%">
 </a>
 
 </div>
-
 ---
 
 ## Meet Nebula
