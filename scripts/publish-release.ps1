@@ -32,11 +32,17 @@ function Import-ReleaseGoogleOAuth {
 
   $lines = Get-Content $EnvPath
   $clientId = Read-DotEnvValue -Lines $lines -Name "VITE_GOOGLE_CLIENT_ID"
+  $secret = Read-DotEnvValue -Lines $lines -Name "GOOGLE_CLIENT_SECRET"
 
   if ($clientId) {
     $env:VITE_GOOGLE_CLIENT_ID = $clientId
     $env:GOOGLE_CLIENT_ID = $clientId
   }
+  if ($secret) {
+  $env:GOOGLE_CLIENT_SECRET = $secret
+} else {
+  throw "GOOGLE_CLIENT_SECRET .env icinde bulunamadi."
+}
 }
 
 if (-not $Version) {

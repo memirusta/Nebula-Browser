@@ -27,6 +27,7 @@ fn runtime_env(name: &str) -> Option<String> {
 
 fn embedded_env(name: &str) -> Option<String> {
     let value = match name {
+        "GOOGLE_CLIENT_SECRET" => option_env!("GOOGLE_CLIENT_SECRET")?,
         "GOOGLE_CLIENT_ID" => option_env!("GOOGLE_CLIENT_ID")?,
         "VITE_GOOGLE_CLIENT_ID" => option_env!("VITE_GOOGLE_CLIENT_ID")?,
         _ => return None,
@@ -160,15 +161,22 @@ async fn exchange_code_for_claims(
 ) -> Result<GoogleProfileClaims, String> {
     let client_id = resolve_google_client_id(client_id);
     let client = reqwest::Client::new();
+
+    let mut form = HashMap::<&str, String>::new();
+
+    form.insert("client_id", client_id);
+    form.insert("code", code.to_string());
+    form.insert("code_verifier", code_verifier.to_string());
+    form.insert("grant_type", "authorization_code".to_string());
+    form.insert("redirect_uri", redirect_uri.to_string());
+
+    if let Some(client_secret) = env_or_embedded("GOOGLE_CLIENT_SECRET") {
+        form.insert("client_secret", client_secret);
+    }
+
     let response = client
         .post("https://oauth2.googleapis.com/token")
-        .form(&[
-            ("client_id", client_id.as_str()),
-            ("code", code),
-            ("code_verifier", code_verifier),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri),
-        ])
+        .form(&form)
         .send()
         .await
         .map_err(|error| error.to_string())?;
@@ -178,7 +186,10 @@ async fn exchange_code_for_claims(
         return Err(format!("Google token exchange failed: {body}"));
     }
 
-    let token: TokenResponse = response.json().await.map_err(|error| error.to_string())?;
+    let token: TokenResponse = response
+        .json()
+        .await
+        .map_err(|error| error.to_string())?;
 
     if let Some(id_token) = token.id_token.as_deref() {
         if let Some(claims) = decode_jwt_claims(id_token) {
