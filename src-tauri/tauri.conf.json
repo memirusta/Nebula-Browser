@@ -1,4 +1,4 @@
-﻿{
+{
     "$schema":  "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName":  "Nebula",
     "version":  "1.2.2",
