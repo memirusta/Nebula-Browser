@@ -13,10 +13,6 @@ export async function fetchSearchSuggestions(
   }
 
   if (!isTauri) {
-    alert(
-      '[Nebula Suggestions]\n\nTauri runtime algılanmadı.',
-    )
-
     return []
   }
 
@@ -38,20 +34,13 @@ export async function fetchSearchSuggestions(
 
     return result
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error)
-
-    alert(
-      `[Nebula Suggestions Error]\n\n${message}`,
-    )
-
-    console.error(
-      '[nebula] search suggestions failed',
+  if (import.meta.env.DEV) {
+    console.warn(
+      '[nebula] search suggestions unavailable',
       error,
     )
-
-    return []
   }
+
+  return []
+}
 }

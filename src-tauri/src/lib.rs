@@ -53,23 +53,76 @@ async fn search_suggestions(
     };
 
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 NebulaBrowser/1.1")
+        .user_agent("Mozilla/5.0 NebulaBrowser/1.2")
         .timeout(Duration::from_secs(5))
         .build()
         .map_err(|error| error.to_string())?;
 
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| error.to_string())?
-        .error_for_status()
-        .map_err(|error| error.to_string())?;
+    let retry_delays = [
+        Duration::from_millis(0),
+        Duration::from_millis(250),
+        Duration::from_millis(700),
+    ];
 
-    let data: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|error| error.to_string())?;
+    let mut data: Option<serde_json::Value> = None;
+
+    for (attempt, delay) in retry_delays.iter().enumerate() {
+        if !delay.is_zero() {
+            tokio::time::sleep(*delay).await;
+        }
+
+        match client.get(&url).send().await {
+            Ok(response) => {
+                let status = response.status();
+
+                if status.is_success() {
+                    match response.json::<serde_json::Value>().await {
+                        Ok(json) => {
+                            data = Some(json);
+                            break;
+                        }
+
+                        Err(error) => {
+                            #[cfg(debug_assertions)]
+                            eprintln!(
+                                "[nebula suggestions] attempt {} JSON error: {}",
+                                attempt + 1,
+                                error
+                            );
+                        }
+                    }
+                } else {
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "[nebula suggestions] attempt {} HTTP {}",
+                        attempt + 1,
+                        status
+                    );
+
+                    // 4xx hatalarında 429 dışında tekrar denemenin
+                    // pek anlamı yok.
+                    if status.is_client_error()
+                        && status != reqwest::StatusCode::TOO_MANY_REQUESTS
+                    {
+                        return Ok(Vec::new());
+                    }
+                }
+            }
+
+            Err(error) => {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[nebula suggestions] attempt {} network error: {}",
+                    attempt + 1,
+                    error
+                );
+            }
+        }
+    }
+
+    let Some(data) = data else {
+        return Ok(Vec::new());
+    };
 
     let mut suggestions: Vec<String> = Vec::new();
 
