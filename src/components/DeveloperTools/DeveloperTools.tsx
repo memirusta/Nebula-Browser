@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react'
+import {
+  useMemo,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
 import { removeLocalStorage } from '../../core/storageSync'
@@ -22,15 +25,28 @@ type SourceViewMode =
   | 'overlay'
 
 interface DeveloperToolsProps {
-  activeTabId: string | null
-  activeUrl: string | null
-  openTabIds: string[]
-  sourceViewMode: SourceViewMode
-  onClose: () => void
+  activeTabId:
+    | string
+    | null
+
+  activeUrl:
+    | string
+    | null
+
+  openTabIds:
+    string[]
+
+  sourceViewMode:
+    SourceViewMode
+
+  onClose:
+    () => void
 }
 
 function prettyStorageValue(
-  value: string | null,
+  value:
+    | string
+    | null,
 ): string {
   if (value === null) {
     return '— empty —'
@@ -54,191 +70,234 @@ export function DeveloperTools({
   sourceViewMode,
   onClose,
 }: DeveloperToolsProps) {
-  const [section, setSection] =
-    useState<DeveloperToolsSection>('storage')
+  const [
+    section,
+    setSection,
+  ] =
+    useState<DeveloperToolsSection>(
+      'storage',
+    )
 
   const [
     storageRevision,
     setStorageRevision,
   ] = useState(0)
 
-  const [status, setStatus] =
-    useState<string | null>(null)
+  const [
+    status,
+    setStatus,
+  ] =
+    useState<
+      string | null
+    >(null)
 
-  const nebulaStorageEntries = useMemo(() => {
-    const entries: Array<{
-      key: string
-      value: string | null
-    }> = []
+  const nebulaStorageEntries =
+    useMemo(() => {
+      const entries:
+        Array<{
+          key: string
+          value:
+            | string
+            | null
+        }> = []
 
-    for (
-      let index = 0;
-      index < localStorage.length;
-      index += 1
-    ) {
-      const key = localStorage.key(index)
-
-      if (
-        !key ||
-        !key.startsWith('nebula-')
+      for (
+        let index = 0;
+        index <
+        localStorage.length;
+        index += 1
       ) {
-        continue
+        const key =
+          localStorage.key(
+            index,
+          )
+
+        if (
+          !key ||
+          !key.startsWith(
+            'nebula-',
+          )
+        ) {
+          continue
+        }
+
+        entries.push({
+          key,
+          value:
+            localStorage.getItem(
+              key,
+            ),
+        })
       }
 
-      entries.push({
+      return entries.sort(
+        (a, b) =>
+          a.key.localeCompare(
+            b.key,
+          ),
+      )
+    }, [storageRevision])
+
+  const refreshStorage =
+    () => {
+      setStorageRevision(
+        (revision) =>
+          revision + 1,
+      )
+    }
+
+  const clearStorageKey =
+    (
+      key: string,
+    ) => {
+      removeLocalStorage(
         key,
-        value: localStorage.getItem(key),
-      })
-    }
-
-    return entries.sort((a, b) =>
-      a.key.localeCompare(b.key),
-    )
-  }, [storageRevision])
-
-  const refreshStorage = () => {
-    setStorageRevision(
-      (revision) => revision + 1,
-    )
-  }
-
-  const clearStorageKey = (
-    key: string,
-  ) => {
-    removeLocalStorage(key)
-
-    refreshStorage()
-
-    window.setTimeout(
-      refreshStorage,
-      100,
-    )
-  }
-
-  const clearFolderCache = () => {
-    clearStorageKey(
-      SHORTCUT_FOLDERS_KEY,
-    )
-
-    setStatus(
-      'Folder state cleared.',
-    )
-  }
-
-  const clearSemiLunarLayout = () => {
-    clearStorageKey(
-      SHORTCUT_POSITIONS_KEY,
-    )
-
-    setStatus(
-      'Semi-Lunar layout cleared.',
-    )
-  }
-
-  const clearSemiLunarState = () => {
-    removeLocalStorage(
-      SHORTCUT_FOLDERS_KEY,
-    )
-
-    removeLocalStorage(
-      SHORTCUT_POSITIONS_KEY,
-    )
-
-    refreshStorage()
-
-    window.setTimeout(
-      refreshStorage,
-      100,
-    )
-
-    setStatus(
-      'Folder and Semi-Lunar layout state cleared.',
-    )
-  }
-
-  const runBrowserAction = async (
-    label: string,
-    action: () => Promise<void>,
-  ) => {
-    try {
-      setStatus(`${label}...`)
-
-      await action()
-
-      setStatus(
-        `${label} complete.`,
       )
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : String(error)
 
-      setStatus(
-        `${label} failed: ${message}`,
+      refreshStorage()
+
+      window.setTimeout(
+        refreshStorage,
+        100,
       )
     }
-  }
 
-  const reloadActiveTab = () => {
-    if (
-      !activeTabId ||
-      !isTauri
-    ) {
-      return
+  const clearFolderCache =
+    () => {
+      clearStorageKey(
+        SHORTCUT_FOLDERS_KEY,
+      )
+
+      setStatus(
+        'Folder state cleared.',
+      )
     }
 
-    void runBrowserAction(
-      'Reload',
-      () =>
-        reloadBrowseTab(activeTabId),
-    )
-  }
+  const clearSemiLunarLayout =
+    () => {
+      clearStorageKey(
+        SHORTCUT_POSITIONS_KEY,
+      )
 
-  const clearActiveTabCache = () => {
-    if (
-      !activeTabId ||
-      !isTauri
-    ) {
-      return
+      setStatus(
+        'Semi-Lunar layout cleared.',
+      )
     }
 
-    void runBrowserAction(
-      'Clear cache',
-      () =>
-        clearBrowseData(
-          activeTabId,
-          'cache',
-        ),
-    )
-  }
+  const clearSemiLunarState =
+    () => {
+      removeLocalStorage(
+        SHORTCUT_FOLDERS_KEY,
+      )
 
-  const openNativeDevTools = () => {
-    if (
-      !activeTabId ||
-      !isTauri
-    ) {
-      return
+      removeLocalStorage(
+        SHORTCUT_POSITIONS_KEY,
+      )
+
+      refreshStorage()
+
+      window.setTimeout(
+        refreshStorage,
+        100,
+      )
+
+      setStatus(
+        'Folder and Semi-Lunar layout state cleared.',
+      )
     }
 
-    void runBrowserAction(
-      'Open native DevTools',
-      () =>
-        openBrowseTabDevTools(
-          activeTabId,
-        ),
-    )
-  }
+  const runBrowserAction =
+    async (
+      label: string,
+      action:
+        () => Promise<void>,
+    ) => {
+      try {
+        setStatus(
+          `${label}...`,
+        )
 
-  if (!import.meta.env.DEV) {
-    return null
-  }
+        await action()
+
+        setStatus(
+          `${label} complete.`,
+        )
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error)
+
+        setStatus(
+          `${label} failed: ${message}`,
+        )
+      }
+    }
+
+  const reloadActiveTab =
+    () => {
+      if (
+        !activeTabId ||
+        !isTauri
+      ) {
+        return
+      }
+
+      void runBrowserAction(
+        'Reload',
+        () =>
+          reloadBrowseTab(
+            activeTabId,
+          ),
+      )
+    }
+
+  const clearActiveTabCache =
+    () => {
+      if (
+        !activeTabId ||
+        !isTauri
+      ) {
+        return
+      }
+
+      void runBrowserAction(
+        'Clear cache',
+        () =>
+          clearBrowseData(
+            activeTabId,
+            'cache',
+          ),
+      )
+    }
+
+  const openNativeDevTools =
+    () => {
+      if (
+        !activeTabId ||
+        !isTauri
+      ) {
+        return
+      }
+
+      void runBrowserAction(
+        'Open native DevTools',
+        () =>
+          openBrowseTabDevTools(
+            activeTabId,
+          ),
+      )
+    }
 
   return createPortal(
     <div
-      className={styles.backdrop}
+      className={
+        styles.backdrop
+      }
       role="presentation"
-      onMouseDown={(event) => {
+      onMouseDown={(
+        event,
+      ) => {
         if (
           event.target ===
           event.currentTarget
@@ -248,17 +307,23 @@ export function DeveloperTools({
       }}
     >
       <section
-        className={styles.panel}
+        className={
+          styles.panel
+        }
         role="dialog"
         aria-modal="true"
         aria-label="Nebula Developer Tools"
       >
         <header
-          className={styles.header}
+          className={
+            styles.header
+          }
         >
           <div>
             <div
-              className={styles.title}
+              className={
+                styles.title
+              }
             >
               Nebula Dev Tools
             </div>
@@ -278,7 +343,9 @@ export function DeveloperTools({
             className={
               styles.closeButton
             }
-            onClick={onClose}
+            onClick={
+              onClose
+            }
             aria-label="Close developer tools"
             title="Close (F12 / Esc)"
           >
@@ -287,17 +354,22 @@ export function DeveloperTools({
         </header>
 
         <nav
-          className={styles.tabs}
+          className={
+            styles.tabs
+          }
         >
           <button
             type="button"
             className={
-              section === 'storage'
+              section ===
+              'storage'
                 ? styles.tabActive
                 : styles.tab
             }
             onClick={() =>
-              setSection('storage')
+              setSection(
+                'storage',
+              )
             }
           >
             Storage
@@ -306,12 +378,15 @@ export function DeveloperTools({
           <button
             type="button"
             className={
-              section === 'browser'
+              section ===
+              'browser'
                 ? styles.tabActive
                 : styles.tab
             }
             onClick={() =>
-              setSection('browser')
+              setSection(
+                'browser',
+              )
             }
           >
             Browser
@@ -320,12 +395,15 @@ export function DeveloperTools({
           <button
             type="button"
             className={
-              section === 'debug'
+              section ===
+              'debug'
                 ? styles.tabActive
                 : styles.tab
             }
             onClick={() =>
-              setSection('debug')
+              setSection(
+                'debug',
+              )
             }
           >
             Debug
@@ -333,9 +411,12 @@ export function DeveloperTools({
         </nav>
 
         <main
-          className={styles.content}
+          className={
+            styles.content
+          }
         >
-          {section === 'storage' && (
+          {section ===
+            'storage' && (
             <div
               className={
                 styles.section
@@ -494,7 +575,8 @@ export function DeveloperTools({
             </div>
           )}
 
-          {section === 'browser' && (
+          {section ===
+            'browser' && (
             <div
               className={
                 styles.section
@@ -647,7 +729,8 @@ export function DeveloperTools({
             </div>
           )}
 
-          {section === 'debug' && (
+          {section ===
+            'debug' && (
             <div
               className={
                 styles.section
@@ -678,16 +761,24 @@ export function DeveloperTools({
                 {JSON.stringify(
                   {
                     environment:
-                      import.meta.env.MODE,
+                      import.meta.env
+                        .MODE,
+
                     tauri:
                       isTauri,
+
                     openedFrom:
                       sourceViewMode,
+
                     activeTabId,
+
                     activeUrl,
+
                     openTabIds,
+
                     openTabCount:
                       openTabIds.length,
+
                     userAgent:
                       navigator.userAgent,
                   },
@@ -700,7 +791,9 @@ export function DeveloperTools({
         </main>
 
         <footer
-          className={styles.footer}
+          className={
+            styles.footer
+          }
         >
           <span>
             F12 / Esc to close
