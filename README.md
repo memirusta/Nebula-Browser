@@ -1,23 +1,28 @@
-```md
 <div align="center">
 
 # 🌌 Nebula Browser
 
 ### A browser that gets out of your way.
 
-A Windows-first desktop browser built around a minimal, spatial interface instead of a traditional tab bar.
+A Windows-first desktop browser built around a minimal, spatial interface instead of a traditional always-visible tab bar.
 
-Powered by **Tauri 2**, **React 19**, **Rust**, and **WebView2**.
+Built with **Tauri 2**, **React 19**, **TypeScript**, **Rust**, and **Microsoft WebView2**.
 
-[![Version](https://img.shields.io/badge/version-1.1.1-7ec8e3)](https://github.com/memirusta/Nebula-Browser/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](https://github.com/memirusta/Nebula-Browser/releases)
-[![Tauri](https://img.shields.io/badge/Tauri-2-FFC131)](https://tauri.app/)
-[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
+[![Version](https://img.shields.io/badge/version-1.1.1-7ec8e3?style=flat-square)](https://github.com/memirusta/Nebula-Browser/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white)](https://github.com/memirusta/Nebula-Browser/releases/latest)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
+[![React](https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://react.dev/)
 
 <br>
 
-**[Download Nebula](https://github.com/memirusta/Nebula-Browser/releases/latest)** ·
-**[Watch the Demo](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)**
+[**Download for Windows**](https://github.com/memirusta/Nebula-Browser/releases/latest) ·
+[**Watch the demo**](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)
+
+<br>
+
+<a href="https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing">
+  <img src="assets/demo-thumbnail.png" alt="Nebula Browser demo" width="100%">
+</a>
 
 </div>
 
@@ -25,16 +30,13 @@ Powered by **Tauri 2**, **React 19**, **Rust**, and **WebView2**.
 
 ## Meet Nebula
 
-Most browsers revolve around the same layout:
-
-tabs at the top, an address bar underneath, and browser chrome permanently taking up space.
+Most desktop browsers still revolve around the same layout: a permanent tab strip, a permanent address bar, and browser chrome that is always there whether you need it or not.
 
 Nebula takes a different approach.
 
-The interface stays out of the way while you browse and appears only when you need it. Navigation, tabs, shortcuts, folders and previews live inside the **Semi-Lunar interface** — a floating radial workspace designed to keep browsing fast without filling the screen with controls.
+The interface stays out of the way while you browse and appears when you need it. Tabs, shortcuts, folders, previews, search, and navigation are brought together through the **Semi-Lunar interface** — a floating workspace designed to keep browsing fast without permanently filling the screen with controls.
 
-> Nebula is not trying to redesign the web.
-> It is trying to redesign the space around it.
+> **Nebula does not try to redesign the web. It redesigns the space around it.**
 
 ---
 
@@ -47,19 +49,20 @@ Nebula's signature interface replaces the traditional always-visible tab strip w
 Use it to:
 
 - switch between open tabs
-- launch shortcuts
+- launch saved shortcuts
 - organize shortcuts into folders
 - preview pages before switching
 - close tabs quickly
-- return home without persistent browser chrome
+- jump back home
+- access browsing actions without permanent browser chrome
 
-The same Semi-Lunar interface is shared across Home, Browsing and Overlay modes.
+The same Semi-Lunar interface is shared across Home, Browsing, and Overlay modes.
 
 ---
 
 ### 🔎 Smart Search
 
-Search combines local browser history with live search suggestions.
+Nebula combines local browsing history with live search suggestions.
 
 Supported search engines:
 
@@ -67,13 +70,13 @@ Supported search engines:
 - DuckDuckGo
 - Bing
 
-Nebula can surface visited sites first while also providing live autocomplete suggestions from the selected search engine.
+Visited sites can appear alongside live autocomplete suggestions, giving the search bar both browser-history awareness and real-time search assistance.
 
 ---
 
 ### 🏠 A Home Screen That Is Actually Yours
 
-The home screen is a workspace rather than a static new-tab page.
+Nebula's home screen is a workspace rather than a static new-tab page.
 
 Customize:
 
@@ -84,9 +87,9 @@ Customize:
 - RAM and CPU widgets
 - clock appearance
 - greeting
-- glass and blur effects
+- glass, blur, and opacity
 - accent colors
-- Semi-Lunar dimensions and animations
+- Semi-Lunar size and animation behavior
 
 Home modules can be repositioned without changing the browsing experience.
 
@@ -96,18 +99,18 @@ Home modules can be repositioned without changing the browsing experience.
 
 Hover over supported shortcuts and tabs to preview their current browsing session before switching.
 
-Useful when multiple pages are open but you do not want a permanent tab strip taking space.
+It is especially useful when multiple pages are open but you do not want a permanent tab strip occupying screen space.
 
 ---
 
 ### 🗂 Folders
 
-Drag shortcuts together to create folders directly inside the Semi-Lunar dock.
+Drag shortcuts together to organize them directly inside the Semi-Lunar dock.
 
 Folders support:
 
 - multiple shortcuts
-- rename
+- renaming
 - drag interactions
 - individual item removal
 - automatic cleanup when members are removed
@@ -116,12 +119,12 @@ Folders support:
 
 ### 📥 Downloads
 
-Nebula includes a native download manager with:
+Nebula includes an integrated download manager with:
 
 - active download progress
 - completed downloads
-- notification integration
-- quick access from the browser toolbar
+- browser notifications
+- quick access from the toolbar
 
 ---
 
@@ -141,7 +144,7 @@ Features include:
 
 ### 🔐 Password Vault
 
-Nebula includes a local password vault and browser-side autofill bridge.
+Nebula includes a local password vault and a browser-side autofill bridge.
 
 Saved credentials can be managed from Settings and used inside supported browsing sessions.
 
@@ -149,7 +152,7 @@ Saved credentials can be managed from Settings and used inside supported browsin
 
 ### 🛡 Privacy Controls
 
-Privacy controls include options for:
+Nebula includes configurable privacy options for:
 
 - tracking protection
 - cookie restrictions
@@ -176,7 +179,7 @@ Nebula has its own notification center for browser events such as downloads and 
 
 Common browser workflows are available from the keyboard, including:
 
-- new / close / reopen tab
+- new, close, and reopen tab
 - next / previous tab
 - direct tab switching
 - back / forward
@@ -191,9 +194,9 @@ Shortcut mappings can be viewed and configured from Settings.
 
 ## 🎬 Demo
 
-> Full Nebula Browser showcase
+Watch the full Nebula Browser showcase:
 
-[![Watch the Nebula demo](assets/demo-thumbnail.png)](DEMO_VIDEO_URL)
+**[▶ Open the demo video](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)**
 
 ---
 
@@ -202,17 +205,17 @@ Shortcut mappings can be viewed and configured from Settings.
 Nebula is built with:
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | Desktop shell | Tauri 2 |
 | Native backend | Rust |
 | Interface | React 19 + TypeScript |
 | Bundler | Vite |
 | Windows rendering | Microsoft WebView2 |
-| Native installer | NSIS |
+| Windows installer | NSIS |
 
-Unlike a conventional single-WebView Tauri application, Nebula uses multiple native webviews on Windows.
+Unlike a conventional single-WebView Tauri application, Nebula uses multiple native WebViews on Windows.
 
-### Windows WebView Architecture
+### Windows WebView architecture
 
 ```text
 ┌─────────────────────────────────────────────┐
@@ -220,7 +223,7 @@ Unlike a conventional single-WebView Tauri application, Nebula uses multiple nat
 │                                             │
 │  nebula-chrome                              │
 │  ─────────────────────────────────────────  │
-│        custom title / browser controls      │
+│      custom title / browser controls        │
 │                                             │
 │  main                                       │
 │  ─────────────────────────────────────────  │
@@ -235,7 +238,7 @@ Unlike a conventional single-WebView Tauri application, Nebula uses multiple nat
 
 Each open browser tab can use its own native WebView.
 
-Nebula dynamically manages their visibility, stacking and hit regions so native page content and the React interface behave like one application.
+Nebula dynamically manages their visibility, stacking, and hit regions so native page content and the React interface behave like one application.
 
 ---
 
@@ -254,8 +257,8 @@ src/
 │   └── ...
 │
 ├── core/
-│   ├── settings
 │   ├── browser state
+│   ├── settings
 │   ├── shortcuts
 │   ├── history
 │   └── bridge logic
@@ -264,7 +267,7 @@ src/
 │   └── React state + browser integrations
 │
 ├── platform/
-│   └── Tauri / WebView native bridge
+│   └── Tauri / native WebView bridge
 │
 └── ChromeApp.tsx
 
@@ -288,7 +291,7 @@ Download the latest installer from:
 
 Nebula currently targets Windows as its primary supported platform.
 
-Microsoft WebView2 is required and is already included with most modern Windows 10 and Windows 11 installations.
+Microsoft WebView2 is required and is already available on most modern Windows 10 and Windows 11 installations.
 
 ---
 
@@ -312,7 +315,7 @@ cd Nebula-Browser
 npm install
 ```
 
-Run the browser:
+Run the desktop browser:
 
 ```bash
 npm run tauri dev
@@ -326,7 +329,7 @@ The React interface can also be started without the native browser layer:
 npm run dev
 ```
 
-Some functionality — including native browser tabs, system statistics and WebView integrations — requires the Tauri application.
+Some functionality — including native browser tabs, system statistics, native browsing behavior, and WebView integrations — requires the Tauri application.
 
 ---
 
@@ -356,7 +359,7 @@ Installer bundles are generated using NSIS.
 
 ## 🧪 Testing
 
-Nebula includes several smoke and release checks.
+Nebula includes smoke, native, clean-install, and release checks.
 
 ```bash
 npm run test:e2e
@@ -365,7 +368,7 @@ npm run test:release-smoke
 npm run release:preflight
 ```
 
-Clean-install and upgrade testing scripts are also included for Windows.
+Additional Windows install tests are available through the clean-install, upgrade-install, and Windows Sandbox scripts in `scripts/`.
 
 ---
 
@@ -373,41 +376,40 @@ Clean-install and upgrade testing scripts are also included for Windows.
 
 Nebula is currently **Windows-first**.
 
-The architecture relies heavily on native multi-WebView behavior and Windows-specific WebView2 integration.
+Its desktop architecture relies heavily on native multi-WebView behavior and Windows-specific WebView2 integration.
 
-The React interface itself is cross-platform, but full macOS and Linux browser-window behavior is not yet at feature parity with Windows.
+The React interface is designed to remain portable, but full native browser-window behavior on macOS and Linux is not yet at feature parity with Windows.
 
 ---
 
 ## 🗺 Roadmap
 
-Nebula is actively evolving.
+Nebula is actively evolving. Areas for continued work include:
 
-Some areas planned for continued work include:
-
-- further browser compatibility improvements
+- browser compatibility improvements
 - performance and memory optimization
 - expanded privacy tooling
 - additional platform support
-- further Semi-Lunar interaction improvements
+- continued Semi-Lunar interaction improvements
+- further polish around native browser behavior
 
 ---
 
 ## ❤️ Why Nebula?
 
-Nebula started from a simple idea:
+Nebula started from a simple question:
 
-**What if the browser UI disappeared until you actually needed it?**
+### What if the browser UI disappeared until you actually needed it?
 
 Instead of making another variation of the traditional browser layout, Nebula experiments with a spatial interface where navigation appears around your workflow rather than permanently occupying part of the screen.
 
-It is still evolving — but that experiment has turned into a browser you can actually use.
+That experiment has grown into a browser you can actually use.
 
 ---
 
 ## License
 
-Nebula currently does not include an open-source license.
+No open-source license has been published for Nebula yet.
 
 Unless a license is added, the source code remains under its default copyright protections.
 
@@ -419,10 +421,6 @@ Unless a license is added, the source code remains under its default copyright p
 
 **Browse the web. Keep the space.**
 
-Made with Tauri, Rust and React.
+Made with Tauri, Rust, React, and an unreasonable amount of glass.
 
 </div>
-```
-
-
-Bir de önemli detay yakaladım: repoda şu anda **LICENSE dosyası yok**. O yüzden eski README’deki `Copyright (c) Nebula contributors` kısmını olduğu gibi taşımadım. Public repo olması otomatik olarak açık kaynak lisansı vermiyor. İstersen README’den sonra **MIT mi, GPL mi, source-available mı** istediğine karar veririz; ona göre LICENSE ekleriz.
