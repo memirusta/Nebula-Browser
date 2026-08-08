@@ -37,6 +37,28 @@
   margin: 0;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.backupBtn {
+  padding: 5px 7px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 7px;
+  color: var(--nebula-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.backupBtn:hover {
+  color: var(--nebula-text);
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .closeBtn {
   width: 28px;
   height: 28px;

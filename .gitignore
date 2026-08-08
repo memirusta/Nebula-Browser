@@ -37,3 +37,7 @@ src-tauri/target
 release/*.exe
 release/*.zip
 build.log
+
+# Local diagnostics
+perf-stress-*.csv
+.release-test/

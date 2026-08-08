@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Update } from '@tauri-apps/plugin-updater'
 import { APP_VERSION } from '../../core/appVersion'
@@ -12,6 +12,7 @@ import {
 } from '../../core/appUpdater'
 import { tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './AppUpdatePrompt.module.css'
 
 const STARTUP_CHECK_DELAY_MS = 2000
@@ -21,6 +22,7 @@ export function AppUpdatePrompt() {
   const [open, setOpen] = useState(false)
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
   const [status, setStatus] = useState<AppUpdateStatus>({ phase: 'idle' })
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!isAppUpdaterAvailable() || !import.meta.env.PROD) return
@@ -62,15 +64,23 @@ export function AppUpdatePrompt() {
     setStatus(result)
   }, [pendingUpdate])
 
+  useDialogFocusTrap({
+    active: open && !!pendingUpdate,
+    containerRef: panelRef,
+    onEscape: busy ? undefined : handleDismiss,
+  })
+
   if (!open || !pendingUpdate) return null
 
   return createPortal(
     <div className={styles.backdrop} role="presentation">
       <div
+        ref={panelRef}
         className={styles.panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-update-title"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <header className={styles.header}>
@@ -89,12 +99,12 @@ export function AppUpdatePrompt() {
         </header>
 
         {status.phase === 'downloading' && (
-          <p className={styles.status}>
+          <p className={styles.status} role="status" aria-live="polite">
             {tf(locale, 'updateDownloading', { progress: status.progress ?? 0 })}
           </p>
         )}
         {status.phase === 'error' && (
-          <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
+          <p className={`${styles.status} ${styles.statusError}`} role="alert">{status.message}</p>
         )}
 
         <footer className={styles.footer}>

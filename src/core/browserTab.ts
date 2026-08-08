@@ -2,6 +2,9 @@ import type { Shortcut } from './types'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
+const assignedWebviewLabels = new Map<string, string>()
+const assignedShortcutIds = new Map<string, string>()
+
 export interface BrowserTab {
   id: string
   shortcutId: string
@@ -22,7 +25,27 @@ export function shortcutFromTab(tab: BrowserTab): Shortcut {
 }
 
 export function tabWebviewLabel(shortcutId: string): string {
-  return `${TAB_WEBVIEW_PREFIX}${shortcutId}`
+  return assignedWebviewLabels.get(shortcutId) ?? `${TAB_WEBVIEW_PREFIX}${shortcutId}`
+}
+
+export function assignTabWebviewLabel(shortcutId: string, label: string): void {
+  const previous = assignedWebviewLabels.get(shortcutId)
+  if (previous) assignedShortcutIds.delete(previous)
+  assignedWebviewLabels.set(shortcutId, label)
+  assignedShortcutIds.set(label, shortcutId)
+}
+
+export function releaseTabWebviewLabel(shortcutId: string): void {
+  const label = assignedWebviewLabels.get(shortcutId)
+  if (label) assignedShortcutIds.delete(label)
+  assignedWebviewLabels.delete(shortcutId)
+}
+
+export function shortcutIdForTabWebviewLabel(label: string): string | null {
+  const assigned = assignedShortcutIds.get(label)
+  if (assigned) return assigned
+  if (!label.startsWith(TAB_WEBVIEW_PREFIX)) return null
+  return label.slice(TAB_WEBVIEW_PREFIX.length)
 }
 
 export function faviconForUrl(url: string): string {

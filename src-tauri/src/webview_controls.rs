@@ -162,3 +162,119 @@ pub fn webview_set_memory_usage(app: AppHandle, label: String, low: bool) -> Res
         Ok(())
     }
 }
+
+
+#[tauri::command]
+pub fn webview_is_playing_audio(app: AppHandle, label: String) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
+        use windows_core::{Interface, BOOL};
+
+        with_webview_result(&app, &label, |inner| unsafe {
+            let core = inner
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
+            let media: ICoreWebView2_8 = core.cast().map_err(|error| error.to_string())?;
+            let mut playing = BOOL::default();
+            media
+                .IsDocumentPlayingAudio(std::ptr::addr_of_mut!(playing))
+                .map_err(|error| error.to_string())?;
+            Ok(playing.as_bool())
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label);
+        Ok(false)
+    }
+}
+
+
+#[tauri::command]
+pub fn webview_set_suspended(
+    app: AppHandle,
+    label: String,
+    suspended: bool,
+) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::sync::mpsc::sync_channel;
+        use std::time::Duration;
+
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
+        use webview2_com::TrySuspendCompletedHandler;
+        use windows_core::{Interface, BOOL};
+
+        if !label.starts_with("nebula-tab-") {
+            return Err("webview suspension is limited to browser tabs".to_string());
+        }
+
+        if !suspended {
+            return with_webview_result(&app, &label, |inner| unsafe {
+                let core = inner
+                    .controller()
+                    .CoreWebView2()
+                    .map_err(|error| error.to_string())?;
+                let lifecycle: ICoreWebView2_3 = core.cast().map_err(|error| error.to_string())?;
+                let mut is_suspended = BOOL::default();
+                lifecycle
+                    .IsSuspended(&mut is_suspended)
+                    .map_err(|error| error.to_string())?;
+                if !is_suspended.as_bool() {
+                    return Ok(false);
+                }
+                lifecycle.Resume().map_err(|error| error.to_string())?;
+                Ok(true)
+            });
+        }
+
+        let webview = app
+            .get_webview(&label)
+            .ok_or_else(|| format!("webview '{label}' not found"))?;
+        let (tx, rx) = sync_channel(1);
+        let label_for_error = label.clone();
+
+        webview
+            .with_webview(move |inner| unsafe {
+                let failure_tx = tx.clone();
+                let handler = TrySuspendCompletedHandler::create(Box::new(
+                    move |result, is_successful| {
+                        let outcome = result
+                            .map(|_| is_successful)
+                            .map_err(|error| error.to_string());
+                        let _ = tx.send(outcome);
+                        Ok(())
+                    },
+                ));
+
+                let result = (|| -> windows_core::Result<()> {
+                    let core = inner.controller().CoreWebView2()?;
+                    let lifecycle: ICoreWebView2_3 = core.cast()?;
+                    let mut is_suspended = BOOL::default();
+                    lifecycle.IsSuspended(&mut is_suspended)?;
+                    if is_suspended.as_bool() {
+                        let _ = failure_tx.send(Ok(true));
+                        return Ok(());
+                    }
+                    lifecycle.TrySuspend(&handler)
+                })();
+
+                if let Err(error) = result {
+                    let _ = failure_tx.send(Err(error.to_string()));
+                }
+            })
+            .map_err(|error| error.to_string())?;
+
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| format!("timed out suspending webview '{label_for_error}'"))?
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label, suspended);
+        Ok(false)
+    }
+}

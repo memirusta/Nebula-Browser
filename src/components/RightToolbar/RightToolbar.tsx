@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { EditModuleChrome } from '../HomeEdit/EditModuleChrome'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './RightToolbar.module.css'
@@ -10,17 +10,36 @@ export interface ToolbarAnchor {
 
 interface RightToolbarProps {
   onSettings: (anchor: ToolbarAnchor) => void
+  onNotifications: () => void
+  onDownloads: () => void
+  onHistory: () => void
   variant?: 'default' | 'overlay'
   notificationBadge?: number
+  downloadCount?: number
+  activeDownloadCount?: number
+  downloadProgress?: number | null
   editMode?: boolean
   editToolbarVisible?: boolean
   onEditToggleToolbar?: () => void
 }
 
-const ACTION_IDS = ['settings', 'notifications'] as const
+const ACTION_IDS = ['settings', 'notifications', 'history', 'downloads'] as const
 
 function ToolbarIcon({ id }: { id: (typeof ACTION_IDS)[number] }) {
   switch (id) {
+    case 'downloads':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'history':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4.5 9A8 8 0 1 1 4 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M4.5 4.5V9H9M12 7.5V12l3 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
     case 'settings':
       return (
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -38,8 +57,14 @@ function ToolbarIcon({ id }: { id: (typeof ACTION_IDS)[number] }) {
 
 export function RightToolbar({
   onSettings,
+  onNotifications,
+  onDownloads,
+  onHistory,
   variant = 'default',
   notificationBadge = 0,
+  downloadCount = 0,
+  activeDownloadCount = 0,
+  downloadProgress = null,
   editMode = false,
   editToolbarVisible = true,
   onEditToggleToolbar,
@@ -48,11 +73,35 @@ export function RightToolbar({
   const settingsRef = useRef<HTMLButtonElement>(null)
 
   const actionLabels: Record<(typeof ACTION_IDS)[number], string> = {
+    downloads: t('downloads'),
     settings: t('settings'),
     notifications: t('notifications'),
+    history: t('historyTitle'),
+  }
+
+  const onToolbarKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+    const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled]):not([tabindex="-1"])'))
+    if (buttons.length === 0) return
+    const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    let nextIndex = currentIndex
+    if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = buttons.length - 1
+    else if (event.key === 'ArrowDown') nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % buttons.length
+    else if (event.key === 'ArrowUp') nextIndex = currentIndex < 0 ? buttons.length - 1 : (currentIndex - 1 + buttons.length) % buttons.length
+    event.preventDefault()
+    buttons[nextIndex]?.focus()
   }
 
   const handlers: Record<(typeof ACTION_IDS)[number], () => void> = {
+    downloads: () => {
+      if (editMode) return
+      onDownloads()
+    },
+    history: () => {
+      if (editMode) return
+      onHistory()
+    },
     settings: () => {
       if (editMode) return
       const el = settingsRef.current
@@ -62,13 +111,14 @@ export function RightToolbar({
     },
     notifications: () => {
       if (editMode) return
+      onNotifications()
     },
   }
 
   const toolbar = (
     <aside className={variant === 'overlay' ? styles.rootOverlay : styles.root}>
-      <div className={styles.actions}>
-        {ACTION_IDS.map((id) => (
+      <div className={styles.actions} role="toolbar" aria-orientation="vertical" aria-label={t('toolbarLabel')} onKeyDown={onToolbarKeyDown}>
+        {ACTION_IDS.filter((id) => id !== 'downloads' || downloadCount > 0).map((id) => (
           <button
             key={id}
             ref={id === 'settings' ? settingsRef : undefined}
@@ -76,6 +126,7 @@ export function RightToolbar({
             className={[
               styles.actionBtn,
               variant === 'overlay' ? styles.actionBtnOverlay : '',
+              id === 'downloads' && activeDownloadCount > 0 ? styles.actionBtnActive : '',
             ]
               .filter(Boolean)
               .join(' ')}
@@ -87,6 +138,16 @@ export function RightToolbar({
             <span className={styles.actionIcon}>
               <ToolbarIcon id={id} />
             </span>
+            {id === 'downloads' && activeDownloadCount > 0 && downloadProgress !== null && (
+              <svg className={styles.progressRing} viewBox="0 0 44 44" aria-hidden="true">
+                <circle cx="22" cy="22" r="20.5" pathLength="100" style={{ strokeDashoffset: 100 - downloadProgress }} />
+              </svg>
+            )}
+            {id === 'downloads' && downloadCount > 0 && (
+              <span className={[styles.badge, activeDownloadCount === 0 ? styles.badgeComplete : ''].filter(Boolean).join(' ')}>
+                {activeDownloadCount > 0 ? activeDownloadCount : '✓'}
+              </span>
+            )}
             {id === 'notifications' && notificationBadge > 0 && (
               <span className={styles.badge}>{notificationBadge}</span>
             )}

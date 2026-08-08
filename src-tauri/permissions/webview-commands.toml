@@ -2,6 +2,7 @@
 identifier = "allow-nebula-webview-commands"
 description = "Allow Nebula custom webview commands"
 commands.allow = [
+  "write_transition_log",
   "webview_navigate",
   "webview_close_tab",
   "webview_current_url",
@@ -22,8 +23,14 @@ commands.allow = [
   "webview_set_chrome_hit_region",
   "webview_set_shell_hit_region",
   "webview_setup_tab_error_pages",
+  "webview_apply_privacy",
+  "webview_clear_browsing_data",
+  "ublock_extension_info",
+  "ublock_extension_install",
+  "ublock_extension_status",
   "webview_setup_branding",
   "webview_execute_script",
+  "download_control",
   "get_system_stats",
   "detect_default_browser",
   "import_default_browser_bookmarks",

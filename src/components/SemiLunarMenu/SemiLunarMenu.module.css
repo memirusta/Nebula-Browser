@@ -318,6 +318,52 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 
+.downloadBtnActive {
+  border-color: rgba(218, 181, 255, 0.38);
+  color: #d9baff;
+  box-shadow: 0 0 16px rgba(155, 97, 225, 0.24);
+}
+
+.downloadProgressRing {
+  position: absolute;
+  inset: -1px;
+  width: 36px !important;
+  height: 36px !important;
+  overflow: visible;
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+
+.downloadProgressRing circle {
+  fill: none;
+  stroke: #d2adff;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  transition: stroke-dashoffset 140ms linear;
+}
+
+.downloadBadge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  display: grid;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  color: #130c1c;
+  background: #d2adff;
+  font-size: 9px;
+  font-weight: 750;
+  place-items: center;
+}
+
+.downloadBadgeComplete {
+  color: #06150c;
+  background: #70dda2;
+}
+
 .lunarDragCap {
   position: absolute;
   top: 0;
@@ -631,4 +677,3 @@
     opacity: 1;
   }
 }
-

@@ -1,18 +1,28 @@
 {
   "name": "nebula",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
+    "lint": "oxlint src",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:build": "tauri build",
     "tauri:build:binary": "tauri build --no-bundle --target x86_64-pc-windows-msvc",
     "tauri:build:x64": "tauri build --target x86_64-pc-windows-msvc",
-    "tauri:build:x86": "tauri build --target i686-pc-windows-msvc"
+    "tauri:build:x86": "tauri build --target i686-pc-windows-msvc",
+    "perf:stress": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/perf-stress.ps1",
+    "perf:summary": "node scripts/perf-log-summary.mjs",
+    "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "test:native-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native-smoke.ps1",
+    "test:release-smoke": "npm run test:e2e && npm run tauri:build:binary && npm run test:native-smoke",
+    "release:preflight": "node scripts/release-preflight.mjs",
+    "test:clean-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-install-smoke.ps1",
+    "test:upgrade-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/upgrade-install-smoke.ps1",
+    "test:clean-sandbox": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-sandbox-smoke.ps1",
+    "test:updater-remote": "node scripts/updater-remote-smoke.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

@@ -52,6 +52,12 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
+.actionBtnActive {
+  border-color: rgba(202, 166, 255, 0.36);
+  color: #d7baff;
+  box-shadow: 0 0 22px rgba(139, 81, 215, 0.18);
+}
+
 .actionBtnOverlay {
   background: rgba(12, 18, 14, 0.28);
 }
@@ -70,6 +76,25 @@
   height: 100%;
 }
 
+.progressRing {
+  position: absolute;
+  inset: -1px;
+  width: 44px;
+  height: 44px;
+  overflow: visible;
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+
+.progressRing circle {
+  fill: none;
+  stroke: #caa6ff;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  transition: stroke-dashoffset 140ms linear;
+}
+
 .badge {
   position: absolute;
   top: -2px;
@@ -85,4 +110,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.badgeComplete {
+  background: #63d99a;
+  color: #07150d;
 }

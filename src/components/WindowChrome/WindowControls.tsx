@@ -53,12 +53,17 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
     event.preventDefault()
   }
 
+  const stopDrag = (event: MouseEvent) => {
+    event.stopPropagation()
+  }
+
   return (
     <>
       <button
         type="button"
         className={buttonClassName}
-        onMouseDown={(event) => {
+        onMouseDown={stopDrag}
+        onClick={(event) => {
           stop(event)
           void appWindow.minimize()
         }}
@@ -72,7 +77,8 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
       <button
         type="button"
         className={buttonClassName}
-        onMouseDown={(event) => {
+        onMouseDown={stopDrag}
+        onClick={(event) => {
           stop(event)
           void toggleWindowMaximize().then(setMaximized)
         }}
@@ -105,7 +111,8 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
       <button
         type="button"
         className={buttonClassName}
-        onMouseDown={(event) => {
+        onMouseDown={stopDrag}
+        onClick={(event) => {
           stop(event)
           void appWindow.close()
         }}

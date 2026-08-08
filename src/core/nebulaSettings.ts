@@ -83,13 +83,21 @@ export interface PrivacySettings {
   blockTrackers: boolean
   strictCookies: boolean
   httpsOnly: boolean
+  trackingLevel: 'none' | 'balanced' | 'strict'
+  globalPrivacyControl: boolean
+  clearOnExit: boolean
+  privateMode: boolean
+  siteExceptions: string
+  customBlockList: string
+  permissionPolicy: 'ask' | 'block'
+  permissionExceptions: string
+  cookieBannerBlocking: boolean
 }
 
 export interface NotificationSettings {
   focusModeAlerts: boolean
   siteNotifications: boolean
   showToolbarBadge: boolean
-  toolbarBadgeCount: number
 }
 
 export interface NebulaSettings {
@@ -162,12 +170,20 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     blockTrackers: false,
     strictCookies: false,
     httpsOnly: false,
+    trackingLevel: 'balanced',
+    globalPrivacyControl: true,
+    clearOnExit: false,
+    privateMode: false,
+    siteExceptions: '',
+    customBlockList: '',
+    permissionPolicy: 'ask',
+    permissionExceptions: '',
+    cookieBannerBlocking: true,
   },
   notifications: {
     focusModeAlerts: true,
     siteNotifications: true,
     showToolbarBadge: true,
-    toolbarBadgeCount: 2,
   },
 }
 
@@ -347,6 +363,25 @@ export function normalizeNebulaSettings(
       strictCookies:
         typeof p?.strictCookies === 'boolean' ? p.strictCookies : d.privacy.strictCookies,
       httpsOnly: typeof p?.httpsOnly === 'boolean' ? p.httpsOnly : d.privacy.httpsOnly,
+      trackingLevel:
+        p?.trackingLevel === 'none' || p?.trackingLevel === 'strict' || p?.trackingLevel === 'balanced'
+          ? p.trackingLevel
+          : d.privacy.trackingLevel,
+      globalPrivacyControl:
+        typeof p?.globalPrivacyControl === 'boolean' ? p.globalPrivacyControl : d.privacy.globalPrivacyControl,
+      clearOnExit: typeof p?.clearOnExit === 'boolean' ? p.clearOnExit : d.privacy.clearOnExit,
+      privateMode: typeof p?.privateMode === 'boolean' ? p.privateMode : d.privacy.privateMode,
+      siteExceptions: typeof p?.siteExceptions === 'string' ? p.siteExceptions.slice(0, 4000) : d.privacy.siteExceptions,
+      customBlockList: typeof p?.customBlockList === 'string' ? p.customBlockList.slice(0, 12000) : d.privacy.customBlockList,
+      permissionPolicy: p?.permissionPolicy === 'block' || p?.permissionPolicy === 'ask'
+        ? p.permissionPolicy
+        : d.privacy.permissionPolicy,
+      permissionExceptions: typeof p?.permissionExceptions === 'string'
+        ? p.permissionExceptions.slice(0, 4000)
+        : d.privacy.permissionExceptions,
+      cookieBannerBlocking: typeof p?.cookieBannerBlocking === 'boolean'
+        ? p.cookieBannerBlocking
+        : d.privacy.cookieBannerBlocking,
     },
     notifications: {
       focusModeAlerts:
@@ -361,7 +396,6 @@ export function normalizeNebulaSettings(
         typeof n?.showToolbarBadge === 'boolean'
           ? n.showToolbarBadge
           : d.notifications.showToolbarBadge,
-      toolbarBadgeCount: clampNum(n?.toolbarBadgeCount, 0, 99, d.notifications.toolbarBadgeCount),
     },
   }
 }

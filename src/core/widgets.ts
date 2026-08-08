@@ -1,11 +1,39 @@
 import { t, type NebulaLocale } from './locale'
 
-export type WidgetType = 'ram' | 'cpu' | 'clock' | 'blank' | 'notes'
+export type WidgetType =
+  | 'ram'
+  | 'cpu'
+  | 'clock'
+  | 'blank'
+  | 'notes'
+  | 'weather'
+  | 'calendar'
+  | 'quickLinks'
+  | 'network'
 
-export const WIDGET_TYPES: WidgetType[] = ['ram', 'cpu', 'clock', 'blank', 'notes']
+export const WIDGET_TYPES: WidgetType[] = [
+  'ram',
+  'cpu',
+  'clock',
+  'blank',
+  'notes',
+  'weather',
+  'calendar',
+  'quickLinks',
+  'network',
+]
 
 /** Widget types offered in the add picker (clock is sidebar-only). */
-export const ADDABLE_WIDGET_TYPES: WidgetType[] = ['ram', 'cpu', 'blank', 'notes']
+export const ADDABLE_WIDGET_TYPES: WidgetType[] = [
+  'ram',
+  'cpu',
+  'notes',
+  'blank',
+  'weather',
+  'calendar',
+  'quickLinks',
+  'network',
+]
 
 export function getWidgetLabel(locale: NebulaLocale, type: WidgetType): string {
   switch (type) {
@@ -19,6 +47,14 @@ export function getWidgetLabel(locale: NebulaLocale, type: WidgetType): string {
       return t(locale, 'widgetBlank')
     case 'notes':
       return t(locale, 'widgetNotes')
+    case 'weather':
+      return t(locale, 'widgetWeather')
+    case 'calendar':
+      return t(locale, 'widgetCalendar')
+    case 'quickLinks':
+      return t(locale, 'widgetQuickLinks')
+    case 'network':
+      return t(locale, 'widgetNetwork')
   }
 }
 
@@ -29,6 +65,10 @@ export const WIDGET_LABELS: Record<WidgetType, string> = {
   clock: 'Saat',
   blank: 'Boş Alan',
   notes: 'Notlar',
+  weather: 'Hava Durumu',
+  calendar: 'Takvim',
+  quickLinks: 'Hızlı Bağlantılar',
+  network: 'Ağ Kullanımı',
 }
 
 export interface WidgetSize {
@@ -44,15 +84,33 @@ export const WIDGET_DEFAULT_SIZES: Record<WidgetType, WidgetSize> = {
   clock: { w: 4, h: 3, minW: 3, minH: 2 },
   blank: { w: 4, h: 4, minW: 2, minH: 2 },
   notes: { w: 4, h: 5, minW: 3, minH: 3 },
+  weather: { w: 4, h: 6, minW: 4, minH: 5 },
+  calendar: { w: 4, h: 7, minW: 4, minH: 6 },
+  quickLinks: { w: 4, h: 6, minW: 3, minH: 4 },
+  network: { w: 4, h: 4, minW: 3, minH: 3 },
 }
 
 export const WIDGET_LAYOUT_KEY = 'nebula-widget-layout-v1'
+
+export interface WidgetQuickLink {
+  id: string
+  label: string
+  url: string
+}
+
+export interface WidgetPaneData {
+  notes?: { text: string }
+  blank?: { heading: string; body: string; accent: string }
+  weather?: { location: string; latitude: number; longitude: number }
+  quickLinks?: { links: WidgetQuickLink[] }
+}
 
 export interface WidgetPane {
   id: string
   widgetType: WidgetType
   title: string
   active: boolean
+  data?: WidgetPaneData
 }
 
 export interface WidgetLayoutItem {
@@ -138,6 +196,7 @@ export function normalizeWidgetLayout(
           ? p.title.trim().slice(0, 32)
           : WIDGET_LABELS[p.widgetType],
       active: Boolean(p.active),
+      data: normalizeWidgetData(p.data),
     }))
 
   if (panes.length === 0) {
@@ -167,10 +226,11 @@ export function normalizeWidgetLayout(
   for (const pane of panes) {
     if (!layoutIds.has(pane.id)) {
       const defaults = WIDGET_DEFAULT_SIZES[pane.widgetType]
+      const bottomY = layout.reduce((bottom, item) => Math.max(bottom, item.y + item.h), 0)
       layout.push({
         i: pane.id,
         x: 0,
-        y: Infinity,
+        y: bottomY,
         w: defaults.w,
         h: defaults.h,
         minW: defaults.minW,
@@ -180,6 +240,50 @@ export function normalizeWidgetLayout(
   }
 
   return { panes, layout }
+}
+
+function normalizeWidgetData(value: unknown): WidgetPaneData {
+  if (!value || typeof value !== 'object') return {}
+  const data = value as WidgetPaneData
+  const normalized: WidgetPaneData = {}
+  if (data.notes && typeof data.notes.text === 'string') {
+    normalized.notes = { text: data.notes.text.slice(0, 20_000) }
+  }
+  if (data.blank) {
+    normalized.blank = {
+      heading: typeof data.blank.heading === 'string' ? data.blank.heading.slice(0, 60) : '',
+      body: typeof data.blank.body === 'string' ? data.blank.body.slice(0, 2_000) : '',
+      accent:
+        typeof data.blank.accent === 'string' && /^#[0-9a-f]{6}$/i.test(data.blank.accent)
+          ? data.blank.accent
+          : '#7ec8e3',
+    }
+  }
+  if (
+    data.weather &&
+    typeof data.weather.location === 'string' &&
+    typeof data.weather.latitude === 'number' &&
+    typeof data.weather.longitude === 'number'
+  ) {
+    normalized.weather = {
+      location: data.weather.location.slice(0, 100),
+      latitude: Math.max(-90, Math.min(90, data.weather.latitude)),
+      longitude: Math.max(-180, Math.min(180, data.weather.longitude)),
+    }
+  }
+  if (data.quickLinks && Array.isArray(data.quickLinks.links)) {
+    normalized.quickLinks = {
+      links: data.quickLinks.links
+        .filter((link) => link && typeof link.id === 'string' && typeof link.url === 'string')
+        .slice(0, 12)
+        .map((link) => ({
+          id: link.id.slice(0, 100),
+          label: typeof link.label === 'string' ? link.label.trim().slice(0, 40) : '',
+          url: link.url.trim().slice(0, 2_000),
+        })),
+    }
+  }
+  return normalized
 }
 
 export function loadWidgetLayout(): WidgetLayoutState {

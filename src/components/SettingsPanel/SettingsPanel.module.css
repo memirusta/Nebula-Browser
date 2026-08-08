@@ -246,6 +246,41 @@
   border-color: rgba(255, 255, 255, 0.22);
 }
 
+.actionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.privacyActionGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  max-width: 330px;
+}
+
+.statusActive,
+.statusInactive {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.statusActive {
+  color: #6ee7ad;
+  background: rgba(36, 176, 112, 0.14);
+  border: 1px solid rgba(74, 222, 148, 0.28);
+}
+
+.statusInactive {
+  color: var(--nebula-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
 .dangerBtn {
   border-color: rgba(255, 96, 96, 0.45);
   background: rgba(255, 72, 72, 0.14);

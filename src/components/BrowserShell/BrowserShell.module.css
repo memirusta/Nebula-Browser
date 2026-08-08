@@ -30,6 +30,16 @@
   pointer-events: none;
 }
 
+.nativeBrowserLoading {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(122, 67, 255, 0.12), transparent 34%),
+    #08050f;
+}
+
 .browserBlurred {
   pointer-events: none;
 }

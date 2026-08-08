@@ -2,7 +2,7 @@ import { listen, emit } from '@tauri-apps/api/event'
 import type { Window } from '@tauri-apps/api/window'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
-import { tabWebviewLabel } from '../core/browserTab'
+import { shortcutIdForTabWebviewLabel, tabWebviewLabel } from '../core/browserTab'
 import { isTauri } from './runtime'
 import {
   setSiteFullscreenBoundsMode,
@@ -29,8 +29,7 @@ let fullscreenResizeUnlisten: (() => void) | undefined
 let transitionChain: Promise<void> = Promise.resolve()
 
 function shortcutIdFromLabel(label: string): string | null {
-  if (!label.startsWith('nebula-tab-')) return null
-  return label.slice('nebula-tab-'.length)
+  return shortcutIdForTabWebviewLabel(label)
 }
 
 function enqueueFullscreenTransition(task: () => Promise<void>): Promise<void> {

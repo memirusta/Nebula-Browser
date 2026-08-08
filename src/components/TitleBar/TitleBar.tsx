@@ -80,7 +80,7 @@ export function TitleBar() {
         <button
           type="button"
           className={styles.control}
-          onMouseDown={onMinimize}
+          onClick={onMinimize}
           aria-label={t('titleMinimize')}
         >
           <svg viewBox="0 0 10 10" aria-hidden="true">
@@ -90,7 +90,7 @@ export function TitleBar() {
         <button
           type="button"
           className={[styles.control, styles.controlMax].join(' ')}
-          onMouseDown={onToggleMaximize}
+          onClick={onToggleMaximize}
           aria-label={maximized ? t('titleRestore') : t('titleMaximize')}
         >
           {maximized ? (
@@ -119,7 +119,7 @@ export function TitleBar() {
         <button
           type="button"
           className={[styles.control, styles.controlClose].join(' ')}
-          onMouseDown={onClose}
+          onClick={onClose}
           aria-label={t('titleClose')}
         >
           <svg viewBox="0 0 10 10" aria-hidden="true">

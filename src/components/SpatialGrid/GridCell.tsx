@@ -1,4 +1,4 @@
-import type { WidgetPane } from '../../core/widgets'
+import type { WidgetPane, WidgetPaneData } from '../../core/widgets'
 import type { SystemStats } from '../../core/types'
 import { useLocale } from '../../hooks/useLocale'
 import { WidgetRenderer } from '../widgets/WidgetRenderer'
@@ -10,9 +10,11 @@ interface GridCellProps {
   stats: SystemStats
   onFocus: () => void
   onClose: () => void
+  onUpdate: (data: WidgetPaneData) => void
+  onNavigate: (url: string) => void
 }
 
-export function GridCell({ pane, isActive, stats, onFocus, onClose }: GridCellProps) {
+export function GridCell({ pane, isActive, stats, onFocus, onClose, onUpdate, onNavigate }: GridCellProps) {
   const { t } = useLocale()
 
   return (
@@ -36,8 +38,8 @@ export function GridCell({ pane, isActive, stats, onFocus, onClose }: GridCellPr
           </button>
         </div>
       </div>
-      <div className={`${styles.content} widget-content`} onClick={onFocus}>
-        <WidgetRenderer type={pane.widgetType} stats={stats} />
+      <div className={`${styles.content} widget-content`} onClick={onFocus} onFocusCapture={onFocus}>
+        <WidgetRenderer pane={pane} stats={stats} onUpdate={onUpdate} onNavigate={onNavigate} />
       </div>
     </div>
   )

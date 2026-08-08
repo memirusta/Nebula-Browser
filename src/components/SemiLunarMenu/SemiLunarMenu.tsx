@@ -79,6 +79,11 @@ interface SemiLunarMenuProps {
   shellViewMode?: ShellViewMode
   onHomeClick?: () => void
   onBackClick?: () => void
+  onDownloadsClick?: () => void
+  downloadCount?: number
+  activeDownloadCount?: number
+  downloadProgress?: number | null
+  downloadPanelOpen?: boolean
   forceOpen?: boolean
   chromeQuickMenuOpen?: boolean
   onShortcutInteractionChange?: (active: boolean) => void
@@ -121,6 +126,11 @@ export function SemiLunarMenu({
   shellViewMode = 'browsing',
   onHomeClick,
   onBackClick,
+  onDownloadsClick,
+  downloadCount = 0,
+  activeDownloadCount = 0,
+  downloadProgress = null,
+  downloadPanelOpen = false,
   forceOpen = false,
   chromeQuickMenuOpen = false,
   onShortcutInteractionChange,
@@ -675,7 +685,7 @@ export function SemiLunarMenu({
     void syncChromeShellLayout(
       isExpanded,
       lunarHeightPx,
-      Boolean(openFolderId),
+      Boolean(openFolderId) || downloadPanelOpen,
       previewShortcut !== null,
       lunarWidthPx,
     )
@@ -735,11 +745,19 @@ export function SemiLunarMenu({
         rect.bottom,
         isExpanded,
         lunarHeightPx,
-        Boolean(openFolderId),
+        Boolean(openFolderId) || downloadPanelOpen,
         lunarWidthPx,
       )
     },
-    [contextMenu, isBrowsing, isExpanded, lunarHeightPx, lunarWidthPx, openFolderId],
+    [
+      contextMenu,
+      downloadPanelOpen,
+      isBrowsing,
+      isExpanded,
+      lunarHeightPx,
+      lunarWidthPx,
+      openFolderId,
+    ],
   )
 
   useEffect(() => {
@@ -751,7 +769,7 @@ export function SemiLunarMenu({
       contextMenu.y + 200,
       isExpanded,
       lunarHeightPx,
-      Boolean(openFolderId),
+      Boolean(openFolderId) || downloadPanelOpen,
       lunarWidthPx,
     )
 
@@ -759,13 +777,14 @@ export function SemiLunarMenu({
       void syncChromeShellLayout(
         isExpanded,
         lunarHeightPx,
-        Boolean(openFolderId),
+        Boolean(openFolderId) || downloadPanelOpen,
         previewShortcut !== null,
         lunarWidthPx,
       )
     }
   }, [
     contextMenu,
+    downloadPanelOpen,
     isBrowsing,
     shellViewMode,
     isExpanded,
@@ -785,7 +804,7 @@ export function SemiLunarMenu({
       void syncChromeShellLayout(
         true,
         lunarHeightPx,
-        Boolean(openFolderId),
+        Boolean(openFolderId) || downloadPanelOpen,
         previewShortcut !== null,
         lunarWidthPx,
       )
@@ -802,9 +821,9 @@ export function SemiLunarMenu({
     if (shellViewMode === 'browsing') {
       clearTimers()
       void syncChromeShellLayout(
-        stage === 'expanded',
+        isExpanded,
         lunarHeightPx,
-        Boolean(openFolderId),
+        Boolean(openFolderId) || downloadPanelOpen,
         previewShortcut !== null,
         lunarWidthPx,
       )
@@ -813,12 +832,13 @@ export function SemiLunarMenu({
     chromeQuickMenuOpen,
     shellViewMode,
     isBrowsing,
-    stage,
+    isExpanded,
     lunarHeightPx,
     lunarWidthPx,
     openFolderId,
     previewShortcut,
     contextMenu,
+    downloadPanelOpen,
     clearTimers,
   ])
 
@@ -830,14 +850,24 @@ export function SemiLunarMenu({
       void syncChromeShellLayout(
         isExpanded,
         lunarHeightPx,
-        Boolean(openFolderId),
+        Boolean(openFolderId) || downloadPanelOpen,
         previewShortcut !== null,
         lunarWidthPx,
       )
     }, 150)
 
     applyLayout()
-  }, [mode, isBrowsing, isExpanded, lunarHeightPx, lunarWidthPx, openFolderId, previewShortcut, contextMenu])
+  }, [
+    mode,
+    isBrowsing,
+    isExpanded,
+    lunarHeightPx,
+    lunarWidthPx,
+    openFolderId,
+    previewShortcut,
+    contextMenu,
+    downloadPanelOpen,
+  ])
 
   if (mode === 'overlay') return null
 
@@ -961,6 +991,58 @@ export function SemiLunarMenu({
                       strokeLinejoin="round"
                     />
                   </svg>
+                </button>
+              )}
+              {isBrowsing && downloadCount > 0 && onDownloadsClick && (
+                <button
+                  type="button"
+                  className={[
+                    styles.evBtn,
+                    activeDownloadCount > 0 ? styles.downloadBtnActive : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onDownloadsClick()
+                  }}
+                  title={t('downloads')}
+                  aria-label={t('downloads')}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M12 3v11m0 0 4-4m-4 4-4-4M5 20h14"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {activeDownloadCount > 0 && downloadProgress !== null && (
+                    <svg
+                      className={styles.downloadProgressRing}
+                      viewBox="0 0 36 36"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="16.5"
+                        pathLength="100"
+                        style={{ strokeDashoffset: 100 - downloadProgress }}
+                      />
+                    </svg>
+                  )}
+                  <span
+                    className={[
+                      styles.downloadBadge,
+                      activeDownloadCount === 0 ? styles.downloadBadgeComplete : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  >
+                    {activeDownloadCount > 0 ? activeDownloadCount : '✓'}
+                  </span>
                 </button>
               )}
               <button

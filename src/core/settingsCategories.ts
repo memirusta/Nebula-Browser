@@ -8,6 +8,7 @@ export type SettingsCategoryId =
   | 'privacy'
   | 'notifications'
   | 'about'
+  | 'shortcuts'
 
 export interface SettingsCategory {
   id: SettingsCategoryId
@@ -35,6 +36,12 @@ export function getSettingsCategories(locale: NebulaLocale): SettingsCategory[] 
       label: t(locale, 'catSemiLunar'),
       icon: '◠',
       description: t(locale, 'catSemiLunarDesc'),
+    },
+    {
+    id: 'shortcuts',
+    label: t(locale, 'catShortcuts'),
+    icon: '⌨',
+    description: t(locale, 'catShortcutsDesc'),
     },
     {
       id: 'account',

@@ -4,8 +4,14 @@ import { isTauri } from '../../platform/runtime'
 import { listenChromeActions, emitActiveUrl, emitTabCatalog, emitViewMode } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
 import type { BrowserShortcutId } from '../../core/browserShortcuts'
-import { syncTauriViewMode, applyTauriViewModeNow } from '../../platform/tauriBrowsingMode'
+import {
+  NATIVE_TAB_FAILED_EVENT,
+  NATIVE_TAB_READY_EVENT,
+  syncTauriViewMode,
+  applyTauriViewModeNow,
+} from '../../platform/tauriBrowsingMode'
 import { initSiteFullscreenBridge, forceExitSiteFullscreen } from '../../platform/tauriSiteFullscreen'
+import { writeTransitionLog } from '../../platform/tauriTransitionLog'
 import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
 import { DEFAULT_SHORTCUTS } from '../../core/constants'
 import { loadBrowseSessions } from '../../core/browseSession'
@@ -21,6 +27,11 @@ import {
   reloadBrowseTab,
   listenTabWebviewSnapshots,
   zoomBrowseTab,
+  setBrowsePrivacyOptions,
+  clearBrowseData,
+  getUblockExtensionInfo,
+  getUblockRuntimeStatus,
+  type BrowsingDataKind,
 } from '../../platform/tauriBrowser'
 import { useBrowserTabs } from '../../hooks/useBrowserTabs'
 import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
@@ -38,6 +49,8 @@ import { useShortcutPreferences } from '../../hooks/useShortcutPreferences'
 import { useShortcutFolders } from '../../hooks/useShortcutFolders'
 import { useNebulaSettings } from '../../hooks/useNebulaSettings'
 import { useBrowseSessions } from '../../hooks/useBrowseSessions'
+import { useBrowsingHistory } from '../../hooks/useBrowsingHistory'
+import type { BrowserSessionSnapshot, ClosedTabEntry } from '../../core/browsingHistory'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
 import { useWallpaper } from '../../hooks/useSystemStats'
 import type { ToolbarAnchor } from '../RightToolbar/RightToolbar'
@@ -54,6 +67,12 @@ import { useNebulaAccount } from '../../hooks/useNebulaAccount'
 import { useLocale } from '../../hooks/useLocale'
 import { usePasswordVault } from '../../hooks/usePasswordVault'
 import { usePasswordBridge } from '../../hooks/usePasswordBridge'
+import { useDownloads } from '../../hooks/useDownloads'
+import { useNotifications } from '../../hooks/useNotifications'
+import { DownloadManager } from '../DownloadManager/DownloadManager'
+import { NotificationPanel } from '../NotificationPanel/NotificationPanel'
+import { HistoryPanel } from '../HistoryPanel/HistoryPanel'
+import { CrashRecoveryPrompt } from '../CrashRecoveryPrompt/CrashRecoveryPrompt'
 import styles from './BrowserShell.module.css'
 
 type ViewMode = 'home' | 'browsing' | 'overlay'
@@ -73,6 +92,7 @@ export function BrowserShell() {
   const { settings, togglePreviewOnHover, updateCategory, resetCategory, applyHomeLayout } =
     useNebulaSettings()
   const [viewMode, setViewMode] = useState<ViewMode>('home')
+  const [nativeTabReady, setNativeTabReady] = useState(false)
   const viewModeRef = useRef<ViewMode>('home')
   const { wallpaper, pickWallpaper, resetWallpaper } = useWallpaper()
   const { visibleShortcuts, allShortcuts, toggleMute, removeShortcut, addVisitedShortcut, isMuted, resetShortcuts, applyImportedShortcuts } =
@@ -105,7 +125,22 @@ export function BrowserShell() {
     showRamWidget: settings.home.showRamWidget,
     showCpuWidget: settings.home.showCpuWidget,
   })
-  const { recordVisit, getSession } = useBrowseSessions()
+  const { recordVisit: recordBrowseSessionVisit, getSession } = useBrowseSessions()
+  const {
+    entries: historyEntries,
+    hosts: historyHosts,
+    closedTabs: persistedClosedTabs,
+    previousSession,
+    previousRunUnclean,
+    recordVisit: recordHistoryVisit,
+    removeEntry: removeHistoryEntry,
+    clearAll: clearAllHistory,
+    clearFiltered: clearFilteredHistory,
+    recordClosedTab,
+    removeClosedTab,
+    clearClosedTabs,
+    saveCurrentSession,
+  } = useBrowsingHistory()
   const {
     tabs,
     activeTab,
@@ -119,6 +154,85 @@ export function BrowserShell() {
     getTab,
     setActiveTabId,
   } = useBrowserTabs()
+  const downloads = useDownloads()
+  const notificationCenter = useNotifications(
+    downloads.items,
+    settings.notifications.siteNotifications,
+  )
+  const [downloadPanelOpen, setDownloadPanelOpen] = useState(false)
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
+  const [crashRecoveryOpen, setCrashRecoveryOpen] = useState(
+    () => previousRunUnclean && previousSession !== null && !settings.privacy.clearOnExit,
+  )
+  const [ublockVersion, setUblockVersion] = useState<string | null>(null)
+  const [ublockEnabled, setUblockEnabled] = useState(false)
+  const observedDownloadIdsRef = useRef<Set<string>>(new Set())
+  const startupPrivacyClearRef = useRef(false)
+  const clearPreviousSessionOnStartupRef = useRef(settings.privacy.clearOnExit)
+
+  useEffect(() => {
+    if (!isTauri) return
+    void getUblockExtensionInfo().then((info) => setUblockVersion(info.version)).catch(() => {
+      setUblockVersion(null)
+    })
+  }, [])
+
+  useEffect(() => {
+    setUblockEnabled(false)
+    if (!isTauri || !activeTabId) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void getUblockRuntimeStatus(activeTabId).then((status) => {
+        if (!cancelled) setUblockEnabled(status.installed && status.enabled)
+      }).catch(() => {
+        if (!cancelled) setUblockEnabled(false)
+      })
+    }, 1200)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [activeTabId])
+
+  useEffect(() => {
+    let hasNewDownload = false
+    for (const download of downloads.items) {
+      if (observedDownloadIdsRef.current.has(download.id)) continue
+      observedDownloadIdsRef.current.add(download.id)
+      hasNewDownload = true
+    }
+    if (hasNewDownload) {
+      setNotificationPanelOpen(false)
+      setHistoryPanelOpen(false)
+      setDownloadPanelOpen(true)
+    }
+  }, [downloads.items])
+
+  const toggleDownloadPanel = useCallback(() => {
+    setNotificationPanelOpen(false)
+    setHistoryPanelOpen(false)
+    setDownloadPanelOpen((open) => !open)
+  }, [])
+  const closeDownloadPanel = useCallback(() => {
+    setDownloadPanelOpen(false)
+  }, [])
+  const toggleNotificationPanel = useCallback(() => {
+    setDownloadPanelOpen(false)
+    setHistoryPanelOpen(false)
+    setNotificationPanelOpen((open) => !open)
+  }, [])
+  const closeNotificationPanel = useCallback(() => {
+    setNotificationPanelOpen(false)
+  }, [])
+  const toggleHistoryPanel = useCallback(() => {
+    setDownloadPanelOpen(false)
+    setNotificationPanelOpen(false)
+    setHistoryPanelOpen((open) => !open)
+  }, [])
+  const closeHistoryPanel = useCallback(() => {
+    setHistoryPanelOpen(false)
+  }, [])
 
   const handleRemoveFromSemiLunar = useCallback(
     (id: string) => {
@@ -198,6 +312,7 @@ export function BrowserShell() {
   const googleSessionHelperTabIdsRef = useRef<Set<string>>(new Set())
   const closingTabIdsRef = useRef<Set<string>>(new Set())
   const closedTabsRef = useRef<BrowserTab[]>([])
+  const historyUrlByTabRef = useRef<Map<string, string>>(new Map())
   const [focusSearchRequest, setFocusSearchRequest] = useState(0)
 
   useEffect(() => {
@@ -251,6 +366,45 @@ export function BrowserShell() {
 
   useEffect(() => {
     if (!isTauri) return
+
+    const recoverHome = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail : undefined
+      void writeTransitionLog('shell.native-tab-failed', 'info', {
+        ...(typeof detail === 'object' && detail !== null ? detail : {}),
+        activeTabId: activeTabIdRef.current,
+        viewMode: viewModeRef.current,
+      })
+      setNativeTabReady(false)
+      setOverlayModeActive(false)
+      setActiveUrl(null)
+      setViewMode('home')
+      delete document.documentElement.dataset.nebulaBrowsingTauri
+      delete document.documentElement.dataset.nebulaOverlayTauri
+    }
+    const markNativeTabReady = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail : undefined
+      void writeTransitionLog('shell.native-tab-ready', 'info', {
+        ...(typeof detail === 'object' && detail !== null ? detail : {}),
+        activeTabId: activeTabIdRef.current,
+        viewMode: viewModeRef.current,
+      })
+      setNativeTabReady(true)
+    }
+
+    window.addEventListener(NATIVE_TAB_FAILED_EVENT, recoverHome)
+    window.addEventListener(NATIVE_TAB_READY_EVENT, markNativeTabReady)
+    return () => {
+      window.removeEventListener(NATIVE_TAB_FAILED_EVENT, recoverHome)
+      window.removeEventListener(NATIVE_TAB_READY_EVENT, markNativeTabReady)
+    }
+  }, [activeTabIdRef])
+
+  useEffect(() => {
+    if (viewMode === 'home') setNativeTabReady(false)
+  }, [viewMode])
+
+  useEffect(() => {
+    if (!isTauri) return
     void emitViewMode(viewMode)
   }, [viewMode])
 
@@ -282,8 +436,13 @@ export function BrowserShell() {
 
   useEffect(() => {
     if (!activeUrl) return
-    recordVisit(activeUrl)
-  }, [activeUrl, recordVisit])
+    recordBrowseSessionVisit(activeUrl)
+  }, [activeUrl, recordBrowseSessionVisit])
+
+  useEffect(() => {
+    if (isTauri || !activeUrl) return
+    recordHistoryVisit(activeUrl, activeTab?.title)
+  }, [activeUrl, recordHistoryVisit])
 
   const registerGoogleSessionHelperTab = useCallback((shortcutId: string, url: string) => {
     if (!isGoogleBrowserSignInUrl(url)) return
@@ -328,6 +487,14 @@ export function BrowserShell() {
         return
       }
 
+      if (!googleSessionHelperTabIdsRef.current.has(snapshot.shortcutId)) {
+        const previousHistoryUrl = historyUrlByTabRef.current.get(snapshot.shortcutId)
+        if (previousHistoryUrl !== snapshot.url) {
+          recordHistoryVisit(snapshot.url, snapshot.title)
+          historyUrlByTabRef.current.set(snapshot.shortcutId, snapshot.url)
+        }
+      }
+
       applyTabSnapshot(snapshot.shortcutId, snapshot.url, snapshot.title)
       if (activeTabIdRef.current !== snapshot.shortcutId) return
       const current = tabsRef.current.find((tab) => tab.shortcutId === snapshot.shortcutId)
@@ -346,7 +513,7 @@ export function BrowserShell() {
       cancelled = true
       unlisten?.()
     }
-  }, [activeTabIdRef, applyTabSnapshot, dismissGoogleSessionHelperTab, tabsRef])
+  }, [activeTabIdRef, applyTabSnapshot, dismissGoogleSessionHelperTab, recordHistoryVisit, tabsRef])
 
   useEffect(() => {
     if (!isTauri) return
@@ -359,6 +526,9 @@ export function BrowserShell() {
   }, [tabs, activeTabId])
 
   const openSettings = useCallback((anchor: ToolbarAnchor) => {
+    setDownloadPanelOpen(false)
+    setNotificationPanelOpen(false)
+    setHistoryPanelOpen(false)
     setOverlayModeActive(false)
     setViewMode('home')
     setSettingsActivated(true)
@@ -370,6 +540,12 @@ export function BrowserShell() {
     setSettingsOpen(false)
     setSettingsAnchor(null)
   }, [])
+
+  const handleClearBrowsingData = useCallback(async (kind: BrowsingDataKind = 'all') => {
+    const tabId = activeTabIdRef.current ?? openTabIds[0]
+    await clearBrowseData(tabId ?? null, kind)
+    if (kind === 'all' || kind === 'history') clearAllHistory()
+  }, [activeTabIdRef, clearAllHistory, openTabIds])
 
   const handleReopenOnboarding = useCallback(() => {
     closeSettings()
@@ -511,6 +687,78 @@ export function BrowserShell() {
     [openShortcutByUrl],
   )
 
+  const openHistoryTab = useCallback(
+    (url: string, title?: string, activate = true) => {
+      const id = `history-${crypto.randomUUID()}`
+      const shortcut: Shortcut = {
+        id,
+        label: title?.trim() || url,
+        url,
+      }
+
+      if (!activate) {
+        openOrSwitchTab(shortcut, { activate: false })
+        if (isTauri) {
+          void prepareBrowseTabInBackground(id, url, { forceNavigate: true })
+        }
+        return
+      }
+
+      setTabSwitchHistory((history) => {
+        const current = activeTabIdRef.current
+        if (current && current !== id) return [...history, current]
+        return history
+      })
+      pendingBrowseTargetRef.current = { tabId: id, url, forceNavigate: true }
+      openOrSwitchTab(shortcut)
+      setTauriBrowseSyncToken((token) => token + 1)
+      setViewMode('browsing')
+    },
+    [activeTabIdRef, openOrSwitchTab],
+  )
+
+  const openHistoryEntry = useCallback(
+    (url: string, title?: string) => {
+      closeHistoryPanel()
+      openHistoryTab(url, title, true)
+    },
+    [closeHistoryPanel, openHistoryTab],
+  )
+
+  const openClosedHistoryTab = useCallback(
+    (entry: ClosedTabEntry) => {
+      removeClosedTab(entry.id)
+      closeHistoryPanel()
+      openHistoryTab(entry.url, entry.title, true)
+    },
+    [closeHistoryPanel, openHistoryTab, removeClosedTab],
+  )
+
+  const openPreviousHistorySession = useCallback(
+    (session: BrowserSessionSnapshot) => {
+      if (session.tabs.length === 0) return
+      closeHistoryPanel()
+      const activeIndex = Math.max(0, session.tabs.findIndex((tab) => tab.id === session.activeTabId))
+      session.tabs.forEach((tab, index) => {
+        if (index === activeIndex) return
+        openHistoryTab(tab.url, tab.title, false)
+      })
+      const active = session.tabs[activeIndex] ?? session.tabs[0]
+      if (active) openHistoryTab(active.url, active.title, true)
+    },
+    [closeHistoryPanel, openHistoryTab],
+  )
+
+  const restoreCrashedSession = useCallback(() => {
+    if (!previousSession) return
+    setCrashRecoveryOpen(false)
+    openPreviousHistorySession(previousSession)
+  }, [openPreviousHistorySession, previousSession])
+
+  const dismissCrashRecovery = useCallback(() => {
+    setCrashRecoveryOpen(false)
+  }, [])
+
   const handleCloseTab = useCallback(
     async (shortcutId: string) => {
       if (closingTabIdsRef.current.has(shortcutId)) return
@@ -519,7 +767,9 @@ export function BrowserShell() {
       const closing = tabsRef.current.find((tab) => tab.shortcutId === shortcutId)
       if (closing) {
         closedTabsRef.current = [closing, ...closedTabsRef.current].slice(0, 25)
+        recordClosedTab(closing)
       }
+      historyUrlByTabRef.current.delete(shortcutId)
 
       const remaining = tabsRef.current.filter(
         (tab) => !closingTabIdsRef.current.has(tab.shortcutId),
@@ -557,8 +807,10 @@ export function BrowserShell() {
         closingTabIdsRef.current.delete(shortcutId)
       }
     },
-    [closeTab, tabsRef],
+    [closeTab, recordClosedTab, tabsRef],
   )
+
+
 
   // Invariant fallback for concurrent close actions: an empty tab catalog can
   // never remain in browsing/overlay mode.
@@ -574,6 +826,16 @@ export function BrowserShell() {
       void applyTauriViewModeNow('home', null)
     }
   }, [tabs.length, viewMode])
+
+  useEffect(() => {
+    // Do not erase the crashed session with an empty startup catalog before the
+    // user has chosen whether to restore it.
+    if (crashRecoveryOpen && tabs.length === 0) return
+    const timer = window.setTimeout(() => {
+      saveCurrentSession(tabs, activeTabId)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [activeTabId, crashRecoveryOpen, saveCurrentSession, tabs])
 
   const goBack = useCallback(() => {
     if (viewModeRef.current === 'overlay') {
@@ -932,11 +1194,13 @@ export function BrowserShell() {
     if (!isTauri) return
 
     if (isHome) {
+      void writeTransitionLog('shell.sync-view-mode', 'info', { mode: 'home' })
       syncTauriViewMode('home', null)
       return
     }
 
     if (isOverlay) {
+      void writeTransitionLog('shell.sync-view-mode', 'info', { mode: 'overlay' })
       syncTauriViewMode('overlay', null)
       return
     }
@@ -954,6 +1218,13 @@ export function BrowserShell() {
       pendingBrowseTargetRef.current = null
     }
 
+    void writeTransitionLog('shell.sync-view-mode', 'info', {
+      mode: 'browsing',
+      tabId: activeTabId,
+      url: targetUrl,
+      forceNavigate: forceNavigate ?? false,
+      pendingTarget: pending?.tabId === activeTabId,
+    })
     syncTauriViewMode('browsing', {
       tabId: activeTabId,
       url: targetUrl,
@@ -963,7 +1234,25 @@ export function BrowserShell() {
 
   const browserContentVisible = isOverlay || !shortcutInteractionActive
   const hideHomeChrome = shortcutInteractionActive && !homeEditMode
-  const { home, semiLunar, notifications } = settings
+  const { home, semiLunar, notifications, privacy } = settings
+
+  useEffect(() => {
+    if (!isTauri) return
+    void setBrowsePrivacyOptions(
+      {
+        ...privacy,
+        siteNotifications: notifications.siteNotifications,
+        notificationAllowedSites: notificationCenter.allowedSites,
+        notificationBlockedSites: notificationCenter.blockedSites,
+      },
+      openTabIds,
+    )
+    if (clearPreviousSessionOnStartupRef.current && !startupPrivacyClearRef.current) {
+      startupPrivacyClearRef.current = true
+      clearAllHistory()
+      void clearBrowseData(null)
+    }
+  }, [clearAllHistory, openTabIds, privacy, notifications.siteNotifications, notificationCenter.allowedSites, notificationCenter.blockedSites])
 
   const editLayout = homeEditMode && draftLayout ? draftLayout : homeLayoutFromSettings(home)
   const effectiveHome = homeEditMode
@@ -1067,11 +1356,23 @@ export function BrowserShell() {
     lunarHeightPx: browsingAdaptiveLunar.height,
     onHomeClick: isHome ? undefined : openOverlay,
     onBackClick: isHome ? undefined : goBack,
+    onDownloadsClick: isHome ? undefined : toggleDownloadPanel,
+    downloadCount: downloads.items.length,
+    activeDownloadCount: downloads.activeCount,
+    downloadProgress: downloads.aggregateProgress,
+    downloadPanelOpen: !isHome && downloadPanelOpen,
+    forceOpen: !isHome && downloadPanelOpen,
   }
 
   const toolbarProps = {
     onSettings: openSettings,
-    notificationBadge: notifications.showToolbarBadge ? notifications.toolbarBadgeCount : 0,
+    onNotifications: toggleNotificationPanel,
+    onDownloads: toggleDownloadPanel,
+    onHistory: toggleHistoryPanel,
+    notificationBadge: notifications.showToolbarBadge ? notificationCenter.unreadCount : 0,
+    downloadCount: downloads.items.length,
+    activeDownloadCount: downloads.activeCount,
+    downloadProgress: downloads.aggregateProgress,
   }
 
   return (
@@ -1147,6 +1448,8 @@ export function BrowserShell() {
                     showRamWidget: home.showRamWidget,
                     showCpuWidget: home.showCpuWidget,
                   }}
+                  onExportWidgets={widgetLayout.exportBackup}
+                  onImportWidgets={widgetLayout.importBackup}
                   clockSettings={{
                     showClock: effectiveHome.showClock,
                     clockFontSize: home.clockFontSize,
@@ -1177,6 +1480,8 @@ export function BrowserShell() {
                         onLayoutChange={widgetLayout.onLayoutChange}
                         onFocusPane={widgetLayout.focusWidget}
                         onClosePane={widgetLayout.removeWidget}
+                        onUpdatePane={widgetLayout.updateWidgetData}
+                        onNavigate={openFromSearchBar}
                       />
                     </Suspense>
                   )}
@@ -1222,13 +1527,93 @@ export function BrowserShell() {
 
       {createPortal(
         <div
-          className={isHome && pinShortcutInteraction ? styles.semiLunarHidden : ''}
-          aria-hidden={isHome && pinShortcutInteraction ? true : undefined}
+          className={
+            (isHome && pinShortcutInteraction) || (isBrowsing && historyPanelOpen)
+              ? styles.semiLunarHidden
+              : ''
+          }
+          aria-hidden={
+            (isHome && pinShortcutInteraction) || (isBrowsing && historyPanelOpen)
+              ? true
+              : undefined
+          }
         >
           <SemiLunarMenu {...semiLunarMenuProps} />
         </div>,
         document.body,
       )}
+
+      {showBrowser && isTauri && !nativeTabReady && (
+        <div className={styles.nativeBrowserLoading} aria-hidden="true" />
+      )}
+
+      {crashRecoveryOpen && previousSession &&
+        createPortal(
+          <CrashRecoveryPrompt
+            tabCount={previousSession.tabs.length}
+            onRestore={restoreCrashedSession}
+            onDismiss={dismissCrashRecovery}
+          />,
+          document.body,
+        )}
+
+      {historyPanelOpen &&
+        createPortal(
+          <HistoryPanel
+            entries={historyEntries}
+            hosts={historyHosts}
+            closedTabs={persistedClosedTabs}
+            previousSession={previousSession}
+            variant={isBrowsing ? 'browsing' : 'home'}
+            browsingTop={browsingAdaptiveLunar.height + 14}
+            onOpenUrl={openHistoryEntry}
+            onOpenClosedTab={openClosedHistoryTab}
+            onOpenPreviousSession={openPreviousHistorySession}
+            onRemoveEntry={removeHistoryEntry}
+            onClearFiltered={clearFilteredHistory}
+            onClearAll={clearAllHistory}
+            onClearClosed={clearClosedTabs}
+            onClose={closeHistoryPanel}
+          />,
+          document.body,
+        )}
+
+      {downloadPanelOpen &&
+        createPortal(
+          <DownloadManager
+            items={downloads.items}
+            variant={isBrowsing ? 'browsing' : 'home'}
+            browsingTop={browsingAdaptiveLunar.height + 14}
+            onAction={downloads.act}
+            onRemove={downloads.remove}
+            onClearFinished={downloads.clearFinished}
+            onClose={closeDownloadPanel}
+          />,
+          document.body,
+        )}
+
+      {notificationPanelOpen &&
+        createPortal(
+          <NotificationPanel
+            items={notificationCenter.items}
+            sites={notificationCenter.sites}
+            sitePermissions={notificationCenter.sitePermissions}
+            siteNotificationsEnabled={notifications.siteNotifications}
+            variant={isBrowsing ? 'browsing' : 'home'}
+            browsingTop={browsingAdaptiveLunar.height + 14}
+            onMarkRead={notificationCenter.markRead}
+            onMarkAllRead={notificationCenter.markAllRead}
+            onRemove={notificationCenter.remove}
+            onClear={notificationCenter.clear}
+            onSetSitePermission={notificationCenter.setSitePermission}
+            onOpenOrigin={(origin) => {
+              closeNotificationPanel()
+              openShortcutByUrl(origin, { forceTargetUrl: true, activate: true })
+            }}
+            onClose={closeNotificationPanel}
+          />,
+          document.body,
+        )}
 
       {isOverlay && (
         <>
@@ -1318,6 +1703,10 @@ export function BrowserShell() {
             onTogglePreviewOnHover={togglePreviewOnHover}
             onEnterHomeEdit={enterHomeEditMode}
             onFactoryReset={handleFactoryReset}
+            onClearBrowsingData={handleClearBrowsingData}
+            activeUrl={activeUrl}
+            ublockVersion={ublockVersion}
+            ublockEnabled={ublockEnabled}
             account={account}
             onAccountChange={setAccount}
             onAccountSignOut={handleAccountSignOut}

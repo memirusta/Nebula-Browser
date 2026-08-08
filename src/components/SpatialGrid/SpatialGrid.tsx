@@ -62,6 +62,8 @@ export function SpatialGrid({
               stats={stats}
               onFocus={() => onFocusPane(pane.id)}
               onClose={() => onClosePane(pane.id)}
+              onUpdate={() => {}}
+              onNavigate={() => {}}
             />
           </div>
         ))}

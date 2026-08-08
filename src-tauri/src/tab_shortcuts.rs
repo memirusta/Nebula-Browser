@@ -35,7 +35,7 @@ mod imp {
         if ctrl && !alt {
             return match virtual_key {
                 0x54 if shift => Some("reopen-tab"),
-                0x54 => Some("new-tab"),
+                0x54 => Some("go-home"),
                 0x57 if !shift => Some("close-tab"),
                 0x09 if shift => Some("prev-tab"),
                 0x09 => Some("next-tab"),
@@ -52,7 +52,7 @@ mod imp {
                 0x39 if !shift => Some("switch-tab-last"),
                 0x52 if !shift => Some("reload"),
                 0x4C if !shift => Some("focus-url-bar"),
-                0x48 if !shift => Some("go-home"),
+                0x48 if !shift => Some("open-history"),
                 0x49 if shift => Some("devtools"),
                 0x30 if !shift => Some("zoom-reset"),
                 0xBD if !shift => Some("zoom-out"),
@@ -188,7 +188,9 @@ mod imp {
 
         #[test]
         fn maps_browser_shortcuts_with_exact_modifiers() {
-            assert_eq!(shortcut_for_key(0x54, true, false, false), Some("new-tab"));
+            assert_eq!(shortcut_for_key(0x4E, true, false, false), None);
+            assert_eq!(shortcut_for_key(0x54, true, false, false), Some("go-home"));
+            assert_eq!(shortcut_for_key(0x48, true, false, false), Some("open-history"));
             assert_eq!(
                 shortcut_for_key(0x54, true, true, false),
                 Some("reopen-tab")

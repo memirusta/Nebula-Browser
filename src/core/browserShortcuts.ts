@@ -1,4 +1,4 @@
-/** Chrome-aligned browser shortcut identifiers. */
+/** Nebula browser shortcut identifiers. */
 export type BrowserShortcutId =
   | 'new-tab'
   | 'close-tab'
@@ -19,6 +19,7 @@ export type BrowserShortcutId =
   | 'go-back'
   | 'go-forward'
   | 'go-home'
+  | 'open-history'
   | 'zoom-in'
   | 'zoom-out'
   | 'zoom-reset'
@@ -41,9 +42,8 @@ export function matchBrowserShortcut(event: KeyboardEvent): BrowserShortcutId | 
   const mod = event.ctrlKey || event.metaKey
   const key = event.key
 
-  if (mod && !event.altKey && key === 't' && !event.shiftKey) return 'new-tab'
   if (mod && !event.altKey && key === 'w' && !event.shiftKey) return 'close-tab'
-  if (mod && !event.altKey && key === 't' && event.shiftKey) return 'reopen-tab'
+  if (mod && !event.altKey && (key === 't' || key === 'T') && event.shiftKey) return 'reopen-tab'
   if (mod && !event.altKey && key === 'Tab' && !event.shiftKey) return 'next-tab'
   if (mod && !event.altKey && key === 'Tab' && event.shiftKey) return 'prev-tab'
   if (mod && !event.altKey && /^[1-8]$/.test(key)) return `switch-tab-${key}` as BrowserShortcutId
@@ -54,7 +54,8 @@ export function matchBrowserShortcut(event: KeyboardEvent): BrowserShortcutId | 
   if (!mod && event.altKey && (key === 'd' || key === 'D') && !event.shiftKey) return 'focus-url-bar'
   if (!mod && event.altKey && key === 'ArrowLeft') return 'go-back'
   if (!mod && event.altKey && key === 'ArrowRight') return 'go-forward'
-  if (mod && !event.altKey && (key === 'h' || key === 'H') && !event.shiftKey) return 'go-home'
+  if (mod && !event.altKey && (key === 't' || key === 'T') && !event.shiftKey) return 'go-home'
+  if (mod && !event.altKey && (key === 'h' || key === 'H') && !event.shiftKey) return 'open-history'
   if (mod && !event.altKey && (key === '=' || key === '+')) return 'zoom-in'
   if (mod && !event.altKey && key === '-') return 'zoom-out'
   if (mod && !event.altKey && key === '0') return 'zoom-reset'

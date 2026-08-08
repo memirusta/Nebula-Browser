@@ -1,5 +1,6 @@
 mod browser_bookmarks;
 mod browser_passwords;
+mod download_manager;
 mod google_oauth;
 mod password_webview;
 mod secure_password_vault;
@@ -9,8 +10,56 @@ mod tab_error_page;
 mod tab_fullscreen;
 mod tab_metadata;
 mod tab_shortcuts;
+mod ublock_extension;
 mod webview_branding;
 mod webview_controls;
+mod webview_privacy;
+
+static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Append one frontend transition phase to the durable per-user diagnostic log.
+#[tauri::command]
+fn write_transition_log(app: tauri::AppHandle, entry: serde_json::Value) -> Result<String, String> {
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tauri::Manager;
+
+    let _guard = TRANSITION_LOG_LOCK
+        .lock()
+        .map_err(|_| "native-tab transition log lock was poisoned".to_string())?;
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&log_dir).map_err(|error| error.to_string())?;
+    let path = log_dir.join("native-tab-transitions.jsonl");
+    let mut record = match entry {
+        serde_json::Value::Object(map) => map,
+        value => {
+            let mut map = serde_json::Map::new();
+            map.insert("entry".to_string(), value);
+            map
+        }
+    };
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    record.insert(
+        "hostTimestampMs".to_string(),
+        serde_json::Value::String(timestamp_ms.to_string()),
+    );
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|error| error.to_string())?;
+    serde_json::to_writer(&mut file, &record).map_err(|error| error.to_string())?;
+    file.write_all(b"\n").map_err(|error| error.to_string())?;
+    file.flush().map_err(|error| error.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
 
 #[cfg(all(not(debug_assertions), dev))]
 compile_error!(
@@ -33,10 +82,29 @@ async fn webview_execute_script(
 #[tauri::command]
 fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result<(), String> {
     webview_branding::setup_webview_branding(&app, &label)?;
+    download_manager::setup_tab_downloads(&app, &label)?;
     tab_error_page::setup_tab_error_page(&app, &label)?;
     tab_fullscreen::setup_tab_fullscreen(&app, &label)?;
     tab_shortcuts::setup_tab_shortcuts(&app, &label)?;
     tab_metadata::setup_tab_metadata(&app, &label)
+}
+
+#[tauri::command]
+fn webview_apply_privacy(
+    app: tauri::AppHandle,
+    label: String,
+    options: webview_privacy::PrivacyOptions,
+) -> Result<(), String> {
+    webview_privacy::apply(&app, &label, options)
+}
+
+#[tauri::command]
+fn webview_clear_browsing_data(
+    app: tauri::AppHandle,
+    label: String,
+    kind: String,
+) -> Result<(), String> {
+    webview_privacy::clear_browsing_data(&app, &label, &kind)
 }
 
 #[tauri::command]
@@ -77,6 +145,8 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
         return Err("close is limited to browser tabs".to_string());
     }
     tab_fullscreen::teardown_tab_fullscreen(&app, &label);
+    download_manager::teardown_tab_downloads(&app, &label);
+    webview_privacy::teardown(&app, &label);
     tab_error_page::teardown_tab_error_page(&app, &label);
     tab_shortcuts::teardown_tab_shortcuts(&app, &label);
     tab_metadata::teardown_tab_metadata(&app, &label);
@@ -97,6 +167,11 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
     .map_err(|error| error.to_string())?;
 
     webview.close().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn download_control(app: tauri::AppHandle, id: String, action: String) -> Result<(), String> {
+    download_manager::control_download(app, id, action)
 }
 
 #[tauri::command]
@@ -856,6 +931,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            write_transition_log,
             webview_navigate,
             webview_close_tab,
             webview_current_url,
@@ -865,6 +941,8 @@ pub fn run() {
             webview_controls::webview_zoom,
             webview_controls::webview_open_devtools,
             webview_controls::webview_set_memory_usage,
+            webview_controls::webview_is_playing_audio,
+            webview_controls::webview_set_suspended,
             webview_document_title,
             webview_raise_ui,
             webview_raise_overlay,
@@ -876,12 +954,19 @@ pub fn run() {
             webview_set_chrome_hit_region,
             webview_set_shell_hit_region,
             webview_setup_tab_error_pages,
+            webview_apply_privacy,
+            webview_clear_browsing_data,
+            ublock_extension::ublock_extension_info,
+            ublock_extension::ublock_extension_install,
+            ublock_extension::ublock_extension_status,
             webview_setup_branding,
             webview_execute_script,
+            download_control,
             secure_password_vault::password_vault_load,
             secure_password_vault::password_vault_save,
             secure_password_vault::password_vault_clear,
             system_stats::get_system_stats,
+            system_stats::get_system_memory_pressure,
             browser_bookmarks::detect_default_browser,
             browser_bookmarks::import_default_browser_bookmarks,
             browser_passwords::detect_browser_passwords,

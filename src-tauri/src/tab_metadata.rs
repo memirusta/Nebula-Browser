@@ -3,24 +3,36 @@ mod imp {
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::sync::{LazyLock, Mutex};
+    use std::time::Instant;
 
     use serde::Serialize;
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2DocumentTitleChangedEventHandler,
+        ICoreWebView2NavigationCompletedEventHandler, ICoreWebView2NavigationStartingEventHandler,
         ICoreWebView2SourceChangedEventHandler,
     };
-    use webview2_com::{DocumentTitleChangedEventHandler, SourceChangedEventHandler};
+    use webview2_com::{
+        DocumentTitleChangedEventHandler, NavigationCompletedEventHandler,
+        NavigationStartingEventHandler, SourceChangedEventHandler,
+    };
     use windows::core::PWSTR;
     use windows::Win32::System::Com::CoTaskMemFree;
+    use windows_core::BOOL;
 
     static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
-    static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, (i64, i64)>>> =
+    static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, (i64, i64, i64, i64)>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static NAVIGATION_STARTED_AT: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     thread_local! {
-        static HANDLERS: RefCell<HashMap<String, (ICoreWebView2SourceChangedEventHandler, ICoreWebView2DocumentTitleChangedEventHandler)>> =
-            RefCell::new(HashMap::new());
+        static HANDLERS: RefCell<HashMap<String, (
+            ICoreWebView2SourceChangedEventHandler,
+            ICoreWebView2DocumentTitleChangedEventHandler,
+            ICoreWebView2NavigationStartingEventHandler,
+            ICoreWebView2NavigationCompletedEventHandler,
+        )>> = RefCell::new(HashMap::new());
     }
     static LAST_SNAPSHOTS: LazyLock<Mutex<HashMap<String, (String, String)>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -30,6 +42,15 @@ mod imp {
         label: String,
         url: String,
         title: String,
+    }
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TabNavigationPerformancePayload {
+        label: String,
+        url: String,
+        duration_ms: u128,
+        success: bool,
     }
 
     unsafe fn take_webview_string(
@@ -71,6 +92,36 @@ mod imp {
         );
     }
 
+    fn emit_navigation_performance(
+        app: &AppHandle,
+        label: &str,
+        webview: &ICoreWebView2,
+        success: bool,
+    ) {
+        let started_at = NAVIGATION_STARTED_AT
+            .lock()
+            .ok()
+            .and_then(|mut starts| starts.remove(label));
+        let Some(started_at) = started_at else {
+            return;
+        };
+
+        let url = unsafe { take_webview_string(|value| webview.Source(value)) };
+        if url.is_empty() || url == "about:blank" {
+            return;
+        }
+
+        let _ = app.emit(
+            "nebula-tab-navigation-performance",
+            TabNavigationPerformancePayload {
+                label: label.to_string(),
+                url,
+                duration_ms: started_at.elapsed().as_millis(),
+                success,
+            },
+        );
+    }
+
     pub fn setup_tab_metadata(app: &AppHandle, label: &str) -> Result<(), String> {
         if !label.starts_with("nebula-tab-") {
             return Ok(());
@@ -90,6 +141,9 @@ mod imp {
         let source_label = label.to_string();
         let title_app = app.clone();
         let title_label = label.to_string();
+        let navigation_start_label = label.to_string();
+        let navigation_complete_label = label.to_string();
+        let navigation_complete_app = app.clone();
         let initial_app = app.clone();
         let label_for_store = label.to_string();
 
@@ -113,6 +167,30 @@ mod imp {
                         }
                         Ok(())
                     }));
+                let navigation_start_handler =
+                    NavigationStartingEventHandler::create(Box::new(move |_sender, _args| {
+                        if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
+                            starts.insert(navigation_start_label.clone(), Instant::now());
+                        }
+                        Ok(())
+                    }));
+                let navigation_complete_handler =
+                    NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
+                        let Some(webview) = sender else {
+                            return Ok(());
+                        };
+                        let mut success = BOOL::default();
+                        let success = args
+                            .and_then(|args| args.IsSuccess(&mut success).ok().map(|_| success.as_bool()))
+                            .unwrap_or(false);
+                        emit_navigation_performance(
+                            &navigation_complete_app,
+                            &navigation_complete_label,
+                            &webview,
+                            success,
+                        );
+                        Ok(())
+                    }));
 
                 let mut source_token = 0i64;
                 if core
@@ -129,14 +207,50 @@ mod imp {
                     let _ = core.remove_SourceChanged(source_token);
                     return;
                 }
+                let mut navigation_start_token = 0i64;
+                if core
+                    .add_NavigationStarting(&navigation_start_handler, &mut navigation_start_token)
+                    .is_err()
+                {
+                    let _ = core.remove_SourceChanged(source_token);
+                    let _ = core.remove_DocumentTitleChanged(title_token);
+                    return;
+                }
+                let mut navigation_complete_token = 0i64;
+                if core
+                    .add_NavigationCompleted(
+                        &navigation_complete_handler,
+                        &mut navigation_complete_token,
+                    )
+                    .is_err()
+                {
+                    let _ = core.remove_SourceChanged(source_token);
+                    let _ = core.remove_DocumentTitleChanged(title_token);
+                    let _ = core.remove_NavigationStarting(navigation_start_token);
+                    return;
+                }
 
                 if let Ok(mut tokens) = HANDLER_TOKENS.lock() {
-                    tokens.insert(label_for_store.clone(), (source_token, title_token));
+                    tokens.insert(
+                        label_for_store.clone(),
+                        (
+                            source_token,
+                            title_token,
+                            navigation_start_token,
+                            navigation_complete_token,
+                        ),
+                    );
                 }
                 HANDLERS.with(|handlers| {
-                    handlers
-                        .borrow_mut()
-                        .insert(label_for_store.clone(), (source_handler, title_handler));
+                    handlers.borrow_mut().insert(
+                        label_for_store.clone(),
+                        (
+                            source_handler,
+                            title_handler,
+                            navigation_start_handler,
+                            navigation_complete_handler,
+                        ),
+                    );
                 });
 
                 emit_snapshot(&initial_app, &label_for_store, &core);
@@ -168,11 +282,13 @@ mod imp {
 
         if let Some(webview) = app.get_webview(label) {
             let _ = webview.with_webview(move |inner| unsafe {
-                if let (Ok(core), Some((source_token, title_token))) =
+                if let (Ok(core), Some((source_token, title_token, navigation_start_token, navigation_complete_token))) =
                     (inner.controller().CoreWebView2(), tokens)
                 {
                     let _ = core.remove_SourceChanged(source_token);
                     let _ = core.remove_DocumentTitleChanged(title_token);
+                    let _ = core.remove_NavigationStarting(navigation_start_token);
+                    let _ = core.remove_NavigationCompleted(navigation_complete_token);
                 }
                 HANDLERS.with(|handlers| {
                     handlers.borrow_mut().remove(&label_for_handler);
@@ -184,6 +300,9 @@ mod imp {
         }
         if let Ok(mut snapshots) = LAST_SNAPSHOTS.lock() {
             snapshots.remove(label);
+        }
+        if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
+            starts.remove(label);
         }
     }
 }

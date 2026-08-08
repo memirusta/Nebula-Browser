@@ -17,6 +17,8 @@ interface LeftSidebarProps {
   onAddWidget: (type: WidgetType) => void
   activeTypes: Set<WidgetType>
   widgetSettings: HomeWidgetSettings
+  onExportWidgets: () => void
+  onImportWidgets: () => void
   clockSettings: Pick<
     HomeSettings,
     | 'showClock'
@@ -37,6 +39,8 @@ export function LeftSidebar({
   onAddWidget,
   activeTypes,
   widgetSettings,
+  onExportWidgets,
+  onImportWidgets,
   clockSettings,
   editMode = false,
   editWidgetsVisible = true,
@@ -70,6 +74,8 @@ export function LeftSidebar({
           onAdd={onAddWidget}
           activeTypes={activeTypes}
           settings={widgetSettings}
+          onExport={onExportWidgets}
+          onImport={onImportWidgets}
         />
       </aside>
     )
@@ -107,6 +113,8 @@ export function LeftSidebar({
         onAdd={onAddWidget}
         activeTypes={activeTypes}
         settings={widgetSettings}
+        onExport={onExportWidgets}
+        onImport={onImportWidgets}
       />
     </aside>
   )

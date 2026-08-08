@@ -1,0 +1,907 @@
+import { createServer } from 'node:http'
+import { readFile, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { extname, join, normalize, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import net from 'node:net'
+
+const root = resolve(process.cwd())
+const distDir = join(root, 'dist')
+const timeoutMs = Number(process.env.NEBULA_E2E_TIMEOUT_MS || 20_000)
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
+}
+
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+}
+
+async function freePort() {
+  return new Promise((resolvePromise, reject) => {
+    const server = net.createServer()
+    server.unref()
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      server.close(() => resolvePromise(port))
+    })
+  })
+}
+
+const mime = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2',
+}
+
+async function startStaticServer() {
+  assert(
+    existsSync(join(distDir, 'index.html')),
+    'dist/index.html bulunamadı. Önce npm run build çalıştır.',
+  )
+
+  const port = await freePort()
+
+  const server = createServer(async (req, res) => {
+    try {
+      const url = new URL(
+        req.url || '/',
+        `http://${req.headers.host || '127.0.0.1'}`,
+      )
+
+      let pathname = decodeURIComponent(url.pathname)
+      if (pathname === '/') pathname = '/index.html'
+
+      const candidate = normalize(join(distDir, pathname))
+
+      if (!candidate.startsWith(normalize(distDir))) {
+        res.writeHead(403).end('Forbidden')
+        return
+      }
+
+      let file = candidate
+
+      try {
+        const info = await stat(file)
+        if (info.isDirectory()) file = join(file, 'index.html')
+      } catch {
+        // SPA fallback for client-side paths.
+        file = join(distDir, 'index.html')
+      }
+
+      const body = await readFile(file)
+
+      res.writeHead(200, {
+        'content-type':
+          mime[extname(file).toLowerCase()] || 'application/octet-stream',
+        'cache-control': 'no-store',
+      })
+
+      res.end(body)
+    } catch (error) {
+      res.writeHead(500).end(String(error))
+    }
+  })
+
+  await new Promise((resolvePromise) =>
+    server.listen(port, '127.0.0.1', resolvePromise),
+  )
+
+  return { server, port }
+}
+
+function firstExisting(paths) {
+  return paths.find((path) => path && existsSync(path)) || null
+}
+
+function findBrowser() {
+  if (process.env.NEBULA_E2E_BROWSER) {
+    assert(
+      existsSync(process.env.NEBULA_E2E_BROWSER),
+      `NEBULA_E2E_BROWSER bulunamadı: ${process.env.NEBULA_E2E_BROWSER}`,
+    )
+
+    return process.env.NEBULA_E2E_BROWSER
+  }
+
+  if (process.platform === 'win32') {
+    const pf = process.env.ProgramFiles
+    const pfx86 = process.env['ProgramFiles(x86)']
+    const local = process.env.LOCALAPPDATA
+
+    const known = firstExisting([
+      pf && join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      pfx86 &&
+        join(pfx86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      local &&
+        join(local, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+
+      pf && join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      pfx86 &&
+        join(pfx86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      local &&
+        join(local, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ])
+
+    if (known) return known
+
+    for (const command of ['msedge', 'chrome']) {
+      const found = spawnSync('where', [command], {
+        encoding: 'utf8',
+      })
+
+      if (found.status === 0) {
+        return found.stdout.trim().split(/\r?\n/)[0]
+      }
+    }
+  } else {
+    for (const command of [
+      'chromium',
+      'chromium-browser',
+      'google-chrome',
+      'microsoft-edge',
+    ]) {
+      const found = spawnSync('which', [command], {
+        encoding: 'utf8',
+      })
+
+      if (found.status === 0) return found.stdout.trim()
+    }
+  }
+
+  throw new Error(
+    'Edge/Chrome/Chromium bulunamadı. NEBULA_E2E_BROWSER ile tarayıcı yolunu belirt.',
+  )
+}
+
+async function waitForJson(url, deadline = Date.now() + timeoutMs) {
+  let lastError
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url)
+
+      if (response.ok) {
+        return await response.json()
+      }
+    } catch (error) {
+      lastError = error
+    }
+
+    await sleep(120)
+  }
+
+  throw new Error(
+    `CDP hazır olmadı: ${url}${lastError ? ` (${lastError})` : ''}`,
+  )
+}
+
+class Cdp {
+  constructor(wsUrl) {
+    this.ws = new WebSocket(wsUrl)
+    this.nextId = 1
+    this.pending = new Map()
+  }
+
+  async open() {
+    await new Promise((resolvePromise, reject) => {
+      this.ws.addEventListener('open', resolvePromise, { once: true })
+      this.ws.addEventListener('error', reject, { once: true })
+    })
+
+    this.ws.addEventListener('message', (event) => {
+      const message = JSON.parse(String(event.data))
+
+      if (!message.id) return
+
+      const pending = this.pending.get(message.id)
+      if (!pending) return
+
+      this.pending.delete(message.id)
+
+      if (message.error) {
+        pending.reject(
+          new Error(message.error.message || JSON.stringify(message.error)),
+        )
+      } else {
+        pending.resolve(message.result)
+      }
+    })
+  }
+
+  call(method, params = {}) {
+    const id = this.nextId++
+
+    return new Promise((resolvePromise, reject) => {
+      this.pending.set(id, {
+        resolve: resolvePromise,
+        reject,
+      })
+
+      this.ws.send(
+        JSON.stringify({
+          id,
+          method,
+          params,
+        }),
+      )
+    })
+  }
+
+  async eval(expression) {
+    const result = await this.call('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+
+    if (result.exceptionDetails) {
+      throw new Error(
+        result.exceptionDetails.exception?.description ||
+          result.exceptionDetails.text ||
+          'Runtime.evaluate failed',
+      )
+    }
+
+    return result.result?.value
+  }
+
+  close() {
+    try {
+      this.ws.close()
+    } catch {
+      // noop
+    }
+  }
+}
+
+async function poll(
+  label,
+  fn,
+  deadline = Date.now() + timeoutMs,
+) {
+  let value
+
+  while (Date.now() < deadline) {
+    value = await fn()
+
+    if (value) return value
+
+    await sleep(100)
+  }
+
+  throw new Error(`Timeout: ${label}`)
+}
+
+async function run() {
+  const { server, port } = await startStaticServer()
+
+  const browserPath = findBrowser()
+  const debugPort = await freePort()
+  const profileDir = await mkdtemp(join(tmpdir(), 'nebula-e2e-'))
+
+  const appUrl = `http://127.0.0.1:${port}/`
+
+  let browser
+  let cdp
+
+  try {
+    const browserArgs = [
+      '--headless=new',
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${profileDir}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-background-networking',
+      '--disable-component-update',
+      '--disable-sync',
+      '--window-size=1440,1000',
+      appUrl,
+    ]
+
+    if (
+      process.platform !== 'win32' &&
+      typeof process.getuid === 'function' &&
+      process.getuid() === 0
+    ) {
+      browserArgs.splice(1, 0, '--no-sandbox')
+    }
+
+    browser = spawn(browserPath, browserArgs, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    browser.on('exit', (code) => {
+      if (code && code !== 0) {
+        console.error(`Browser exited with code ${code}`)
+      }
+    })
+
+    const targets = await poll('browser target', async () => {
+      try {
+        const list = await waitForJson(
+          `http://127.0.0.1:${debugPort}/json/list`,
+          Date.now() + 500,
+        )
+
+        return (
+          list.find(
+            (target) =>
+              target.type === 'page' &&
+              target.webSocketDebuggerUrl &&
+              target.url?.startsWith(appUrl),
+          ) || null
+        )
+      } catch {
+        return null
+      }
+    })
+
+    cdp = new Cdp(targets.webSocketDebuggerUrl)
+
+    await cdp.open()
+    await cdp.call('Runtime.enable')
+    await cdp.call('Page.enable')
+
+    await poll('app navigation', () =>
+      cdp.eval(
+        `location.href.startsWith(${JSON.stringify(appUrl)})`,
+      ),
+    )
+
+    await poll('localStorage availability', () =>
+      cdp.eval(`
+        (() => {
+          try {
+            localStorage.getItem('nebula-e2e-probe')
+            return true
+          } catch {
+            return false
+          }
+        })()
+      `),
+    )
+
+    // Skip onboarding so the smoke suite always reaches the normal browser shell.
+    await cdp.eval(`
+      (() => {
+        localStorage.setItem(
+          'nebula-onboarding-complete-v1',
+          '1'
+        )
+        return true
+      })()
+    `)
+
+    await cdp.call('Page.reload', {
+      ignoreCache: true,
+    })
+
+    await sleep(250)
+
+    await poll('Nebula root render', () =>
+      cdp.eval(
+        `Boolean(document.querySelector('#root')?.children.length)`,
+      ),
+    )
+
+    const bodyText = await cdp.eval(
+      `document.body.innerText`,
+    )
+
+    assert(
+      typeof bodyText === 'string' &&
+        bodyText.trim().length > 0,
+      'Nebula UI boş render oldu.',
+    )
+
+    console.log('✓ App shell render')
+
+    // ----------------------------------------------------------------
+    // HISTORY
+    // ----------------------------------------------------------------
+
+    await poll('History toolbar button', () =>
+      cdp.eval(`
+        Boolean(
+          [...document.querySelectorAll('button')].find(
+            (b) =>
+              ['Geçmiş', 'History'].includes(
+                b.getAttribute('aria-label') || ''
+              )
+          )
+        )
+      `),
+    )
+
+    await cdp.eval(`
+      (() => {
+        const b = [...document.querySelectorAll('button')].find(
+          (el) =>
+            ['Geçmiş', 'History'].includes(
+              el.getAttribute('aria-label') || ''
+            )
+        )
+
+        b?.focus()
+        b?.click()
+
+        return Boolean(b)
+      })()
+    `)
+
+    await poll('History dialog open', () =>
+      cdp.eval(`
+        Boolean(
+          document.querySelector(
+            '[role="dialog"][aria-labelledby="history-dialog-title"]'
+          )
+        )
+      `),
+    )
+
+    console.log('✓ History opens')
+
+    const historySearchFocused = await poll(
+      'History search focus',
+      () =>
+        cdp.eval(`
+          (() => {
+            const d = document.querySelector(
+              '[role="dialog"][aria-labelledby="history-dialog-title"]'
+            )
+
+            return Boolean(
+              d &&
+              d.contains(document.activeElement) &&
+              document.activeElement?.tagName === 'INPUT'
+            )
+          })()
+        `),
+    )
+
+    assert(
+      historySearchFocused,
+      'History açıldığında arama alanı odaklanmadı.',
+    )
+
+    console.log('✓ History initial keyboard focus')
+
+    await cdp.eval(`
+      (() => {
+        const d = document.querySelector(
+          '[role="dialog"][aria-labelledby="history-dialog-title"]'
+        )
+
+        const f = d
+          ? [
+              ...d.querySelectorAll(
+                'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+              ),
+            ]
+          : []
+
+        f[f.length - 1]?.focus()
+
+        return f.length
+      })()
+    `)
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Tab',
+      code: 'Tab',
+      windowsVirtualKeyCode: 9,
+    })
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Tab',
+      code: 'Tab',
+      windowsVirtualKeyCode: 9,
+    })
+
+    const historyTrapped = await cdp.eval(`
+      (() => {
+        const d = document.querySelector(
+          '[role="dialog"][aria-labelledby="history-dialog-title"]'
+        )
+
+        return Boolean(
+          d?.contains(document.activeElement)
+        )
+      })()
+    `)
+
+    assert(
+      historyTrapped,
+      'History içinde Tab odağı modal dışına kaçtı.',
+    )
+
+    console.log('✓ History focus trap')
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    })
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    })
+
+    await poll(
+      'History dialog close',
+      async () =>
+        !(await cdp.eval(`
+          Boolean(
+            document.querySelector(
+              '[role="dialog"][aria-labelledby="history-dialog-title"]'
+            )
+          )
+        `)),
+    )
+
+    await poll('History focus restore', () =>
+      cdp.eval(`
+        ['Geçmiş', 'History'].includes(
+          document.activeElement?.getAttribute?.('aria-label') || ''
+        )
+      `),
+    )
+
+    console.log(
+      '✓ History closes with Escape + restores focus',
+    )
+
+    // ----------------------------------------------------------------
+    // SETTINGS
+    // ----------------------------------------------------------------
+
+    await cdp.eval(`
+      (() => {
+        const b = [...document.querySelectorAll('button')].find(
+          (el) =>
+            ['Ayarlar', 'Settings'].includes(
+              el.getAttribute('aria-label') || ''
+            )
+        )
+
+        b?.focus()
+        b?.click()
+
+        return Boolean(b)
+      })()
+    `)
+
+    await poll('Settings dialog open', () =>
+      cdp.eval(`
+        Boolean(
+          document.querySelector(
+            '[role="dialog"][aria-label="Ayarlar"], [role="dialog"][aria-label="Settings"]'
+          )
+        )
+      `),
+    )
+
+    await poll('Settings focus enters dialog', () =>
+      cdp.eval(`
+        (() => {
+          const d = document.querySelector(
+            '[role="dialog"][aria-label="Ayarlar"], [role="dialog"][aria-label="Settings"]'
+          )
+
+          return Boolean(
+            d?.contains(document.activeElement)
+          )
+        })()
+      `),
+    )
+
+    console.log('✓ Settings opens + keyboard focus')
+
+    // ----------------------------------------------------------------
+// SHORTCUTS SETTINGS
+// ----------------------------------------------------------------
+
+const shortcutsOpened = await cdp.eval(`
+  (() => {
+    const d = document.querySelector(
+      '[role="dialog"][aria-label="Ayarlar"], [role="dialog"][aria-label="Settings"]'
+    )
+
+    if (!d) return false
+
+    const buttons = [...d.querySelectorAll('button')]
+
+    const b = buttons.find((el) => {
+      const text = (el.textContent || '')
+        .replace(/\\s+/g, ' ')
+        .trim()
+        .toLocaleLowerCase('tr-TR')
+
+      const aria = (el.getAttribute('aria-label') || '')
+        .replace(/\\s+/g, ' ')
+        .trim()
+        .toLocaleLowerCase('tr-TR')
+
+      return (
+        text.includes('kısayol') ||
+        text.includes('shortcut') ||
+        aria.includes('kısayol') ||
+        aria.includes('shortcut')
+      )
+    })
+
+    if (!b) return false
+
+    b.click()
+    return true
+  })()
+`)
+
+assert(
+  shortcutsOpened,
+  'Ayarlar içinde Klavye Kısayolları kategorisi bulunamadı.',
+)
+
+await poll('Keyboard shortcuts settings', () =>
+  cdp.eval(`
+    (() => {
+      const d = document.querySelector(
+        '[role="dialog"][aria-label="Ayarlar"], [role="dialog"][aria-label="Settings"]'
+      )
+
+      if (!d) return false
+
+      /*
+       * Keycap'ler Ctrl + T'yi örneğin:
+       *
+       * Ctrl
+       * +
+       * T
+       *
+       * şeklinde innerText'e verebilir.
+       *
+       * Bu nedenle boşlukları tamamen kaldırıyoruz.
+       */
+      const text = (d.innerText || '')
+        .replace(/\\s+/g, '')
+        .toLowerCase()
+
+      const hasCtrlT = text.includes('ctrl+t')
+      const hasCtrlH = text.includes('ctrl+h')
+      const hasCtrlN = text.includes('ctrl+n')
+
+      return hasCtrlT && hasCtrlH && !hasCtrlN
+    })()
+  `),
+)
+
+console.log('✓ Keyboard shortcuts reference')
+
+    // ----------------------------------------------------------------
+    // ACCESSIBLE BUTTON NAMES
+    // ----------------------------------------------------------------
+
+    const unnamedButtons = await cdp.eval(`
+      [...document.querySelectorAll('button')].filter((b) => {
+        const style = getComputedStyle(b)
+
+        if (
+          style.display === 'none' ||
+          style.visibility === 'hidden'
+        ) {
+          return false
+        }
+
+        return !(
+          b.getAttribute('aria-label') ||
+          b.getAttribute('aria-labelledby') ||
+          b.getAttribute('title') ||
+          b.textContent?.trim()
+        )
+      }).length
+    `)
+
+    assert(
+      unnamedButtons === 0,
+      `Erişilebilir adı olmayan görünür buton sayısı: ${unnamedButtons}`,
+    )
+
+    console.log(
+      '✓ Visible buttons have accessible names',
+    )
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    })
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    })
+
+    await poll(
+      'Settings dialog close',
+      async () =>
+        !(await cdp.eval(`
+          Boolean(
+            document.querySelector(
+              '[role="dialog"][aria-label="Ayarlar"], [role="dialog"][aria-label="Settings"]'
+            )
+          )
+        `)),
+    )
+
+    await poll('Settings focus restore', () =>
+      cdp.eval(`
+        ['Ayarlar', 'Settings'].includes(
+          document.activeElement?.getAttribute?.('aria-label') || ''
+        )
+      `),
+    )
+
+    console.log(
+      '✓ Settings closes + restores focus',
+    )
+
+    await sleep(150)
+
+    // ----------------------------------------------------------------
+    // CRASH RECOVERY
+    // ----------------------------------------------------------------
+
+    // Simulate an unclean previous run and a two-tab session,
+    // then reload the app.
+    await cdp.eval(`
+      (() => {
+        const now = Date.now()
+
+        localStorage.setItem(
+          'nebula-browser-run-state-v1',
+          JSON.stringify({
+            version: 1,
+            launchId: 'e2e-old-run',
+            startedAt: now - 30000,
+            cleanExit: false,
+          })
+        )
+
+        localStorage.setItem(
+          'nebula-current-browser-session-v1',
+          JSON.stringify({
+            id: 'e2e-session',
+            savedAt: now - 5000,
+            activeTabId: 'e2e-tab-1',
+            tabs: [
+              {
+                id: 'e2e-tab-1',
+                url: 'https://example.com/',
+                title: 'Example',
+              },
+              {
+                id: 'e2e-tab-2',
+                url: 'https://example.org/',
+                title: 'Example Org',
+              },
+            ],
+          })
+        )
+
+        return true
+      })()
+    `)
+
+    await cdp.call('Page.reload', {
+      ignoreCache: true,
+    })
+
+    await sleep(250)
+
+    await poll('Crash recovery alert', () =>
+      cdp.eval(`
+        Boolean(
+          document.querySelector('[role="alertdialog"]')
+        )
+      `),
+    )
+
+    const recoveryText = await cdp.eval(`
+      document.querySelector('[role="alertdialog"]')
+        ?.innerText || ''
+    `)
+
+    assert(
+      /2/.test(recoveryText),
+      'Crash recovery sekme sayısını göstermedi.',
+    )
+
+    console.log('✓ Crash recovery prompt')
+
+    const restoreFocused = await cdp.eval(`
+      document.activeElement?.tagName === 'BUTTON' &&
+      /restore|geri yükle/i.test(
+        document.activeElement?.innerText || ''
+      )
+    `)
+
+    assert(
+      restoreFocused,
+      'Crash recovery Restore butonu ilk odak değil.',
+    )
+
+    console.log('✓ Crash recovery keyboard focus')
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Tab',
+      code: 'Tab',
+      windowsVirtualKeyCode: 9,
+    })
+
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Tab',
+      code: 'Tab',
+      windowsVirtualKeyCode: 9,
+    })
+
+    const recoveryTrapped = await cdp.eval(`
+      document
+        .querySelector('[role="alertdialog"]')
+        ?.contains(document.activeElement) === true
+    `)
+
+    assert(
+      recoveryTrapped,
+      'Crash recovery Tab odağı dialog dışına kaçtı.',
+    )
+
+    console.log('✓ Crash recovery focus trap')
+
+    console.log('\nNebula UI/E2E smoke: PASS')
+  } finally {
+    cdp?.close()
+
+    if (browser && !browser.killed) {
+      browser.kill()
+    }
+
+    await new Promise((resolvePromise) =>
+      server.close(resolvePromise),
+    )
+
+    await rm(profileDir, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined)
+  }
+}
+
+run().catch((error) => {
+  console.error('\nNebula UI/E2E smoke: FAIL')
+  console.error(error?.stack || error)
+  process.exitCode = 1
+})

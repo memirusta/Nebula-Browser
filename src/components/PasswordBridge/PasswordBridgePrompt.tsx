@@ -1,6 +1,8 @@
+import { useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { SavedPassword } from '../../core/passwordVault'
 import { useLocale } from '../../hooks/useLocale'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import type { PasswordBridgeOffer } from '../../hooks/usePasswordBridge'
 import styles from './PasswordBridgePrompt.module.css'
 
@@ -18,6 +20,15 @@ export function PasswordBridgePrompt({
   onSave,
 }: PasswordBridgePromptProps) {
   const { t, tf } = useLocale()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const primaryRef = useRef<HTMLButtonElement>(null)
+
+  useDialogFocusTrap({
+    active: !!offer,
+    containerRef: panelRef,
+    initialFocusRef: primaryRef,
+    onEscape: onDismiss,
+  })
 
   if (!offer) return null
 
@@ -26,10 +37,12 @@ export function PasswordBridgePrompt({
   return createPortal(
     <div className={styles.wrap} role="presentation">
       <div
+        ref={panelRef}
         className={styles.panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby="password-bridge-title"
+        tabIndex={-1}
       >
         <header className={styles.header}>
           <h2 id="password-bridge-title" className={styles.title}>
@@ -65,6 +78,7 @@ export function PasswordBridgePrompt({
           </button>
           {offer.mode === 'fill' ? (
             <button
+              ref={primaryRef}
               type="button"
               className={styles.primaryBtn}
               onClick={() => {
@@ -75,7 +89,7 @@ export function PasswordBridgePrompt({
               {t('pwdFillBtn')}
             </button>
           ) : (
-            <button type="button" className={styles.primaryBtn} onClick={onSave}>
+            <button ref={primaryRef} type="button" className={styles.primaryBtn} onClick={onSave}>
               {t('pwdSaveBtn')}
             </button>
           )}

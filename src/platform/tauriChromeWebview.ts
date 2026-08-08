@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
-import { Webview, getCurrentWebview } from '@tauri-apps/api/webview'
+import { Webview, getCurrentWebview, type WebviewOptions } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { TITLE_BAR_HEIGHT } from '../core/windowChrome'
 import { debounce } from './debounce'
@@ -24,6 +24,10 @@ import {
 
 export const CHROME_WEBVIEW_LABEL = 'nebula-chrome'
 const LAYOUT_DEBOUNCE_MS = 120
+
+type ExtensionEnabledWebviewOptions = WebviewOptions & {
+  browserExtensionsEnabled: boolean
+}
 
 let activeChromeWebview: Webview | null = null
 let resizeUnlisten: (() => void) | null = null
@@ -169,7 +173,7 @@ export async function showChromeWebview(logicalHeight: number): Promise<void> {
 
   if (!webview) {
     try {
-      webview = new Webview(appWindow, CHROME_WEBVIEW_LABEL, {
+      const webviewOptions: ExtensionEnabledWebviewOptions = {
         url: chromeWebviewUrl(),
         x: 0,
         y: 0,
@@ -177,7 +181,9 @@ export async function showChromeWebview(logicalHeight: number): Promise<void> {
         height: size.height,
         transparent: true,
         focus: false,
-      })
+        browserExtensionsEnabled: true,
+      }
+      webview = new Webview(appWindow, CHROME_WEBVIEW_LABEL, webviewOptions)
       await waitForWebviewCreated(webview)
       await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
     } catch {

@@ -5,6 +5,7 @@ import {
   type SettingsCategoryId,
 } from '../../core/settingsCategories'
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import type { NebulaSettings } from '../../core/nebulaSettings'
 import {
   SettingColorRow,
@@ -19,10 +20,135 @@ import { AboutUpdateSection } from './AboutUpdateSection'
 import { AccountSettingsSection } from './AccountSettingsSection'
 import styles from './SettingsPanel.module.css'
 import type { NebulaAccount } from '../../core/nebulaAccount'
+import type { BrowsingDataKind } from '../../platform/tauriBrowser'
 
 export interface SettingsAnchor {
   x: number
   y: number
+}
+
+interface ShortcutReferenceItem {
+  keys: string[]
+  tr: string
+  en: string
+  noteTr?: string
+  noteEn?: string
+}
+
+interface ShortcutReferenceGroup {
+  tr: string
+  en: string
+  items: ShortcutReferenceItem[]
+}
+
+const SHORTCUT_REFERENCE: ShortcutReferenceGroup[] = [
+  {
+    tr: 'Sekmeler',
+    en: 'Tabs',
+    items: [
+      { keys: ['Ctrl + W'], tr: 'Aktif sekmeyi kapat', en: 'Close the active tab' },
+      { keys: ['Ctrl + Shift + T'], tr: 'Son kapatılan sekmeyi yeniden aç', en: 'Reopen the last closed tab' },
+      { keys: ['Ctrl + Tab'], tr: 'Sonraki sekmeye geç', en: 'Switch to the next tab' },
+      { keys: ['Ctrl + Shift + Tab'], tr: 'Önceki sekmeye geç', en: 'Switch to the previous tab' },
+      { keys: ['Ctrl + 1 … Ctrl + 8'], tr: 'Numaralı sekmeye geç', en: 'Switch to a numbered tab' },
+      { keys: ['Ctrl + 9'], tr: 'Son sekmeye geç', en: 'Switch to the last tab' },
+    ],
+  },
+  {
+    tr: 'Gezinme',
+    en: 'Navigation',
+    items: [
+      { keys: ['Ctrl + T'], tr: 'Ana sayfaya dön', en: 'Go to Home' },
+      { keys: ['Ctrl + H'], tr: 'Geçmişi aç', en: 'Open History' },
+      { keys: ['Ctrl + L', 'Alt + D'], tr: 'Adres çubuğuna odaklan', en: 'Focus the address bar' },
+      { keys: ['Alt + ←'], tr: 'Geri git', en: 'Go back' },
+      { keys: ['Alt + →'], tr: 'İleri git', en: 'Go forward' },
+      { keys: ['Ctrl + R', 'F5'], tr: 'Sayfayı yenile', en: 'Reload the page' },
+    ],
+  },
+  {
+    tr: 'Görünüm ve geliştirici',
+    en: 'View and developer',
+    items: [
+      { keys: ['Ctrl + +'], tr: 'Yakınlaştır', en: 'Zoom in' },
+      { keys: ['Ctrl + -'], tr: 'Uzaklaştır', en: 'Zoom out' },
+      { keys: ['Ctrl + 0'], tr: 'Yakınlaştırmayı sıfırla', en: 'Reset zoom' },
+      {
+        keys: ['Ctrl + Shift + I', 'F12'],
+        tr: 'Geliştirici araçlarını aç',
+        en: 'Open Developer Tools',
+        noteTr: 'Yalnızca development build',
+        noteEn: 'Development builds only',
+      },
+    ],
+  },
+  {
+    tr: 'Klavye navigasyonu',
+    en: 'Keyboard navigation',
+    items: [
+      { keys: ['Esc'], tr: 'Açık paneli veya overlay’i kapat', en: 'Close the current panel or overlay' },
+      {
+        keys: ['Tab', 'Shift + Tab'],
+        tr: 'Odaklanabilir öğeler arasında ilerle',
+        en: 'Move between focusable controls',
+        noteTr: 'Modal pencerelerde odak panelin içinde tutulur',
+        noteEn: 'Focus stays trapped inside modal dialogs',
+      },
+      {
+        keys: ['↑', '↓'],
+        tr: 'Sağ araç çubuğunda önceki/sonraki düğmeye geç',
+        en: 'Move to the previous/next right-toolbar button',
+        noteTr: 'Araç çubuğu odaktayken',
+        noteEn: 'When the toolbar has focus',
+      },
+      {
+        keys: ['Home', 'End'],
+        tr: 'Sağ araç çubuğunda ilk/son düğmeye geç',
+        en: 'Move to the first/last right-toolbar button',
+        noteTr: 'Araç çubuğu odaktayken',
+        noteEn: 'When the toolbar has focus',
+      },
+      { keys: ['Enter', 'Space'], tr: 'Odaktaki düğmeyi çalıştır', en: 'Activate the focused button' },
+    ],
+  },
+]
+
+function ShortcutReference({ locale }: { locale: NebulaLocale }) {
+  const isTr = locale === 'tr'
+  return (
+    <div className={styles.shortcutGroups}>
+      <p className={styles.shortcutIntro}>
+        {isTr
+          ? 'Kısayollar uygulama kabuğunda ve site sekmesi odaktayken çalışır. Ctrl+T Ana Sayfa, Ctrl+H Geçmiş olarak ayarlanmıştır.'
+          : 'Shortcuts work both in the app shell and while a site tab has focus. Ctrl+T opens Home and Ctrl+H opens History.'}
+      </p>
+      {SHORTCUT_REFERENCE.map((group) => (
+        <section key={group.en} className={styles.shortcutGroup}>
+          <h3 className={styles.shortcutGroupTitle}>{isTr ? group.tr : group.en}</h3>
+          <div className={styles.shortcutList}>
+            {group.items.map((item) => (
+              <div key={`${group.en}-${item.keys.join('-')}`} className={styles.shortcutRow}>
+                <div className={styles.shortcutKeySet} aria-label={item.keys.join(' / ')}>
+                  {item.keys.map((keys, index) => (
+                    <span key={keys} className={styles.shortcutKeyWrap}>
+                      {index > 0 && <span className={styles.shortcutOr}>/</span>}
+                      <kbd className={styles.shortcutKey}>{keys}</kbd>
+                    </span>
+                  ))}
+                </div>
+                <div className={styles.shortcutText}>
+                  <div className={styles.shortcutLabel}>{isTr ? item.tr : item.en}</div>
+                  {(isTr ? item.noteTr : item.noteEn) && (
+                    <div className={styles.shortcutNote}>{isTr ? item.noteTr : item.noteEn}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
 }
 
 interface SettingsPanelProps {
@@ -42,6 +168,10 @@ interface SettingsPanelProps {
   onTogglePreviewOnHover: () => void
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
+  onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
+  activeUrl?: string | null
+  ublockVersion?: string | null
+  ublockEnabled?: boolean
   account: NebulaAccount | null
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
@@ -60,6 +190,10 @@ function CategoryContent({
   onTogglePreviewOnHover,
   onEnterHomeEdit,
   onFactoryReset,
+  onClearBrowsingData,
+  activeUrl,
+  ublockVersion,
+  ublockEnabled,
   account,
   onAccountChange,
   onAccountSignOut,
@@ -76,6 +210,10 @@ function CategoryContent({
   onTogglePreviewOnHover: () => void
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
+  onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
+  activeUrl?: string | null
+  ublockVersion?: string | null
+  ublockEnabled?: boolean
   account: NebulaAccount | null
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
@@ -84,6 +222,34 @@ function CategoryContent({
 }) {
   const { t, locale, setLocale } = useLocale()
   const { appearance, home, semiLunar, browsing, privacy, notifications } = settings
+  let activeHost = ''
+  try {
+    activeHost = activeUrl ? new URL(activeUrl).hostname.toLowerCase() : ''
+  } catch {
+    activeHost = ''
+  }
+  const exceptionHosts = privacy.siteExceptions.split(/[\s,;]+/).filter(Boolean)
+  const permissionHosts = privacy.permissionExceptions.split(/[\s,;]+/).filter(Boolean)
+  const activeSiteExcepted = activeHost
+    ? exceptionHosts.some((host) => activeHost === host || activeHost.endsWith(`.${host}`))
+    : false
+  const toggleActiveSiteException = () => {
+    if (!activeHost) return
+    const next = activeSiteExcepted
+      ? exceptionHosts.filter((host) => host !== activeHost)
+      : [...exceptionHosts, activeHost]
+    onUpdate('privacy', 'siteExceptions', next.join(', '))
+  }
+  const activeSitePermissionAllowed = activeHost
+    ? permissionHosts.some((host) => activeHost === host || activeHost.endsWith(`.${host}`))
+    : false
+  const toggleActiveSitePermission = () => {
+    if (!activeHost) return
+    const next = activeSitePermissionAllowed
+      ? permissionHosts.filter((host) => host !== activeHost)
+      : [...permissionHosts, activeHost]
+    onUpdate('privacy', 'permissionExceptions', next.join(', '))
+  }
 
   switch (categoryId) {
     case 'appearance':
@@ -523,6 +689,8 @@ function CategoryContent({
           />
         </>
       )
+    case 'shortcuts':
+      return <ShortcutReference locale={locale} />
     case 'account':
       return (
         <AccountSettingsSection
@@ -538,6 +706,26 @@ function CategoryContent({
     case 'privacy':
       return (
         <>
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>uBlock Origin Lite</div>
+              <div className={styles.rowHint}>{ublockVersion ? `${ublockEnabled ? t('ublockActive') : t('ublockReady')} · v${ublockVersion}` : t('ublockUnavailable')}</div>
+            </div>
+            <span className={ublockEnabled ? styles.statusActive : styles.statusInactive}>
+              {ublockEnabled ? t('active') : ublockVersion ? t('ready') : t('unavailable')}
+            </span>
+          </div>
+          <SettingSelectRow
+            label={t('trackingLevel')}
+            hint={t('trackingLevelHint')}
+            value={privacy.trackingLevel}
+            options={[
+              { value: 'none', label: t('trackingNone') },
+              { value: 'balanced', label: t('trackingBalanced') },
+              { value: 'strict', label: t('trackingStrict') },
+            ]}
+            onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
+          />
           <SettingToggleRow
             label={t('blockTrackers')}
             hint={t('blockTrackersHint')}
@@ -556,6 +744,85 @@ function CategoryContent({
             checked={privacy.httpsOnly}
             onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
           />
+          <SettingToggleRow
+            label={t('globalPrivacyControl')}
+            hint={t('globalPrivacyControlHint')}
+            checked={privacy.globalPrivacyControl}
+            onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
+          />
+          <SettingSelectRow
+            label={t('permissionPolicy')}
+            hint={t('permissionPolicyHint')}
+            value={privacy.permissionPolicy}
+            options={[
+              { value: 'ask', label: t('permissionAsk') },
+              { value: 'block', label: t('permissionBlock') },
+            ]}
+            onChange={(value) => onUpdate('privacy', 'permissionPolicy', value as NebulaSettings['privacy']['permissionPolicy'])}
+          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>{t('currentSitePermissions')}</div>
+              <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSitePermissionAllowed ? t('permissionSiteAsk') : t('permissionSiteDefault')}` : t('siteShieldUnavailable')}</div>
+            </div>
+            <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSitePermission}>
+              {activeSitePermissionAllowed ? t('removePermissionException') : t('allowPermissionPrompts')}
+            </button>
+          </div>
+          <SettingToggleRow
+            label={t('cookieBannerBlocking')}
+            hint={t('cookieBannerBlockingHint')}
+            checked={privacy.cookieBannerBlocking}
+            onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
+          />
+          <SettingTextRow
+            label={t('permissionExceptions')}
+            hint={t('permissionExceptionsHint')}
+            value={privacy.permissionExceptions}
+            onChange={(value) => onUpdate('privacy', 'permissionExceptions', value)}
+          />
+          <SettingToggleRow
+            label={t('privateMode')}
+            hint={t('privateModeHint')}
+            checked={privacy.privateMode}
+            onChange={() => onUpdate('privacy', 'privateMode', !privacy.privateMode)}
+          />
+          <SettingToggleRow
+            label={t('clearOnExit')}
+            hint={t('clearOnExitHint')}
+            checked={privacy.clearOnExit}
+            onChange={() => onUpdate('privacy', 'clearOnExit', !privacy.clearOnExit)}
+          />
+          <SettingTextRow
+            label={t('privacyExceptions')}
+            hint={t('privacyExceptionsHint')}
+            value={privacy.siteExceptions}
+            onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
+          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>{t('siteShield')}</div>
+              <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
+            </div>
+            <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
+              {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
+            </button>
+          </div>
+          <SettingTextRow
+            label={t('customBlockList')}
+            hint={t('customBlockListHint')}
+            value={privacy.customBlockList}
+            onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
+          />
+          <div className={styles.row}>
+            <div className={styles.rowText}><div className={styles.rowLabel}>{t('clearBrowsingData')}</div><div className={styles.rowHint}>{t('clearBrowsingDataHint')}</div></div>
+            <div className={styles.privacyActionGrid}>
+              {(['cookies', 'cache', 'history', 'permissions'] as const).map((kind) => (
+                <button key={kind} type="button" className={styles.actionBtn} onClick={() => void onClearBrowsingData(kind)}>{t(`clear_${kind}`)}</button>
+              ))}
+              <button type="button" className={styles.dangerBtn} onClick={() => void onClearBrowsingData('all')}>{t('clearAll')}</button>
+            </div>
+          </div>
           <SettingResetRow
             label={t('privacyReset')}
             hint={t('privacyResetHint')}
@@ -589,16 +856,6 @@ function CategoryContent({
             onChange={() =>
               onUpdate('notifications', 'showToolbarBadge', !notifications.showToolbarBadge)
             }
-          />
-          <SettingRangeRow
-            label={t('badgeCount')}
-            hint={t('badgeCountHint')}
-            value={notifications.toolbarBadgeCount}
-            min={0}
-            max={99}
-            step={1}
-            unit=""
-            onChange={(v) => onUpdate('notifications', 'toolbarBadgeCount', v)}
           />
           <SettingResetRow
             label={t('notificationsReset')}
@@ -638,6 +895,10 @@ export function SettingsPanel({
   onTogglePreviewOnHover,
   onEnterHomeEdit,
   onFactoryReset,
+  onClearBrowsingData,
+  activeUrl,
+  ublockVersion,
+  ublockEnabled,
   account,
   onAccountChange,
   onAccountSignOut,
@@ -651,6 +912,8 @@ export function SettingsPanel({
   const [entering, setEntering] = useState(false)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasOpenRef = useRef(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const activeNavRef = useRef<HTMLButtonElement>(null)
 
   const settingsCategories = getSettingsCategories(locale)
   const activeCategory = settingsCategories.find((c) => c.id === activeId)!
@@ -691,15 +954,12 @@ export function SettingsPanel({
     return () => clearTimeout(timer)
   }, [entering, closing])
 
-  useEffect(() => {
-    if (!visible || closing) return
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') requestClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [visible, closing, requestClose])
+  useDialogFocusTrap({
+    active: visible && !closing,
+    containerRef: panelRef,
+    initialFocusRef: activeNavRef,
+    onEscape: requestClose,
+  })
 
   useEffect(() => {
     return () => {
@@ -729,10 +989,12 @@ export function SettingsPanel({
         aria-hidden="true"
       />
       <div
+        ref={panelRef}
         className={`${styles.panel} ${panelAnimClass}`}
         role="dialog"
         aria-modal="true"
         aria-label={t('settingsTitle')}
+        tabIndex={-1}
       >
         <button
           type="button"
@@ -748,9 +1010,11 @@ export function SettingsPanel({
           {settingsCategories.map((cat) => (
             <button
               key={cat.id}
+              ref={activeId === cat.id ? activeNavRef : undefined}
               type="button"
               className={`${styles.navItem} ${activeId === cat.id ? styles.navItemActive : ''}`}
               onClick={() => setActiveId(cat.id)}
+              aria-current={activeId === cat.id ? 'page' : undefined}
             >
               <span className={styles.navIcon} aria-hidden="true">
                 {cat.icon}
@@ -777,6 +1041,10 @@ export function SettingsPanel({
               onTogglePreviewOnHover={onTogglePreviewOnHover}
               onEnterHomeEdit={onEnterHomeEdit}
               onFactoryReset={onFactoryReset}
+              onClearBrowsingData={onClearBrowsingData}
+              activeUrl={activeUrl}
+              ublockVersion={ublockVersion}
+              ublockEnabled={ublockEnabled}
               account={account}
               onAccountChange={onAccountChange}
               onAccountSignOut={onAccountSignOut}

@@ -1,0 +1,313 @@
+.panel {
+  position: fixed;
+  z-index: 420;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(390px, calc(100vh - 120px));
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 22px;
+  color: rgba(255, 255, 255, 0.94);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 38%),
+    rgba(13, 17, 20, 0.92);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(34px) saturate(1.35);
+  -webkit-backdrop-filter: blur(34px) saturate(1.35);
+  animation: panelIn 180ms var(--ease-out-expo);
+  transform-origin: top right;
+}
+
+.panelHome {
+  top: calc(26px + var(--title-bar-height, 0px));
+  right: 82px;
+}
+
+.panelBrowsing {
+  left: 50%;
+  max-height: min(270px, calc(100vh - 120px));
+  transform: translateX(-50%);
+  transform-origin: top center;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 68px;
+  padding: 14px 14px 10px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.textButton,
+.closeButton,
+.itemActions button {
+  border: 0;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
+  cursor: pointer;
+}
+
+.textButton {
+  padding: 7px 9px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+.textButton:hover,
+.closeButton:hover,
+.itemActions button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.closeButton {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border-radius: 50%;
+  place-items: center;
+}
+
+.closeButton svg,
+.itemActions svg,
+.fileGlyph svg,
+.emptyGlyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+.error {
+  margin: 10px 14px 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 112, 112, 0.2);
+  border-radius: 10px;
+  color: #ffb0b0;
+  background: rgba(255, 72, 72, 0.1);
+  font-size: 12px;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 68px;
+  padding: 9px 8px;
+  border-radius: 14px;
+  transition: background var(--duration-fast);
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.fileGlyph {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  padding: 9px;
+  border: 1px solid rgba(194, 159, 255, 0.22);
+  border-radius: 12px;
+  color: #d2b8ff;
+  background: rgba(126, 76, 202, 0.18);
+  place-items: center;
+}
+
+.fileGlyphCompleted {
+  border-color: rgba(106, 224, 158, 0.22);
+  color: #7de5ab;
+  background: rgba(50, 160, 99, 0.14);
+}
+
+.fileGlyphFailed {
+  border-color: rgba(255, 119, 119, 0.2);
+  color: #ff9393;
+  background: rgba(194, 68, 68, 0.13);
+}
+
+.itemBody {
+  min-width: 0;
+}
+
+.fileName {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  color: rgba(255, 255, 255, 0.94);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileName:not(:disabled) {
+  cursor: pointer;
+}
+
+.fileName:not(:disabled):hover {
+  color: #d8bdff;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.metaDot {
+  opacity: 0.4;
+}
+
+.progressTrack {
+  position: relative;
+  height: 3px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8f54e8, #d1a8ff);
+  box-shadow: 0 0 12px rgba(177, 118, 255, 0.5);
+  transition: width 120ms linear;
+}
+
+.progressUnknown {
+  width: 35%;
+  animation: progressUnknown 1.2s ease-in-out infinite;
+}
+
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.itemActions button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+  border-radius: 9px;
+  place-items: center;
+}
+
+.empty {
+  display: flex;
+  min-height: 185px;
+  padding: 28px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.emptyGlyph {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 12px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  color: #c9a5ff;
+  background: rgba(255, 255, 255, 0.05);
+  place-items: center;
+}
+
+.empty strong {
+  font-size: 14px;
+}
+
+.empty p {
+  max-width: 270px;
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.panel footer {
+  padding: 9px 16px 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  text-align: center;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    scale: 0.97;
+    translate: 0 -5px;
+  }
+}
+
+@keyframes progressUnknown {
+  from { left: -35%; }
+  to { left: 100%; }
+}
+
+@media (max-width: 640px) {
+  .panelHome {
+    top: 78px;
+    right: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .progressUnknown {
+    animation: none;
+  }
+}

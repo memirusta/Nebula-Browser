@@ -9,6 +9,8 @@ import { applyDocumentLocale } from './core/locale'
 import { LocaleProvider } from './hooks/useLocale'
 import { isTauri } from './platform/runtime'
 import { syncTauriViewMode } from './platform/tauriBrowsingMode'
+import { prewarmBrowseWebview, prewarmUblockProfile } from './platform/tauriBrowser'
+import { writeTransitionLog } from './platform/tauriTransitionLog'
 
 applyNebulaCssVars(loadNebulaSettings())
 applyDocumentLocale()
@@ -20,6 +22,9 @@ if (isTauri) {
 }
 if (isTauri && !isChromeShell()) {
   syncTauriViewMode('home', null)
+  void prewarmUblockProfile()
+    .then(() => prewarmBrowseWebview())
+    .catch(() => undefined)
 }
 
 async function renderRoot() {
@@ -34,6 +39,17 @@ async function renderRoot() {
       </LocaleProvider>
     </StrictMode>,
   )
+
+  if (isTauri && !isChromeShell()) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void writeTransitionLog('performance.frontend-ready', 'ok', {
+          durationMs: Math.round(performance.now() * 10) / 10,
+          timeOrigin: Math.round(performance.timeOrigin),
+        })
+      })
+    })
+  }
 }
 
 void renderRoot()

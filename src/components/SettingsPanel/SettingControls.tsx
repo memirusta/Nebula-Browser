@@ -22,6 +22,7 @@ export function SettingToggleRow({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         className={`${styles.toggle} ${checked ? styles.toggleOn : ''}`}
         onClick={onChange}
       >

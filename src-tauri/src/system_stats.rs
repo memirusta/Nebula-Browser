@@ -25,6 +25,34 @@ fn current_pid() -> Pid {
     Pid::from_u32(std::process::id())
 }
 
+fn system_memory_percent(sys: &System) -> u32 {
+    let total = sys.total_memory();
+    if total == 0 {
+        return 0;
+    }
+
+    ((sys.used_memory() as f64 / total as f64) * 100.0)
+        .round()
+        .clamp(0.0, 100.0) as u32
+}
+
+#[tauri::command]
+pub fn get_system_memory_pressure() -> Result<u32, String> {
+    let mut guard = SYSTEM
+        .lock()
+        .map_err(|error| format!("system stats lock failed: {error}"))?;
+
+    if guard.is_none() {
+        *guard = Some(System::new());
+    }
+
+    let sys = guard
+        .as_mut()
+        .ok_or_else(|| "system stats unavailable".to_string())?;
+    sys.refresh_memory();
+    Ok(system_memory_percent(sys))
+}
+
 fn is_in_app_tree(sys: &System, pid: Pid, root: Pid) -> bool {
     if pid == root {
         return true;

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import GridLayout, { type Layout } from 'react-grid-layout/legacy'
 import 'react-grid-layout/css/styles.css'
 import { HOME_GRID_COLS, HOME_GRID_ROW_HEIGHT } from '../../core/widgets'
-import type { WidgetPane } from '../../core/widgets'
+import type { WidgetPane, WidgetPaneData } from '../../core/widgets'
 import { useLocale } from '../../hooks/useLocale'
 import { useSystemStats } from '../../hooks/useSystemStats'
 import { GridCell } from './GridCell'
@@ -15,6 +15,8 @@ interface HomeWidgetGridProps {
   onLayoutChange: (layout: Layout) => void
   onFocusPane: (id: string) => void
   onClosePane: (id: string) => void
+  onUpdatePane: (id: string, data: WidgetPaneData) => void
+  onNavigate: (url: string) => void
 }
 
 export function HomeWidgetGrid({
@@ -24,17 +26,14 @@ export function HomeWidgetGrid({
   onLayoutChange,
   onFocusPane,
   onClosePane,
+  onUpdatePane,
+  onNavigate,
 }: HomeWidgetGridProps) {
   const { t } = useLocale()
   const stats = useSystemStats(statsEnabled)
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
-  const [localLayout, setLocalLayout] = useState(layout)
   const [isDragging, setIsDragging] = useState(false)
-
-  useEffect(() => {
-    if (!isDragging) setLocalLayout(layout)
-  }, [layout, isDragging])
 
   useEffect(() => {
     const el = containerRef.current
@@ -51,22 +50,18 @@ export function HomeWidgetGrid({
     return () => observer.disconnect()
   }, [])
 
-  const handleLayoutChange = useCallback((newLayout: Layout) => {
-    setLocalLayout(newLayout)
-  }, [])
+  const handleLayoutChange = useCallback(
+    (newLayout: Layout) => onLayoutChange(newLayout),
+    [onLayoutChange],
+  )
 
   const handleDragStart = useCallback(() => {
     setIsDragging(true)
   }, [])
 
-  const handleDragStop = useCallback(
-    (newLayout: Layout) => {
-      setIsDragging(false)
-      setLocalLayout(newLayout)
-      onLayoutChange(newLayout)
-    },
-    [onLayoutChange],
-  )
+  const handleDragStop = useCallback(() => {
+    setIsDragging(false)
+  }, [])
 
   if (panes.length === 0) {
     return (
@@ -85,7 +80,7 @@ export function HomeWidgetGrid({
       {width > 0 && (
         <GridLayout
           className={styles.grid}
-          layout={localLayout}
+          layout={layout}
           cols={HOME_GRID_COLS}
           rowHeight={HOME_GRID_ROW_HEIGHT}
           width={width}
@@ -109,6 +104,8 @@ export function HomeWidgetGrid({
                 stats={stats}
                 onFocus={() => onFocusPane(pane.id)}
                 onClose={() => onClosePane(pane.id)}
+                onUpdate={(data) => onUpdatePane(pane.id, data)}
+                onNavigate={onNavigate}
               />
             </div>
           ))}

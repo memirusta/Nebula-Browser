@@ -11,6 +11,7 @@ import { loadNebulaAccount, type NebulaAccount } from '../../core/nebulaAccount'
 import { tf } from '../../core/locale'
 import type { NebulaLocale } from '../../hooks/useLocale'
 import { useLocale } from '../../hooks/useLocale'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import {
   isOAuthReturnUrl,
   peekOnboardingImportedShortcuts,
@@ -62,6 +63,9 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
   const importedShortcutsRef = useRef<Shortcut[]>([])
   const accountRef = useRef<NebulaAccount | null>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useDialogFocusTrap({ active: open, containerRef: panelRef, restoreFocus: false })
 
   const handleGoogleClaims = useCallback(
     (claims: { name?: string; email?: string; picture?: string }) => {
@@ -279,10 +283,12 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
   return createPortal(
     <div className={styles.backdrop} role="presentation">
       <div
+        ref={panelRef}
         className={styles.panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
+        tabIndex={-1}
       >
         <header className={styles.header}>
           <p className={styles.kicker}>{t('onboardingKicker')}</p>
