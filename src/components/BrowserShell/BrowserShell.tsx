@@ -1400,6 +1400,7 @@ export function BrowserShell() {
             onNavigate={openShortcutByUrl}
             onSearchNavigate={openFromSearchBar}
             searchEngine={effectiveHome.searchEngine}
+            historyEntries={historyEntries}
             userDisplayName={accountDisplayName}
             avatarUrl={account?.avatarUrl}
             showGreeting={effectiveHome.showGreeting}
@@ -1656,6 +1657,7 @@ export function BrowserShell() {
               onNavigate={openShortcutByUrl}
               onSearchNavigate={openFromSearchBar}
               searchEngine={home.searchEngine}
+              historyEntries={historyEntries}
               userDisplayName={home.userDisplayName}
               showGreeting={false}
               showProfile={false}

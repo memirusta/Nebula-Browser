@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react'
+import type { HistoryEntry } from '../../core/browsingHistory'
 import { buildSearchUrl, type SearchEngine } from '../../core/nebulaSettings'
 import { useLocale } from '../../hooks/useLocale'
 import type { HomeLayout, ModuleOffset, ModuleSize } from '../../core/homeLayout'
@@ -15,6 +22,7 @@ interface HomeCenterProps {
   onSearchNavigate?: (url: string) => void
   variant?: 'home' | 'overlay'
   searchEngine?: SearchEngine
+  historyEntries?: HistoryEntry[]
   userDisplayName?: string
   avatarUrl?: string
   showGreeting?: boolean
@@ -48,6 +56,7 @@ export function HomeCenter({
   onSearchNavigate,
   variant = 'home',
   searchEngine = 'google',
+  historyEntries = [],
   userDisplayName = 'memir',
   avatarUrl,
   showGreeting = true,
@@ -79,6 +88,67 @@ export function HomeCenter({
   const [query, setQuery] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
+
+const historySuggestions = useMemo(() => {
+  const needle = query.trim().toLocaleLowerCase()
+
+  if (!needle || editMode) return []
+
+  const seen = new Set<string>()
+
+  return historyEntries
+    .filter((entry) => {
+      const haystack =
+        `${entry.title} ${entry.host} ${entry.url}`.toLocaleLowerCase()
+
+      return haystack.includes(needle)
+    })
+    .sort((a, b) => {
+      const aHost = a.host.toLocaleLowerCase()
+      const bHost = b.host.toLocaleLowerCase()
+      const aTitle = a.title.toLocaleLowerCase()
+      const bTitle = b.title.toLocaleLowerCase()
+
+      const score = (host: string, title: string) => {
+        if (host.startsWith(needle)) return 0
+        if (title.startsWith(needle)) return 1
+        if (host.includes(needle)) return 2
+        return 3
+      }
+
+      const scoreDifference =
+        score(aHost, aTitle) - score(bHost, bTitle)
+
+      if (scoreDifference !== 0) {
+        return scoreDifference
+      }
+
+      return b.visitedAt - a.visitedAt
+    })
+    .filter((entry) => {
+      if (seen.has(entry.url)) return false
+
+      seen.add(entry.url)
+      return true
+    })
+    .slice(0, 7)
+}, [editMode, historyEntries, query])
+
+const suggestionsOpen =
+  isEditing &&
+  !editMode &&
+  query.trim().length > 0
+
+const suggestionCount =
+  historySuggestions.length + 1
+
+const searchEngineLabel =
+  searchEngine === 'duckduckgo'
+    ? 'DuckDuckGo'
+    : searchEngine === 'bing'
+      ? 'Bing'
+      : 'Google'
 
   useEffect(() => {
     if (!focusSearchRequest) return
@@ -93,25 +163,120 @@ export function HomeCenter({
     setQuery(activeUrl ?? '')
   }, [activeUrl, isEditing])
 
-  const handleSubmit = () => {
-    if (editMode) return
-    const trimmed = query.trim()
-    if (!trimmed) return
-    let url = buildSearchUrl(trimmed, searchEngine)
-    if (!trimmed.includes(' ')) {
-      const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-      try {
-        const parsed = new URL(candidate)
-        if (['http:', 'https:'].includes(parsed.protocol) && parsed.hostname.includes('.')) {
-          url = parsed.href
-        }
-      } catch {
-        // Keep the search URL for malformed input.
+const navigateQuery = (value: string) => {
+  if (editMode) return
+
+  const trimmed = value.trim()
+  if (!trimmed) return
+
+  let url = buildSearchUrl(trimmed, searchEngine)
+
+  if (!trimmed.includes(' ')) {
+    const candidate =
+      /^https?:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`
+
+    try {
+      const parsed = new URL(candidate)
+
+      if (
+        ['http:', 'https:'].includes(parsed.protocol) &&
+        parsed.hostname.includes('.')
+      ) {
+        url = parsed.href
       }
+    } catch {
+      // Geçersiz URL ise arama olarak devam et.
     }
-    ;(onSearchNavigate ?? onNavigate)(url)
-    setIsEditing(false)
   }
+
+  ;(onSearchNavigate ?? onNavigate)(url)
+
+  setIsEditing(false)
+  setActiveSuggestion(-1)
+}
+
+const chooseSuggestion = (index: number) => {
+  if (
+    index >= 0 &&
+    index < historySuggestions.length
+  ) {
+    const entry = historySuggestions[index]
+
+    setQuery(entry.url)
+
+    ;(onSearchNavigate ?? onNavigate)(entry.url)
+
+    setIsEditing(false)
+    setActiveSuggestion(-1)
+
+    return
+  }
+
+  navigateQuery(query)
+}
+
+const handleSubmit = () => {
+  if (
+    suggestionsOpen &&
+    activeSuggestion >= 0
+  ) {
+    chooseSuggestion(activeSuggestion)
+    return
+  }
+
+  navigateQuery(query)
+}
+
+const handleSearchKeyDown = (
+  event: KeyboardEvent<HTMLInputElement>,
+) => {
+  if (
+    event.key === 'ArrowDown' &&
+    suggestionsOpen
+  ) {
+    event.preventDefault()
+
+    setActiveSuggestion((current) =>
+      current >= suggestionCount - 1
+        ? 0
+        : current + 1,
+    )
+
+    return
+  }
+
+  if (
+    event.key === 'ArrowUp' &&
+    suggestionsOpen
+  ) {
+    event.preventDefault()
+
+    setActiveSuggestion((current) =>
+      current <= 0
+        ? suggestionCount - 1
+        : current - 1,
+    )
+
+    return
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+
+    setIsEditing(false)
+    setActiveSuggestion(-1)
+    searchInputRef.current?.blur()
+
+    return
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    handleSubmit()
+  }
+}
 
   const resolvedSearchOffset =
     editMode && editLayout ? editLayout.search.offset : searchOffset
@@ -143,40 +308,208 @@ export function HomeCenter({
       <div className={styles.emptyPinPlaceholder}>{t('noPinnedSites')}</div>
     ) : null
 
-  const searchBar = (
+const searchBar = (
+  <div
+    className={styles.searchWrap}
+    style={{
+      width: SEARCH_SIZE_WIDTH[searchSize],
+    }}
+  >
     <div
       className={[
         styles.searchBar,
-        variant === 'overlay' ? styles.searchBarOverlay : '',
+        variant === 'overlay'
+          ? styles.searchBarOverlay
+          : '',
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ width: SEARCH_SIZE_WIDTH[searchSize] }}
     >
-      <svg className={styles.searchIcon} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M16 16l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <svg
+        className={styles.searchIcon}
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle
+          cx="11"
+          cy="11"
+          r="7"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+
+        <path
+          d="M16 16l5 5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
       </svg>
+
       <input
         ref={searchInputRef}
         type="text"
         className={styles.searchInput}
         placeholder={t('searchPlaceholder')}
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onFocus={(e) => {
-          setIsEditing(true)
-          e.currentTarget.select()
+        onChange={(event) => {
+          setQuery(event.target.value)
+          setActiveSuggestion(-1)
         }}
-        onBlur={() => setIsEditing(false)}
-        onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+        onFocus={(event) => {
+          setIsEditing(true)
+          setActiveSuggestion(-1)
+          event.currentTarget.select()
+        }}
+        onBlur={() => {
+          setIsEditing(false)
+          setActiveSuggestion(-1)
+        }}
+        onKeyDown={handleSearchKeyDown}
         readOnly={editMode}
         tabIndex={editMode ? -1 : undefined}
         autoFocus={variant === 'overlay'}
         spellCheck={false}
+        autoComplete="off"
+        role="combobox"
+        aria-expanded={suggestionsOpen}
+        aria-autocomplete="list"
       />
     </div>
-  )
+
+    {suggestionsOpen && (
+      <div
+        className={styles.suggestions}
+        role="listbox"
+      >
+        {historySuggestions.map(
+          (entry, index) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="option"
+              aria-selected={
+                activeSuggestion === index
+              }
+              className={[
+                styles.suggestionRow,
+                activeSuggestion === index
+                  ? styles.suggestionRowActive
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onMouseEnter={() =>
+                setActiveSuggestion(index)
+              }
+              onMouseDown={(event) => {
+                event.preventDefault()
+                chooseSuggestion(index)
+              }}
+            >
+              <span
+                className={
+                  styles.suggestionSiteIcon
+                }
+              >
+                {entry.host
+                  .replace(/^www\./, '')
+                  .charAt(0)
+                  .toUpperCase()}
+              </span>
+
+              <span
+                className={
+                  styles.suggestionText
+                }
+              >
+                <strong>
+                  {entry.title}
+                </strong>
+
+                <span>
+                  {entry.url}
+                </span>
+              </span>
+            </button>
+          ),
+        )}
+
+        <button
+          type="button"
+          role="option"
+          aria-selected={
+            activeSuggestion ===
+            historySuggestions.length
+          }
+          className={[
+            styles.suggestionRow,
+            activeSuggestion ===
+            historySuggestions.length
+              ? styles.suggestionRowActive
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onMouseEnter={() =>
+            setActiveSuggestion(
+              historySuggestions.length,
+            )
+          }
+          onMouseDown={(event) => {
+            event.preventDefault()
+
+            chooseSuggestion(
+              historySuggestions.length,
+            )
+          }}
+        >
+          <span
+            className={
+              styles.suggestionSearchIcon
+            }
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle
+                cx="10.5"
+                cy="10.5"
+                r="6"
+                stroke="currentColor"
+                strokeWidth="1.7"
+              />
+
+              <path
+                d="M15 15l5 5"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+
+          <span
+            className={
+              styles.suggestionText
+            }
+          >
+            <strong>
+              {query.trim()}
+            </strong>
+
+            <span>
+              {searchEngineLabel} ile ara
+            </span>
+          </span>
+        </button>
+      </div>
+    )}
+  </div>
+)
 
   const profileSection =
     variant === 'home' && (showProfile || editMode) ? (
