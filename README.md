@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 <h1>
   <img src="src-tauri/icons/icon.png" alt="Nebula Browser Logo" width="42" />
@@ -16,7 +16,7 @@ Built with <strong>Tauri 2</strong>, <strong>React 19</strong>, <strong>TypeScri
 </p>
 
 <a href="https://github.com/memirusta/Nebula-Browser/releases">
-  <img src="https://img.shields.io/badge/version-1.2.0-7ec8e3?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.1-7ec8e3?style=flat-square" alt="Version">
 </a>
 <a href="https://github.com/memirusta/Nebula-Browser/releases/latest">
   <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white" alt="Windows">
@@ -31,7 +31,7 @@ Built with <strong>Tauri 2</strong>, <strong>React 19</strong>, <strong>TypeScri
 <br><br>
 
 <a href="https://github.com/memirusta/Nebula-Browser/releases/latest"><strong>Download for Windows</strong></a>
-&nbsp;Â·&nbsp;
+&nbsp;Ã‚Â·&nbsp;
 <a href="https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing"><strong>Watch the demo</strong></a>
 
 <br><br>
@@ -49,15 +49,15 @@ Most desktop browsers still revolve around the same layout: a permanent tab stri
 
 Nebula takes a different approach.
 
-The interface stays out of the way while you browse and appears when you need it. Tabs, shortcuts, folders, previews, search, and navigation are brought together through the **Semi-Lunar interface** â€” a floating workspace designed to keep browsing fast without permanently filling the screen with controls.
+The interface stays out of the way while you browse and appears when you need it. Tabs, shortcuts, folders, previews, search, and navigation are brought together through the **Semi-Lunar interface** Ã¢â‚¬â€ a floating workspace designed to keep browsing fast without permanently filling the screen with controls.
 
 > **Nebula does not try to redesign the web. It redesigns the space around it.**
 
 ---
 
-## âœ¨ Highlights
+## Ã¢Å“Â¨ Highlights
 
-### ğŸŒ™ Semi-Lunar Navigation
+### ÄŸÅ¸Å’â„¢ Semi-Lunar Navigation
 
 Nebula's signature interface replaces the traditional always-visible tab strip with a floating semi-lunar dock.
 
@@ -75,7 +75,7 @@ The same Semi-Lunar interface is shared across Home, Browsing, and Overlay modes
 
 ---
 
-### ğŸ” Smart Search
+### ÄŸÅ¸â€Â Smart Search
 
 Nebula combines local browsing history with live search suggestions.
 
@@ -89,7 +89,7 @@ Visited sites can appear alongside live autocomplete suggestions, giving the sea
 
 ---
 
-### ğŸ  A Home Screen That Is Actually Yours
+### ÄŸÅ¸ÂÂ  A Home Screen That Is Actually Yours
 
 Nebula's home screen is a workspace rather than a static new-tab page.
 
@@ -110,7 +110,7 @@ Home modules can be repositioned without changing the browsing experience.
 
 ---
 
-### ğŸ‘ Tab Previews
+### ÄŸÅ¸â€˜Â Tab Previews
 
 Hover over supported shortcuts and tabs to preview their current browsing session before switching.
 
@@ -118,7 +118,7 @@ It is especially useful when multiple pages are open but you do not want a perma
 
 ---
 
-### ğŸ—‚ Folders
+### ÄŸÅ¸â€”â€š Folders
 
 Drag shortcuts together to organize them directly inside the Semi-Lunar dock.
 
@@ -132,7 +132,7 @@ Folders support:
 
 ---
 
-### ğŸ“¥ Downloads
+### ÄŸÅ¸â€œÂ¥ Downloads
 
 Nebula includes an integrated download manager with:
 
@@ -143,7 +143,7 @@ Nebula includes an integrated download manager with:
 
 ---
 
-### ğŸ“œ History & Session Recovery
+### ÄŸÅ¸â€œÅ“ History & Session Recovery
 
 Browsing history is stored locally and integrated directly into Nebula.
 
@@ -157,7 +157,7 @@ Features include:
 
 ---
 
-### ğŸ” Password Vault
+### ÄŸÅ¸â€Â Password Vault
 
 Nebula includes a local password vault and a browser-side autofill bridge.
 
@@ -165,7 +165,7 @@ Saved credentials can be managed from Settings and used inside supported browsin
 
 ---
 
-### ğŸ›¡ Privacy Controls
+### ÄŸÅ¸â€ºÂ¡ Privacy Controls
 
 Nebula includes configurable privacy options for:
 
@@ -184,13 +184,13 @@ Nebula also integrates **uBlock Origin** into its desktop browsing environment.
 
 ---
 
-### ğŸ”” Notifications
+### ÄŸÅ¸â€â€ Notifications
 
 Nebula has its own notification center for browser events such as downloads and supported site notifications.
 
 ---
 
-### âŒ¨ï¸ Keyboard Navigation
+### Ã¢Å’Â¨Ã¯Â¸Â Keyboard Navigation
 
 Common browser workflows are available from the keyboard, including:
 
@@ -207,15 +207,15 @@ Shortcut mappings can be viewed and configured from Settings.
 
 ---
 
-## ğŸ¬ Demo
+## ÄŸÅ¸ÂÂ¬ Demo
 
 Watch the full Nebula Browser showcase:
 
-**[â–¶ Open the demo video](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)**
+**[Ã¢â€“Â¶ Open the demo video](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)**
 
 ---
 
-## ğŸ§  How Nebula Works
+## ÄŸÅ¸Â§Â  How Nebula Works
 
 Nebula is built with:
 
@@ -233,22 +233,22 @@ Unlike a conventional single-WebView Tauri application, Nebula uses multiple nat
 ### Windows WebView architecture
 
 ```text
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                  Window                     â”‚
-â”‚                                             â”‚
-â”‚  nebula-chrome                              â”‚
-â”‚  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  â”‚
-â”‚      custom title / browser controls        â”‚
-â”‚                                             â”‚
-â”‚  main                                       â”‚
-â”‚  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  â”‚
-â”‚  Home / Overlay / Semi-Lunar / UI shell     â”‚
-â”‚                                             â”‚
-â”‚  nebula-tab-*                               â”‚
-â”‚  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  â”‚
-â”‚          native website WebViews            â”‚
-â”‚                                             â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+Ã¢â€Å’Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Â
+Ã¢â€â€š                  Window                     Ã¢â€â€š
+Ã¢â€â€š                                             Ã¢â€â€š
+Ã¢â€â€š  nebula-chrome                              Ã¢â€â€š
+Ã¢â€â€š  Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬  Ã¢â€â€š
+Ã¢â€â€š      custom title / browser controls        Ã¢â€â€š
+Ã¢â€â€š                                             Ã¢â€â€š
+Ã¢â€â€š  main                                       Ã¢â€â€š
+Ã¢â€â€š  Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬  Ã¢â€â€š
+Ã¢â€â€š  Home / Overlay / Semi-Lunar / UI shell     Ã¢â€â€š
+Ã¢â€â€š                                             Ã¢â€â€š
+Ã¢â€â€š  nebula-tab-*                               Ã¢â€â€š
+Ã¢â€â€š  Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬  Ã¢â€â€š
+Ã¢â€â€š          native website WebViews            Ã¢â€â€š
+Ã¢â€â€š                                             Ã¢â€â€š
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€Ëœ
 ```
 
 Each open browser tab can use its own native WebView.
@@ -257,46 +257,46 @@ Nebula dynamically manages their visibility, stacking, and hit regions so native
 
 ---
 
-## ğŸ“ Project Structure
+## ÄŸÅ¸â€œÂ Project Structure
 
 ```text
 src/
-â”œâ”€â”€ components/
-â”‚   â”œâ”€â”€ BrowserShell/
-â”‚   â”œâ”€â”€ HomeCenter/
-â”‚   â”œâ”€â”€ SemiLunarMenu/
-â”‚   â”œâ”€â”€ SettingsPanel/
-â”‚   â”œâ”€â”€ DownloadManager/
-â”‚   â”œâ”€â”€ HistoryPanel/
-â”‚   â”œâ”€â”€ NotificationPanel/
-â”‚   â””â”€â”€ ...
-â”‚
-â”œâ”€â”€ core/
-â”‚   â”œâ”€â”€ browser state
-â”‚   â”œâ”€â”€ settings
-â”‚   â”œâ”€â”€ shortcuts
-â”‚   â”œâ”€â”€ history
-â”‚   â””â”€â”€ bridge logic
-â”‚
-â”œâ”€â”€ hooks/
-â”‚   â””â”€â”€ React state + browser integrations
-â”‚
-â”œâ”€â”€ platform/
-â”‚   â””â”€â”€ Tauri / native WebView bridge
-â”‚
-â””â”€â”€ ChromeApp.tsx
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ components/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ BrowserShell/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ HomeCenter/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ SemiLunarMenu/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ SettingsPanel/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ DownloadManager/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ HistoryPanel/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ NotificationPanel/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ ...
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ core/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ browser state
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ settings
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ shortcuts
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ history
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ bridge logic
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ hooks/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ React state + browser integrations
+Ã¢â€â€š
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ platform/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ Tauri / native WebView bridge
+Ã¢â€â€š
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ ChromeApp.tsx
 
 src-tauri/
-â”œâ”€â”€ src/
-â”‚   â””â”€â”€ Rust native browser commands
-â”œâ”€â”€ capabilities/
-â”œâ”€â”€ permissions/
-â””â”€â”€ tauri.conf.json
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ src/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ Rust native browser commands
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ capabilities/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ permissions/
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ tauri.conf.json
 ```
 
 ---
 
-## ğŸš€ Installation
+## ÄŸÅ¸Å¡â‚¬ Installation
 
 ### Windows
 
@@ -310,7 +310,7 @@ Microsoft WebView2 is required and is already available on most modern Windows 1
 
 ---
 
-## ğŸ›  Development
+## ÄŸÅ¸â€ºÂ  Development
 
 ### Requirements
 
@@ -344,11 +344,11 @@ The React interface can also be started without the native browser layer:
 npm run dev
 ```
 
-Some functionality â€” including native browser tabs, system statistics, native browsing behavior, and WebView integrations â€” requires the Tauri application.
+Some functionality Ã¢â‚¬â€ including native browser tabs, system statistics, native browsing behavior, and WebView integrations Ã¢â‚¬â€ requires the Tauri application.
 
 ---
 
-## ğŸ“¦ Building
+## ÄŸÅ¸â€œÂ¦ Building
 
 ### Windows x64
 
@@ -372,7 +372,7 @@ Installer bundles are generated using NSIS.
 
 ---
 
-## ğŸ§ª Testing
+## ÄŸÅ¸Â§Âª Testing
 
 Nebula includes smoke, native, clean-install, and release checks.
 
@@ -387,7 +387,7 @@ Additional Windows install tests are available through the clean-install, upgrad
 
 ---
 
-## âš ï¸ Current Platform Status
+## Ã¢Å¡Â Ã¯Â¸Â Current Platform Status
 
 Nebula is currently **Windows-first**.
 
@@ -397,7 +397,7 @@ The React interface is designed to remain portable, but full native browser-wind
 
 ---
 
-## ğŸ—º Roadmap
+## ÄŸÅ¸â€”Âº Roadmap
 
 Nebula is actively evolving. Areas for continued work include:
 
@@ -410,7 +410,7 @@ Nebula is actively evolving. Areas for continued work include:
 
 ---
 
-## â¤ï¸ Why Nebula?
+## Ã¢ÂÂ¤Ã¯Â¸Â Why Nebula?
 
 Nebula started from a simple question:
 
@@ -439,3 +439,4 @@ Unless a license is added, the source code remains under its default copyright p
 Made with Tauri, Rust, React, and an unreasonable amount of glass.
 
 </div>
+
