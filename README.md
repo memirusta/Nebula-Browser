@@ -1,7 +1,3 @@
-Aynen, şimdi README’ye geçiyoruz. Mevcut README artık projenin seviyesinin bayağı gerisinde kalmış; hâlâ “frameless browser shell” gibi anlatıyor ama Nebula artık download manager, history/session recovery, password vault, notifications, live search suggestions, Semi-Lunar folders, privacy controls vs. olan gerçek bir browser uygulaması. Mevcut proje sürümü de `1.1.1`.  
-
-Ben README’yi şöyle yazardım. **Tamamen İngilizce**, üst taraf product showcase; aşağı indikçe teknik dokümantasyon:
-
 ```md
 <div align="center">
 
