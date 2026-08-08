@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-search-suggestions"
+description = "Allows the Nebula frontend to request search autocomplete suggestions."
+
+commands.allow = [
+  "search_suggestions"
+]

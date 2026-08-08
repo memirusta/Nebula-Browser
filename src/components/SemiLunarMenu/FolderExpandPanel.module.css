@@ -79,6 +79,11 @@
   gap: 10px;
 }
 
+.itemWrap {
+  position: relative;
+  min-width: 0;
+}
+
 .item {
   display: flex;
   flex-direction: column;
@@ -91,10 +96,59 @@
   cursor: pointer;
   color: var(--nebula-text);
   transition: background var(--duration-fast);
+  width: 100%;
 }
 
 .item:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+
+.closeBtn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+
+  width: 17px;
+  height: 17px;
+  padding: 0;
+
+  border: none;
+  border-radius: 50%;
+
+  background: #e53935;
+  color: #fff;
+
+  font-size: 9px;
+  line-height: 1;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+  z-index: 5;
+
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+
+  transition:
+    transform var(--duration-fast),
+    background var(--duration-fast);
+}
+
+.closeBtn:hover {
+  background: #ff5252;
+  transform: scale(1.08);
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
 }
 
 .itemDragging {

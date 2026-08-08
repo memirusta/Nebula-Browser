@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { isTauri } from '../../platform/runtime'
 import { listenChromeActions, emitActiveUrl, emitTabCatalog, emitViewMode } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
@@ -22,7 +23,6 @@ import {
   closeBrowseTab,
   navigateBrowseTabBack,
   navigateBrowseTabForward,
-  openBrowseTabDevTools,
   prepareBrowseTabInBackground,
   reloadBrowseTab,
   listenTabWebviewSnapshots,
@@ -297,6 +297,8 @@ export function BrowserShell() {
   const [lunarShortcutInteraction, setLunarShortcutInteraction] = useState(false)
   const [pinShortcutInteraction, setPinShortcutInteraction] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [developerToolsOpen, setDeveloperToolsOpen] = useState(false)
+  const developerToolsPreviousModeRef = useRef<ViewMode>('home')
   const [settingsActivated, setSettingsActivated] = useState(false)
   const [settingsAnchor, setSettingsAnchor] = useState<ToolbarAnchor | null>(null)
   const [homeEditMode, setHomeEditMode] = useState(false)
@@ -837,38 +839,6 @@ export function BrowserShell() {
     return () => window.clearTimeout(timer)
   }, [activeTabId, crashRecoveryOpen, saveCurrentSession, tabs])
 
-  const goBack = useCallback(() => {
-    if (viewModeRef.current === 'overlay') {
-      if (isTauri) setOverlayModeActive(false)
-      setViewMode('browsing')
-      return
-    }
-
-    setTabSwitchHistory((history) => {
-      if (history.length > 0) {
-        const next = [...history]
-        const previousTabId = next.pop()!
-        if (tabsRef.current.some((tab) => tab.shortcutId === previousTabId)) {
-          setActiveTabId(previousTabId)
-          setViewMode('browsing')
-        } else {
-          setViewMode('home')
-        }
-        return next
-      }
-
-      if (isTauri && activeTabIdRef.current) {
-        void navigateBrowseTabBack(activeTabIdRef.current).then((wentBack) => {
-          if (!wentBack) setViewMode('home')
-        })
-      } else {
-        setViewMode('home')
-      }
-
-      return history
-    })
-  }, [activeTabIdRef, setActiveTabId, tabsRef])
-
   const openOverlay = useCallback(() => {
     overlayDismissGuardRef.current = performance.now() + 450
     if (isTauri) setOverlayModeActive(true)
@@ -1006,28 +976,137 @@ export function BrowserShell() {
     setFocusSearchRequest((token) => token + 1)
   }, [openOverlay])
 
-  const handleBrowserShortcut = useCallback(
+const openDeveloperTools = useCallback(() => {
+  if (!import.meta.env.DEV) return
+  if (developerToolsOpen) return
+
+  const previousMode = viewModeRef.current
+
+  developerToolsPreviousModeRef.current =
+    previousMode
+
+  setDownloadPanelOpen(false)
+  setNotificationPanelOpen(false)
+  setHistoryPanelOpen(false)
+
+  if (previousMode === 'browsing') {
+    if (isTauri) {
+      setOverlayModeActive(true)
+    }
+
+    setViewMode('overlay')
+  }
+
+  setDeveloperToolsOpen(true)
+}, [developerToolsOpen])
+
+const closeDeveloperTools =
+  useCallback(() => {
+    const previousMode =
+      developerToolsPreviousModeRef.current
+
+    setDeveloperToolsOpen(false)
+
+    if (
+      previousMode === 'browsing' &&
+      activeTabIdRef.current
+    ) {
+      if (isTauri) {
+        setOverlayModeActive(false)
+      }
+
+      setViewMode('browsing')
+      return
+    }
+
+    if (
+      previousMode === 'overlay' &&
+      activeTabIdRef.current
+    ) {
+      if (isTauri) {
+        setOverlayModeActive(true)
+      }
+
+      setViewMode('overlay')
+      return
+    }
+
+    if (isTauri) {
+      setOverlayModeActive(false)
+    }
+
+    setViewMode('home')
+  }, [activeTabIdRef])
+
+const toggleDeveloperTools =
+  useCallback(() => {
+    if (developerToolsOpen) {
+      closeDeveloperTools()
+      return
+    }
+
+    openDeveloperTools()
+  }, [
+    closeDeveloperTools,
+    developerToolsOpen,
+    openDeveloperTools,
+  ])
+
+const handleBrowserShortcut =
+  useCallback(
     (action: BrowserShortcutId) => {
-      if (settingsOpen || onboardingOpen) return
+      if (action === 'devtools') {
+        if (import.meta.env.DEV) {
+          toggleDeveloperTools()
+        }
+
+        return
+      }
+
+      if (developerToolsOpen) {
+        if (
+          action === 'close-overlay'
+        ) {
+          closeDeveloperTools()
+        }
+
+        return
+      }
+
+      if (
+        settingsOpen ||
+        onboardingOpen
+      ) {
+        return
+      }
 
       switch (action) {
         case 'new-tab':
           openNewBlankTab()
           break
+
         case 'close-tab':
-          if (activeTabIdRef.current) {
-            void handleCloseTab(activeTabIdRef.current)
+          if (
+            activeTabIdRef.current
+          ) {
+            void handleCloseTab(
+              activeTabIdRef.current,
+            )
           }
           break
+
         case 'reopen-tab':
           reopenLastClosedTab()
           break
+
         case 'next-tab':
           cycleTab(1)
           break
+
         case 'prev-tab':
           cycleTab(-1)
           break
+
         case 'switch-tab-1':
         case 'switch-tab-2':
         case 'switch-tab-3':
@@ -1036,49 +1115,79 @@ export function BrowserShell() {
         case 'switch-tab-6':
         case 'switch-tab-7':
         case 'switch-tab-8':
-          switchToTabByIndex(Number(action.slice(-1)) - 1)
+          switchToTabByIndex(
+            Number(
+              action.slice(-1),
+            ) - 1,
+          )
           break
+
         case 'switch-tab-last': {
-          const count = tabsRef.current.length
-          if (count > 0) switchToTabByIndex(count - 1)
+          const count =
+            tabsRef.current.length
+
+          if (count > 0) {
+            switchToTabByIndex(
+              count - 1,
+            )
+          }
+
           break
         }
+
         case 'reload':
           reloadActiveTab()
           break
+
         case 'focus-url-bar':
           focusAddressBar()
           break
+
         case 'go-back':
           goBackInPage()
           break
+
         case 'go-forward':
           goForwardInPage()
           break
+
         case 'go-home':
           goHome()
           break
-        case 'zoom-in':
-        case 'zoom-out':
-        case 'zoom-reset':
-          if (activeTabIdRef.current && isTauri) {
-            const zoomAction = action === 'zoom-in' ? 'in' : action === 'zoom-out' ? 'out' : 'reset'
-            void zoomBrowseTab(activeTabIdRef.current, zoomAction)
-          }
-          break
-        case 'devtools':
-          if (import.meta.env.DEV && activeTabIdRef.current && isTauri) {
-            void openBrowseTabDevTools(activeTabIdRef.current)
-          }
-          break
-        case 'close-overlay':
-          if (viewModeRef.current === 'overlay') dismissOverlay()
-          break
+
+case 'zoom-in':
+  case 'zoom-out':
+  case 'zoom-reset': {
+    if (activeTabIdRef.current && isTauri) {
+      const zoomAction =
+        action === 'zoom-in'
+          ? 'in'
+          : action === 'zoom-out'
+            ? 'out'
+            : 'reset'
+
+      void zoomBrowseTab(
+        activeTabIdRef.current,
+        zoomAction,
+      )
+    }
+
+    break
+  }
+
+  case 'close-overlay':
+    if (viewModeRef.current === 'overlay') {
+      dismissOverlay()
+    }
+    break
+
       }
     },
     [
       activeTabIdRef,
+      closeDeveloperTools,
       cycleTab,
+      developerToolsOpen,
       dismissOverlay,
       focusAddressBar,
       goBackInPage,
@@ -1092,6 +1201,7 @@ export function BrowserShell() {
       settingsOpen,
       switchToTabByIndex,
       tabsRef,
+      toggleDeveloperTools,
     ],
   )
 
@@ -1101,14 +1211,22 @@ export function BrowserShell() {
   })
 
   useEffect(() => {
-    if (viewMode !== 'overlay') return
+  if (viewMode !== 'overlay') return
+  if (developerToolsOpen) return
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismissOverlay()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [viewMode, dismissOverlay])
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') dismissOverlay()
+  }
+
+  window.addEventListener('keydown', onKeyDown)
+
+  return () =>
+    window.removeEventListener('keydown', onKeyDown)
+}, [
+  viewMode,
+  developerToolsOpen,
+  dismissOverlay,
+])
 
   const isHome = viewMode === 'home'
   const isBrowsing = viewMode === 'browsing'
@@ -1170,8 +1288,8 @@ export function BrowserShell() {
           })
           break
         case 'go-back':
-          goBack()
-          break
+  goBackInPage()
+  break
         case 'go-home':
           goHome()
           break
@@ -1188,7 +1306,7 @@ export function BrowserShell() {
       cancelled = true
       unlisten?.()
     }
-  }, [openShortcutByUrl, handleCloseTab, setActiveTabId, openOverlay, goBack, goHome, tabsRef])
+  }, [openShortcutByUrl, handleCloseTab, setActiveTabId, openOverlay, goBackInPage, goHome, tabsRef])
 
   useEffect(() => {
     if (!isTauri) return
@@ -1355,7 +1473,7 @@ export function BrowserShell() {
     lunarWidthPx: browsingAdaptiveLunar.width,
     lunarHeightPx: browsingAdaptiveLunar.height,
     onHomeClick: isHome ? undefined : openOverlay,
-    onBackClick: isHome ? undefined : goBack,
+    onBackClick: isHome ? undefined : goBackInPage,
     onDownloadsClick: isHome ? undefined : toggleDownloadPanel,
     downloadCount: downloads.items.length,
     activeDownloadCount: downloads.activeCount,
@@ -1616,7 +1734,7 @@ export function BrowserShell() {
           document.body,
         )}
 
-      {isOverlay && (
+      {isOverlay && !developerToolsOpen && (
         <>
           <button
             type="button"
@@ -1661,62 +1779,96 @@ export function BrowserShell() {
               userDisplayName={home.userDisplayName}
               showGreeting={false}
               showProfile={false}
-              showPinnedStrip={pinnedShortcutList.length > 0}
-              pinnedShortcuts={pinnedShortcutList}
-              onUnpinShortcut={unpinShortcut}
-              onReorderPins={reorderPins}
-              isShortcutMuted={isMuted}
-              onToggleShortcutMute={toggleMute}
-              onRemoveShortcut={handleRemoveFromSemiLunar}
-              previewOnHover={semiLunar.previewOnHover}
-              previewDelayMs={semiLunar.previewDelayMs}
+              showPinnedStrip={
+                pinnedShortcutList.length > 0
+              }
+              pinnedShortcuts={
+                pinnedShortcutList
+              }
+              onUnpinShortcut={
+                unpinShortcut
+              }
+              onReorderPins={
+                reorderPins
+              }
+              isShortcutMuted={
+                isMuted
+              }
+              onToggleShortcutMute={
+                toggleMute
+              }
+              onRemoveShortcut={
+                handleRemoveFromSemiLunar
+              }
+              previewOnHover={
+                semiLunar.previewOnHover
+              }
+              previewDelayMs={
+                semiLunar.previewDelayMs
+              }
               activeUrl={activeUrl}
               getSession={getSession}
-              focusSearchRequest={focusSearchRequest}
+              focusSearchRequest={
+                focusSearchRequest
+              }
             />
           </div>
         </>
       )}
 
-      {onboardingOpen && (
-        <Suspense fallback={null}>
-          <OnboardingWizard
-            open
-            initialStep={onboardingInitialStep}
-            onApplyImportedShortcuts={handleApplyImportedShortcuts}
-            onComplete={handleOnboardingComplete}
-            onOpenBrowseUrl={(url) => openBrowseUrl(url, { activate: true })}
-          />
-        </Suspense>
-      )}
+{import.meta.env.DEV && developerToolsOpen && (
+  <DeveloperTools
+    activeTabId={activeTabId}
+    activeUrl={activeUrl}
+    openTabIds={openTabIds}
+    sourceViewMode={developerToolsPreviousModeRef.current}
+    onClose={closeDeveloperTools}
+  />
+)}
 
-      {settingsActivated && (
-        <Suspense fallback={null}>
-          <SettingsPanel
-            open={settingsOpen}
-            anchor={settingsAnchor}
-            onClose={closeSettings}
-            onPickWallpaper={pickWallpaper}
-            onResetWallpaper={resetWallpaper}
-            onResetShortcuts={handleResetShortcuts}
-            settings={settings}
-            onUpdate={updateCategory}
-            onResetCategory={resetCategory}
-            onTogglePreviewOnHover={togglePreviewOnHover}
-            onEnterHomeEdit={enterHomeEditMode}
-            onFactoryReset={handleFactoryReset}
-            onClearBrowsingData={handleClearBrowsingData}
-            activeUrl={activeUrl}
-            ublockVersion={ublockVersion}
-            ublockEnabled={ublockEnabled}
-            account={account}
-            onAccountChange={setAccount}
-            onAccountSignOut={handleAccountSignOut}
-            onReopenOnboarding={handleReopenOnboarding}
-            onOpenBrowseUrl={(url) => openBrowseUrl(url, { activate: false })}
-          />
-        </Suspense>
-      )}
+{onboardingOpen && (
+  <Suspense fallback={null}>
+    <OnboardingWizard
+      open
+      initialStep={onboardingInitialStep}
+      onApplyImportedShortcuts={handleApplyImportedShortcuts}
+      onComplete={handleOnboardingComplete}
+      onOpenBrowseUrl={(url) =>
+        openBrowseUrl(url, { activate: true })
+      }
+    />
+  </Suspense>
+)}
+
+{settingsActivated && (
+  <Suspense fallback={null}>
+    <SettingsPanel
+      open={settingsOpen}
+      anchor={settingsAnchor}
+      onClose={closeSettings}
+      onPickWallpaper={pickWallpaper}
+      onResetWallpaper={resetWallpaper}
+      onResetShortcuts={handleResetShortcuts}
+      settings={settings}
+      onUpdate={updateCategory}
+      onResetCategory={resetCategory}
+      onTogglePreviewOnHover={togglePreviewOnHover}
+      onEnterHomeEdit={enterHomeEditMode}
+      onFactoryReset={handleFactoryReset}
+      onClearBrowsingData={handleClearBrowsingData}
+      activeUrl={activeUrl}
+      ublockVersion={ublockVersion}
+      ublockEnabled={ublockEnabled}
+      account={account}
+      onAccountChange={setAccount}
+      onAccountSignOut={handleAccountSignOut}
+      onReopenOnboarding={handleReopenOnboarding}
+      onOpenBrowseUrl={(url) =>
+        openBrowseUrl(url, { activate: false })
+      }
+    />
+  </Suspense>
+)}
     </div>
   )
 }

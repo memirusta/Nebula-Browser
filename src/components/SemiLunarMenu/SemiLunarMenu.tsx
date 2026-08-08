@@ -159,10 +159,11 @@ export function SemiLunarMenu({
   const [dragHover, setDragHover] = useState<{ id: string; x: number; y: number } | null>(null)
   const [mergeReady, setMergeReady] = useState<{ sourceId: string; targetId: string } | null>(null)
   const [contextMenu, setContextMenu] = useState<{
-    shortcut: Shortcut
-    x: number
-    y: number
-  } | null>(null)
+  shortcut: Shortcut
+  x: number
+  y: number
+  folderId?: string
+} | null>(null)
   const [isAnyDragging, setIsAnyDragging] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -426,12 +427,13 @@ export function SemiLunarMenu({
     [closeMenuImmediately, onNavigate],
   )
 
-  const shouldDeferClose = useCallback(() => {
-    if (isDraggingRef.current) return true
-    if (contextMenuOpenRef.current || contextMenuHoverRef.current) return true
-    if (folderPanelHoverRef.current) return true
-    return false
-  }, [])
+const shouldDeferClose = useCallback(() => {
+  if (isDraggingRef.current) return true
+  if (contextMenuOpenRef.current || contextMenuHoverRef.current) return true
+  if (folderOpenRef.current || folderPanelHoverRef.current) return true
+
+  return false
+}, [])
 
   const scheduleClose = useCallback(() => {
     if (chromeQuickMenuOpen) return
@@ -449,15 +451,20 @@ export function SemiLunarMenu({
     }, closeDelayMs)
   }, [chromeQuickMenuOpen, shellViewMode, clearTimers, closeDelayMs, homeAlwaysOpen, isHome, isBrowsing, shouldDeferClose])
 
-  const handleContextMenuOpen = useCallback(
-    (shortcut: Shortcut, x: number, y: number) => {
-      contextMenuOpenRef.current = true
-      clearTimers()
-      setStage('expanded')
-      setContextMenu({ shortcut, x, y })
-    },
-    [clearTimers],
-  )
+const handleContextMenuOpen = useCallback(
+  (
+    shortcut: Shortcut,
+    x: number,
+    y: number,
+    folderId?: string,
+  ) => {
+    contextMenuOpenRef.current = true
+    clearTimers()
+    setStage('expanded')
+    setContextMenu({ shortcut, x, y, folderId })
+  },
+  [clearTimers],
+)
 
   const handleContextMenuClose = useCallback(() => {
     contextMenuOpenRef.current = false
@@ -593,6 +600,52 @@ export function SemiLunarMenu({
     (dockId: string) => openTabIdForDockId(dockId, openTabIds, shortcutMap),
     [openTabIds, shortcutMap],
   )
+
+const handleFolderMemberClose = useCallback(
+  (folderId: string, shortcut: Shortcut) => {
+    const dockId = folderDockId(folderId)
+
+    const result = onRemoveMemberFromFolder?.(folderId, shortcut.id)
+
+    if (result?.action === 'dissolved') {
+      if (result.remainingMemberId) {
+        // Kalan shortcut klasörün eski konumunu devralır.
+        replacePositionId(dockId, result.remainingMemberId)
+      } else {
+        removePosition(dockId)
+      }
+
+      // Folder artık yok; panel state'ini de temizle.
+      folderOpenRef.current = false
+      folderPanelHoverRef.current = false
+      setOpenFolderId(null)
+
+      clearTimers()
+      setStage('expanded')
+    }
+
+    const targetTabId = resolveCloseTabId(shortcut.id)
+
+    if (targetTabId) {
+      onCloseTab?.(targetTabId)
+      return
+    }
+
+    if (!isBrowsing) {
+      onRemoveShortcut?.(shortcut.id)
+    }
+  },
+  [
+    clearTimers,
+    isBrowsing,
+    onCloseTab,
+    onRemoveMemberFromFolder,
+    onRemoveShortcut,
+    removePosition,
+    replacePositionId,
+    resolveCloseTabId,
+  ],
+)
 
   const handleDockClose = useCallback(
     (dockId: string, shortcutId: string) => {
@@ -1089,9 +1142,13 @@ export function SemiLunarMenu({
                 if (isFolderDockId(dockId)) {
                   const folder = folderMap.get(parseFolderDockId(dockId))
                   if (!folder) return null
-                  const members = folder.members
-                    .map((id) => shortcutMap.get(id))
-                    .filter((s): s is Shortcut => s !== undefined)
+const memberIds = isBrowsing
+  ? folder.members.filter((id) => resolveCloseTabId(id) !== null)
+  : folder.members
+
+const members = memberIds
+  .map((id) => shortcutMap.get(id))
+  .filter((s): s is Shortcut => s !== undefined)
                   return (
                     <DockFolderItem
                       key={dockId}
@@ -1237,16 +1294,26 @@ export function SemiLunarMenu({
           canPinMore={canPinMore}
           onClose={handleContextMenuClose}
           onRemove={() => {
-            const targetTabId =
-              openTabIds.includes(contextMenu.shortcut.id)
-                ? contextMenu.shortcut.id
-                : resolveCloseTabId(contextMenu.shortcut.id)
-            if (targetTabId) {
-              onCloseTab?.(targetTabId)
-              return
-            }
-            onRemoveShortcut?.(contextMenu.shortcut.id)
-          }}
+  if (contextMenu.folderId) {
+    handleFolderMemberClose(
+      contextMenu.folderId,
+      contextMenu.shortcut,
+    )
+    return
+  }
+
+  const targetTabId =
+    openTabIds.includes(contextMenu.shortcut.id)
+      ? contextMenu.shortcut.id
+      : resolveCloseTabId(contextMenu.shortcut.id)
+
+  if (targetTabId) {
+    onCloseTab?.(targetTabId)
+    return
+  }
+
+  onRemoveShortcut?.(contextMenu.shortcut.id)
+}}
           onToggleMute={() => onToggleMute?.(contextMenu.shortcut.id)}
           onOpenNewTab={() =>
             handleNavigate(contextMenu.shortcut.url, contextMenu.shortcut.id)
@@ -1260,37 +1327,52 @@ export function SemiLunarMenu({
         />
       )}
 
-      {openFolderId && (() => {
-        const folder = folderMap.get(parseFolderDockId(openFolderId))
-        if (!folder) return null
-        const members = folder.members
-          .map((id) => shortcutMap.get(id))
-          .filter((s): s is Shortcut => s !== undefined)
-        const pos = getPosition(openFolderId)
-        const anchor = anchorRef.current?.getBoundingClientRect()
-        if (!anchor) return null
-        return (
-          <FolderExpandPanel
-            folderId={folder.id}
-            folderName={folder.name}
-            members={members}
-            anchorX={anchor.left + pos.x}
-            anchorY={anchor.top + pos.y}
-            onNavigate={handleNavigate}
-            onRenameFolder={onRenameFolder}
-            onClose={handleFolderClose}
-            onRemoveFromFolder={handleRemoveFromFolder}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onMouseEnter={handleFolderPanelEnter}
-            onMouseLeave={handleFolderPanelLeave}
-            previewOnHover={previewOnHover}
-            previewDelayMs={previewDelayMs}
-            onPreviewShow={setPreviewShortcut}
-            onPreviewHide={() => setPreviewShortcut(null)}
-          />
-        )
-      })()}
+{openFolderId && (() => {
+  const folder = folderMap.get(parseFolderDockId(openFolderId))
+  if (!folder) return null
+
+  const memberIds = isBrowsing
+    ? folder.members.filter((id) => resolveCloseTabId(id) !== null)
+    : folder.members
+
+  const members = memberIds
+    .map((id) => shortcutMap.get(id))
+    .filter((s): s is Shortcut => s !== undefined)
+
+  const pos = getPosition(openFolderId)
+  const anchor = anchorRef.current?.getBoundingClientRect()
+
+  if (!anchor) return null
+
+  return (
+    <FolderExpandPanel
+      folderId={folder.id}
+      folderName={folder.name}
+      members={members}
+      anchorX={anchor.left + pos.x}
+      anchorY={anchor.top + pos.y}
+      onNavigate={handleNavigate}
+      onRenameFolder={onRenameFolder}
+      onClose={handleFolderClose}
+      onRemoveFromFolder={handleRemoveFromFolder}
+      onCloseShortcut={(shortcut) =>
+        handleFolderMemberClose(folder.id, shortcut)
+}     
+    onContextMenu={(shortcut, x, y) =>
+     handleContextMenuOpen(shortcut, x, y, folder.id)
+}
+      closeBtnDelayMs={closeBtnDelayMs}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onMouseEnter={handleFolderPanelEnter}
+      onMouseLeave={handleFolderPanelLeave}
+      previewOnHover={previewOnHover}
+      previewDelayMs={previewDelayMs}
+      onPreviewShow={setPreviewShortcut}
+      onPreviewHide={() => setPreviewShortcut(null)}
+    />
+  )
+})()}
     </>
   )
 

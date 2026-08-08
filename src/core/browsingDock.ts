@@ -65,15 +65,46 @@ export function buildBrowsingVisibleDockItemIds(
   }
 
   for (const dockId of dockItemIds) {
-    if (!isFolderDockId(dockId)) continue
-    const folder = folderMap.get(parseFolderDockId(dockId))
-    if (!folder) continue
-    const openMembers = folder.members.filter((memberId) => openTabIds.includes(memberId))
-    if (openMembers.length === 0) continue
-    items.push(dockId)
-    usedDockEntries.add(dockId)
-    openMembers.forEach((memberId) => assignedTabIds.add(memberId))
-  }
+  if (!isFolderDockId(dockId)) continue
+
+  const folder = folderMap.get(parseFolderDockId(dockId))
+  if (!folder) continue
+
+  const matchingOpenTabIds = openTabIds.filter((tabId) => {
+    if (assignedTabIds.has(tabId)) return false
+
+    // Exact id match.
+    if (folder.members.includes(tabId)) return true
+
+    // Tabs can have runtime ids such as visit-* while the folder stores the
+    // persistent shortcut id. When there is only one open tab for this host,
+    // treat the two ids as aliases of the same shortcut.
+    const tabShortcut = shortcutMap.get(tabId)
+    if (!tabShortcut) return false
+
+    const tabHost = hostKeyForShortcut(tabShortcut.url)
+
+    // Do not collapse multiple tabs from the same host into one folder member.
+    if ((tabsPerHost.get(tabHost) ?? 0) !== 1) return false
+
+    return folder.members.some((memberId) => {
+      const memberShortcut = shortcutMap.get(memberId)
+      return (
+        memberShortcut !== undefined &&
+        hostKeyForShortcut(memberShortcut.url) === tabHost
+      )
+    })
+  })
+
+  if (matchingOpenTabIds.length === 0) continue
+
+  items.push(dockId)
+  usedDockEntries.add(dockId)
+
+  matchingOpenTabIds.forEach((tabId) => {
+    assignedTabIds.add(tabId)
+  })
+}
 
   for (const tabId of openTabIds) {
     if (assignedTabIds.has(tabId)) continue

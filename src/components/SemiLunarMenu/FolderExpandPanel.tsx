@@ -14,12 +14,18 @@ interface FolderExpandPanelProps {
   onNavigate: (url: string, shortcutId?: string) => void
   onRenameFolder: (folderId: string, name: string) => void
   onClose: () => void
+
+  onCloseShortcut: (shortcut: Shortcut) => void
+  onContextMenu: (shortcut: Shortcut, x: number, y: number) => void
+  closeBtnDelayMs?: number
+
   onRemoveFromFolder: (
     folderId: string,
     shortcutId: string,
     clientX: number,
     clientY: number,
   ) => void
+
   onDragStart?: () => void
   onDragEnd?: () => void
   onMouseEnter?: () => void
@@ -36,6 +42,9 @@ function FolderPanelItem({
   onNavigate,
   onClose,
   onDragOut,
+  onCloseShortcut,
+  onContextMenu,
+  closeBtnDelayMs,
   onDragStart,
   onDragEnd,
   previewOnHover,
@@ -48,6 +57,11 @@ function FolderPanelItem({
   onNavigate: (url: string, shortcutId?: string) => void
   onClose: () => void
   onDragOut: (shortcutId: string, clientX: number, clientY: number) => void
+
+  onCloseShortcut: () => void
+  onContextMenu: (x: number, y: number) => void
+  closeBtnDelayMs: number
+
   onDragStart?: () => void
   onDragEnd?: () => void
   previewOnHover: boolean
@@ -57,6 +71,7 @@ function FolderPanelItem({
 }) {
   const [isDragging, setIsDragging] = useState(false)
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 })
+  const [showCloseBtn, setShowCloseBtn] = useState(false)
   const dragState = useRef({
     active: false,
     pointerId: -1,
@@ -65,6 +80,7 @@ function FolderPanelItem({
     moved: false,
   })
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeBtnTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clearPreviewTimer = useCallback(() => {
     if (previewTimer.current) {
@@ -73,8 +89,20 @@ function FolderPanelItem({
     }
   }, [])
 
-  useEffect(() => () => clearPreviewTimer(), [clearPreviewTimer])
+  const clearCloseBtnTimer = useCallback(() => {
+  if (closeBtnTimer.current) {
+    clearTimeout(closeBtnTimer.current)
+    closeBtnTimer.current = null
+  }
+}, [])
 
+useEffect(
+  () => () => {
+    clearPreviewTimer()
+    clearCloseBtnTimer()
+  },
+  [clearPreviewTimer, clearCloseBtnTimer],
+)
   const finishDrag = useCallback(
     (clientX: number, clientY: number) => {
       const wasMoved = dragState.current.moved
@@ -105,17 +133,21 @@ function FolderPanelItem({
       const dx = clientX - dragState.current.startClientX
       const dy = clientY - dragState.current.startClientY
       if (!dragState.current.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
-        dragState.current.moved = true
-        clearPreviewTimer()
-        onPreviewHide?.()
-        setIsDragging(true)
-        onDragStart?.()
-      }
+  dragState.current.moved = true
+
+  setShowCloseBtn(false)
+  clearCloseBtnTimer()
+  clearPreviewTimer()
+  onPreviewHide?.()
+
+  setIsDragging(true)
+  onDragStart?.()
+}
       if (dragState.current.moved) {
         setGhostPos({ x: clientX, y: clientY })
       }
     },
-    [clearPreviewTimer, onDragStart, onPreviewHide],
+    [clearCloseBtnTimer, clearPreviewTimer, onDragStart, onPreviewHide],
   )
 
   useEffect(() => {
@@ -171,6 +203,50 @@ function FolderPanelItem({
       onClose()
     }
   }
+  
+  
+  const handleWrapEnter = () => {
+  if (isDragging) return
+
+  clearCloseBtnTimer()
+
+  closeBtnTimer.current = setTimeout(() => {
+    setShowCloseBtn(true)
+  }, closeBtnDelayMs)
+}
+
+const handleWrapLeave = () => {
+  setShowCloseBtn(false)
+  clearCloseBtnTimer()
+  clearPreviewTimer()
+  onPreviewHide?.()
+}
+
+const handleContextMenu = (e: React.MouseEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+
+  if (isDragging) return
+
+  clearCloseBtnTimer()
+  clearPreviewTimer()
+  onPreviewHide?.()
+
+  onContextMenu(e.clientX, e.clientY)
+}
+
+const handleClosePointerDown = (e: React.PointerEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+
+  setShowCloseBtn(false)
+  clearCloseBtnTimer()
+  clearPreviewTimer()
+  onPreviewHide?.()
+
+  onCloseShortcut()
+}
+
 
   const handleMouseEnter = () => {
     if (isDragging) return
@@ -185,43 +261,83 @@ function FolderPanelItem({
     onPreviewHide?.()
   }
 
-  return (
-    <>
+return (
+  <>
+    <div
+      className={styles.itemWrap}
+      onMouseEnter={handleWrapEnter}
+      onMouseLeave={handleWrapLeave}
+      onContextMenu={handleContextMenu}
+    >
       <button
         type="button"
-        className={[styles.item, isDragging ? styles.itemDragging : ''].filter(Boolean).join(' ')}
+        className={[
+          styles.item,
+          isDragging ? styles.itemDragging : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        onContextMenu={handleContextMenu}
         aria-label={shortcut.label}
       >
         {shortcut.favicon ? (
-          <img src={shortcut.favicon} alt="" draggable={false} />
+          <img
+            src={shortcut.favicon}
+            alt=""
+            draggable={false}
+          />
         ) : (
           <span>{shortcut.label[0]}</span>
         )}
-        <span className={styles.label}>{shortcut.label}</span>
+
+        <span className={styles.label}>
+          {shortcut.label}
+        </span>
       </button>
-      {isDragging &&
-        createPortal(
-          <div
-            className={styles.dragGhost}
-            style={{ left: `${ghostPos.x}px`, top: `${ghostPos.y}px` }}
-            aria-hidden="true"
-          >
-            {shortcut.favicon ? (
-              <img src={shortcut.favicon} alt="" draggable={false} />
-            ) : (
-              <span>{shortcut.label[0]}</span>
-            )}
-          </div>,
-          document.body,
-        )}
-    </>
-  )
+
+      {showCloseBtn && !isDragging && (
+        <button
+          type="button"
+          className={styles.closeBtn}
+          onPointerDown={handleClosePointerDown}
+          aria-label={`Close ${shortcut.label}`}
+          title={`Close ${shortcut.label}`}
+        >
+          ✕
+        </button>
+      )}
+    </div>
+
+    {isDragging &&
+      createPortal(
+        <div
+          className={styles.dragGhost}
+          style={{
+            left: `${ghostPos.x}px`,
+            top: `${ghostPos.y}px`,
+          }}
+          aria-hidden="true"
+        >
+          {shortcut.favicon ? (
+            <img
+              src={shortcut.favicon}
+              alt=""
+              draggable={false}
+            />
+          ) : (
+            <span>{shortcut.label[0]}</span>
+          )}
+        </div>,
+        document.body,
+      )}
+  </>
+)
 }
 
 export function FolderExpandPanel({
@@ -234,6 +350,11 @@ export function FolderExpandPanel({
   onRenameFolder,
   onClose,
   onRemoveFromFolder,
+
+  onCloseShortcut,
+  onContextMenu,
+  closeBtnDelayMs = 500,
+
   onDragStart,
   onDragEnd,
   onMouseEnter,
@@ -358,6 +479,9 @@ export function FolderExpandPanel({
               onDragOut={handleDragOut}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
+              onCloseShortcut={() => onCloseShortcut(s)}
+              onContextMenu={(x, y) => onContextMenu(s, x, y)}
+              closeBtnDelayMs={closeBtnDelayMs} 
               previewOnHover={previewOnHover}
               previewDelayMs={previewDelayMs}
               onPreviewShow={onPreviewShow}
