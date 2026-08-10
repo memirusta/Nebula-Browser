@@ -1,10 +1,7 @@
-/** Frameless shell — semi-lunar is the only top chrome. */
-export const TITLE_BAR_HEIGHT = 0
-
-/** Hover strip below title bar for semi-lunar trigger in browsing mode. */
+/** Hover strip for the collapsed Semi-Lunar trigger. */
 export const SEMI_LUNAR_HIT_ZONE_HEIGHT = 10
 
-/** Padding below expanded semi-lunar dome. */
+/** Padding below expanded Semi-Lunar dome. */
 export const BROWSING_LUNAR_CHROME_PADDING = 12
 
 /** Extra height when a folder panel is open below the dome. */
@@ -24,13 +21,4 @@ export function browsingChromeBelowTitlePx(
   }
 
   return chrome
-}
-
-export function shellHitRegionHeight(chromePx: number): number {
-  return chromePx
-}
-
-/** @deprecated Use shellHitRegionHeight */
-export function shellHitRegionHeightBelowTitle(chromeBelowTopPx: number): number {
-  return shellHitRegionHeight(chromeBelowTopPx)
 }

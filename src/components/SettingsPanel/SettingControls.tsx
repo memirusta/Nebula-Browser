@@ -229,17 +229,3 @@ export function SettingDangerRow({
     </div>
   )
 }
-
-export function SettingSoonRow({ label, hint }: { label: string; hint: string }) {
-  const { t } = useLocale()
-
-  return (
-    <div className={styles.row}>
-      <div className={styles.rowText}>
-        <div className={styles.rowLabel}>{label}</div>
-        <div className={styles.rowHint}>{hint}</div>
-      </div>
-      <span className={styles.badgeSoon}>{t('geckoSoon')}</span>
-    </div>
-  )
-}

@@ -85,7 +85,6 @@ interface SemiLunarMenuProps {
   downloadProgress?: number | null
   downloadPanelOpen?: boolean
   forceOpen?: boolean
-  chromeQuickMenuOpen?: boolean
   onShortcutInteractionChange?: (active: boolean) => void
   activeUrl?: string | null
   getSession?: (url: string) => BrowseSession | null
@@ -132,7 +131,6 @@ export function SemiLunarMenu({
   downloadProgress = null,
   downloadPanelOpen = false,
   forceOpen = false,
-  chromeQuickMenuOpen = false,
   onShortcutInteractionChange,
   activeUrl = null,
   getSession,
@@ -420,9 +418,8 @@ export function SemiLunarMenu({
 
   const handleNavigate = useCallback(
     (url: string, shortcutId?: string) => {
-      // A tab activation resets the native shell hit region to the collapsed
-      // strip. Close the DOM menu in the same interaction so an expanded dome
-      // cannot remain clipped as a grey sliver at the top of the new tab.
+      // Collapse the floating menu before navigation so the dedicated chrome
+      // overlay immediately returns to its compact browsing footprint.
       closeMenuImmediately()
       onNavigate(url, shortcutId)
     },
@@ -438,7 +435,6 @@ const shouldDeferClose = useCallback(() => {
 }, [])
 
   const scheduleClose = useCallback(() => {
-    if (chromeQuickMenuOpen) return
     if (isBrowsing && shellViewMode === 'overlay') return
     if (isHome && homeAlwaysOpen) return
     if (shouldDeferClose()) return
@@ -451,7 +447,7 @@ const shouldDeferClose = useCallback(() => {
       }
       setStage('closed')
     }, closeDelayMs)
-  }, [chromeQuickMenuOpen, shellViewMode, clearTimers, closeDelayMs, homeAlwaysOpen, isHome, isBrowsing, shouldDeferClose])
+  }, [shellViewMode, clearTimers, closeDelayMs, homeAlwaysOpen, isHome, isBrowsing, shouldDeferClose])
 
 const handleContextMenuOpen = useCallback(
   (
@@ -853,19 +849,6 @@ const handleFolderMemberClose = useCallback(
     if (!shouldManageNativeChrome || !isTauri) return
     if (contextMenu) return
 
-    if (chromeQuickMenuOpen) {
-      clearTimers()
-      setStage('expanded')
-      void syncChromeShellLayout(
-        true,
-        lunarHeightPx,
-        Boolean(openFolderId) || downloadPanelOpen,
-        previewShortcut !== null,
-        lunarWidthPx,
-      )
-      return
-    }
-
     if (shellViewMode === 'overlay') {
       clearTimers()
       folderOpenRef.current = false
@@ -882,7 +865,6 @@ const handleFolderMemberClose = useCallback(
       lunarWidthPx,
     )
   }, [
-    chromeQuickMenuOpen,
     shellViewMode,
     isBrowsing,
     isExpanded,

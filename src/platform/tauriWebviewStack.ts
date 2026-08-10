@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
 import { tabWebviewLabel } from '../core/browserTab'
-import { getBrowsingChromeLogicalHeight } from './browsingLayout'
 import { isTauri } from './runtime'
 
 let stackTimer: ReturnType<typeof setTimeout> | null = null
@@ -9,10 +8,6 @@ let overlayModeActive = false
 
 export function setOverlayModeActive(active: boolean): void {
   overlayModeActive = active
-}
-
-export function isOverlayModeActive(): boolean {
-  return overlayModeActive
 }
 
 export function setBrowsingChromeExpected(expected: boolean): void {
@@ -50,15 +45,12 @@ export async function stackBrowsingChromeAboveBrowser(
 
   try {
     if (overlayModeActive) {
-      await invoke('webview_raise_overlay', {
-        chromeLogicalHeight: getBrowsingChromeLogicalHeight(),
-      })
+      await invoke('webview_raise_overlay')
       return
     }
 
     await invoke('webview_raise_chrome', {
       activeTabLabel: activeTabId ? tabWebviewLabel(activeTabId) : null,
-      chromeLogicalHeight: getBrowsingChromeLogicalHeight(),
     })
   } catch (error) {
     if (import.meta.env.DEV) {

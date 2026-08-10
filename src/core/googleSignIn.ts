@@ -316,12 +316,6 @@ export function takePendingGoogleClaims(): GoogleProfileClaims | null {
   }
 }
 
-export function takeGoogleOAuthReturn(): string | null {
-  const value = readStoredAuth(GOOGLE_OAUTH_RETURN_KEY)
-  removeStoredAuth(GOOGLE_OAUTH_RETURN_KEY)
-  return value
-}
-
 export async function resumeGoogleSignInFromRedirect(): Promise<{
   claims: GoogleProfileClaims | null
 }> {

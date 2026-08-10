@@ -237,24 +237,24 @@ Unlike a conventional single-WebView Tauri application, Nebula uses multiple nat
 ┌─────────────────────────────────────────────┐
 │                  Window                     │
 │                                             │
-│  nebula-chrome                              │
+│  nebula-chrome              top overlay     │
 │  ─────────────────────────────────────────  │
-│      custom title / browser controls        │
+│       bounded Semi-Lunar browser UI         │
 │                                             │
-│  main                                       │
+│  nebula-tab-*               middle layer    │
 │  ─────────────────────────────────────────  │
-│  Home / Overlay / Semi-Lunar / UI shell     │
+│       full-client website WebViews          │
 │                                             │
-│  nebula-tab-*                               │
+│  main                       bottom layer     │
 │  ─────────────────────────────────────────  │
-│          native website WebViews            │
+│       Home / app UI / modal surfaces        │
 │                                             │
 └─────────────────────────────────────────────┘
 ```
 
-Each open browser tab can use its own native WebView.
+Each open browser tab can use its own native WebView. The Home surface stays mounted underneath browsing content, while the dedicated Semi-Lunar WebView is physically bounded to its floating overlay instead of reserving layout space above the page.
 
-Nebula dynamically manages their visibility, stacking, and hit regions so native page content and the React interface behave like one application.
+Nebula dynamically manages visibility and native z-order so these surfaces behave like one application without pushing website content down.
 
 ---
 

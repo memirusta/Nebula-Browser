@@ -24,7 +24,6 @@ import {
   browserWebviewPhysicalBounds,
 } from './windowClientBounds'
 
-const LEGACY_BROWSER_LABEL = 'nebula-browser'
 const BROWSER_WEBVIEW_BG = '#000000'
 const LAYOUT_DEBOUNCE_MS = 120
 const UBLOCK_READY_TIMEOUT_MS = 4_000
@@ -404,10 +403,6 @@ let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
 let lastBrowserBoundsKey: string | null = null
 let siteFullscreenBounds = false
-
-export function isSiteFullscreenBoundsActive(): boolean {
-  return siteFullscreenBounds
-}
 
 export function setSiteFullscreenBoundsMode(
   active: boolean,
@@ -798,21 +793,6 @@ export async function prewarmBrowseWebview(): Promise<void> {
   })
 
   await prewarmPromise
-}
-
-async function hideLegacyBrowser(): Promise<void> {
-  try {
-    const legacy =
-      await Webview.getByLabel(
-        LEGACY_BROWSER_LABEL,
-      )
-
-    if (legacy) {
-      await legacy.hide()
-    }
-  } catch {
-    // ignore
-  }
 }
 
 function cancelTabSleep(
@@ -2769,22 +2749,6 @@ export async function activateBrowseTab(
       },
     )
 
-    await traceTransitionCall(
-      traceId,
-      'browser.activation.hide-legacy',
-      {
-        shortcutId,
-      },
-      hideLegacyBrowser,
-    )
-
-    if (!shouldContinue()) {
-      await logSuperseded(
-        'after-hide-legacy',
-      )
-      return
-    }
-
     const webview =
       await traceTransitionCall(
         traceId,
@@ -3234,8 +3198,6 @@ export async function prepareBrowseTabInBackground(
       dormantState?.url ??
       url
 
-    await hideLegacyBrowser()
-
     const traceId =
       `background-${Date.now()}-${++activationSequence}`
 
@@ -3304,199 +3266,6 @@ export async function forceSyncActiveTabBounds(): Promise<void> {
   )
 
   await stackBrowsingChromeAboveBrowser(
-    activeTabId,
-  )
-}
-
-export async function hideBrowseTabById(
-  shortcutId: string,
-): Promise<void> {
-  if (!isTauri) return
-
-  const cached =
-    webviewCache.get(
-      shortcutId,
-    )
-
-  if (cached) {
-    await hideWebviewSafe(
-      cached,
-    )
-    return
-  }
-
-  const label =
-    tabWebviewLabel(
-      shortcutId,
-    )
-
-  try {
-    const webview =
-      await Webview.getByLabel(
-        label,
-      )
-
-    if (webview) {
-      await hideWebviewSafe(
-        webview,
-      )
-    }
-  } catch {
-    // ignore
-  }
-}
-
-export async function showBrowseTabById(
-  shortcutId: string,
-): Promise<void> {
-  if (!isTauri) return
-
-  cancelTabUnload(
-    shortcutId,
-  )
-
-  tabActivationRequests.add(
-    shortcutId,
-  )
-
-  try {
-    const inFlightUnload =
-      tabUnloadInFlight.get(
-        shortcutId,
-      )
-
-    if (inFlightUnload) {
-      await inFlightUnload.catch(
-        () => undefined,
-      )
-    }
-
-    const label =
-      tabWebviewLabel(
-        shortcutId,
-      )
-
-    let webview =
-      webviewCache.get(
-        shortcutId,
-      ) ??
-      null
-
-    if (!webview) {
-      try {
-        webview =
-          await Webview.getByLabel(
-            label,
-          )
-      } catch {
-        webview = null
-      }
-    }
-
-    const dormantState =
-      unloadedTabStates.get(
-        shortcutId,
-      ) ??
-      null
-
-    if (
-      !webview &&
-      dormantState
-    ) {
-      const traceId =
-        `restore-${Date.now()}-${++activationSequence}`
-
-      webview =
-        await getOrCreateTabWebview(
-          shortcutId,
-          dormantState.url,
-          false,
-          traceId,
-        )
-    }
-
-    if (!webview) return
-
-    webviewCache.set(
-      shortcutId,
-      webview,
-    )
-
-    const previouslyActiveTabId =
-      activeTabId
-
-    if (
-      previouslyActiveTabId &&
-      previouslyActiveTabId !==
-        shortcutId
-    ) {
-      tabLastActiveAt.set(
-        previouslyActiveTabId,
-        Date.now(),
-      )
-    }
-
-    activeTabId =
-      shortcutId
-
-    tabLastActiveAt.set(
-      shortcutId,
-      Date.now(),
-    )
-
-    activeWebview =
-      webview
-
-    await restoreWebviewMemory(
-      webview,
-    )
-
-    await syncBrowserBounds(
-      webview,
-    )
-
-    await webview.show()
-
-    await stackBrowsingChromeAboveBrowser(
-      shortcutId,
-    )
-
-    if (dormantState) {
-      await restoreUnloadedTabState(
-        shortcutId,
-        webview,
-        dormantState,
-      )
-    }
-  } finally {
-    tabActivationRequests.delete(
-      shortcutId,
-    )
-  }
-}
-
-export async function hideActiveBrowseTab(): Promise<void> {
-  if (
-    !isTauri ||
-    !activeTabId
-  ) {
-    return
-  }
-
-  await hideBrowseTabById(
-    activeTabId,
-  )
-}
-
-export async function showActiveBrowseTab(): Promise<void> {
-  if (
-    !isTauri ||
-    !activeTabId
-  ) {
-    return
-  }
-
-  await showBrowseTabById(
     activeTabId,
   )
 }
@@ -3649,93 +3418,6 @@ export async function openBrowseTabDevTools(
   }
 }
 
-export async function readTabWebviewUrl(
-  shortcutId: string,
-): Promise<string | null> {
-  if (!isTauri) {
-    return null
-  }
-
-  try {
-    const url =
-      await invoke<string>(
-        'webview_current_url',
-        {
-          label:
-            tabWebviewLabel(
-              shortcutId,
-            ),
-        },
-      )
-
-    if (
-      !url ||
-      url === 'about:blank'
-    ) {
-      return null
-    }
-
-    return url
-  } catch {
-    return null
-  }
-}
-
-export async function readTabWebviewTitle(
-  shortcutId: string,
-): Promise<string | null> {
-  if (!isTauri) {
-    return null
-  }
-
-  try {
-    const title =
-      await invoke<string>(
-        'webview_document_title',
-        {
-          label:
-            tabWebviewLabel(
-              shortcutId,
-            ),
-        },
-      )
-
-    if (!title?.trim()) {
-      return null
-    }
-
-    return title.trim()
-  } catch {
-    return null
-  }
-}
-
-export async function snapshotTabWebview(
-  shortcutId: string,
-): Promise<{
-  url: string
-  title: string | null
-} | null> {
-  const url =
-    await readTabWebviewUrl(
-      shortcutId,
-    )
-
-  if (!url) {
-    return null
-  }
-
-  const title =
-    await readTabWebviewTitle(
-      shortcutId,
-    )
-
-  return {
-    url,
-    title,
-  }
-}
-
 export async function hideAllBrowseTabs(): Promise<void> {
   if (!isTauri) return
 
@@ -3776,12 +3458,8 @@ export async function hideAllBrowseTabs(): Promise<void> {
           (webview) =>
             webview.label !==
               spareLabel &&
-            (
-              webview.label.startsWith(
-                'nebula-tab-',
-              ) ||
-              webview.label ===
-                LEGACY_BROWSER_LABEL
+            webview.label.startsWith(
+              'nebula-tab-',
             ),
         )
         .map(
@@ -3792,7 +3470,7 @@ export async function hideAllBrowseTabs(): Promise<void> {
         ),
     )
   } catch {
-    await hideLegacyBrowser()
+    // ignore
   }
 }
 
@@ -4082,42 +3760,4 @@ export async function syncTabWebviewFullscreenBounds(
 
 export function getActiveBrowseTabId(): string | null {
   return activeTabId
-}
-
-/** @deprecated Legacy single-webview API */
-export async function showTauriBrowser(
-  url: string,
-): Promise<void> {
-  await activateBrowseTab(
-    'legacy',
-    url,
-  )
-}
-
-/** @deprecated Legacy single-webview API */
-export async function hideTauriBrowser(): Promise<void> {
-  await hideAllBrowseTabs()
-}
-
-/** @deprecated Use snapshotTabWebview */
-export async function snapshotTauriBrowserSession(
-  recordVisit: (
-    url: string,
-  ) => void,
-): Promise<string | null> {
-  const snapshot =
-    await snapshotTabWebview(
-      activeTabId ??
-        'legacy',
-    )
-
-  if (!snapshot) {
-    return null
-  }
-
-  recordVisit(
-    snapshot.url,
-  )
-
-  return snapshot.url
 }

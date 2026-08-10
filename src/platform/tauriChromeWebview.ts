@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { Webview, getCurrentWebview, type WebviewOptions } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { SEMI_LUNAR_HIT_ZONE_HEIGHT, TITLE_BAR_HEIGHT } from '../core/windowChrome'
+import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 import { debounce } from './debounce'
 import { getActiveBrowseTabId, syncTauriBrowserBounds } from './tauriBrowser'
 import { isChromeShell } from '../core/nebulaBridge'
@@ -13,11 +13,6 @@ import {
 } from './tauriWebviewStack'
 import { windowClientPhysicalSize } from './windowClientBounds'
 
-import {
-  getBrowsingChromeLogicalHeight,
-  resetBrowsingChromeLogicalHeight,
-  setBrowsingChromeLogicalHeight,
-} from './browsingLayout'
 
 export const CHROME_WEBVIEW_LABEL = 'nebula-chrome'
 const LAYOUT_DEBOUNCE_MS = 120
@@ -35,7 +30,6 @@ let lastChromeBoundsKey: string | null = null
 let chromeBoundsListenerBound = false
 let chromeOverlayLogicalWidth: number | null = null
 let chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
-let chromeOverlayFullClient = false
 let chromeVisibilitySuppressed = false
 
 // Semi-Lunar uses max-width: 98vw. Give its dedicated WebView a tiny logical
@@ -52,13 +46,6 @@ async function chromePhysicalBounds(): Promise<{
   size: PhysicalSize
 }> {
   const windowSize = await windowClientPhysicalSize()
-  if (chromeOverlayFullClient) {
-    return {
-      position: new PhysicalPosition(0, 0),
-      size: new PhysicalSize(windowSize.width, windowSize.height),
-    }
-  }
-
   const scaleFactor = await getCurrentWindow().scaleFactor()
   const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1)
   const requestedPhysicalWidth = Math.ceil(
@@ -140,7 +127,6 @@ async function waitForWebviewCreated(webview: Webview): Promise<void> {
 
 export function setChromeWebviewHeight(logicalHeight: number): void {
   chromeOverlayLogicalHeight = Math.max(1, logicalHeight)
-  setBrowsingChromeLogicalHeight(logicalHeight)
 }
 
 /**
@@ -154,12 +140,10 @@ export async function setChromeOverlayLogicalBounds(
 ): Promise<void> {
   if (!isTauri) return
 
-  chromeOverlayFullClient = false
   chromeOverlayLogicalHeight = Math.max(1, logicalHeight)
   if (logicalWidth !== undefined && Number.isFinite(logicalWidth)) {
     chromeOverlayLogicalWidth = Math.max(1, logicalWidth)
   }
-  setBrowsingChromeLogicalHeight(logicalHeight)
 
   const webview = await getChromeWebview()
   if (!webview) return
@@ -172,10 +156,6 @@ export async function setChromeOverlayLogicalBounds(
   if (changed) {
     scheduleStackBrowsingChromeAboveBrowser(getActiveBrowseTabId(), 0)
   }
-}
-
-export function getChromeWebviewLogicalHeight(): number {
-  return getBrowsingChromeLogicalHeight()
 }
 
 export async function syncChromeWebviewBounds(): Promise<void> {
@@ -302,38 +282,9 @@ export async function hideChromeWebview(): Promise<void> {
   lastChromeBoundsKey = null
   chromeOverlayLogicalWidth = null
   chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
-  chromeOverlayFullClient = false
-  resetBrowsingChromeLogicalHeight()
 
   const webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
   if (webview) {
     await webview.hide()
   }
-}
-
-export async function expandChromeForQuickMenu(): Promise<boolean> {
-  if (!isTauri) return false
-
-  chromeOverlayFullClient = true
-  const webview = await getChromeWebview()
-  if (!webview) return false
-
-  lastChromeBoundsKey = null
-  await syncChromeBounds(webview)
-  await webview.show()
-  return true
-}
-
-export async function collapseChromeFromQuickMenu(): Promise<void> {
-  if (!isTauri) return
-
-  chromeOverlayFullClient = false
-  setChromeWebviewHeight(Math.max(TITLE_BAR_HEIGHT, SEMI_LUNAR_HIT_ZONE_HEIGHT))
-
-  const webview = await getChromeWebview()
-  if (!webview) return
-
-  lastChromeBoundsKey = null
-  await syncChromeBounds(webview)
-  await webview.show()
 }

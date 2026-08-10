@@ -6,7 +6,6 @@ pub fn is_nebula_webview_label(label: &str) -> bool {
 mod imp {
     use std::collections::HashSet;
     use std::sync::{LazyLock, Mutex};
-    use std::time::Duration;
 
     use tauri::{AppHandle, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
@@ -42,7 +41,7 @@ mod imp {
             .SetAreHostObjectsAllowed(false)
             .map_err(|error| error.to_string())?;
         settings
-            .SetAreDevToolsEnabled(cfg!(debug_assertions))
+            .SetAreDevToolsEnabled(false)
             .map_err(|error| error.to_string())?;
 
         // Keep WebView2's native User-Agent untouched. It must stay consistent
@@ -76,21 +75,37 @@ mod imp {
         let webview = app
             .get_webview(label)
             .ok_or_else(|| format!("webview '{label}' not found"))?;
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let label_for_setup = label.to_string();
 
         webview
             .with_webview(move |inner| {
-                let _ = tx.send(unsafe { apply_settings(inner) });
+                let result = unsafe { apply_settings(inner) };
+                match result {
+                    Ok(()) => {
+                        if let Ok(mut configured) = CONFIGURED_LABELS.lock() {
+                            configured.insert(label_for_setup.clone());
+                        }
+                    }
+                    Err(error) => {
+                        #[cfg(debug_assertions)]
+                        eprintln!(
+                            "[nebula branding] {}: {}",
+                            label_for_setup, error
+                        );
+                    }
+                }
             })
             .map_err(|error| error.to_string())?;
 
-        rx.recv_timeout(Duration::from_secs(2))
-            .map_err(|_| format!("timed out configuring webview '{label}'"))??;
-        CONFIGURED_LABELS
+        if CONFIGURED_LABELS
             .lock()
             .map_err(|error| error.to_string())?
-            .insert(label.to_string());
-        Ok(())
+            .contains(label)
+        {
+            Ok(())
+        } else {
+            Err(format!("failed to configure webview '{label}'"))
+        }
     }
 
     pub fn teardown_webview_branding(label: &str) {

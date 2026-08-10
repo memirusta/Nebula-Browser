@@ -58,8 +58,8 @@ export function getWidgetLabel(locale: NebulaLocale, type: WidgetType): string {
   }
 }
 
-/** @deprecated Use getWidgetLabel(locale, type) */
-export const WIDGET_LABELS: Record<WidgetType, string> = {
+/** Default Turkish labels retained for persisted/default pane metadata. */
+const WIDGET_LABELS: Record<WidgetType, string> = {
   ram: 'RAM',
   cpu: 'CPU',
   clock: 'Saat',

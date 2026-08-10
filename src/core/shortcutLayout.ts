@@ -8,7 +8,6 @@ import {
 
 export const ICON_SIZE = 44
 export const ICON_GAP = 10
-export const MIN_CENTER_DIST = ICON_SIZE + ICON_GAP
 export const DRAG_THRESHOLD = 4
 export const SHORTCUT_POSITIONS_KEY = 'nebula-shortcut-positions-v10'
 

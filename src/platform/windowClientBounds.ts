@@ -6,13 +6,6 @@ export async function windowClientPhysicalSize(): Promise<PhysicalSize> {
   return getCurrentWindow().innerSize()
 }
 
-export function logicalHeightToPhysical(
-  logicalHeight: number,
-  scaleFactor: number,
-): number {
-  return Math.ceil(logicalHeight * scaleFactor)
-}
-
 /** Site webview fills the client area; semi-lunar overlays on the shell webview. */
 export async function browserWebviewPhysicalBounds(): Promise<{
   position: PhysicalPosition

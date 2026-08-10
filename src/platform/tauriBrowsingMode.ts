@@ -249,7 +249,7 @@ async function applyOverlayMode(
   if (!isCurrentTransition(requestId)) return
 
   try {
-    await invoke('webview_raise_overlay', { chromeLogicalHeight: null })
+    await invoke('webview_raise_overlay')
   } catch (error) {
     if (import.meta.env.DEV) {
       console.warn('[nebula] webview_raise_overlay failed', error)
@@ -635,43 +635,4 @@ export async function applyTauriViewModeNow(
        */
     }
   }
-}
-
-/**
- * @deprecated
- * Use syncTauriViewMode.
- */
-export async function enterTauriBrowsingMode(
-  tabId: string,
-  url: string,
-): Promise<void> {
-  syncTauriViewMode(
-    'browsing',
-    {
-      tabId,
-      url,
-    },
-  )
-}
-
-/**
- * @deprecated
- * Use syncTauriViewMode.
- */
-export async function enterTauriOverlayMode(): Promise<void> {
-  syncTauriViewMode(
-    'overlay',
-    null,
-  )
-}
-
-/**
- * @deprecated
- * Use syncTauriViewMode.
- */
-export async function enterTauriHomeMode(): Promise<void> {
-  syncTauriViewMode(
-    'home',
-    null,
-  )
 }

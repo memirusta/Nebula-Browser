@@ -30,7 +30,6 @@ export {
 
 /** Home pinned strip starts empty; user pins shortcuts manually. */
 
-export const DEFAULT_PINNED_IDS: string[] = []
 
 
 

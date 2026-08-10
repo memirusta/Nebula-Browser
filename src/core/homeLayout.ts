@@ -20,8 +20,6 @@ export function clampModuleOffset(x: number, y: number): ModuleOffset {
   }
 }
 
-export const ZERO_OFFSET: ModuleOffset = { x: 0, y: 0 }
-
 export interface HomeLayoutModule {
   visible: boolean
   size?: ModuleSize
@@ -34,15 +32,6 @@ export interface HomeLayout {
   widgets: HomeLayoutModule
   clock: HomeLayoutModule
   toolbar: HomeLayoutModule
-}
-
-export const DEFAULT_HOME_LAYOUT: HomeLayout = {
-  pinnedStrip: { visible: true, size: 'm' },
-  search: { visible: true, size: 'm', offset: ZERO_OFFSET },
-  profile: { visible: true, offset: ZERO_OFFSET },
-  widgets: { visible: true },
-  clock: { visible: true },
-  toolbar: { visible: true },
 }
 
 export function homeLayoutFromSettings(home: HomeSettings): HomeLayout {

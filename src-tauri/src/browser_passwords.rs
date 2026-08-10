@@ -12,8 +12,6 @@ pub struct ImportedPassword {
 
 #[derive(Debug, Clone)]
 struct PasswordSource {
-    browser: String,
-    display_name: String,
     user_data: PathBuf,
     login_data: PathBuf,
 }
@@ -224,15 +222,13 @@ fn best_login_data_path(user_data: &Path) -> Option<PathBuf> {
         .max_by_key(|path| std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0))
 }
 
-fn source_from_installation(id: &str, name: &str, user_data: &Path) -> Option<PasswordSource> {
+fn source_from_installation(user_data: &Path) -> Option<PasswordSource> {
     if !user_data.is_dir() {
         return None;
     }
 
     let login_data = best_login_data_path(user_data)?;
     Some(PasswordSource {
-        browser: id.to_string(),
-        display_name: name.to_string(),
         user_data: user_data.to_path_buf(),
         login_data,
     })
@@ -242,8 +238,8 @@ fn resolve_password_source_for(browser_id: Option<&str>) -> Option<PasswordSourc
     let installations = chromium_installations();
 
     if let Some(id) = browser_id {
-        if let Some((bid, name, user_data)) = installations.iter().find(|(bid, _, _)| *bid == id) {
-            return source_from_installation(bid, name, user_data);
+        if let Some((_, _, user_data)) = installations.iter().find(|(bid, _, _)| *bid == id) {
+            return source_from_installation(user_data);
         }
         return None;
     }
@@ -255,10 +251,10 @@ fn resolve_password_source_for(browser_id: Option<&str>) -> Option<PasswordSourc
             return None;
         }
 
-        if let Some((id, name, user_data)) =
+        if let Some((_, _, user_data)) =
             installations.iter().find(|(id, _, _)| *id == preferred_id)
         {
-            if let Some(source) = source_from_installation(id, name, user_data) {
+            if let Some(source) = source_from_installation(user_data) {
                 return Some(source);
             }
         }
@@ -266,16 +262,12 @@ fn resolve_password_source_for(browser_id: Option<&str>) -> Option<PasswordSourc
 
     installations
         .into_iter()
-        .filter_map(|(id, name, user_data)| source_from_installation(id, name, &user_data))
+        .filter_map(|(_, _, user_data)| source_from_installation(&user_data))
         .max_by_key(|source| {
             std::fs::metadata(&source.login_data)
                 .map(|meta| meta.len())
                 .unwrap_or(0)
         })
-}
-
-fn resolve_password_source() -> Option<PasswordSource> {
-    resolve_password_source_for(None)
 }
 
 #[cfg(target_os = "windows")]
@@ -490,28 +482,9 @@ fn with_login_database<T>(
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PasswordImportResult {
-    browser: String,
-    display_name: String,
-    passwords_available: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChromiumPasswordSource {
     browser: String,
     display_name: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PasswordImportDiagnostics {
-    browser: String,
-    display_name: String,
-    total_rows: usize,
-    decryptable: usize,
-    app_bound: usize,
-    failed: usize,
 }
 
 #[tauri::command]
@@ -529,48 +502,6 @@ pub fn list_chromium_password_sources() -> Vec<ChromiumPasswordSource> {
             }
         })
         .collect()
-}
-
-#[tauri::command]
-pub fn inspect_browser_passwords(
-    browser: Option<String>,
-) -> Result<PasswordImportDiagnostics, String> {
-    let browser_id = browser.as_deref();
-    let source = resolve_password_source_for(browser_id).ok_or_else(|| {
-        if let Some(id) = browser_id {
-            return format!("{id} şifre veritabanı bulunamadı.");
-        }
-        "Chromium tabanlı tarayıcı şifre veritabanı bulunamadı.".to_string()
-    })?;
-
-    let master_key = chromium_master_key(&source.user_data)?;
-    let stats = collect_import_stats(&source.user_data, &master_key)?;
-
-    Ok(PasswordImportDiagnostics {
-        browser: source.browser,
-        display_name: source.display_name,
-        total_rows: stats.total_rows,
-        decryptable: stats.decryptable,
-        app_bound: stats.app_bound_skipped,
-        failed: stats.decrypt_failed,
-    })
-}
-
-#[tauri::command]
-pub fn detect_browser_passwords() -> PasswordImportResult {
-    let Some(source) = resolve_password_source() else {
-        return PasswordImportResult {
-            browser: "unknown".to_string(),
-            display_name: "Tarayici".to_string(),
-            passwords_available: false,
-        };
-    };
-
-    PasswordImportResult {
-        browser: source.browser,
-        display_name: source.display_name,
-        passwords_available: true,
-    }
 }
 
 #[tauri::command]
@@ -624,30 +555,6 @@ fn import_failure_message(stats: &ImportStats) -> String {
     )
 }
 
-fn collect_import_stats(user_data: &Path, master_key: &[u8]) -> Result<ImportStats, String> {
-    let login_paths = login_data_paths_in_user_data(user_data);
-    if login_paths.is_empty() {
-        return Err("Login Data dosyası bulunamadı.".to_string());
-    }
-
-    let mut stats = ImportStats {
-        total_rows: 0,
-        decryptable: 0,
-        decrypt_failed: 0,
-        app_bound_skipped: 0,
-    };
-
-    for login_data in login_paths {
-        let batch_stats = read_password_stats(&login_data, master_key)?;
-        stats.total_rows += batch_stats.total_rows;
-        stats.decryptable += batch_stats.decryptable;
-        stats.decrypt_failed += batch_stats.decrypt_failed;
-        stats.app_bound_skipped += batch_stats.app_bound_skipped;
-    }
-
-    Ok(stats)
-}
-
 fn read_cell_bytes(row: &rusqlite::Row<'_>, index: usize) -> Result<Vec<u8>, rusqlite::Error> {
     match row.get_ref(index)? {
         rusqlite::types::ValueRef::Blob(bytes) => Ok(bytes.to_vec()),
@@ -696,86 +603,6 @@ fn import_from_user_data(
     }
 
     Ok(imported)
-}
-
-fn read_password_stats(login_data: &Path, master_key: &[u8]) -> Result<ImportStats, String> {
-    with_login_database(login_data, |conn| {
-        let sql = "SELECT origin_url, action_url, username_value, password_value
-           FROM logins
-           ORDER BY date_created DESC";
-        let mut stmt = conn.prepare(sql).map_err(|error| error.to_string())?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                let origin_url: String = row.get(0)?;
-                let action_url: String = row.get(1)?;
-                let username_blob = read_cell_bytes(row, 2)?;
-                let password_blob = read_cell_bytes(row, 3)?;
-                Ok((origin_url, action_url, username_blob, password_blob))
-            })
-            .map_err(|error| error.to_string())?;
-
-        let mut stats = ImportStats {
-            total_rows: 0,
-            decryptable: 0,
-            decrypt_failed: 0,
-            app_bound_skipped: 0,
-        };
-
-        for row in rows {
-            let (origin_url, action_url, username_blob, password_blob) =
-                row.map_err(|error| error.to_string())?;
-            stats.total_rows += 1;
-
-            let url = origin_url.trim();
-            let url = if url.is_empty() {
-                action_url.trim()
-            } else {
-                url
-            };
-            if url.is_empty() {
-                continue;
-            }
-
-            if password_blob.starts_with(b"v20") || username_blob.starts_with(b"v20") {
-                stats.app_bound_skipped += 1;
-                continue;
-            }
-
-            let username = match decrypt_chromium_blob(&username_blob, master_key) {
-                Ok(value) => value.trim().to_string(),
-                Err(err) if err == "app-bound-v20" => {
-                    stats.app_bound_skipped += 1;
-                    continue;
-                }
-                Err(_) => {
-                    stats.decrypt_failed += 1;
-                    continue;
-                }
-            };
-
-            let password = match decrypt_chromium_blob(&password_blob, master_key) {
-                Ok(value) => value,
-                Err(err) if err == "app-bound-v20" => {
-                    stats.app_bound_skipped += 1;
-                    continue;
-                }
-                Err(_) => {
-                    stats.decrypt_failed += 1;
-                    continue;
-                }
-            };
-
-            if username.is_empty() || password.is_empty() {
-                stats.decrypt_failed += 1;
-                continue;
-            }
-
-            stats.decryptable += 1;
-        }
-
-        Ok(stats)
-    })
 }
 
 fn read_password_rows(

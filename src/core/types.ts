@@ -33,10 +33,3 @@ export interface SystemStats {
   ramHistory: number[]
   cpuHistory: number[]
 }
-
-export interface UserProfile {
-  name: string
-  avatarUrl?: string
-}
-
-export type WallpaperSource = string | 'default'

@@ -20,17 +20,6 @@ export function createLunarMetrics(w: number, h: number): LunarMetrics {
 
 export const DEFAULT_LUNAR_METRICS = createLunarMetrics(1100, 152)
 
-/** @deprecated use metrics.w */
-export const LUNAR_W = DEFAULT_LUNAR_METRICS.w
-/** @deprecated use metrics.h */
-export const LUNAR_H = DEFAULT_LUNAR_METRICS.h
-export const LUNAR_CX = DEFAULT_LUNAR_METRICS.cx
-export const LUNAR_CY = DEFAULT_LUNAR_METRICS.cy
-export const LUNAR_RX = DEFAULT_LUNAR_METRICS.rx
-export const LUNAR_RY = DEFAULT_LUNAR_METRICS.ry
-
-export const LUNAR_CLIP_CSS = `ellipse(50% 112% at 50% -16%)`
-
 /** Only show the lower outer rim band of the ellipse stroke */
 export const LUNAR_RIM_CLIP_Y = 100
 
@@ -82,20 +71,6 @@ export function buildParallelRimPath(
 }
 
 export const LUNAR_INNER_RIM_OFFSET = 8
-export const LUNAR_INNER_RIM_PATH = buildParallelRimPath(LUNAR_INNER_RIM_OFFSET, 48, 2)
-
-export function isInsideLunarDome(
-  x: number,
-  y: number,
-  inset = 0,
-  metrics: LunarMetrics = DEFAULT_LUNAR_METRICS,
-): boolean {
-  const rx = Math.max(1, metrics.rx - inset)
-  const ry = Math.max(1, metrics.ry - inset)
-  const nx = (x - metrics.cx) / rx
-  const ny = (y - metrics.cy) / ry
-  return nx * nx + ny * ny <= 1 && y >= inset
-}
 
 /** True when every sampled point on the icon circle lies inside the outer lunar ellipse. */
 export function isIconDiscInsideLunarDome(

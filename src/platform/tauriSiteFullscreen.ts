@@ -2,7 +2,7 @@ import { listen, emit } from '@tauri-apps/api/event'
 import type { Window } from '@tauri-apps/api/window'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
-import { shortcutIdForTabWebviewLabel, tabWebviewLabel } from '../core/browserTab'
+import { shortcutIdForTabWebviewLabel } from '../core/browserTab'
 import { isTauri } from './runtime'
 import {
   setSiteFullscreenBoundsMode,
@@ -243,8 +243,4 @@ export function forceExitSiteFullscreen(): Promise<void> {
     if (!siteFullscreenActive) return
     await exitSiteFullscreen()
   })
-}
-
-export function tabLabelForShortcut(shortcutId: string): string {
-  return tabWebviewLabel(shortcutId)
 }

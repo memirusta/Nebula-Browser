@@ -8,9 +8,6 @@ export type ChromeShellAction =
   | { type: 'close-tab'; shortcutId: string }
   | { type: 'switch-tab'; shortcutId: string }
   | { type: 'open-overlay' }
-  | { type: 'open-quick-menu'; shortcutId?: string }
-  | { type: 'close-quick-menu' }
-  | { type: 'toggle-quick-menu' }
   | { type: 'go-back' }
   | { type: 'go-home' }
 
@@ -25,7 +22,6 @@ const CHROME_ACTION_EVENT = 'nebula-chrome-action'
 const ACTIVE_URL_EVENT = 'nebula-active-url'
 const TAB_CATALOG_EVENT = 'nebula-tab-catalog'
 const VIEW_MODE_EVENT = 'nebula-view-mode'
-const QUICK_MENU_STATE_EVENT = 'nebula-quick-menu-state'
 
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
@@ -96,22 +92,5 @@ export function listenViewMode(
 
   return listen<{ mode: ShellViewMode }>(VIEW_MODE_EVENT, (event) => {
     handler(event.payload.mode)
-  })
-}
-
-export async function emitQuickMenuState(open: boolean): Promise<void> {
-  if (!isTauri) return
-  await emit(QUICK_MENU_STATE_EVENT, { open })
-}
-
-export function listenQuickMenuState(
-  handler: (open: boolean) => void,
-): Promise<() => void> {
-  if (!isTauri) {
-    return Promise.resolve(() => {})
-  }
-
-  return listen<{ open: boolean }>(QUICK_MENU_STATE_EVENT, (event) => {
-    handler(event.payload.open)
   })
 }

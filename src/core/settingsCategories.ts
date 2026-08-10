@@ -38,10 +38,10 @@ export function getSettingsCategories(locale: NebulaLocale): SettingsCategory[] 
       description: t(locale, 'catSemiLunarDesc'),
     },
     {
-    id: 'shortcuts',
-    label: t(locale, 'catShortcuts'),
-    icon: '⌨',
-    description: t(locale, 'catShortcutsDesc'),
+      id: 'shortcuts',
+      label: t(locale, 'catShortcuts'),
+      icon: '⌨',
+      description: t(locale, 'catShortcutsDesc'),
     },
     {
       id: 'account',
@@ -69,6 +69,3 @@ export function getSettingsCategories(locale: NebulaLocale): SettingsCategory[] 
     },
   ]
 }
-
-/** @deprecated Use getSettingsCategories(locale) */
-export const SETTINGS_CATEGORIES: SettingsCategory[] = getSettingsCategories('tr')

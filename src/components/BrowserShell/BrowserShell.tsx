@@ -9,6 +9,8 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
+import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
+import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
 import { isTauri } from '../../platform/runtime'
 import {
   listenChromeActions,
@@ -31,6 +33,21 @@ import {
 import { writeTransitionLog } from '../../platform/tauriTransitionLog'
 import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
 import { setChromeWebviewSuppressed } from '../../platform/tauriChromeWebview'
+import {
+  listenSiteCloseWindows,
+  listenSiteNewWindows,
+  listenSiteUiCancelled,
+  listenSiteUiRequests,
+  respondToSiteUi,
+  type SiteUiRequest,
+  type SiteUiResponse,
+} from '../../platform/tauriSiteUi'
+import {
+  listenSiteContextMenuCancelled,
+  listenSiteContextMenus,
+  respondToSiteContextMenu,
+  type SiteContextMenuRequest,
+} from '../../platform/tauriContextMenu'
 import { DEFAULT_SHORTCUTS } from '../../core/constants'
 import { loadBrowseSessions } from '../../core/browseSession'
 import { resolveShortcutForOpen } from '../../core/navigateShortcut'
@@ -58,6 +75,8 @@ import { useBrowserTabs } from '../../hooks/useBrowserTabs'
 import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
 import {
   shortcutFromTab,
+  shortcutIdForTabWebviewLabel,
+  titleFromUrl,
   type BrowserTab,
 } from '../../core/browserTab'
 import { computeAdaptiveLunarSize } from '../../core/lunarSizing'
@@ -723,6 +742,26 @@ export function BrowserShell() {
     )
 
   const [
+    siteUiQueue,
+    setSiteUiQueue,
+  ] = useState<SiteUiRequest[]>([])
+
+  const [
+    siteContextMenu,
+    setSiteContextMenu,
+  ] = useState<SiteContextMenuRequest | null>(null)
+
+  const siteSurfaceActive =
+    siteUiQueue.length > 0 ||
+    siteContextMenu !== null
+
+  const siteUiPreviousModeRef =
+    useRef<ViewMode>('home')
+
+  const siteUiWasOpenRef =
+    useRef(false)
+
+  const [
     settingsActivated,
     setSettingsActivated,
   ] = useState(false)
@@ -738,8 +777,20 @@ export function BrowserShell() {
   useEffect(() => {
     if (!isTauri) return
 
-    void setChromeWebviewSuppressed(settingsOpen)
-  }, [settingsOpen])
+    void setChromeWebviewSuppressed(
+      settingsOpen ||
+        developerToolsOpen ||
+        crashRecoveryOpen ||
+        siteUiQueue.length > 0 ||
+        siteContextMenu !== null,
+    )
+  }, [
+    crashRecoveryOpen,
+    developerToolsOpen,
+    settingsOpen,
+    siteContextMenu,
+    siteUiQueue.length,
+  ])
 
   const [
     homeEditMode,
@@ -2540,6 +2591,366 @@ export function BrowserShell() {
       t,
     ])
 
+  const openUrlInNewTab =
+    useCallback(
+      (
+        rawUrl: string,
+      ) => {
+        const url =
+          rawUrl.trim() ||
+          'about:blank'
+
+        try {
+          const parsed =
+            new URL(
+              url,
+              'about:blank',
+            )
+
+          if (
+            ![
+              'http:',
+              'https:',
+              'about:',
+            ].includes(
+              parsed.protocol,
+            )
+          ) {
+            return
+          }
+        } catch {
+          return
+        }
+
+        const id =
+          `tab-${crypto.randomUUID()}`
+
+        const shortcut:
+          Shortcut = {
+          id,
+          label:
+            url ===
+            'about:blank'
+              ? t('newTab')
+              : titleFromUrl(
+                  url,
+                ),
+          url,
+        }
+
+        setTabSwitchHistory(
+          (history) => {
+            const current =
+              activeTabIdRef.current
+
+            if (
+              current &&
+              current !== id
+            ) {
+              return [
+                ...history,
+                current,
+              ]
+            }
+
+            return history
+          },
+        )
+
+        pendingBrowseTargetRef.current =
+          {
+            tabId: id,
+            url,
+            forceNavigate: true,
+          }
+
+        tabSwitchCursorRef.current =
+          id
+
+        openOrSwitchTab(
+          shortcut,
+        )
+
+        setTauriBrowseSyncToken(
+          (token) =>
+            token + 1,
+        )
+
+        setViewMode(
+          'browsing',
+        )
+      },
+      [
+        activeTabIdRef,
+        openOrSwitchTab,
+        t,
+      ],
+    )
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    let disposed = false
+    const unlisteners:
+      Array<() => void> = []
+
+    const register =
+      async () => {
+        const listeners =
+          await Promise.all([
+            listenSiteUiRequests(
+              (request) => {
+                setSiteUiQueue(
+                  (queue) =>
+                    queue.some(
+                      (item) =>
+                        item.id ===
+                        request.id,
+                    )
+                      ? queue
+                      : [
+                          ...queue,
+                          request,
+                        ],
+                )
+              },
+            ),
+            listenSiteUiCancelled(
+              ({ id }) => {
+                setSiteUiQueue(
+                  (queue) =>
+                    queue.filter(
+                      (item) =>
+                        item.id !== id,
+                    ),
+                )
+              },
+            ),
+            listenSiteContextMenus(
+              (request) => {
+                setSiteContextMenu(
+                  request,
+                )
+              },
+            ),
+            listenSiteContextMenuCancelled(
+              ({ id }) => {
+                setSiteContextMenu(
+                  (current) =>
+                    current?.id === id
+                      ? null
+                      : current,
+                )
+              },
+            ),
+            listenSiteNewWindows(
+              ({ uri }) => {
+                openUrlInNewTab(
+                  uri,
+                )
+              },
+            ),
+            listenSiteCloseWindows(
+              ({ tabLabel }) => {
+                const shortcutId =
+                  shortcutIdForTabWebviewLabel(
+                    tabLabel,
+                  )
+
+                if (shortcutId) {
+                  void handleCloseTab(
+                    shortcutId,
+                  )
+                }
+              },
+            ),
+          ])
+
+        if (disposed) {
+          listeners.forEach(
+            (unlisten) =>
+              unlisten(),
+          )
+          return
+        }
+
+        unlisteners.push(
+          ...listeners,
+        )
+      }
+
+    void register()
+
+    return () => {
+      disposed = true
+      unlisteners.forEach(
+        (unlisten) =>
+          unlisten(),
+      )
+    }
+  }, [
+    handleCloseTab,
+    openUrlInNewTab,
+  ])
+
+  useEffect(() => {
+    const open =
+      siteUiQueue.length > 0 ||
+      siteContextMenu !== null
+
+    if (
+      open &&
+      !siteUiWasOpenRef.current
+    ) {
+      const previous =
+        viewModeRef.current
+
+      siteUiPreviousModeRef.current =
+        previous
+
+      setDownloadPanelOpen(
+        false,
+      )
+      setNotificationPanelOpen(
+        false,
+      )
+      setHistoryPanelOpen(
+        false,
+      )
+
+      if (
+        previous ===
+        'browsing'
+      ) {
+        setOverlayModeActive(
+          true,
+        )
+        setViewMode(
+          'overlay',
+        )
+      }
+    }
+
+    if (
+      !open &&
+      siteUiWasOpenRef.current
+    ) {
+      const previous =
+        siteUiPreviousModeRef.current
+
+      if (
+        previous ===
+          'browsing' &&
+        activeTabIdRef.current
+      ) {
+        setOverlayModeActive(
+          false,
+        )
+        setViewMode(
+          'browsing',
+        )
+      } else if (
+        previous ===
+          'overlay' &&
+        activeTabIdRef.current
+      ) {
+        setOverlayModeActive(
+          true,
+        )
+        setViewMode(
+          'overlay',
+        )
+      } else if (
+        previous ===
+        'home'
+      ) {
+        setOverlayModeActive(
+          false,
+        )
+        setViewMode(
+          'home',
+        )
+      }
+    }
+
+    siteUiWasOpenRef.current =
+      open
+  }, [
+    activeTabIdRef,
+    siteContextMenu,
+    siteUiQueue.length,
+  ])
+
+  const handleSiteContextMenuSelect =
+    useCallback(
+      async (
+        commandId: number | null,
+      ) => {
+        const request =
+          siteContextMenu
+
+        if (!request) return
+
+        // Clear the visible menu immediately so the main shell can return to
+        // the page as soon as WebView2 completes the original native command.
+        setSiteContextMenu(null)
+
+        try {
+          await respondToSiteContextMenu(
+            request.id,
+            commandId,
+          )
+        } catch (error) {
+          if (import.meta.env.DEV) {
+            console.warn(
+              '[nebula] site context-menu response failed',
+              error,
+            )
+          }
+        }
+      },
+      [siteContextMenu],
+    )
+
+  const handleSiteUiResponse =
+    useCallback(
+      async (
+        response:
+          SiteUiResponse,
+      ) => {
+        const request =
+          siteUiQueue[0]
+
+        if (!request) return
+
+        try {
+          await respondToSiteUi(
+            request.id,
+            response,
+          )
+        } catch (error) {
+          if (
+            import.meta.env.DEV
+          ) {
+            console.warn(
+              '[nebula] site UI response failed',
+              error,
+            )
+          }
+        } finally {
+          setSiteUiQueue(
+            (queue) =>
+              queue.filter(
+                (item) =>
+                  item.id !==
+                  request.id,
+              ),
+          )
+        }
+      },
+      [siteUiQueue],
+    )
+
   const reopenLastClosedTab =
     useCallback(() => {
       const closed =
@@ -3220,7 +3631,8 @@ export function BrowserShell() {
     }
 
     if (
-      developerToolsOpen
+      developerToolsOpen ||
+      siteSurfaceActive
     ) {
       return
     }
@@ -3252,6 +3664,7 @@ export function BrowserShell() {
     viewMode,
     developerToolsOpen,
     dismissOverlay,
+    siteSurfaceActive,
   ])
 
   const isHome =
@@ -3391,45 +3804,6 @@ export function BrowserShell() {
 
           case 'open-overlay':
             openOverlay()
-            break
-
-          case 'open-quick-menu':
-            setOverlayModeActive(
-              true,
-            )
-
-            setViewMode(
-              'overlay',
-            )
-            break
-
-          case 'close-quick-menu':
-            setOverlayModeActive(
-              false,
-            )
-
-            setViewMode(
-              'browsing',
-            )
-            break
-
-          case 'toggle-quick-menu':
-            setViewMode(
-              (mode) => {
-                const next =
-                  mode ===
-                  'overlay'
-                    ? 'browsing'
-                    : 'overlay'
-
-                setOverlayModeActive(
-                  next ===
-                    'overlay',
-                )
-
-                return next
-              },
-            )
             break
 
           case 'go-back':
@@ -4556,7 +4930,8 @@ export function BrowserShell() {
         )}
 
       {isOverlay &&
-        !developerToolsOpen && (
+        !developerToolsOpen &&
+        !siteSurfaceActive && (
           <>
             <button
               type="button"
@@ -4704,6 +5079,39 @@ export function BrowserShell() {
             </div>
           </>
         )}
+
+      {siteContextMenu && (
+        <SiteContextMenu
+          request={
+            siteContextMenu
+          }
+          onSelect={
+            (commandId) => {
+              void handleSiteContextMenuSelect(
+                commandId,
+              )
+            }
+          }
+        />
+      )}
+
+      {siteUiQueue[0] && (
+        <SiteUiPrompt
+          request={
+            siteUiQueue[0]
+          }
+          pendingCount={
+            siteUiQueue.length
+          }
+          onRespond={
+            (response) => {
+              void handleSiteUiResponse(
+                response,
+              )
+            }
+          }
+        />
+      )}
 
       {developerToolsOpen && (
         <DeveloperTools

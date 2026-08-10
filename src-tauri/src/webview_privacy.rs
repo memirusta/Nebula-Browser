@@ -485,6 +485,7 @@ mod imp {
         let resource_label = label.to_string();
         let store_label = label.to_string();
         let notification_app = app.clone();
+        let permission_app = app.clone();
 
         webview
             .with_webview(move |inner| unsafe {
@@ -595,8 +596,9 @@ mod imp {
                         let current = options(&permission_label);
                         let uri = take_string(|value| args.Uri(value));
                         let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
-                        let is_notification = args.PermissionKind(&mut kind).is_ok()
-                            && kind == COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS;
+                        let has_kind = args.PermissionKind(&mut kind).is_ok();
+                        let is_notification =
+                            has_kind && kind == COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS;
 
                         if is_notification {
                             if !current.site_notifications
@@ -615,8 +617,24 @@ mod imp {
                             && !is_excepted(&uri, &current.permission_exceptions)
                         {
                             args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
+                            return Ok(());
                         }
-                        Ok(())
+
+                        if !has_kind {
+                            args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
+                            return Ok(());
+                        }
+
+                        let mut initiated = windows_core::BOOL::default();
+                        let _ = args.IsUserInitiated(&mut initiated);
+                        crate::site_ui::request_permission(
+                            &permission_app,
+                            &permission_label,
+                            args,
+                            uri,
+                            kind,
+                            initiated.as_bool(),
+                        )
                     }));
 
                 let notification_label = store_label.clone();

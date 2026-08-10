@@ -26,8 +26,4 @@ export const DEFAULT_SHORTCUTS: Shortcut[] = [
   { id: 'pinterest', label: 'Pinterest', url: 'https://pinterest.com', favicon: 'https://www.google.com/s2/favicons?domain=pinterest.com&sz=64' },
 ]
 
-export const DEFAULT_USER = {
-  name: 'memir',
-}
-
 export const WALLPAPER_STORAGE_KEY = 'nebula-wallpaper'
