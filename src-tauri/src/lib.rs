@@ -18,6 +18,62 @@ mod webview_privacy;
 static TRANSITION_LOG_LOCK: std::sync::Mutex<()> =
     std::sync::Mutex::new(());
 
+// Browsing keeps the main WRY container full-screen for stable composition.
+// The actual WebView2 document child is clipped to the interactive shell area,
+// while the WRY container returns HTTRANSPARENT outside that rectangle so
+// pointer input falls through to the browser tab below.
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_LEFT: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_TOP: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_RIGHT: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_BOTTOM: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_SUBCLASSED_HWND: std::sync::atomic::AtomicIsize =
+    std::sync::atomic::AtomicIsize::new(0);
+#[cfg(target_os = "windows")]
+static SHELL_HIT_TEST_ORIGINAL_WNDPROC: std::sync::atomic::AtomicIsize =
+    std::sync::atomic::AtomicIsize::new(0);
+
+// Dedicated chrome follows the same stable-composition rule as the main shell:
+// keep the entire WRY/WebView2 compositor tree full-client and never clip it.
+// Every HWND in the chrome input chain returns HTTRANSPARENT outside the
+// published Semi-Lunar rectangle so pointer input reaches Home/browser below.
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_LEFT: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_TOP: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_RIGHT: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_BOTTOM: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_ORIGIN_X: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_ORIGIN_Y: std::sync::atomic::AtomicI32 =
+    std::sync::atomic::AtomicI32::new(0);
+#[cfg(target_os = "windows")]
+static CHROME_HIT_TEST_ORIGINAL_WNDPROCS: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<isize, isize>>,
+> = std::sync::OnceLock::new();
+
 #[tauri::command]
 async fn search_suggestions(
     query: String,
@@ -556,75 +612,635 @@ fn debug_labels(app: &tauri::AppHandle) -> String {
 /// repaint of areas that changed visibility, leaving stale/ghost pixels behind.
 #[cfg(target_os = "windows")]
 fn force_redraw(app: &tauri::AppHandle) {
+    use tauri::Manager;
     use windows::Win32::Graphics::Gdi::{
-        RedrawWindow, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW,
+        RedrawWindow, RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_NOERASE, RDW_UPDATENOW,
     };
 
-    if let Ok(hwnd) = resolve_webview_hwnd(app, "main") {
-        unsafe {
-            let _ = RedrawWindow(
-                Some(hwnd),
-                None,
-                None,
-                RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE | RDW_UPDATENOW,
-            );
+    // Redraw the top-level Nebula window, not only the main/Home WRY child.
+    // Home, browser tabs, and dedicated chrome are sibling child HWNDs. After
+    // SetWindowRgn changes the chrome surface, invalidating only `main` can
+    // leave WebView2's composition visually stale until Windows performs a
+    // full activation repaint (for example after Alt+Tab).
+    //
+    // RDW_UPDATENOW makes this an actual synchronous repaint rather than merely
+    // marking the tree dirty for some later WM_PAINT cycle. RDW_ALLCHILDREN is
+    // required so the sibling WRY/WebView2 child hierarchy participates too.
+    if let Some(window) = app.get_window("main") {
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                let _ = RedrawWindow(
+                    Some(hwnd),
+                    None,
+                    None,
+                    RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE | RDW_UPDATENOW,
+                );
+            }
         }
     }
 }
 
-/// Clip chrome webview hit-testing to the title/semi-lunar strip.
+/// Route input for every HWND that can receive pointer hit-tests inside the
+/// dedicated chrome WebView without clipping any compositor surface.
+///
+/// Chromium/WebView2 has several nested child HWNDs under WRY_WEBVIEW. Hooking
+/// only the WRY host is not enough: Windows can hit-test the deepest renderer
+/// child directly and that child will otherwise swallow input even when the
+/// host itself would return HTTRANSPARENT.
 #[cfg(target_os = "windows")]
-fn set_chrome_hit_region(
-    app: &tauri::AppHandle,
-    logical_height: Option<f64>,
-) -> Result<(), String> {
-    use tauri::Manager;
-    use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn};
+fn chrome_hit_test_original_wndprocs(
+) -> &'static std::sync::Mutex<std::collections::HashMap<isize, isize>> {
+    CHROME_HIT_TEST_ORIGINAL_WNDPROCS
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
 
-    let window = app
-        .get_window("main")
-        .ok_or_else(|| format!("main window not found ({})", debug_labels(app)))?;
-    let size = window.inner_size().map_err(|error| error.to_string())?;
-    let scale = window.scale_factor().map_err(|error| error.to_string())?;
-    let chrome_hwnd = resolve_webview_hwnd(app, "nebula-chrome")?;
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn chrome_hit_test_wndproc(
+    hwnd: windows::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use std::sync::atomic::Ordering;
+    use windows::Win32::Foundation::LRESULT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, DefWindowProcW, HTTRANSPARENT, WM_NCHITTEST,
+    };
+
+    if msg == WM_NCHITTEST && CHROME_HIT_TEST_ENABLED.load(Ordering::Acquire) {
+        // WM_NCHITTEST lParam is in screen coordinates. Convert it to the
+        // chrome container's client coordinates using the container's screen
+        // origin published alongside the hit rectangle.
+        let packed = lparam.0 as usize;
+        let screen_x = (packed as u16 as i16) as i32;
+        let screen_y = ((packed >> 16) as u16 as i16) as i32;
+        let point_x = screen_x - CHROME_HIT_TEST_ORIGIN_X.load(Ordering::Relaxed);
+        let point_y = screen_y - CHROME_HIT_TEST_ORIGIN_Y.load(Ordering::Relaxed);
+
+        let left = CHROME_HIT_TEST_LEFT.load(Ordering::Relaxed);
+        let top = CHROME_HIT_TEST_TOP.load(Ordering::Relaxed);
+        let right = CHROME_HIT_TEST_RIGHT.load(Ordering::Relaxed);
+        let bottom = CHROME_HIT_TEST_BOTTOM.load(Ordering::Relaxed);
+
+        if point_x < left || point_x >= right || point_y < top || point_y >= bottom {
+            return LRESULT(HTTRANSPARENT as isize);
+        }
+    }
+
+    let original = chrome_hit_test_original_wndprocs()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&(hwnd.0 as isize)).copied());
+
+    if let Some(original) = original {
+        if original != 0 {
+            return CallWindowProcW(
+                std::mem::transmute(original),
+                hwnd,
+                msg,
+                wparam,
+                lparam,
+            );
+        }
+    }
+
+    DefWindowProcW(hwnd, msg, wparam, lparam)
+}
+
+#[cfg(target_os = "windows")]
+fn chrome_hit_test_should_subclass(
+    hwnd: windows::Win32::Foundation::HWND,
+    include_root: bool,
+) -> bool {
+    if include_root {
+        return true;
+    }
+
+    let class_name = hwnd_debug_class_name(hwnd);
+    class_name.starts_with("Chrome_WidgetWin_")
+        || class_name == "Chrome_RenderWidgetHostHWND"
+        || class_name == "Intermediate D3D Window"
+}
+
+#[cfg(target_os = "windows")]
+fn collect_chrome_hit_test_hwnds(
+    root: windows::Win32::Foundation::HWND,
+    output: &mut Vec<windows::Win32::Foundation::HWND>,
+    depth: usize,
+) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GW_CHILD, GW_HWNDNEXT};
+
+    if depth == 0 {
+        return;
+    }
+
+    let mut child = unsafe { GetWindow(root, GW_CHILD).ok() };
+    while let Some(hwnd) = child {
+        if chrome_hit_test_should_subclass(hwnd, false) {
+            output.push(hwnd);
+        }
+        collect_chrome_hit_test_hwnds(hwnd, output, depth - 1);
+        child = unsafe { GetWindow(hwnd, GW_HWNDNEXT).ok() };
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_chrome_hit_test_subclass_for_hwnd(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, GWLP_WNDPROC,
+    };
+
+    let hwnd_value = hwnd.0 as isize;
+    if chrome_hit_test_original_wndprocs()
+        .lock()
+        .map_err(|_| "chrome hit-test wndproc map poisoned".to_string())?
+        .contains_key(&hwnd_value)
+    {
+        return Ok(());
+    }
 
     unsafe {
-        match logical_height {
-            None => {
-                SetWindowRgn(chrome_hwnd, None, true);
+        let original = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+        if original == 0 {
+            return Err(format!(
+                "failed to read chrome hit-test wndproc for {} ({hwnd_value})",
+                hwnd_debug_class_name(hwnd)
+            ));
+        }
+
+        // Publish the original before installing our proc so even a synchronous
+        // message during subclass installation can safely chain onward.
+        chrome_hit_test_original_wndprocs()
+            .lock()
+            .map_err(|_| "chrome hit-test wndproc map poisoned".to_string())?
+            .insert(hwnd_value, original);
+
+        let previous = SetWindowLongPtrW(
+            hwnd,
+            GWLP_WNDPROC,
+            chrome_hit_test_wndproc as *const () as isize,
+        );
+
+        if previous == 0 {
+            if let Ok(mut map) = chrome_hit_test_original_wndprocs().lock() {
+                map.remove(&hwnd_value);
             }
-            Some(height) => {
-                let physical_height =
-                    (height * scale).round().clamp(1.0, size.height as f64) as i32;
-                let rgn = CreateRectRgn(0, 0, size.width as i32, physical_height);
-                if SetWindowRgn(chrome_hwnd, Some(rgn), true) == 0 {
-                    return Err("SetWindowRgn failed for chrome".to_string());
-                }
-            }
+            return Err(format!(
+                "failed to subclass chrome hit-test wndproc for {} ({hwnd_value})",
+                hwnd_debug_class_name(hwnd)
+            ));
         }
     }
 
     Ok(())
 }
 
-/// Browsing: tabs at bottom, main shell for semi-lunar overlay, title-bar chrome on top.
+#[cfg(target_os = "windows")]
+fn ensure_chrome_hit_test_subclasses(
+    app: &tauri::AppHandle,
+) -> Result<windows::Win32::Foundation::HWND, String> {
+    use windows::Win32::Graphics::Gdi::SetWindowRgn;
+
+    let container_hwnd = resolve_webview_hwnd(app, "nebula-chrome")?;
+    let mut targets = vec![container_hwnd];
+    collect_chrome_hit_test_hwnds(container_hwnd, &mut targets, 4);
+
+    for hwnd in targets {
+        ensure_chrome_hit_test_subclass_for_hwnd(hwnd)?;
+    }
+
+    unsafe {
+        // Undo any host clipping left by earlier experiments. No descendant is
+        // visually clipped in this implementation.
+        SetWindowRgn(container_hwnd, None, true);
+    }
+
+    Ok(container_hwnd)
+}
+
+#[cfg(target_os = "windows")]
+fn chrome_debug_tree_node(
+    hwnd: windows::Win32::Foundation::HWND,
+    depth: usize,
+    max_depth: usize,
+) -> serde_json::Value {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, GetWindowThreadProcessId, IsWindowVisible, GW_CHILD, GW_HWNDNEXT,
+    };
+
+    let mut process_id = 0u32;
+    let thread_id = unsafe { GetWindowThreadProcessId(hwnd, Some(&mut process_id)) };
+    let hooked = chrome_hit_test_original_wndprocs()
+        .lock()
+        .ok()
+        .map(|map| map.contains_key(&(hwnd.0 as isize)))
+        .unwrap_or(false);
+
+    let mut children = Vec::new();
+    if depth < max_depth {
+        let mut child = unsafe { GetWindow(hwnd, GW_CHILD) }
+            .ok()
+            .unwrap_or(HWND::default());
+        let mut guard = 0usize;
+        while !child.0.is_null() && guard < 32 {
+            children.push(chrome_debug_tree_node(child, depth + 1, max_depth));
+            child = unsafe { GetWindow(child, GW_HWNDNEXT) }
+                .ok()
+                .unwrap_or(HWND::default());
+            guard += 1;
+        }
+    }
+
+    serde_json::json!({
+        "hwnd": hwnd.0 as isize,
+        "class": hwnd_debug_class_name(hwnd),
+        "visible": unsafe { IsWindowVisible(hwnd) }.as_bool(),
+        "rect": hwnd_debug_rect(hwnd),
+        "threadId": thread_id,
+        "processId": process_id,
+        "hitTestHooked": hooked,
+        "children": children,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn log_chrome_region_snapshot(
+    app: &tauri::AppHandle,
+    phase: &str,
+    logical_top: Option<f64>,
+    logical_height: Option<f64>,
+    logical_left: Option<f64>,
+    logical_width: Option<f64>,
+    physical_rect: Option<(i32, i32, i32, i32)>,
+    container_hwnd: windows::Win32::Foundation::HWND,
+    document_hwnd: Option<windows::Win32::Foundation::HWND>,
+) {
+    use std::sync::atomic::Ordering;
+    use tauri::Manager;
+
+    let window_size = app
+        .get_window("main")
+        .and_then(|window| window.inner_size().ok())
+        .map(|size| serde_json::json!({ "width": size.width, "height": size.height }));
+    let scale = app
+        .get_window("main")
+        .and_then(|window| window.scale_factor().ok());
+
+    let main_surface = resolve_webview_hwnd(app, "main").ok();
+    let main_surface_debug = main_surface.map(|hwnd| chrome_debug_tree_node(hwnd, 0, 2));
+
+    let entry = serde_json::json!({
+        "frontendTimestamp": serde_json::Value::Null,
+        "stage": "native.chrome-region.snapshot",
+        "status": "info",
+        "phase": phase,
+        "logical": {
+            "top": logical_top,
+            "height": logical_height,
+            "left": logical_left,
+            "width": logical_width,
+        },
+        "physical": physical_rect.map(|(left, top, right, bottom)| serde_json::json!({
+            "left": left,
+            "top": top,
+            "right": right,
+            "bottom": bottom,
+            "width": right - left,
+            "height": bottom - top,
+        })),
+        "windowSize": window_size,
+        "scaleFactor": scale,
+        "hitTest": {
+            "enabled": CHROME_HIT_TEST_ENABLED.load(Ordering::Acquire),
+            "left": CHROME_HIT_TEST_LEFT.load(Ordering::Relaxed),
+            "top": CHROME_HIT_TEST_TOP.load(Ordering::Relaxed),
+            "right": CHROME_HIT_TEST_RIGHT.load(Ordering::Relaxed),
+            "bottom": CHROME_HIT_TEST_BOTTOM.load(Ordering::Relaxed),
+        },
+        "container": chrome_debug_tree_node(container_hwnd, 0, 4),
+        "mainSurface": main_surface_debug,
+        "selectedDocumentHwnd": document_hwnd.map(|hwnd| hwnd.0 as isize),
+        "selectedDocumentClass": document_hwnd.map(hwnd_debug_class_name),
+        "selectedDocumentRect": document_hwnd.map(hwnd_debug_rect),
+    });
+
+    let _ = write_transition_log(app.clone(), entry);
+}
+
+#[cfg(target_os = "windows")]
+fn set_chrome_hit_region(
+    app: &tauri::AppHandle,
+    logical_top: Option<f64>,
+    logical_height: Option<f64>,
+    logical_left: Option<f64>,
+    logical_width: Option<f64>,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    use tauri::Manager;
+    use windows::Win32::Graphics::Gdi::SetWindowRgn;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, SetWindowPos, GW_CHILD, SWP_NOACTIVATE, SWP_NOZORDER,
+    };
+
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| format!("main window not found ({})", debug_labels(app)))?;
+    let size = window.inner_size().map_err(|error| error.to_string())?;
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let container_hwnd = ensure_chrome_hit_test_subclasses(app)?;
+
+    // The dedicated chrome WebView is a transparent overlay. Keep its complete
+    // WRY/WebView2 compositor tree intact and full-client at all times. Visual
+    // clipping with SetWindowRgn caused stale/partially-presented WebView2
+    // frames; only native hit testing should decide where this overlay accepts
+    // pointer input.
+    unsafe {
+        SetWindowPos(
+            container_hwnd,
+            None,
+            0,
+            0,
+            size.width.max(1) as i32,
+            size.height.max(1) as i32,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .map_err(|error| error.to_string())?;
+        // Clear only legacy clipping that may have been left on the WRY host.
+        // No descendant gets a region in this implementation.
+        SetWindowRgn(container_hwnd, None, false);
+    }
+
+    // WM_NCHITTEST arrives in screen coordinates even for child windows. Store
+    // the WRY container screen origin so every nested Chromium child can use
+    // the same Semi-Lunar rectangle.
+    let container_rect = hwnd_debug_rect(container_hwnd);
+    if let (Some(left), Some(top)) = (
+        container_rect.get("left").and_then(|value| value.as_i64()),
+        container_rect.get("top").and_then(|value| value.as_i64()),
+    ) {
+        CHROME_HIT_TEST_ORIGIN_X.store(left as i32, Ordering::Relaxed);
+        CHROME_HIT_TEST_ORIGIN_Y.store(top as i32, Ordering::Relaxed);
+    }
+
+    // The Chromium child HWNDs can be created/recreated after the WRY host.
+    // Re-scan on every layout publication; already-subclassed handles are cheap
+    // no-ops, while newly-created renderer children become click-through too.
+    ensure_chrome_hit_test_subclasses(app)?;
+
+    // Resolve the first child for diagnostic snapshots only. The log proved it
+    // is Chrome_WidgetWin_0, not the renderer/document surface, so it must not
+    // be used as a clipping target.
+    let diagnostic_child = unsafe { GetWindow(container_hwnd, GW_CHILD).ok() };
+
+    log_chrome_region_snapshot(
+        app,
+        "before-hit-test-update",
+        logical_top,
+        logical_height,
+        logical_left,
+        logical_width,
+        None,
+        container_hwnd,
+        diagnostic_child,
+    );
+
+    match logical_height {
+        None => {
+            CHROME_HIT_TEST_ENABLED.store(false, Ordering::Release);
+        }
+        Some(height) => {
+            // Disable filtering while publishing the four coordinates, then
+            // enable it only after the rectangle is complete.
+            CHROME_HIT_TEST_ENABLED.store(false, Ordering::Release);
+
+            let top = logical_top.unwrap_or(0.0);
+            let physical_top =
+                (top * scale).round().clamp(0.0, size.height.saturating_sub(1) as f64) as i32;
+            let physical_bottom = (physical_top as f64 + height * scale)
+                .round()
+                .clamp(physical_top as f64 + 1.0, size.height as f64)
+                as i32;
+            let physical_left = logical_left
+                .map(|left| {
+                    (left * scale)
+                        .round()
+                        .clamp(0.0, size.width.saturating_sub(1) as f64)
+                        as i32
+                })
+                .unwrap_or(0);
+            let physical_right = logical_width
+                .map(|width| {
+                    (physical_left as f64 + width * scale)
+                        .round()
+                        .clamp(physical_left as f64 + 1.0, size.width as f64)
+                        as i32
+                })
+                .unwrap_or(size.width as i32);
+
+            CHROME_HIT_TEST_LEFT.store(physical_left, Ordering::Relaxed);
+            CHROME_HIT_TEST_TOP.store(physical_top, Ordering::Relaxed);
+            CHROME_HIT_TEST_RIGHT.store(physical_right, Ordering::Relaxed);
+            CHROME_HIT_TEST_BOTTOM.store(physical_bottom, Ordering::Relaxed);
+            CHROME_HIT_TEST_ENABLED.store(true, Ordering::Release);
+
+            log_chrome_region_snapshot(
+                app,
+                "after-hit-test-update",
+                logical_top,
+                logical_height,
+                logical_left,
+                logical_width,
+                Some((physical_left, physical_top, physical_right, physical_bottom)),
+                container_hwnd,
+                diagnostic_child,
+            );
+        }
+    }
+
+    // Intentionally no SetWindowRgn on Chrome_WidgetWin_0, WidgetWin_1,
+    // RenderWidgetHost, or the D3D child, and no forced redraw. The transparent
+    // WebView2 compositor stays geometrically stable across open/close.
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_debug_class_name(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> String {
+    use windows::Win32::UI::WindowsAndMessaging::GetClassNameW;
+
+    let mut buffer = [0u16; 256];
+    let length = unsafe { GetClassNameW(hwnd, &mut buffer) };
+    if length <= 0 {
+        return String::new();
+    }
+
+    String::from_utf16_lossy(&buffer[..length as usize])
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_debug_rect(
+    hwnd: windows::Win32::Foundation::HWND,
+) -> serde_json::Value {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut rect = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
+        return serde_json::Value::Null;
+    }
+
+    serde_json::json!({
+        "left": rect.left,
+        "top": rect.top,
+        "right": rect.right,
+        "bottom": rect.bottom,
+        "width": rect.right - rect.left,
+        "height": rect.bottom - rect.top,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_debug_entry(
+    hwnd: windows::Win32::Foundation::HWND,
+    role: Option<&str>,
+) -> serde_json::Value {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, IsWindowVisible, GW_CHILD, GW_HWNDPREV, GW_HWNDNEXT,
+    };
+
+    let first_child = unsafe { GetWindow(hwnd, GW_CHILD) }
+        .ok()
+        .unwrap_or(HWND::default());
+    let previous = unsafe { GetWindow(hwnd, GW_HWNDPREV) }
+        .ok()
+        .unwrap_or(HWND::default());
+    let next = unsafe { GetWindow(hwnd, GW_HWNDNEXT) }
+        .ok()
+        .unwrap_or(HWND::default());
+
+    serde_json::json!({
+        "role": role,
+        "hwnd": hwnd.0 as isize,
+        "class": hwnd_debug_class_name(hwnd),
+        "visible": unsafe { IsWindowVisible(hwnd) }.as_bool(),
+        "rect": hwnd_debug_rect(hwnd),
+        "firstChildHwnd": first_child.0 as isize,
+        "firstChildClass": if first_child.0.is_null() { String::new() } else { hwnd_debug_class_name(first_child) },
+        "previousSiblingHwnd": previous.0 as isize,
+        "nextSiblingHwnd": next.0 as isize,
+    })
+}
+
+/// Persist the actual Win32 sibling order of Tauri/Wry child surfaces.
+/// This is intentionally diagnostic-only: it does not mutate z-order.
+#[cfg(target_os = "windows")]
+fn log_native_webview_stack(
+    app: &tauri::AppHandle,
+    phase: &str,
+    active_tab_label: Option<&str>,
+) {
+    use tauri::Manager;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GW_CHILD, GW_HWNDNEXT};
+
+    let parent_hwnd = match app.get_window("main").and_then(|window| window.hwnd().ok()) {
+        Some(hwnd) => hwnd,
+        None => return,
+    };
+
+    let main_hwnd = resolve_webview_hwnd(app, "main").ok();
+    let chrome_hwnd = resolve_webview_hwnd(app, "nebula-chrome").ok();
+    let active_hwnd = active_tab_label.and_then(|label| resolve_webview_hwnd(app, label).ok());
+
+    let mut children = Vec::new();
+    let mut current = unsafe { GetWindow(parent_hwnd, GW_CHILD) }
+        .ok()
+        .unwrap_or(HWND::default());
+    let mut guard = 0usize;
+
+    while !current.0.is_null() && guard < 64 {
+        let role = if Some(current) == chrome_hwnd {
+            Some("chrome")
+        } else if Some(current) == active_hwnd {
+            Some("active-browser")
+        } else if Some(current) == main_hwnd {
+            Some("main-home")
+        } else {
+            None
+        };
+
+        children.push(hwnd_debug_entry(current, role));
+        current = unsafe { GetWindow(current, GW_HWNDNEXT) }
+            .ok()
+            .unwrap_or(HWND::default());
+        guard += 1;
+    }
+
+    let entry = serde_json::json!({
+        "frontendTimestamp": serde_json::Value::Null,
+        "stage": "native.stack.snapshot",
+        "status": "info",
+        "phase": phase,
+        "activeTabLabel": active_tab_label,
+        "parentHwnd": parent_hwnd.0 as isize,
+        "parentClass": hwnd_debug_class_name(parent_hwnd),
+        "resolvedMain": main_hwnd.map(|hwnd| hwnd.0 as isize),
+        "resolvedChrome": chrome_hwnd.map(|hwnd| hwnd.0 as isize),
+        "resolvedActive": active_hwnd.map(|hwnd| hwnd.0 as isize),
+        // GetWindow(parent, GW_CHILD) returns the top child; GW_HWNDNEXT walks downward.
+        "childrenTopToBottom": children,
+    });
+
+    let _ = write_transition_log(app.clone(), entry);
+}
+
+/// Browsing stack for the separated-surface architecture:
+/// opaque Home/main at bottom, active site in the middle, dedicated chrome top.
 #[cfg(target_os = "windows")]
 fn stack_chrome_above_browser(
     app: &tauri::AppHandle,
-    _active_tab_label: Option<&str>,
-    chrome_logical_height: Option<f64>,
+    active_tab_label: Option<&str>,
+    _chrome_logical_height: Option<f64>,
 ) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::UI::WindowsAndMessaging::{
         SetWindowPos, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     };
 
+    log_native_webview_stack(app, "before-stack", active_tab_label);
+
     if let Some(main) = app.get_webview("main") {
         let _ = main.show();
     }
 
+    // Home is deliberately kept alive and opaque underneath every browser tab.
+    if let Ok(main_hwnd) = resolve_webview_hwnd(app, "main") {
+        unsafe {
+            SetWindowPos(
+                main_hwnd,
+                Some(HWND_BOTTOM),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+
+    // Non-active browser WebViews are hidden by the JS tab manager. Keep their
+    // native containers low as an additional guard, then raise only the active tab.
     for (label, _) in app.webviews() {
         if label.starts_with("nebula-tab-") || label == "nebula-browser" {
+            if active_tab_label == Some(label.as_str()) {
+                continue;
+            }
             if let Ok(browser_hwnd) = resolve_webview_hwnd(app, &label) {
                 unsafe {
                     SetWindowPos(
@@ -642,23 +1258,21 @@ fn stack_chrome_above_browser(
         }
     }
 
-    if let Ok(main_hwnd) = resolve_webview_hwnd(app, "main") {
-        unsafe {
-            SetWindowPos(
-                main_hwnd,
-                Some(HWND_TOP),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            )
-            .map_err(|error| error.to_string())?;
+    if let Some(label) = active_tab_label {
+        if let Ok(browser_hwnd) = resolve_webview_hwnd(app, label) {
+            unsafe {
+                SetWindowPos(
+                    browser_hwnd,
+                    Some(HWND_TOP),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                )
+                .map_err(|error| error.to_string())?;
+            }
         }
-    }
-
-    if chrome_logical_height.is_some() && resolve_webview_hwnd(app, "nebula-chrome").is_ok() {
-        set_chrome_hit_region(app, chrome_logical_height)?;
     }
 
     if let Ok(chrome_hwnd) = resolve_webview_hwnd(app, "nebula-chrome") {
@@ -676,8 +1290,9 @@ fn stack_chrome_above_browser(
         }
     }
 
+    log_native_webview_stack(app, "after-stack", active_tab_label);
     force_redraw(app);
-
+    log_native_webview_stack(app, "after-redraw", active_tab_label);
     Ok(())
 }
 
@@ -776,10 +1391,6 @@ fn stack_overlay_mode(
         .map_err(|error| error.to_string())?;
     }
 
-    if chrome_logical_height.is_some() && resolve_webview_hwnd(app, "nebula-chrome").is_ok() {
-        set_chrome_hit_region(app, chrome_logical_height)?;
-    }
-
     if let Ok(chrome_hwnd) = resolve_webview_hwnd(app, "nebula-chrome") {
         unsafe {
             SetWindowPos(
@@ -849,7 +1460,7 @@ fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), S
 
     if let Ok(ui_hwnd) = resolve_webview_hwnd(app, "main") {
         unsafe {
-            SetWindowRgn(ui_hwnd, None, true);
+            SetWindowRgn(ui_hwnd, None, false);
         }
     }
 
@@ -873,7 +1484,7 @@ fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), S
 fn restore_browsing_webview_layout(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::Graphics::Gdi::SetWindowRgn;
-    use windows::Win32::UI::WindowsAndMessaging::{HWND_BOTTOM, HWND_TOP};
+    use windows::Win32::UI::WindowsAndMessaging::HWND_BOTTOM;
 
     let (x, y, width, height) = main_client_physical_rect(app)?;
 
@@ -889,7 +1500,7 @@ fn restore_browsing_webview_layout(app: &tauri::AppHandle) -> Result<(), String>
         unsafe {
             SetWindowRgn(main_hwnd, None, true);
         }
-        layout_webview_hwnd(main_hwnd, x, y, width, height, Some(HWND_TOP))?;
+        layout_webview_hwnd(main_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
     }
 
     if let Some(main) = app.get_webview("main") {
@@ -976,15 +1587,24 @@ fn webview_raise_chrome(
 #[tauri::command]
 fn webview_set_chrome_hit_region(
     app: tauri::AppHandle,
+    logical_top: Option<f64>,
     logical_height: Option<f64>,
+    logical_left: Option<f64>,
+    logical_width: Option<f64>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        set_chrome_hit_region(&app, logical_height)
+        set_chrome_hit_region(
+            &app,
+            logical_top,
+            logical_height,
+            logical_left,
+            logical_width,
+        )
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, logical_height);
+        let _ = (app, logical_top, logical_height, logical_left, logical_width);
         Ok(())
     }
 }
@@ -1002,7 +1622,107 @@ fn webview_raise_ui(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
-/// Clip shell webview hit-testing so clicks reach tab webviews outside the strip.
+/// Main-shell input routing without resizing/clipping the WRY container.
+///
+/// Wry 0.55 creates a `WRY_WEBVIEW` container HWND and hosts the actual
+/// WebView2 document as its first child. Keeping the container full-screen
+/// avoids the compositor gap caused by resizing/region-clipping that host.
+/// While browsing we clip only the document child to the Semi-Lunar area and
+/// return HTTRANSPARENT from the container outside that rectangle, allowing
+/// the browser-tab sibling underneath to receive pointer input.
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn shell_hit_test_wndproc(
+    hwnd: windows::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use std::sync::atomic::Ordering;
+    use windows::Win32::Foundation::{LRESULT, POINT};
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, DefWindowProcW, HTTRANSPARENT, WM_NCHITTEST,
+    };
+
+    if msg == WM_NCHITTEST && SHELL_HIT_TEST_ENABLED.load(Ordering::Acquire) {
+        // WM_NCHITTEST packs signed screen coordinates into LPARAM.
+        let packed = lparam.0 as usize;
+        let screen_x = (packed as u16 as i16) as i32;
+        let screen_y = ((packed >> 16) as u16 as i16) as i32;
+        let mut point = POINT {
+            x: screen_x,
+            y: screen_y,
+        };
+
+        let _ = ScreenToClient(hwnd, &mut point);
+
+        let left = SHELL_HIT_TEST_LEFT.load(Ordering::Relaxed);
+        let top = SHELL_HIT_TEST_TOP.load(Ordering::Relaxed);
+        let right = SHELL_HIT_TEST_RIGHT.load(Ordering::Relaxed);
+        let bottom = SHELL_HIT_TEST_BOTTOM.load(Ordering::Relaxed);
+
+        if point.x < left || point.x >= right || point.y < top || point.y >= bottom {
+            return LRESULT(HTTRANSPARENT as isize);
+        }
+    }
+
+    let original = SHELL_HIT_TEST_ORIGINAL_WNDPROC.load(Ordering::Acquire);
+    if original != 0 {
+        return CallWindowProcW(
+            std::mem::transmute(original),
+            hwnd,
+            msg,
+            wparam,
+            lparam,
+        );
+    }
+
+    DefWindowProcW(hwnd, msg, wparam, lparam)
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_shell_hit_test_subclass(
+    app: &tauri::AppHandle,
+) -> Result<windows::Win32::Foundation::HWND, String> {
+    use std::sync::atomic::Ordering;
+    use windows::Win32::Graphics::Gdi::SetWindowRgn;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, GWLP_WNDPROC,
+    };
+
+    let container_hwnd = resolve_webview_hwnd(app, "main")?;
+    let hwnd_value = container_hwnd.0 as isize;
+
+    if SHELL_HIT_TEST_SUBCLASSED_HWND.load(Ordering::Acquire) != hwnd_value {
+        unsafe {
+            let original = GetWindowLongPtrW(container_hwnd, GWLP_WNDPROC);
+            if original == 0 {
+                return Err("failed to read main WRY container wndproc".to_string());
+            }
+
+            SHELL_HIT_TEST_ORIGINAL_WNDPROC.store(original, Ordering::Release);
+
+            let previous = SetWindowLongPtrW(
+                container_hwnd,
+                GWLP_WNDPROC,
+                shell_hit_test_wndproc as *const () as isize,
+            );
+
+            if previous == 0 {
+                SHELL_HIT_TEST_ORIGINAL_WNDPROC.store(0, Ordering::Release);
+                return Err("failed to subclass main WRY container wndproc".to_string());
+            }
+
+            // Remove any region left behind by older diagnostic implementations.
+            SetWindowRgn(container_hwnd, None, true);
+        }
+
+        SHELL_HIT_TEST_SUBCLASSED_HWND.store(hwnd_value, Ordering::Release);
+    }
+
+    Ok(container_hwnd)
+}
+
 #[cfg(target_os = "windows")]
 fn set_shell_hit_region(
     app: &tauri::AppHandle,
@@ -1011,45 +1731,94 @@ fn set_shell_hit_region(
     logical_left: Option<f64>,
     logical_width: Option<f64>,
 ) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
     use tauri::Manager;
     use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, SetWindowPos, GW_CHILD, SWP_NOACTIVATE, SWP_NOZORDER,
+    };
 
     let window = app
         .get_window("main")
         .ok_or_else(|| format!("main window not found ({})", debug_labels(app)))?;
     let size = window.inner_size().map_err(|error| error.to_string())?;
     let scale = window.scale_factor().map_err(|error| error.to_string())?;
-    let ui_hwnd = resolve_webview_hwnd(app, "main")?;
+    let container_hwnd = ensure_shell_hit_test_subclass(app)?;
 
+    // The container must stay full-client at all times. Resizing this HWND is
+    // what produced the Home -> browsing transparent compositor frame.
     unsafe {
-        match logical_height {
-            None => {
-                SetWindowRgn(ui_hwnd, None, true);
+        SetWindowPos(
+            container_hwnd,
+            None,
+            0,
+            0,
+            size.width.max(1) as i32,
+            size.height.max(1) as i32,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .map_err(|error| error.to_string())?;
+
+        SetWindowRgn(container_hwnd, None, false);
+    }
+
+    // Wry's Windows backend places the WebView2 document as the first child
+    // of the WRY_WEBVIEW container.
+    let document_hwnd = unsafe {
+        GetWindow(container_hwnd, GW_CHILD)
+            .map_err(|error| format!("failed to resolve main WebView2 document hwnd: {error}"))?
+    };
+
+    match logical_height {
+        None => {
+            // Home/overlay: restore the complete document and normal input.
+            SHELL_HIT_TEST_ENABLED.store(false, Ordering::Release);
+            unsafe {
+                SetWindowRgn(document_hwnd, None, true);
             }
-            Some(height) => {
-                let top = logical_top.unwrap_or(0.0);
-                let physical_top = (top * scale).round().clamp(0.0, size.height as f64) as i32;
-                let physical_bottom = (physical_top as f64 + height * scale)
-                    .round()
-                    .clamp(physical_top as f64 + 1.0, size.height as f64)
-                    as i32;
-                let physical_left = logical_left
-                    .map(|left| (left * scale).round().clamp(0.0, size.width as f64) as i32)
-                    .unwrap_or(0);
-                let physical_right = logical_width
-                    .map(|width| {
-                        ((physical_left as f64 + width * scale)
-                            .round()
-                            .clamp(physical_left as f64 + 1.0, size.width as f64))
-                            as i32
-                    })
-                    .unwrap_or(size.width as i32);
-                let rgn =
-                    CreateRectRgn(physical_left, physical_top, physical_right, physical_bottom);
-                if SetWindowRgn(ui_hwnd, Some(rgn), true) == 0 {
-                    return Err("SetWindowRgn failed".to_string());
+        }
+        Some(height) => {
+            // Disable hit filtering while publishing the new rectangle.
+            SHELL_HIT_TEST_ENABLED.store(false, Ordering::Release);
+
+            let top = logical_top.unwrap_or(0.0);
+            let physical_top =
+                (top * scale).round().clamp(0.0, size.height.saturating_sub(1) as f64) as i32;
+            let physical_bottom = (physical_top as f64 + height * scale)
+                .round()
+                .clamp(physical_top as f64 + 1.0, size.height as f64)
+                as i32;
+            let physical_left = logical_left
+                .map(|left| (left * scale).round().clamp(0.0, size.width.saturating_sub(1) as f64) as i32)
+                .unwrap_or(0);
+            let physical_right = logical_width
+                .map(|width| {
+                    (physical_left as f64 + width * scale)
+                        .round()
+                        .clamp(physical_left as f64 + 1.0, size.width as f64)
+                        as i32
+                })
+                .unwrap_or(size.width as i32);
+
+            SHELL_HIT_TEST_LEFT.store(physical_left, Ordering::Relaxed);
+            SHELL_HIT_TEST_TOP.store(physical_top, Ordering::Relaxed);
+            SHELL_HIT_TEST_RIGHT.store(physical_right, Ordering::Relaxed);
+            SHELL_HIT_TEST_BOTTOM.store(physical_bottom, Ordering::Relaxed);
+
+            unsafe {
+                let region = CreateRectRgn(
+                    physical_left,
+                    physical_top,
+                    physical_right,
+                    physical_bottom,
+                );
+
+                if SetWindowRgn(document_hwnd, Some(region), true) == 0 {
+                    return Err("SetWindowRgn failed for main WebView2 document child".to_string());
                 }
             }
+
+            SHELL_HIT_TEST_ENABLED.store(true, Ordering::Release);
         }
     }
 

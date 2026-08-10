@@ -11,8 +11,14 @@ import {
 } from './tauriBrowser'
 import { hideMainWebview, showMainWebview } from './tauriMainWebview'
 import {
+  ensureChromeWebviewVisible,
+  getChromeWebview,
+  syncChromeWebviewBounds,
+} from './tauriChromeWebview'
+import {
   cancelScheduledStack,
   setBrowsingChromeExpected,
+  stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
 
 export const SITE_FULLSCREEN_EXIT_EVENT = 'nebula-site-fullscreen-exit'
@@ -102,16 +108,11 @@ async function enterSiteFullscreen(shortcutId: string): Promise<void> {
 
     await hideMainWebview()
     try {
-      await invoke('webview_set_shell_hit_region', {
-        logicalTop: null,
-        logicalHeight: null,
-        logicalLeft: null,
-        logicalWidth: null,
-      })
+      const chrome = await getChromeWebview()
+      await chrome?.hide()
     } catch {
-      // ignore
+      // chrome may not exist yet
     }
-
     await invoke('window_enter_site_fullscreen')
 
     await waitForWindowLayoutSettle(appWindow)
@@ -147,6 +148,7 @@ async function enterSiteFullscreen(shortcutId: string): Promise<void> {
 async function exitSiteFullscreen(): Promise<void> {
   if (!siteFullscreenActive) return
 
+  const returningTabId = fullscreenTabId
   const appWindow = getCurrentWindow()
   clearFullscreenResizeListener()
 
@@ -180,8 +182,18 @@ async function exitSiteFullscreen(): Promise<void> {
     }
   }
 
+  try {
+    await ensureChromeWebviewVisible()
+    await syncChromeWebviewBounds()
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] restore chrome after site fullscreen failed', error)
+    }
+  }
+
   setBrowsingChromeExpected(true)
   await forceSyncActiveTabBounds()
+  await stackBrowsingChromeAboveBrowser(returningTabId)
   await emit(SITE_FULLSCREEN_EXIT_EVENT)
 }
 

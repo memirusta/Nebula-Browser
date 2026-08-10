@@ -27,9 +27,9 @@ fn runtime_env(name: &str) -> Option<String> {
 
 fn embedded_env(name: &str) -> Option<String> {
     let value = match name {
-        "GOOGLE_CLIENT_SECRET" => option_env!("GOOGLE_CLIENT_SECRET")?,
         "GOOGLE_CLIENT_ID" => option_env!("GOOGLE_CLIENT_ID")?,
         "VITE_GOOGLE_CLIENT_ID" => option_env!("VITE_GOOGLE_CLIENT_ID")?,
+        "GOOGLE_CLIENT_SECRET" => option_env!("GOOGLE_CLIENT_SECRET")?,
         _ => return None,
     };
     let trimmed = value.trim();
@@ -50,16 +50,27 @@ fn resolve_google_client_id(provided: &str) -> String {
         .unwrap_or_else(|| provided.to_string())
 }
 
+fn resolve_google_client_secret() -> Result<String, String> {
+    env_or_embedded("GOOGLE_CLIENT_SECRET").ok_or_else(|| {
+        "Google OAuth client secret is not configured. Set GOOGLE_CLIENT_SECRET in .env or the installed AppData .env, then restart Nebula.".to_string()
+    })
+}
+
 fn google_client_id_configured() -> bool {
     env_or_embedded("GOOGLE_CLIENT_ID")
         .or_else(|| env_or_embedded("VITE_GOOGLE_CLIENT_ID"))
         .is_some()
 }
 
+fn google_client_secret_configured() -> bool {
+    env_or_embedded("GOOGLE_CLIENT_SECRET").is_some()
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleOAuthStatus {
     pub client_id_configured: bool,
+    pub client_secret_configured: bool,
     pub appdata_env_path: String,
 }
 
@@ -76,9 +87,11 @@ pub fn google_oauth_status() -> GoogleOAuthStatus {
         .unwrap_or_else(|| "%LOCALAPPDATA%\\com.nebula.browser\\.env".to_string());
 
     let client_id_configured = google_client_id_configured();
+    let client_secret_configured = google_client_secret_configured();
 
     GoogleOAuthStatus {
         client_id_configured,
+        client_secret_configured,
         appdata_env_path,
     }
 }
@@ -160,19 +173,20 @@ async fn exchange_code_for_claims(
     redirect_uri: &str,
 ) -> Result<GoogleProfileClaims, String> {
     let client_id = resolve_google_client_id(client_id);
+    let client_secret = resolve_google_client_secret()?;
     let client = reqwest::Client::new();
 
+    // Keep PKCE for the desktop flow, while also sending the Desktop OAuth
+    // client's secret because Google's token endpoint requires it for this
+    // configured client. The secret stays on the native side and is never
+    // exposed through a VITE_* frontend variable.
     let mut form = HashMap::<&str, String>::new();
-
     form.insert("client_id", client_id);
+    form.insert("client_secret", client_secret);
     form.insert("code", code.to_string());
     form.insert("code_verifier", code_verifier.to_string());
     form.insert("grant_type", "authorization_code".to_string());
     form.insert("redirect_uri", redirect_uri.to_string());
-
-    if let Some(client_secret) = env_or_embedded("GOOGLE_CLIENT_SECRET") {
-        form.insert("client_secret", client_secret);
-    }
 
     let response = client
         .post("https://oauth2.googleapis.com/token")
@@ -335,6 +349,7 @@ pub async fn google_oauth_sign_in_loopback(
     state: String,
 ) -> Result<GoogleProfileClaims, String> {
     let client_id = resolve_google_client_id(&client_id);
+    resolve_google_client_secret()?;
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|error| error.to_string())?;

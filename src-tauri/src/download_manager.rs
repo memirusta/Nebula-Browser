@@ -31,6 +31,7 @@ mod imp {
     use windows_core::{Interface, BOOL};
 
     const DOWNLOAD_EVENT: &str = "nebula-download-updated";
+    const MAX_FINISHED_DOWNLOADS: usize = 200;
     type StartHandlerTokens = (i64, Option<i64>);
     type StartHandlers = (
         ICoreWebView2DownloadStartingEventHandler,
@@ -52,16 +53,24 @@ mod imp {
             RefCell::new(HashMap::new());
         static DOWNLOADS: RefCell<HashMap<String, DownloadRegistration>> =
             RefCell::new(HashMap::new());
+        static FINISHED_DOWNLOADS: RefCell<HashMap<String, FinishedDownload>> =
+            RefCell::new(HashMap::new());
     }
 
     struct DownloadRegistration {
         operation: ICoreWebView2DownloadOperation,
         _bytes_handler: ICoreWebView2BytesReceivedChangedEventHandler,
         _state_handler: ICoreWebView2StateChangedEventHandler,
-        _bytes_token: i64,
-        _state_token: i64,
+        bytes_token: i64,
+        state_token: i64,
         label: String,
         started_at_ms: u64,
+    }
+
+    #[derive(Clone)]
+    struct FinishedDownload {
+        file_path: String,
+        completed_at_ms: u64,
     }
 
     #[derive(Clone, Serialize)]
@@ -183,7 +192,7 @@ mod imp {
         label: &str,
         operation: &ICoreWebView2DownloadOperation,
         started_at_ms: u64,
-    ) {
+    ) -> DownloadPayload {
         let payload = read_payload(id, label, operation, started_at_ms);
         if matches!(
             payload.state.as_str(),
@@ -193,7 +202,64 @@ mod imp {
                 paused.remove(id);
             }
         }
-        let _ = app.emit(DOWNLOAD_EVENT, payload);
+        let _ = app.emit(DOWNLOAD_EVENT, payload.clone());
+        payload
+    }
+
+    fn is_terminal(payload: &DownloadPayload) -> bool {
+        matches!(
+            payload.state.as_str(),
+            "completed" | "interrupted" | "cancelled"
+        )
+    }
+
+    fn remember_finished_download(id: &str, payload: &DownloadPayload) {
+        if payload.state != "completed" || payload.file_path.is_empty() {
+            return;
+        }
+
+        FINISHED_DOWNLOADS.with(|finished| {
+            let mut finished = finished.borrow_mut();
+            finished.insert(
+                id.to_string(),
+                FinishedDownload {
+                    file_path: payload.file_path.clone(),
+                    completed_at_ms: started_at_ms(),
+                },
+            );
+
+            while finished.len() > MAX_FINISHED_DOWNLOADS {
+                let oldest = finished
+                    .iter()
+                    .min_by_key(|(_, item)| item.completed_at_ms)
+                    .map(|(id, _)| id.clone());
+                let Some(oldest) = oldest else { break };
+                finished.remove(&oldest);
+            }
+        });
+    }
+
+    fn finalize_download(id: &str, payload: &DownloadPayload) {
+        remember_finished_download(id, payload);
+
+        let registration = DOWNLOADS.with(|downloads| downloads.borrow_mut().remove(id));
+        if let Some(registration) = registration {
+            unsafe {
+                let _ = registration
+                    .operation
+                    .remove_BytesReceivedChanged(registration.bytes_token);
+                let _ = registration
+                    .operation
+                    .remove_StateChanged(registration.state_token);
+            }
+        }
+
+        if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
+            paused.remove(id);
+        }
+        if let Ok(mut emits) = LAST_PROGRESS_EMITS.lock() {
+            emits.remove(id);
+        }
     }
 
     fn should_emit_progress(id: &str) -> bool {
@@ -323,13 +389,16 @@ mod imp {
                         let state_handler =
                             StateChangedEventHandler::create(Box::new(move |sender, _args| {
                                 if let Some(operation) = sender {
-                                    emit_download(
+                                    let payload = emit_download(
                                         &state_app,
                                         &state_id,
                                         &state_label,
                                         &operation,
                                         download_started_at,
                                     );
+                                    if is_terminal(&payload) {
+                                        finalize_download(&state_id, &payload);
+                                    }
                                 }
                                 Ok(())
                             }));
@@ -350,27 +419,32 @@ mod imp {
                             return Ok(());
                         }
 
-                        emit_download(
-                            &app_handle,
-                            &id,
-                            &download_label,
-                            &operation,
-                            download_started_at,
-                        );
+                        let operation_for_emit = operation.clone();
                         DOWNLOADS.with(|downloads| {
                             downloads.borrow_mut().insert(
-                                id,
+                                id.clone(),
                                 DownloadRegistration {
                                     operation,
                                     _bytes_handler: bytes_handler,
                                     _state_handler: state_handler,
-                                    _bytes_token: bytes_token,
-                                    _state_token: state_token,
+                                    bytes_token,
+                                    state_token,
                                     label: download_label.clone(),
                                     started_at_ms: download_started_at,
                                 },
                             );
                         });
+
+                        let payload = emit_download(
+                            &app_handle,
+                            &id,
+                            &download_label,
+                            &operation_for_emit,
+                            download_started_at,
+                        );
+                        if is_terminal(&payload) {
+                            finalize_download(&id, &payload);
+                        }
                         Ok(())
                     }));
 
@@ -473,6 +547,15 @@ mod imp {
         Ok(())
     }
 
+    fn finished_download_path(id: &str) -> Option<String> {
+        FINISHED_DOWNLOADS.with(|finished| {
+            finished
+                .borrow()
+                .get(id)
+                .map(|item| item.file_path.clone())
+        })
+    }
+
     pub fn control_download(app: AppHandle, id: String, action: String) -> Result<(), String> {
         if !matches!(
             action.as_str(),
@@ -484,49 +567,67 @@ mod imp {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let app_for_main = app.clone();
         app.run_on_main_thread(move || {
-            let result = DOWNLOADS.with(|downloads| {
-                let downloads = downloads.borrow();
-                let registration = downloads
-                    .get(&id)
-                    .ok_or_else(|| format!("download '{id}' not found"))?;
+            let result = (|| -> Result<(), String> {
+                let active = DOWNLOADS.with(|downloads| {
+                    downloads.borrow().get(&id).map(|registration| {
+                        (
+                            registration.operation.clone(),
+                            registration.label.clone(),
+                            registration.started_at_ms,
+                        )
+                    })
+                });
 
                 match action.as_str() {
-                    "pause" => unsafe {
-                        registration
-                            .operation
-                            .Pause()
-                            .map_err(|error| error.to_string())?;
-                        PAUSED_DOWNLOADS
-                            .lock()
-                            .map_err(|error| error.to_string())?
-                            .insert(id.clone());
-                    },
-                    "resume" => unsafe {
-                        registration
-                            .operation
-                            .Resume()
-                            .map_err(|error| error.to_string())?;
-                        PAUSED_DOWNLOADS
-                            .lock()
-                            .map_err(|error| error.to_string())?
-                            .remove(&id);
-                    },
-                    "cancel" => unsafe {
-                        registration
-                            .operation
-                            .Cancel()
-                            .map_err(|error| error.to_string())?;
-                        PAUSED_DOWNLOADS
-                            .lock()
-                            .map_err(|error| error.to_string())?
-                            .remove(&id);
-                    },
+                    "pause" | "resume" | "cancel" => {
+                        let (operation, label, download_started_at) = active
+                            .ok_or_else(|| format!("active download '{id}' not found"))?;
+
+                        match action.as_str() {
+                            "pause" => unsafe {
+                                operation.Pause().map_err(|error| error.to_string())?;
+                                PAUSED_DOWNLOADS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .insert(id.clone());
+                            },
+                            "resume" => unsafe {
+                                operation.Resume().map_err(|error| error.to_string())?;
+                                PAUSED_DOWNLOADS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id);
+                            },
+                            "cancel" => unsafe {
+                                operation.Cancel().map_err(|error| error.to_string())?;
+                                PAUSED_DOWNLOADS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id);
+                            },
+                            _ => unreachable!(),
+                        }
+
+                        let payload = emit_download(
+                            &app_for_main,
+                            &id,
+                            &label,
+                            &operation,
+                            download_started_at,
+                        );
+                        if is_terminal(&payload) {
+                            finalize_download(&id, &payload);
+                        }
+                    }
                     "open" | "reveal" => {
-                        let path = unsafe {
-                            take_webview_string(|value| {
-                                registration.operation.ResultFilePath(value)
-                            })
+                        let path = if let Some((operation, _, _)) = active {
+                            unsafe {
+                                take_webview_string(|value| operation.ResultFilePath(value))
+                            }
+                        } else {
+                            finished_download_path(&id).unwrap_or_default()
                         };
+
                         if path.is_empty() || !Path::new(&path).exists() {
                             return Err("downloaded file no longer exists".to_string());
                         }
@@ -542,15 +643,8 @@ mod imp {
                     _ => unreachable!(),
                 }
 
-                emit_download(
-                    &app_for_main,
-                    &id,
-                    &registration.label,
-                    &registration.operation,
-                    registration.started_at_ms,
-                );
                 Ok(())
-            });
+            })();
             let _ = tx.send(result);
         })
         .map_err(|error| error.to_string())?;

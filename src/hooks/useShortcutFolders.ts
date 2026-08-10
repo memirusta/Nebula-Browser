@@ -31,7 +31,10 @@ export function useShortcutFolders(visibleShortcuts: Shortcut[]) {
   const [folders, setFolders] = useState<ShortcutFolder[]>(() => loadFolders().folders)
 
   const reloadFolders = useCallback(() => {
-    setFolders(loadFolders().folders)
+    const next = loadFolders().folders
+    setFolders((prev) =>
+      JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+    )
   }, [])
 
   useStorageSync(SHORTCUT_FOLDERS_KEY, reloadFolders)

@@ -80,7 +80,10 @@ export function useShortcutPreferences(defaultShortcuts: Shortcut[]) {
 
   const reloadPreferences = useCallback(() => {
 
-    setPrefs(loadShortcutPreferences(defaultShortcuts))
+    const next = loadShortcutPreferences(defaultShortcuts)
+    setPrefs((prev) =>
+      JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+    )
 
   }, [defaultShortcuts])
 

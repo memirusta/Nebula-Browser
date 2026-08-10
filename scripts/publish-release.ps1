@@ -32,17 +32,20 @@ function Import-ReleaseGoogleOAuth {
 
   $lines = Get-Content $EnvPath
   $clientId = Read-DotEnvValue -Lines $lines -Name "VITE_GOOGLE_CLIENT_ID"
-  $secret = Read-DotEnvValue -Lines $lines -Name "GOOGLE_CLIENT_SECRET"
+  $clientSecret = Read-DotEnvValue -Lines $lines -Name "GOOGLE_CLIENT_SECRET"
 
-  if ($clientId) {
-    $env:VITE_GOOGLE_CLIENT_ID = $clientId
-    $env:GOOGLE_CLIENT_ID = $clientId
+  if (-not $clientId) {
+    throw "VITE_GOOGLE_CLIENT_ID not found in $EnvPath"
   }
-  if ($secret) {
-  $env:GOOGLE_CLIENT_SECRET = $secret
-} else {
-  throw "GOOGLE_CLIENT_SECRET .env icinde bulunamadi."
-}
+  if (-not $clientSecret) {
+    throw "GOOGLE_CLIENT_SECRET not found in $EnvPath"
+  }
+
+  # Keep the client id available to Vite/native code, but expose the client
+  # secret only to the native Rust build. Never use a VITE_* name for it.
+  $env:VITE_GOOGLE_CLIENT_ID = $clientId
+  $env:GOOGLE_CLIENT_ID = $clientId
+  $env:GOOGLE_CLIENT_SECRET = $clientSecret
 }
 
 if (-not $Version) {
@@ -141,6 +144,17 @@ Copy-Item $setupExe.FullName (Join-Path $releaseDir $assetName) -Force
 $latestPath = Join-Path $releaseDir "latest.json"
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText($latestPath, $latest, $utf8NoBom)
+
+# Never publish an installer with a stale or mismatched updater manifest/signature.
+Push-Location $root
+try {
+  node scripts/release-preflight.mjs --require-artifacts --require-current-manifest
+  if ($LASTEXITCODE -ne 0) {
+    throw "Release preflight failed; refusing to publish mismatched updater artifacts."
+  }
+} finally {
+  Pop-Location
+}
 
 Write-Host ""
 Write-Host "Release artifacts:"

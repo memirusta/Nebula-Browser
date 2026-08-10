@@ -50,9 +50,11 @@ else if (endpoints.some((u) => !String(u).startsWith('https://'))) fail('All upd
 else pass(`Updater endpoint configured (${endpoints[0]})`)
 
 const latestRel = path.join('release', 'latest.json')
+let latestManifest = null
 if (exists(latestRel)) {
   try {
     const latest = readJson(latestRel)
+    latestManifest = latest
     const platform = latest.platforms?.['windows-x86_64']
     if (!latest.version) fail('release/latest.json has no version')
     if (!platform?.url) fail('release/latest.json has no windows-x86_64 URL')
@@ -60,6 +62,17 @@ if (exists(latestRel)) {
     if (platform?.url && !String(platform.url).startsWith('https://')) fail('latest.json installer URL must use HTTPS')
     if (platform?.url && !String(platform.url).endsWith(`Nebula_${latest.version}_x64-setup.exe`)) {
       fail('latest.json installer filename does not match manifest version')
+    }
+    if (platform?.url && latest.version) {
+      const expectedReleasePath = `/releases/download/v${latest.version}/Nebula_${latest.version}_x64-setup.exe`
+      try {
+        const parsed = new URL(String(platform.url))
+        if (parsed.pathname !== `/memirusta/Nebula-Browser${expectedReleasePath}`) {
+          fail(`latest.json installer URL does not match manifest version/tag: ${platform.url}`)
+        }
+      } catch {
+        fail(`latest.json installer URL is invalid: ${platform.url}`)
+      }
     }
     if (latest.version === version) pass(`latest.json matches current version ${version}`)
     else if (requireCurrentManifest) fail(`latest.json version ${latest.version} does not match current version ${version}`)
@@ -86,9 +99,25 @@ if (installer) {
   warn('Current-version installer not found; build/release artifact checks skipped')
 }
 
+// When the signed bundle output exists, verify that latest.json carries the exact
+// signature generated for this build. This prevents an old manifest from being
+// uploaded beside a newer installer even when their filenames happen to look valid.
+const expectedBundleSignature = `${expectedBundleInstaller}.sig`
+if (latestManifest?.version === version && exists(expectedBundleSignature)) {
+  const generatedSignature = fs.readFileSync(path.join(root, expectedBundleSignature), 'utf8').trim()
+  const manifestSignature = String(
+    latestManifest.platforms?.['windows-x86_64']?.signature ?? '',
+  ).trim()
+  if (!generatedSignature) fail(`Generated updater signature is empty: ${expectedBundleSignature}`)
+  else if (manifestSignature !== generatedSignature) fail('release/latest.json signature does not match the current signed installer')
+  else pass('latest.json signature matches current signed installer')
+} else if (requireArtifacts && requireCurrentManifest) {
+  fail(`Updater signature for ${version} not found: ${expectedBundleSignature}`)
+}
+
 console.log('\nNebula release preflight')
 for (const p of passes) console.log(`✓ ${p}`)
 for (const w of warnings) console.log(`! ${w}`)
 for (const e of errors) console.error(`✗ ${e}`)
-console.log(`\n${passes.length} passed, ${warnings.length} warning(s), ${errors.length} error(s)`) 
+console.log(`\n${passes.length} passed, ${warnings.length} warning(s), ${errors.length} error(s)`)
 if (failed) process.exit(1)

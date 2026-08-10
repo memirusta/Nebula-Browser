@@ -854,7 +854,8 @@ pub use imp::{apply, teardown, PrivacyOptions};
 
 #[cfg(target_os = "windows")]
 pub fn clear_browsing_data(app: &tauri::AppHandle, label: &str, kind: &str) -> Result<(), String> {
-    use tauri::Manager;
+    use serde::Serialize;
+    use tauri::{Emitter, Manager};
     use webview2_com::ClearBrowsingDataCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Profile2, ICoreWebView2_13, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
@@ -863,6 +864,17 @@ pub fn clear_browsing_data(app: &tauri::AppHandle, label: &str, kind: &str) -> R
         COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS,
     };
     use windows_core::Interface;
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BrowsingDataClearPayload {
+        label: String,
+        kind: String,
+        error: Option<String>,
+    }
+
+    const CLEAR_EVENT: &str = "nebula-browsing-data-cleared";
+
     let webview = app
         .get_webview(label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
@@ -873,22 +885,40 @@ pub fn clear_browsing_data(app: &tauri::AppHandle, label: &str, kind: &str) -> R
         "permissions" => COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS,
         _ => COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
     };
+    let app_handle = app.clone();
+    let label_for_event = label.to_string();
+    let kind_for_event = kind.to_string();
+
     webview
         .with_webview(move |inner| unsafe {
-            let Ok(core) = inner.controller().CoreWebView2() else {
-                return;
-            };
-            let Ok(core13) = core.cast::<ICoreWebView2_13>() else {
-                return;
-            };
-            let Ok(profile) = core13.Profile() else {
-                return;
-            };
-            let Ok(profile2) = profile.cast::<ICoreWebView2Profile2>() else {
-                return;
-            };
-            let handler = ClearBrowsingDataCompletedHandler::create(Box::new(|_| Ok(())));
-            let _ = profile2.ClearBrowsingData(data_kind, &handler);
+            let completion_app = app_handle.clone();
+            let completion_label = label_for_event.clone();
+            let completion_kind = kind_for_event.clone();
+            let result = (|| -> windows_core::Result<()> {
+                let core = inner.controller().CoreWebView2()?;
+                let core13 = core.cast::<ICoreWebView2_13>()?;
+                let profile = core13.Profile()?;
+                let profile2 = profile.cast::<ICoreWebView2Profile2>()?;
+                let handler = ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
+                    let payload = BrowsingDataClearPayload {
+                        label: completion_label.clone(),
+                        kind: completion_kind.clone(),
+                        error: result.err().map(|error| error.to_string()),
+                    };
+                    let _ = completion_app.emit(CLEAR_EVENT, payload);
+                    Ok(())
+                }));
+                profile2.ClearBrowsingData(data_kind, &handler)
+            })();
+
+            if let Err(error) = result {
+                let payload = BrowsingDataClearPayload {
+                    label: label_for_event,
+                    kind: kind_for_event,
+                    error: Some(error.to_string()),
+                };
+                let _ = app_handle.emit(CLEAR_EVENT, payload);
+            }
         })
         .map_err(|error| error.to_string())
 }

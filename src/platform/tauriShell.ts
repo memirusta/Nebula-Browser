@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
+import { isChromeShell } from '../core/nebulaBridge'
 import { browsingChromeBelowTitlePx } from '../core/windowChrome'
 import { isTauri } from './runtime'
 import { syncTauriBrowserBounds } from './tauriBrowser'
 import { setBrowsingChromeLogicalHeight } from './browsingLayout'
+import { setChromeOverlayLogicalBounds } from './tauriChromeWebview'
 
 export type ShellHitRegion =
   | null
@@ -14,12 +16,20 @@ export type ShellHitRegion =
       logicalWidth?: number
     }
 
-/** Limit main shell webview hit-testing to a screen strip. */
+/**
+ * Route the interactive region to the surface that actually owns Semi-Lunar.
+ * In the dedicated chrome architecture this clips only nebula-chrome, never
+ * the full-screen Home/main WebView underneath the browser.
+ */
 export async function setShellHitRegion(region: ShellHitRegion): Promise<void> {
   if (!isTauri) return
 
+  const command = isChromeShell()
+    ? 'webview_set_chrome_hit_region'
+    : 'webview_set_shell_hit_region'
+
   if (region === null) {
-    await invoke('webview_set_shell_hit_region', {
+    await invoke(command, {
       logicalTop: null,
       logicalHeight: null,
       logicalLeft: null,
@@ -28,7 +38,7 @@ export async function setShellHitRegion(region: ShellHitRegion): Promise<void> {
     return
   }
 
-  await invoke('webview_set_shell_hit_region', {
+  await invoke(command, {
     logicalTop: region.logicalTop ?? 0,
     logicalHeight: region.logicalHeight,
     logicalLeft: region.logicalLeft ?? null,
@@ -44,7 +54,7 @@ function centeredLunarStrip(
   return { logicalLeft, logicalWidth }
 }
 
-/** Semi-lunar chrome on main shell — frameless, no separate title-bar webview. */
+/** Keep Semi-Lunar's dedicated native overlay sized to its current content. */
 export async function syncChromeShellLayout(
   isExpanded: boolean,
   lunarHeightPx: number,
@@ -55,37 +65,43 @@ export async function syncChromeShellLayout(
   if (!isTauri) return
 
   const lunarStrip = browsingChromeBelowTitlePx(isExpanded, lunarHeightPx, folderOpen)
-
   setBrowsingChromeLogicalHeight(lunarStrip)
-  await syncTauriBrowserBounds()
 
   const horizontal =
     isExpanded && lunarWidthPx
       ? centeredLunarStrip(lunarWidthPx)
       : { logicalLeft: undefined, logicalWidth: undefined }
 
+  if (isChromeShell()) {
+    // No native clipping and no click-through tricks: the dedicated Chrome
+    // WebView is physically only as large as Semi-Lunar. Home/browser remain
+    // full-client siblings underneath, so this overlay cannot push them down
+    // and cannot swallow input outside its own bounds.
+    await setChromeOverlayLogicalBounds(lunarStrip, lunarWidthPx)
+    return
+  }
+
+  // Legacy/non-dedicated path retained for web/dev fallback.
+  await syncTauriBrowserBounds()
   await setShellHitRegion({
     logicalTop: 0,
     logicalHeight: lunarStrip,
     ...horizontal,
   })
-
-  try {
-    await invoke('webview_raise_ui')
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.warn('[nebula] webview_raise_ui failed', error)
-    }
-  }
 }
 
 export async function resetBrowsingChromeLayout(): Promise<void> {
   if (!isTauri) return
+
+  if (isChromeShell()) {
+    return
+  }
+
   await setShellHitRegion(null)
   await syncTauriBrowserBounds()
 }
 
-/** Grow the main shell clip strip so floating UI (context menus) is not cut off. */
+/** Grow only the chrome overlay so floating UI is not cut off. */
 export async function expandShellHitRegionToFitBottom(
   bottomLogicalPx: number,
   isExpanded: boolean,
@@ -101,6 +117,11 @@ export async function expandShellHitRegionToFitBottom(
     isExpanded && lunarWidthPx
       ? centeredLunarStrip(lunarWidthPx)
       : { logicalLeft: undefined, logicalWidth: undefined }
+
+  if (isChromeShell()) {
+    await setChromeOverlayLogicalBounds(needed, lunarWidthPx)
+    return
+  }
 
   await setShellHitRegion({
     logicalTop: 0,

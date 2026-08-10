@@ -41,3 +41,5 @@ build.log
 # Local diagnostics
 perf-stress-*.csv
 .release-test/
+
+docs/ARCHITECTURE.md

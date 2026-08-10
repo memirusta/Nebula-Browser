@@ -140,6 +140,8 @@ export function SemiLunarMenu({
   const { t, tf } = useLocale()
   const isHome = mode === 'home'
   const isBrowsing = mode === 'browsing'
+  const usesDedicatedChromeSurface = isChromeShell()
+  const shouldManageNativeChrome = isBrowsing || usesDedicatedChromeSurface
   const [stage, setStage] = useState<MenuStage>(
     isHome && homeAlwaysOpen ? 'expanded' : 'closed',
   )
@@ -733,7 +735,7 @@ const handleFolderMemberClose = useCallback(
     (isHome && homeAlwaysOpen)
 
   shellLayoutResyncRef.current = () => {
-    if (!isBrowsing || !isTauri || isChromeShell() || shellViewMode === 'overlay') return
+    if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
     if (contextMenu) return
     void syncChromeShellLayout(
       isExpanded,
@@ -745,7 +747,7 @@ const handleFolderMemberClose = useCallback(
   }
 
   useEffect(() => {
-    if (!isBrowsing || !isTauri || isChromeShell() || shellViewMode === 'overlay') return
+    if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
 
     let disposed = false
     let unlistenFocus: (() => void) | undefined
@@ -770,7 +772,7 @@ const handleFolderMemberClose = useCallback(
   }, [isBrowsing, shellViewMode])
 
   useEffect(() => {
-    if (!isBrowsing || !isTauri || isChromeShell()) return
+    if (!shouldManageNativeChrome || !isTauri) return
 
     let unlisten: (() => void) | undefined
     let cancelled = false
@@ -793,7 +795,7 @@ const handleFolderMemberClose = useCallback(
 
   const handleContextMenuLayout = useCallback(
     (rect: DOMRect) => {
-      if (!contextMenu || !isBrowsing || !isTauri || isChromeShell()) return
+      if (!contextMenu || !shouldManageNativeChrome || !isTauri) return
       void expandShellHitRegionToFitBottom(
         rect.bottom,
         isExpanded,
@@ -814,7 +816,7 @@ const handleFolderMemberClose = useCallback(
   )
 
   useEffect(() => {
-    if (!contextMenu || !isBrowsing || !isTauri || isChromeShell() || shellViewMode === 'overlay') {
+    if (!contextMenu || !shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') {
       return
     }
 
@@ -848,7 +850,7 @@ const handleFolderMemberClose = useCallback(
   ])
 
   useEffect(() => {
-    if (!isBrowsing || !isTauri || isChromeShell()) return
+    if (!shouldManageNativeChrome || !isTauri) return
     if (contextMenu) return
 
     if (chromeQuickMenuOpen) {
@@ -871,16 +873,14 @@ const handleFolderMemberClose = useCallback(
       return
     }
 
-    if (shellViewMode === 'browsing') {
-      clearTimers()
-      void syncChromeShellLayout(
-        isExpanded,
-        lunarHeightPx,
-        Boolean(openFolderId) || downloadPanelOpen,
-        previewShortcut !== null,
-        lunarWidthPx,
-      )
-    }
+    clearTimers()
+    void syncChromeShellLayout(
+      isExpanded,
+      lunarHeightPx,
+      Boolean(openFolderId) || downloadPanelOpen,
+      previewShortcut !== null,
+      lunarWidthPx,
+    )
   }, [
     chromeQuickMenuOpen,
     shellViewMode,
@@ -896,7 +896,7 @@ const handleFolderMemberClose = useCallback(
   ])
 
   useEffect(() => {
-    if (mode === 'overlay' || !isBrowsing || !isTauri || isChromeShell()) return
+    if (mode === 'overlay' || !shouldManageNativeChrome || !isTauri) return
     if (contextMenu) return
 
     const applyLayout = debounce(() => {
@@ -1376,7 +1376,7 @@ const members = memberIds
     </>
   )
 
-  if (isBrowsing && !isChromeShell()) {
+  if (isBrowsing) {
     const browsingChromeClass = [
       styles.browsingChrome,
       isTauri ? styles.browsingChromeTauri : styles.browsingChromeWeb,

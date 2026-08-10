@@ -17,10 +17,17 @@ applyDocumentLocale()
 resetHomeMenuStorageOnce()
 migrateToEmptySemiLunarDockOnce(DEFAULT_SHORTCUTS)
 
+const chromeShell = isChromeShell()
+
 if (isTauri) {
   document.documentElement.dataset.nebulaTauri = 'true'
 }
-if (isTauri && !isChromeShell()) {
+if (chromeShell) {
+  // Must be set before React mounts so the transparent chrome WebView never
+  // paints the opaque Home fallback color for its first compositor frame.
+  document.documentElement.dataset.nebulaChrome = 'true'
+}
+if (isTauri && !chromeShell) {
   syncTauriViewMode('home', null)
   void prewarmUblockProfile()
     .then(() => prewarmBrowseWebview())
@@ -28,7 +35,7 @@ if (isTauri && !isChromeShell()) {
 }
 
 async function renderRoot() {
-  const Root = isChromeShell()
+  const Root = chromeShell
     ? (await import('./ChromeApp.tsx')).ChromeApp
     : (await import('./App.tsx')).default
 
@@ -40,7 +47,7 @@ async function renderRoot() {
     </StrictMode>,
   )
 
-  if (isTauri && !isChromeShell()) {
+  if (isTauri && !chromeShell) {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         void writeTransitionLog('performance.frontend-ready', 'ok', {

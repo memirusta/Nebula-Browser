@@ -48,7 +48,12 @@ export function usePinnedShortcuts(
 
   const reloadPinnedIds = useCallback(() => {
 
-    setPinnedIds(loadPinnedShortcutIds())
+    const next = loadPinnedShortcutIds()
+    setPinnedIds((prev) =>
+      prev.length === next.length && prev.every((id, index) => id === next[index])
+        ? prev
+        : next,
+    )
 
   }, [])
 

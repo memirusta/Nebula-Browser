@@ -3,6 +3,7 @@ import type { BrowserTab } from './browserTab'
 import { isTauri } from '../platform/runtime'
 
 export type ChromeShellAction =
+  | { type: 'request-state' }
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
   | { type: 'switch-tab'; shortcutId: string }

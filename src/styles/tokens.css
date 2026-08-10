@@ -52,9 +52,9 @@ html[data-nebula-titlebar] {
   --browsing-chrome-height: 14px;
 }
 
-html[data-nebula-browsing-tauri] body,
-html[data-nebula-browsing-tauri] #root {
-  background: transparent;
+html[data-nebula-browsing-tauri]:not([data-nebula-chrome]) body,
+html[data-nebula-browsing-tauri]:not([data-nebula-chrome]) #root {
+  background: #1a2e22;
 }
 
 html[data-nebula-overlay-tauri] body,
@@ -67,7 +67,7 @@ html[data-nebula-chrome] #root {
   background: transparent;
 }
 
-html[data-nebula-tauri]:not([data-nebula-browsing-tauri]):not([data-nebula-overlay-tauri]) body,
-html[data-nebula-tauri]:not([data-nebula-browsing-tauri]):not([data-nebula-overlay-tauri]) #root {
+html[data-nebula-tauri]:not([data-nebula-chrome]):not([data-nebula-browsing-tauri]):not([data-nebula-overlay-tauri]) body,
+html[data-nebula-tauri]:not([data-nebula-chrome]):not([data-nebula-browsing-tauri]):not([data-nebula-overlay-tauri]) #root {
   background: #1a2e22;
 }

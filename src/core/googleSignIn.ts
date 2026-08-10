@@ -175,9 +175,16 @@ export async function consumeGoogleSignInRedirect(): Promise<GoogleProfileClaims
     return consumeInFlight
   }
 
-  consumeInFlight = consumeGoogleSignInRedirectOnce().finally(() => {
-    consumeInFlight = null
-  })
+  consumeInFlight = consumeGoogleSignInRedirectOnce()
+    .catch((error) => {
+      // A transient fetch/IPC failure must not permanently mark this OAuth code as
+      // consumed. The caller can recover to onboarding and the next sign-in starts cleanly.
+      removeStoredAuth(GOOGLE_OAUTH_USED_CODE_KEY)
+      throw error
+    })
+    .finally(() => {
+      consumeInFlight = null
+    })
 
   return consumeInFlight
 }
@@ -318,6 +325,13 @@ export function takeGoogleOAuthReturn(): string | null {
 export async function resumeGoogleSignInFromRedirect(): Promise<{
   claims: GoogleProfileClaims | null
 }> {
-  const claims = await consumeGoogleSignInRedirect()
-  return { claims }
+  try {
+    const claims = await consumeGoogleSignInRedirect()
+    return { claims }
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] Google redirect resume failed', error)
+    }
+    return { claims: null }
+  }
 }

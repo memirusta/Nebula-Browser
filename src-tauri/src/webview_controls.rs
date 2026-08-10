@@ -108,10 +108,6 @@ pub fn webview_zoom(app: AppHandle, label: String, action: String) -> Result<(),
 
 #[tauri::command]
 pub fn webview_open_devtools(app: AppHandle, label: String) -> Result<(), String> {
-    if !cfg!(debug_assertions) {
-        return Err("developer tools are disabled in release builds".to_string());
-    }
-
     #[cfg(target_os = "windows")]
     {
         with_webview_result(&app, &label, |inner| unsafe {
@@ -163,7 +159,6 @@ pub fn webview_set_memory_usage(app: AppHandle, label: String, low: bool) -> Res
     }
 }
 
-
 #[tauri::command]
 pub fn webview_is_playing_audio(app: AppHandle, label: String) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
@@ -191,7 +186,6 @@ pub fn webview_is_playing_audio(app: AppHandle, label: String) -> Result<bool, S
         Ok(false)
     }
 }
-
 
 #[tauri::command]
 pub fn webview_set_suspended(

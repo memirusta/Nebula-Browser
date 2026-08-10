@@ -128,9 +128,7 @@ mod imp {
                             pressed(VK_MENU),
                         ) {
                             let _ = args.SetHandled(true);
-                            if action != "devtools" || cfg!(debug_assertions) {
-                                let _ = app_handle.emit("nebula-browser-shortcut", action);
-                            }
+                            let _ = app_handle.emit("nebula-browser-shortcut", action);
                         }
                         Ok(())
                     }));

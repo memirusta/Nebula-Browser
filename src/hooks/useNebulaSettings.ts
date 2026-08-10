@@ -18,7 +18,9 @@ export function useNebulaSettings() {
 
   const reloadSettings = useCallback(() => {
     const next = loadNebulaSettings()
-    setSettings(next)
+    setSettings((prev) =>
+      JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+    )
     applyNebulaCssVars(next)
   }, [])
 
