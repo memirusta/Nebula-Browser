@@ -1,5 +1,6 @@
 import { emit, listen } from '@tauri-apps/api/event'
 import type { BrowserTab } from './browserTab'
+import type { DownloadItem } from './download'
 import { isTauri } from '../platform/runtime'
 
 export type ChromeShellAction =
@@ -10,10 +11,21 @@ export type ChromeShellAction =
   | { type: 'open-overlay' }
   | { type: 'go-back' }
   | { type: 'go-home' }
+  | { type: 'toggle-download-panel' }
+  | { type: 'close-download-panel' }
+  | { type: 'remove-download'; id: string }
+  | { type: 'clear-finished-downloads' }
 
 export interface TabCatalogPayload {
   tabs: BrowserTab[]
   activeTabId: string | null
+}
+
+export interface DownloadUiStatePayload {
+  items: DownloadItem[]
+  activeCount: number
+  aggregateProgress: number | null
+  panelOpen: boolean
 }
 
 export type ShellViewMode = 'home' | 'browsing' | 'overlay'
@@ -22,6 +34,7 @@ const CHROME_ACTION_EVENT = 'nebula-chrome-action'
 const ACTIVE_URL_EVENT = 'nebula-active-url'
 const TAB_CATALOG_EVENT = 'nebula-tab-catalog'
 const VIEW_MODE_EVENT = 'nebula-view-mode'
+const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
 
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
@@ -92,5 +105,24 @@ export function listenViewMode(
 
   return listen<{ mode: ShellViewMode }>(VIEW_MODE_EVENT, (event) => {
     handler(event.payload.mode)
+  })
+}
+
+export async function emitDownloadUiState(
+  state: DownloadUiStatePayload,
+): Promise<void> {
+  if (!isTauri) return
+  await emit(DOWNLOAD_UI_STATE_EVENT, state)
+}
+
+export function listenDownloadUiState(
+  handler: (state: DownloadUiStatePayload) => void,
+): Promise<() => void> {
+  if (!isTauri) {
+    return Promise.resolve(() => {})
+  }
+
+  return listen<DownloadUiStatePayload>(DOWNLOAD_UI_STATE_EVENT, (event) => {
+    handler(event.payload)
   })
 }

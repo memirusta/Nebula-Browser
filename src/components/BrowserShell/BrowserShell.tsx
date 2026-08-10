@@ -15,10 +15,11 @@ import { isTauri } from '../../platform/runtime'
 import {
   listenChromeActions,
   emitActiveUrl,
+  emitDownloadUiState,
   emitTabCatalog,
   emitViewMode,
 } from '../../core/nebulaBridge'
-import type { ShellViewMode } from '../../core/nebulaBridge'
+import type { DownloadUiStatePayload, ShellViewMode } from '../../core/nebulaBridge'
 import type { BrowserShortcutId } from '../../core/browserShortcuts'
 import {
   NATIVE_TAB_FAILED_EVENT,
@@ -328,6 +329,14 @@ export function BrowserShell() {
     setHistoryPanelOpen,
   ] = useState(false)
 
+  const downloadUiStateRef =
+    useRef<DownloadUiStatePayload>({
+      items: downloads.items,
+      activeCount: downloads.activeCount,
+      aggregateProgress: downloads.aggregateProgress,
+      panelOpen: downloadPanelOpen,
+    })
+
   const [
     crashRecoveryOpen,
     setCrashRecoveryOpen,
@@ -473,6 +482,29 @@ export function BrowserShell() {
       )
     }
   }, [downloads.items])
+
+  useEffect(() => {
+    const nextState: DownloadUiStatePayload = {
+      items: downloads.items,
+      activeCount: downloads.activeCount,
+      aggregateProgress: downloads.aggregateProgress,
+      panelOpen: downloadPanelOpen,
+    }
+
+    downloadUiStateRef.current =
+      nextState
+
+    if (!isTauri) return
+
+    void emitDownloadUiState(
+      nextState,
+    )
+  }, [
+    downloadPanelOpen,
+    downloads.activeCount,
+    downloads.aggregateProgress,
+    downloads.items,
+  ])
 
   const toggleDownloadPanel =
     useCallback(() => {
@@ -782,14 +814,26 @@ export function BrowserShell() {
         developerToolsOpen ||
         crashRecoveryOpen ||
         siteUiQueue.length > 0 ||
-        siteContextMenu !== null,
+        siteContextMenu !== null ||
+        (
+          viewMode !== 'browsing' &&
+          (
+            downloadPanelOpen ||
+            notificationPanelOpen ||
+            historyPanelOpen
+          )
+        ),
     )
   }, [
     crashRecoveryOpen,
     developerToolsOpen,
+    downloadPanelOpen,
+    historyPanelOpen,
+    notificationPanelOpen,
     settingsOpen,
     siteContextMenu,
     siteUiQueue.length,
+    viewMode,
   ])
 
   const [
@@ -3752,6 +3796,9 @@ export function BrowserShell() {
             void emitViewMode(
               viewModeRef.current,
             )
+            void emitDownloadUiState(
+              downloadUiStateRef.current,
+            )
             break
           }
 
@@ -3813,6 +3860,22 @@ export function BrowserShell() {
           case 'go-home':
             goHome()
             break
+
+          case 'toggle-download-panel':
+            toggleDownloadPanel()
+            break
+
+          case 'close-download-panel':
+            closeDownloadPanel()
+            break
+
+          case 'remove-download':
+            downloads.remove(action.id)
+            break
+
+          case 'clear-finished-downloads':
+            downloads.clearFinished()
+            break
         }
       },
     ).then(
@@ -3845,6 +3908,10 @@ export function BrowserShell() {
     goBackInPage,
     goHome,
     tabsRef,
+    toggleDownloadPanel,
+    closeDownloadPanel,
+    downloads.remove,
+    downloads.clearFinished,
   ])
 
   useEffect(() => {
@@ -4837,6 +4904,7 @@ export function BrowserShell() {
         )}
 
       {downloadPanelOpen &&
+        !(isTauri && isBrowsing) &&
         createPortal(
           <DownloadManager
             items={

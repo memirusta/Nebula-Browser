@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { emit } from '@tauri-apps/api/event'
+import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
 import { matchBrowserShortcut, shouldIgnoreShellShortcut } from './core/browserShortcuts'
 import { DEFAULT_SHORTCUTS } from './core/constants'
+import { controlDownload } from './core/download'
 import {
   emitChromeAction,
   listenActiveUrl,
+  listenDownloadUiState,
   listenTabCatalog,
   listenViewMode,
+  type DownloadUiStatePayload,
   type ShellViewMode,
   type TabCatalogPayload,
 } from './core/nebulaBridge'
@@ -64,6 +68,12 @@ export function ChromeApp() {
   })
   const [activeUrl, setActiveUrl] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ShellViewMode>('home')
+  const [downloadUi, setDownloadUi] = useState<DownloadUiStatePayload>({
+    items: [],
+    activeCount: 0,
+    aggregateProgress: null,
+    panelOpen: false,
+  })
 
   useEffect(() => {
     document.documentElement.dataset.nebulaChrome = 'true'
@@ -80,6 +90,7 @@ export function ChromeApp() {
       listenTabCatalog((next) => setCatalog(next)),
       listenActiveUrl(setActiveUrl),
       listenViewMode(setViewMode),
+      listenDownloadUiState(setDownloadUi),
     ]).then((items) => {
       if (disposed) {
         items.forEach((dispose) => dispose())
@@ -181,10 +192,29 @@ export function ChromeApp() {
     [removeShortcut, removeShortcutFromFolders],
   )
 
+  const toggleDownloads = useCallback(() => {
+    void emitChromeAction({ type: 'toggle-download-panel' })
+  }, [])
+
+  const closeDownloads = useCallback(() => {
+    void emitChromeAction({ type: 'close-download-panel' })
+  }, [])
+
+  const removeDownload = useCallback((id: string) => {
+    void emitChromeAction({ type: 'remove-download', id })
+  }, [])
+
+  const clearFinishedDownloads = useCallback(() => {
+    void emitChromeAction({ type: 'clear-finished-downloads' })
+  }, [])
+
   const mode = viewMode === 'home' ? 'home' : 'browsing'
+  const browsingDownloadPanelOpen =
+    viewMode === 'browsing' && downloadUi.panelOpen
 
   return (
-    <SemiLunarMenu
+    <>
+      <SemiLunarMenu
       shortcuts={semiLunarShortcuts}
       dockItemIds={dockItemIds}
       folders={folders}
@@ -235,6 +265,27 @@ export function ChromeApp() {
               void emitChromeAction({ type: 'go-back' })
             }
       }
-    />
+      onDownloadsClick={
+        viewMode === 'browsing' ? toggleDownloads : undefined
+      }
+      downloadCount={downloadUi.items.length}
+      activeDownloadCount={downloadUi.activeCount}
+      downloadProgress={downloadUi.aggregateProgress}
+      downloadPanelOpen={browsingDownloadPanelOpen}
+      forceOpen={browsingDownloadPanelOpen}
+      />
+
+      {browsingDownloadPanelOpen && (
+        <DownloadManager
+          items={downloadUi.items}
+          variant="browsing"
+          browsingTop={adaptiveLunar.height + 14}
+          onAction={controlDownload}
+          onRemove={removeDownload}
+          onClearFinished={clearFinishedDownloads}
+          onClose={closeDownloads}
+        />
+      )}
+    </>
   )
 }

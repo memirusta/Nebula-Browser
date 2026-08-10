@@ -1,0 +1,157 @@
+--- a/src/components/BrowserShell/BrowserShell.tsx
++++ b/src/components/BrowserShell/BrowserShell.tsx
+@@ -31,7 +31,10 @@
+   forceExitSiteFullscreen,
+ } from '../../platform/tauriSiteFullscreen'
+ import { writeTransitionLog } from '../../platform/tauriTransitionLog'
+-import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
++import {
++  setOverlayModeActive,
++  stackBrowsingChromeAboveBrowser,
++} from '../../platform/tauriWebviewStack'
+ import { setChromeWebviewSuppressed } from '../../platform/tauriChromeWebview'
+ import {
+   listenSiteCloseWindows,
+@@ -328,6 +331,14 @@
+     setHistoryPanelOpen,
+   ] = useState(false)
+ 
++  const browserPanelSurfaceActive =
++    downloadPanelOpen ||
++    notificationPanelOpen ||
++    historyPanelOpen
++
++  const browserPanelStackedRef =
++    useRef(false)
++
+   const [
+     crashRecoveryOpen,
+     setCrashRecoveryOpen,
+@@ -474,6 +485,58 @@
+     }
+   }, [downloads.items])
+ 
++  useEffect(() => {
++    if (!isTauri) return
++
++    const shouldRaiseMain =
++      browserPanelSurfaceActive &&
++      viewMode === 'browsing' &&
++      activeTabId !== null
++
++    if (
++      shouldRaiseMain &&
++      !browserPanelStackedRef.current
++    ) {
++      browserPanelStackedRef.current =
++        true
++
++      setOverlayModeActive(
++        true,
++      )
++
++      void stackBrowsingChromeAboveBrowser(
++        activeTabId,
++      )
++
++      return
++    }
++
++    if (
++      !shouldRaiseMain &&
++      browserPanelStackedRef.current
++    ) {
++      browserPanelStackedRef.current =
++        false
++
++      setOverlayModeActive(
++        false,
++      )
++
++      if (
++        viewMode === 'browsing' &&
++        activeTabId
++      ) {
++        void stackBrowsingChromeAboveBrowser(
++          activeTabId,
++        )
++      }
++    }
++  }, [
++    activeTabId,
++    browserPanelSurfaceActive,
++    viewMode,
++  ])
++
+   const toggleDownloadPanel =
+     useCallback(() => {
+       setNotificationPanelOpen(
+@@ -3677,7 +3740,12 @@
+   // Browser tabs cover it while browsing; overlay mode intentionally hides it.
+   const showHomeSurface =
+     isHome ||
+-    (isTauri && isBrowsing)
++    (
++      isTauri &&
++      isBrowsing &&
++      !browserPanelSurfaceActive &&
++      !browserPanelStackedRef.current
++    )
+ 
+   usePasswordBridge({
+     enabled:
+--- a/src/components/DownloadManager/DownloadManager.tsx
++++ b/src/components/DownloadManager/DownloadManager.tsx
+@@ -97,12 +97,21 @@
+   }
+ 
+   return (
+-    <section
+-      className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
+-      style={variant === 'browsing' ? { top: browsingTop } : undefined}
+-      role="dialog"
+-      aria-label={t('downloads')}
+-    >
++    <>
++      {variant === 'browsing' && (
++        <button
++          type="button"
++          className={styles.backdrop}
++          onClick={onClose}
++          aria-label={t('close')}
++        />
++      )}
++      <section
++        className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
++        style={variant === 'browsing' ? { top: browsingTop } : undefined}
++        role="dialog"
++        aria-label={t('downloads')}
++      >
+       <header className={styles.header}>
+         <div>
+           <span className={styles.eyebrow}>{t('downloadSession')}</span>
+@@ -215,6 +224,7 @@
+         )}
+       </div>
+       <footer>{t('downloadSessionHint')}</footer>
+-    </section>
++      </section>
++    </>
+   )
+ }
+--- a/src/components/DownloadManager/DownloadManager.module.css
++++ b/src/components/DownloadManager/DownloadManager.module.css
+@@ -1,3 +1,13 @@
++.backdrop {
++  position: fixed;
++  inset: 0;
++  z-index: 419;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  cursor: default;
++}
++
+ .panel {
+   position: fixed;
+   z-index: 420;
