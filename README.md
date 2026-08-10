@@ -16,7 +16,7 @@ Built with <strong>Tauri 2</strong>, <strong>React 19</strong>, <strong>TypeScri
 </p>
 
 <a href="https://github.com/memirusta/Nebula-Browser/releases">
-  <img src="https://img.shields.io/badge/version-1.2.2-7ec8e3?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.3.0-7ec8e3?style=flat-square" alt="Version">
 </a>
 <a href="https://github.com/memirusta/Nebula-Browser/releases/latest">
   <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white" alt="Windows">
@@ -203,8 +203,44 @@ Common browser workflows are available from the keyboard, including:
 - focus search
 - zoom controls
 - Home
+- F12 — Nebula Inspector
 
 Shortcut mappings can be viewed and configured from Settings.
+
+---
+
+### 🧩 Native Site UI
+
+Nebula replaces many default WebView2 browser surfaces with its own interface.
+
+This includes:
+
+- JavaScript alerts, confirms, and prompts
+- site permission requests
+- HTTP authentication prompts
+- context menus
+- new-window handling
+- integrated site notifications
+
+WebView2 remains the rendering engine while Nebula owns the visible browser experience.
+
+---
+
+### 🛠 Nebula Inspector
+
+Press **F12** to open Nebula's built-in browser inspector.
+
+It includes:
+
+- DOM and element inspection
+- computed styles
+- JavaScript console and evaluation
+- performance and memory metrics
+- local and session storage inspection
+- cookie and site information
+- permission and security diagnostics
+
+The inspector is built directly into Nebula rather than relying on the standard WebView2 DevTools interface.
 
 ---
 
