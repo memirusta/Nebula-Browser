@@ -79,8 +79,7 @@ export function useBrowserTabs() {
           current &&
           current.url === url &&
           current.title === nextTitle &&
-          current.favicon === nextFavicon &&
-          !current.isLoading
+          current.favicon === nextFavicon
         ) {
           return prev
         }
@@ -92,7 +91,6 @@ export function useBrowserTabs() {
                 url,
                 title: nextTitle,
                 favicon: nextFavicon,
-                isLoading: false,
               }
             : tab,
         )

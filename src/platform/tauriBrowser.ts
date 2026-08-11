@@ -288,6 +288,15 @@ export interface TabWebviewSnapshot {
   title: string | null
 }
 
+interface NativeTabLoadingPayload {
+  label: string
+  isLoading: boolean
+}
+
+export interface TabWebviewLoadingState {
+  shortcutId: string
+  isLoading: boolean
+}
 interface NativeNavigationPerformancePayload {
   label: string
   url: string
@@ -355,6 +364,24 @@ export function listenTabWebviewSnapshots(
   )
 }
 
+export function listenTabWebviewLoadingStates(
+  onLoadingState: (state: TabWebviewLoadingState) => void,
+): Promise<UnlistenFn> {
+  return listen<NativeTabLoadingPayload>(
+    'nebula-tab-loading-state',
+    ({ payload }) => {
+      const shortcutId =
+        shortcutIdForTabWebviewLabel(payload.label)
+
+      if (!shortcutId) return
+
+      onLoadingState({
+        shortcutId,
+        isLoading: payload.isLoading,
+      })
+    },
+  )
+}
 let activeTabId: string | null = null
 let activeWebview: Webview | null = null
 

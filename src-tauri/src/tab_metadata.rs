@@ -46,6 +46,13 @@ mod imp {
 
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
+    struct TabLoadingPayload {
+        label: String,
+        is_loading: bool,
+    }
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct TabNavigationPerformancePayload {
         label: String,
         url: String,
@@ -141,6 +148,7 @@ mod imp {
         let source_label = label.to_string();
         let title_app = app.clone();
         let title_label = label.to_string();
+        let navigation_start_app = app.clone();
         let navigation_start_label = label.to_string();
         let navigation_complete_label = label.to_string();
         let navigation_complete_app = app.clone();
@@ -172,6 +180,13 @@ mod imp {
                         if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
                             starts.insert(navigation_start_label.clone(), Instant::now());
                         }
+                        let _ = navigation_start_app.emit(
+                            "nebula-tab-loading-state",
+                            TabLoadingPayload {
+                                label: navigation_start_label.clone(),
+                                is_loading: true,
+                            },
+                        );
                         Ok(())
                     }));
                 let navigation_complete_handler =
@@ -183,6 +198,13 @@ mod imp {
                         let success = args
                             .and_then(|args| args.IsSuccess(&mut success).ok().map(|_| success.as_bool()))
                             .unwrap_or(false);
+                        let _ = navigation_complete_app.emit(
+                            "nebula-tab-loading-state",
+                            TabLoadingPayload {
+                                label: navigation_complete_label.clone(),
+                                is_loading: false,
+                            },
+                        );
                         emit_navigation_performance(
                             &navigation_complete_app,
                             &navigation_complete_label,
@@ -191,7 +213,6 @@ mod imp {
                         );
                         Ok(())
                     }));
-
                 let mut source_token = 0i64;
                 if core
                     .add_SourceChanged(&source_handler, &mut source_token)

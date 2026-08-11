@@ -163,15 +163,25 @@ mod imp {
   // Report real user clicks on the actual site surface to the Nebula shell.
   // The captured bridge stays usable after later hardening masks
   // window.chrome.webview from ordinary page code.
-  window.addEventListener('pointerdown', function (event) {
-    if (!event.isTrusted) return;
+  // Wry's Windows IPC layer turns WebMessageReceived.Source into an
+  // http::Request URI. WebView2 can report an empty Source for opaque/internal
+  // documents such as Nebula's data: error page, which makes Wry panic while
+  // parsing that URI. Only remote HTTP(S) site documents need this click bridge.
+  const canReportSitePointerDown =
+    window.location.protocol === 'http:' ||
+    window.location.protocol === 'https:';
 
-    try {
-      bridge.postMessage(JSON.stringify({
-        type: 'nebula-site-pointer-down'
-      }));
-    } catch (_) {}
-  }, true);
+  if (canReportSitePointerDown) {
+    window.addEventListener('pointerdown', function (event) {
+      if (!event.isTrusted) return;
+
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-site-pointer-down'
+        }));
+      } catch (_) {}
+    }, true);
+  }
 
   if (typeof Navigator === 'undefined') return;
 

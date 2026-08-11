@@ -583,14 +583,41 @@
   outline-offset: 2px;
 }
 
-.favicon {
+.faviconShell {
+  position: relative;
+  display: flex;
   width: calc(var(--shortcut-icon-size, 44px) * 0.59);
   height: calc(var(--shortcut-icon-size, 44px) * 0.59);
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
-  object-fit: contain;
   transition: transform var(--lunar-duration) var(--lunar-ease);
 }
 
+.favicon {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
+.faviconLoadingRing {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--nebula-gold);
+  border-right-color: rgba(255, 255, 255, 0.82);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(255, 220, 128, 0.18);
+  animation: faviconLoadingSpin 720ms linear infinite;
+}
+
+@keyframes faviconLoadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .fallback {
   font-size: 16px;
   font-weight: 600;
@@ -607,8 +634,7 @@
   border-color: rgba(126, 200, 227, 0.65) !important;
 }
 
-.shortcutDropTarget .favicon,
-.shortcutDropTarget .fallback {
+.shortcutDropTarget .faviconShell {
   transform: scale(0.65);
   transition: transform 650ms var(--ease-out-expo);
 }

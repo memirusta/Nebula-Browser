@@ -74,6 +74,7 @@ import {
   prepareBrowseTabInBackground,
   reloadBrowseTab,
   listenTabWebviewSnapshots,
+  listenTabWebviewLoadingStates,
   printBrowseTab,
   zoomBrowseTab,
   setBrowsePrivacyOptions,
@@ -293,6 +294,7 @@ export function BrowserShell() {
     openOrSwitchTab,
     closeTab,
     applyTabSnapshot,
+    updateTabMeta,
     getTab,
     setActiveTabId,
   } = useBrowserTabs()
@@ -1626,6 +1628,47 @@ export function BrowserShell() {
     tabsRef,
   ])
 
+  useEffect(() => {
+    if (!isTauri) return
+
+    let cancelled =
+      false
+
+    let unlisten:
+      | (() => void)
+      | undefined
+
+    void listenTabWebviewLoadingStates(
+      ({
+        shortcutId,
+        isLoading,
+      }) => {
+        updateTabMeta(
+          shortcutId,
+          { isLoading },
+        )
+      },
+    ).then(
+      (dispose) => {
+        if (cancelled) {
+          dispose()
+          return
+        }
+
+        unlisten =
+          dispose
+      },
+    )
+
+    return () => {
+      cancelled =
+        true
+
+      unlisten?.()
+    }
+  }, [
+    updateTabMeta,
+  ])
   useEffect(() => {
     if (!isTauri) return
 

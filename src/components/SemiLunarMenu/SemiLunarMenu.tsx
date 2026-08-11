@@ -1159,6 +1159,7 @@ const members = memberIds
                 const tabIsOpen = openTabId !== null
                 const tabIsActive = openTabId !== null && activeTabId === openTabId
                 const tab = resolveTabForDock(dockId)
+                const tabIsLoading = tab?.isLoading === true
                 const displayFavicon = tab?.favicon ?? item.favicon
                 const displayTitle = tab ? truncateTabTitle(tab.title) : item.label
                 const hoverTitle = tab?.title ?? item.label
@@ -1190,6 +1191,7 @@ const members = memberIds
                         : tf('removeShortcutAria', { label: item.label })
                     }
                     isTabActive={tabIsActive}
+                    isLoading={tabIsLoading}
                     displayFavicon={displayFavicon}
                     displayTitle={displayTitle}
                     hoverTitle={hoverTitle}
@@ -1427,6 +1429,7 @@ function DraggableShortcut({
   onRemove,
   closeAriaLabel,
   isTabActive = false,
+  isLoading = false,
   displayFavicon,
   displayTitle,
   hoverTitle,
@@ -1453,6 +1456,7 @@ function DraggableShortcut({
   onRemove?: () => void
   closeAriaLabel: string
   isTabActive?: boolean
+  isLoading?: boolean
   displayFavicon?: string
   displayTitle?: string
   hoverTitle?: string
@@ -1754,12 +1758,16 @@ function DraggableShortcut({
         aria-label={tf('shortcutAria', { label: item.label })}
         tabIndex={-1}
       >
-        {resolvedFavicon ? (
-          <img src={resolvedFavicon} alt="" className={styles.favicon} draggable={false} />
-        ) : (
-          <span className={styles.fallback}>{resolvedTitle[0]}</span>
-        )}
-        {muted && <span className={styles.mutedStrike} aria-hidden="true" />}
+        <span className={styles.faviconShell}>
+          {resolvedFavicon ? (
+            <img src={resolvedFavicon} alt="" className={styles.favicon} draggable={false} />
+          ) : (
+            <span className={styles.fallback}>{resolvedTitle[0]}</span>
+          )}
+          {isLoading && (
+            <span className={styles.faviconLoadingRing} aria-hidden="true" />
+          )}
+        </span>        {muted && <span className={styles.mutedStrike} aria-hidden="true" />}
         {showCloseBtn && !isDragging && onRemove && (
           <span
             role="button"
