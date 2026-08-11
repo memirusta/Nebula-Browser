@@ -30,7 +30,9 @@ import {
 } from '../../platform/tauriBrowsingMode'
 import {
   initSiteFullscreenBridge,
+  exitSiteFullscreenForTabSwitch,
   forceExitSiteFullscreen,
+  isSiteFullscreenActive,
   toggleBrowserWindowFullscreen,
 } from '../../platform/tauriSiteFullscreen'
 import { writeTransitionLog } from '../../platform/tauriTransitionLog'
@@ -62,6 +64,7 @@ import {
 import { loadBrowseSessions } from '../../core/browseSession'
 import { resolveShortcutForOpen } from '../../core/navigateShortcut'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
+import { removeLocalStorage } from '../../core/storageSync'
 import {
   clearGoogleBrowserSession,
   isGoogleBrowserSignInUrl,
@@ -85,6 +88,7 @@ import {
 } from '../../platform/tauriBrowser'
 import { useBrowserTabs } from '../../hooks/useBrowserTabs'
 import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
+import { useBrowserShortcutBindings } from '../../hooks/useBrowserShortcutBindings'
 import {
   shortcutFromTab,
   shortcutIdForTabWebviewLabel,
@@ -104,13 +108,17 @@ import { HomeEditBar } from '../HomeEdit/HomeEditBar'
 import { WallpaperBackground } from '../WallpaperBackground/WallpaperBackground'
 import { usePinnedShortcuts } from '../../hooks/usePinnedShortcuts'
 import { useShortcutPreferences } from '../../hooks/useShortcutPreferences'
-import { useShortcutFolders } from '../../hooks/useShortcutFolders'
+import {
+  SHORTCUT_FOLDERS_KEY,
+  useShortcutFolders,
+} from '../../hooks/useShortcutFolders'
 import { useNebulaSettings } from '../../hooks/useNebulaSettings'
 import { useBrowseSessions } from '../../hooks/useBrowseSessions'
 import { useBrowsingHistory } from '../../hooks/useBrowsingHistory'
-import type {
-  BrowserSessionSnapshot,
-  ClosedTabEntry,
+import {
+  CURRENT_SESSION_KEY,
+  type BrowserSessionSnapshot,
+  type ClosedTabEntry,
 } from '../../core/browsingHistory'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
 import { useWallpaper } from '../../hooks/useSystemStats'
@@ -176,6 +184,13 @@ export function BrowserShell() {
     applyHomeLayout,
   } = useNebulaSettings()
 
+  const {
+    bindings: browserShortcutBindings,
+    setBinding: setBrowserShortcutBinding,
+    resetBinding: resetBrowserShortcutBinding,
+    resetAll: resetAllBrowserShortcutBindings,
+  } = useBrowserShortcutBindings()
+
   const [viewMode, setViewMode] =
     useState<ViewMode>('home')
 
@@ -230,6 +245,7 @@ export function BrowserShell() {
     resetFolders,
   } = useShortcutFolders(
     visibleShortcuts,
+    settings.semiLunar.rememberFolders,
   )
 
   const {
@@ -282,6 +298,7 @@ export function BrowserShell() {
     removeClosedTab,
     clearClosedTabs,
     saveCurrentSession,
+    clearCurrentSession,
   } = useBrowsingHistory()
 
   const {
@@ -311,10 +328,53 @@ export function BrowserShell() {
       activeTabId,
     )
 
+  const startupSessionRestoreRef =
+    useRef(false)
+
   useEffect(() => {
     tabSwitchCursorRef.current =
       activeTabId
   }, [activeTabId])
+
+  useEffect(() => {
+    const clearNonPersistentStateOnExit = () => {
+      if (
+        settings.browsing.restoreTabsOnStartup &&
+        !settings.privacy.clearOnExit
+      ) {
+        saveCurrentSession(
+          tabsRef.current,
+          activeTabIdRef.current,
+        )
+      } else {
+        localStorage.removeItem(CURRENT_SESSION_KEY)
+      }
+
+      if (!settings.semiLunar.rememberLayout) {
+        localStorage.removeItem(SHORTCUT_POSITIONS_KEY)
+      }
+
+      if (!settings.semiLunar.rememberFolders) {
+        localStorage.removeItem(SHORTCUT_FOLDERS_KEY)
+      }
+    }
+
+    window.addEventListener('beforeunload', clearNonPersistentStateOnExit)
+    window.addEventListener('pagehide', clearNonPersistentStateOnExit)
+
+    return () => {
+      window.removeEventListener('beforeunload', clearNonPersistentStateOnExit)
+      window.removeEventListener('pagehide', clearNonPersistentStateOnExit)
+    }
+  }, [
+    activeTabIdRef,
+    saveCurrentSession,
+    settings.browsing.restoreTabsOnStartup,
+    settings.privacy.clearOnExit,
+    settings.semiLunar.rememberFolders,
+    settings.semiLunar.rememberLayout,
+    tabsRef,
+  ])
 
   const downloads =
     useDownloads()
@@ -663,6 +723,13 @@ export function BrowserShell() {
       resetFolders,
       resetPins,
     ])
+
+  const handleResetSemiLunarLayout =
+    useCallback(() => {
+      removeLocalStorage(
+        SHORTCUT_POSITIONS_KEY,
+      )
+    }, [])
 
   const handleApplyImportedShortcuts =
     useCallback(
@@ -2150,8 +2217,11 @@ export function BrowserShell() {
         title?: string,
         activate =
           true,
+        restoredId?:
+          string,
       ) => {
         const id =
+          restoredId?.trim() ||
           `history-${crypto.randomUUID()}`
 
         const shortcut:
@@ -2171,6 +2241,8 @@ export function BrowserShell() {
             {
               activate:
                 false,
+              reload:
+                Boolean(restoredId),
             },
           )
 
@@ -2224,6 +2296,12 @@ export function BrowserShell() {
 
         openOrSwitchTab(
           shortcut,
+          restoredId
+            ? {
+                reload:
+                  true,
+              }
+            : undefined,
         )
 
         setTauriBrowseSyncToken(
@@ -2330,6 +2408,7 @@ export function BrowserShell() {
               tab.url,
               tab.title,
               false,
+              tab.id,
             )
           },
         )
@@ -2345,6 +2424,7 @@ export function BrowserShell() {
             active.url,
             active.title,
             true,
+            active.id,
           )
         }
       },
@@ -2373,6 +2453,32 @@ export function BrowserShell() {
       openPreviousHistorySession,
       previousSession,
     ])
+
+  useEffect(() => {
+    if (startupSessionRestoreRef.current) return
+    startupSessionRestoreRef.current = true
+
+    if (
+      previousRunUnclean ||
+      crashRecoveryOpen ||
+      !settings.browsing.restoreTabsOnStartup ||
+      settings.privacy.clearOnExit ||
+      !previousSession
+    ) {
+      return
+    }
+
+    openPreviousHistorySession(
+      previousSession,
+    )
+  }, [
+    crashRecoveryOpen,
+    openPreviousHistorySession,
+    previousRunUnclean,
+    previousSession,
+    settings.browsing.restoreTabsOnStartup,
+    settings.privacy.clearOnExit,
+  ])
 
   const dismissCrashRecovery =
     useCallback(() => {
@@ -2827,6 +2933,61 @@ export function BrowserShell() {
       ],
     )
 
+  const openHomeNavigate =
+    useCallback(
+      (
+        shortcutUrl:
+          string,
+      ) => {
+        const normalizedTarget =
+          (() => {
+            try {
+              return new URL(
+                shortcutUrl,
+              ).href
+            } catch {
+              return shortcutUrl
+            }
+          })()
+
+        const isPinnedTarget =
+          pinnedShortcutList.some(
+            (shortcut) => {
+              try {
+                return (
+                  new URL(
+                    shortcut.url,
+                  ).href ===
+                  normalizedTarget
+                )
+              } catch {
+                return (
+                  shortcut.url ===
+                  shortcutUrl
+                )
+              }
+            },
+          )
+
+        if (
+          isPinnedTarget
+        ) {
+          openUrlInNewTab(
+            shortcutUrl,
+          )
+          return
+        }
+
+        openBrowseUrl(
+          shortcutUrl,
+        )
+      },
+      [
+        openBrowseUrl,
+        openUrlInNewTab,
+        pinnedShortcutList,
+      ],
+    )
   useEffect(() => {
     if (!isTauri) return
 
@@ -3245,6 +3406,73 @@ export function BrowserShell() {
       openOrSwitchTab,
     ])
 
+  const switchTabAfterSiteFullscreen =
+    useCallback(
+      (
+        shortcutId:
+          string,
+      ) => {
+        /*
+         * Normal Ctrl+Tab remains immediate. Only HTML5 fullscreen needs the
+         * native handoff.
+         */
+        tabSwitchCursorRef.current =
+          shortcutId
+
+        if (
+          !isSiteFullscreenActive()
+        ) {
+          switchToExistingBrowseTab(
+            shortcutId,
+          )
+          return
+        }
+
+        const fullscreenOwner =
+          activeTabIdRef.current ??
+          undefined
+
+        /*
+         * Selecting the already-fullscreen tab is an exit, not a handoff.
+         * Restore that same tab normally so its bounds are repaired.
+         */
+        if (
+          fullscreenOwner ===
+          shortcutId
+        ) {
+          void forceExitSiteFullscreen(
+            fullscreenOwner,
+          ).catch(
+            () => undefined,
+          )
+          return
+        }
+
+        void exitSiteFullscreenForTabSwitch(
+          fullscreenOwner,
+        )
+          .catch(
+            () => false,
+          )
+          .then(() => {
+            if (
+              tabSwitchCursorRef.current !==
+              shortcutId
+            ) {
+              return
+            }
+
+            switchToExistingBrowseTab(
+              shortcutId,
+            )
+          })
+      },
+      [
+        activeTabIdRef,
+        switchToExistingBrowseTab,
+      ],
+    )
+
   const cycleTab =
     useCallback(
       (
@@ -3324,13 +3552,13 @@ export function BrowserShell() {
         tabSwitchCursorRef.current =
           nextId
 
-        switchToExistingBrowseTab(
+        switchTabAfterSiteFullscreen(
           nextId,
         )
       },
       [
         activeTabIdRef,
-        switchToExistingBrowseTab,
+        switchTabAfterSiteFullscreen,
         tabsRef,
       ],
     )
@@ -3368,12 +3596,12 @@ export function BrowserShell() {
         tabSwitchCursorRef.current =
           target
 
-        switchToExistingBrowseTab(
+        switchTabAfterSiteFullscreen(
           target,
         )
       },
       [
-        switchToExistingBrowseTab,
+        switchTabAfterSiteFullscreen,
         tabsRef,
       ],
     )
@@ -3872,6 +4100,8 @@ export function BrowserShell() {
   useBrowserShortcuts({
     onAction:
       handleBrowserShortcut,
+    bindings:
+      browserShortcutBindings,
     enabled:
       !onboardingOpen,
   })
@@ -4431,6 +4661,9 @@ export function BrowserShell() {
 
     iconSizePx:
       semiLunar.iconSizePx,
+
+    rememberLayout:
+      semiLunar.rememberLayout,
   }
 
   const semiLunarShortcuts =
@@ -4698,7 +4931,7 @@ export function BrowserShell() {
         <>
           <HomeCenter
             onNavigate={
-              openShortcutByUrl
+              openHomeNavigate
             }
             onSearchNavigate={
               openFromSearchBar
@@ -5296,8 +5529,8 @@ export function BrowserShell() {
               <HomeCenter
                 variant="overlay"
                 onNavigate={
-                  openShortcutByUrl
-                }
+              openHomeNavigate
+            }
                 onSearchNavigate={
                   openFromSearchBar
                 }
@@ -5507,6 +5740,27 @@ export function BrowserShell() {
             }
             onResetShortcuts={
               handleResetShortcuts
+            }
+            onClearSavedSession={
+              clearCurrentSession
+            }
+            onResetSemiLunarLayout={
+              handleResetSemiLunarLayout
+            }
+            onResetFolders={
+              resetFolders
+            }
+            shortcutBindings={
+              browserShortcutBindings
+            }
+            onSetShortcutBinding={
+              setBrowserShortcutBinding
+            }
+            onResetShortcutBinding={
+              resetBrowserShortcutBinding
+            }
+            onResetAllShortcutBindings={
+              resetAllBrowserShortcutBindings
             }
             settings={
               settings

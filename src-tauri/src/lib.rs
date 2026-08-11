@@ -381,6 +381,13 @@ fn webview_setup_branding(app: tauri::AppHandle, label: String) -> Result<(), St
 }
 
 #[tauri::command]
+fn webview_set_shortcut_bindings(
+    bindings: std::collections::HashMap<String, Vec<String>>,
+) -> Result<(), String> {
+    tab_shortcuts::set_shortcut_bindings(bindings)
+}
+
+#[tauri::command]
 fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result<(), String> {
     use tauri::Manager;
 
@@ -961,6 +968,7 @@ pub fn run() {
       .invoke_handler(tauri::generate_handler![
     write_transition_log,
     search_suggestions,
+    webview_set_shortcut_bindings,
     webview_navigate,
     webview_close_tab,
     webview_current_url,

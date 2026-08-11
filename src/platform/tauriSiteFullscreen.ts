@@ -2,7 +2,10 @@ import { listen, emit } from '@tauri-apps/api/event'
 import type { Window } from '@tauri-apps/api/window'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
-import { shortcutIdForTabWebviewLabel } from '../core/browserTab'
+import {
+  shortcutIdForTabWebviewLabel,
+  tabWebviewLabel,
+} from '../core/browserTab'
 import { isTauri } from './runtime'
 import {
   setSiteFullscreenBoundsMode,
@@ -12,6 +15,7 @@ import {
 import { hideMainWebview, showMainWebview } from './tauriMainWebview'
 import {
   ensureChromeWebviewVisible,
+  forceChromeWebviewCompactBounds,
   getChromeWebview,
   syncChromeWebviewBounds,
 } from './tauriChromeWebview'
@@ -33,14 +37,72 @@ let fullscreenTabId: string | null = null
 let listenerStarted = false
 let fullscreenResizeUnlisten: (() => void) | undefined
 let transitionChain: Promise<void> = Promise.resolve()
+let tabSwitchHandoffPending = false
 
 function shortcutIdFromLabel(label: string): string | null {
   return shortcutIdForTabWebviewLabel(label)
 }
 
-function enqueueFullscreenTransition(task: () => Promise<void>): Promise<void> {
-  const run = transitionChain.then(task, task)
-  transitionChain = run.catch(() => {})
+function requestDocumentFullscreenExit(
+  shortcutId: string,
+): void {
+  const script = `(() => {
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        void document.exitFullscreen().catch(() => {});
+        return true;
+      }
+
+      const webkitDocument = document;
+      if (
+        webkitDocument.webkitFullscreenElement &&
+        webkitDocument.webkitExitFullscreen
+      ) {
+        webkitDocument.webkitExitFullscreen();
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  })()`
+
+  /*
+   * Do not await the generic script bridge. Its native implementation waits
+   * for a WebView2 ExecuteScript callback and is appropriate for reads, but a
+   * keyboard fullscreen handoff must not stall behind that synchronous wait.
+   */
+  void invoke<string>(
+    'webview_execute_script',
+    {
+      label:
+        tabWebviewLabel(
+          shortcutId,
+        ),
+      script,
+    },
+  ).catch((error) => {
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[nebula] document fullscreen exit request failed',
+        error,
+      )
+    }
+  })
+}
+
+function enqueueFullscreenTransition<T>(task: () => Promise<T>): Promise<T> {
+  const run = transitionChain.then(
+    () => task(),
+    () => task(),
+  )
+
+  // Keep the shared serialization chain Promise<void>, while callers may
+  // receive a typed result such as the fullscreen handoff boolean.
+  transitionChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+
   return run
 }
 
@@ -60,7 +122,7 @@ async function waitForWindowLayoutSettle(appWindow: Window): Promise<void> {
       unlisten?.()
       resolve()
     }
-    timeout = setTimeout(finish, 400)
+    timeout = setTimeout(finish, 120)
 
     void appWindow
       .onResized(finish)
@@ -218,6 +280,7 @@ export function initSiteFullscreenBridge(): () => void {
   listenerStarted = true
   let unlisten: (() => void) | undefined
   let cancelled = false
+  let focusUnlisten: (() => void) | undefined
 
   void listen<TabFullscreenPayload>('nebula-tab-fullscreen', (event) => {
     void enqueueFullscreenTransition(() => handleTabFullscreenPayload(event.payload))
@@ -229,18 +292,177 @@ export function initSiteFullscreenBridge(): () => void {
     unlisten = dispose
   })
 
+  /*
+   * Leaving Nebula while a page owns HTML5 fullscreen should restore normal
+   * browsing. This covers Windows Alt+Tab without installing a global key hook.
+   */
+  void getCurrentWindow()
+    .onFocusChanged(
+      ({
+        payload:
+          focused,
+      }) => {
+        if (
+          focused ||
+          !siteFullscreenActive
+        ) {
+          return
+        }
+
+        void forceExitSiteFullscreen()
+          .catch(
+            () => undefined,
+          )
+      },
+    )
+    .then(
+      (dispose) => {
+        if (cancelled) {
+          dispose()
+          return
+        }
+
+        focusUnlisten =
+          dispose
+      },
+    )
   return () => {
     cancelled = true
     unlisten?.()
+    focusUnlisten?.()
     listenerStarted = false
     clearFullscreenResizeListener()
   }
 }
 
-/** Force-exit when leaving browsing mode (home, tab close, tab switch, etc.). */
-export function forceExitSiteFullscreen(): Promise<void> {
+/**
+ * Consume the one-shot fast-handoff flag in the next browsing transition.
+ * tauriSiteFullscreen and tauriBrowsingMode share this state in BrowserShell.
+ */
+export function consumeSiteFullscreenTabSwitchHandoff(): boolean {
+  const pending =
+    tabSwitchHandoffPending
+
+  tabSwitchHandoffPending =
+    false
+
+  return pending
+}
+
+/**
+ * Fast HTML5-fullscreen -> different-tab handoff.
+ *
+ * Do not restore/re-stack the outgoing fullscreen tab. The incoming browsing
+ * transition will show main/chrome, activate the target, and establish the
+ * final stack once.
+ */
+export function exitSiteFullscreenForTabSwitch(
+  shortcutId?: string,
+): Promise<boolean> {
   return enqueueFullscreenTransition(async () => {
+    if (!siteFullscreenActive) {
+      return false
+    }
+
+    const documentTabId =
+      fullscreenTabId ??
+      shortcutId ??
+      null
+
+    if (documentTabId) {
+      requestDocumentFullscreenExit(
+        documentTabId,
+      )
+    }
+
+    clearFullscreenResizeListener()
+
+    siteFullscreenActive =
+      false
+    fullscreenTabId =
+      null
+
+    setSiteFullscreenBoundsMode(
+      false,
+    )
+
+    try {
+      await invoke(
+        'window_exit_site_fullscreen',
+      )
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[nebula] fast window_exit_site_fullscreen failed',
+          error,
+        )
+      }
+    }
+
+    /*
+     * During site fullscreen the native chrome child covers the full client.
+     * Reset its physical bounds directly before it can intercept the incoming
+     * page. This does not rely on ChromeApp's separate React/module state.
+     */
+    try {
+      await forceChromeWebviewCompactBounds()
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[nebula] compact chrome after fullscreen handoff failed',
+          error,
+        )
+      }
+    }
+
+    setBrowsingChromeExpected(
+      true,
+    )
+
+    tabSwitchHandoffPending =
+      true
+
+    /*
+     * Let ChromeApp clear any preview/menu state, but do not block the tab
+     * switch on a listener running in another JS context.
+     */
+    void emit(
+      SITE_FULLSCREEN_EXIT_EVENT,
+    ).catch(
+      () => undefined,
+    )
+
+    return true
+  })
+}
+
+/** Force-exit when leaving browsing mode (home, tab close, tab switch, etc.). */
+export function forceExitSiteFullscreen(
+  shortcutId?: string,
+): Promise<void> {
+  return enqueueFullscreenTransition(async () => {
+    const documentTabId =
+      fullscreenTabId ??
+      shortcutId ??
+      null
+
+    if (documentTabId) {
+      try {
+        requestDocumentFullscreenExit(
+          documentTabId,
+        )
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.warn(
+            '[nebula] document fullscreen exit failed',
+            error,
+          )
+        }
+      }
+    }
+
     if (!siteFullscreenActive) return
+
     await exitSiteFullscreen()
   })
 }

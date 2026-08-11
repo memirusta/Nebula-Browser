@@ -309,6 +309,14 @@ export function loadCurrentSessionSnapshot(): BrowserSessionSnapshot | null {
   }
 }
 
+export function clearCurrentSessionSnapshot(): void {
+  try {
+    localStorage.removeItem(CURRENT_SESSION_KEY)
+  } catch {
+    // Storage can be unavailable in restricted web contexts.
+  }
+}
+
 export function persistCurrentSessionSnapshot(tabs: BrowserTab[], activeTabId: string | null): void {
   const serializableTabs = tabs.flatMap((tab) => {
     const url = normalizeHttpUrl(tab.url)

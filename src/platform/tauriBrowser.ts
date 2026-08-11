@@ -736,6 +736,8 @@ export async function prewarmBrowseWebview(): Promise<void> {
       width: 1,
       height: 1,
       focus: false,
+      dragDropEnabled:
+        false,
       backgroundColor:
         BROWSER_WEBVIEW_BG,
       incognito:
@@ -2351,6 +2353,8 @@ async function getOrCreateTabWebview(
           1,
         focus:
           false,
+        dragDropEnabled:
+          false,
         backgroundColor:
           BROWSER_WEBVIEW_BG,
         incognito:
@@ -2486,6 +2490,8 @@ async function getOrCreateTabWebview(
           height:
             1,
           focus:
+            false,
+          dragDropEnabled:
             false,
           backgroundColor:
             BROWSER_WEBVIEW_BG,

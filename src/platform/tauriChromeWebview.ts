@@ -21,6 +21,10 @@ type ExtensionEnabledWebviewOptions = WebviewOptions & {
   browserExtensionsEnabled: boolean
 }
 
+interface ShowChromeWebviewOptions {
+  stack?: boolean
+}
+
 let activeChromeWebview: Webview | null = null
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
@@ -30,6 +34,7 @@ let lastChromeBoundsKey: string | null = null
 let chromeBoundsListenerBound = false
 let chromeOverlayLogicalWidth: number | null = null
 let chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
+let chromeOverlayFullClient = false
 let chromeVisibilitySuppressed = false
 
 // Semi-Lunar uses max-width: 98vw. Give its dedicated WebView a tiny logical
@@ -46,6 +51,27 @@ async function chromePhysicalBounds(): Promise<{
   size: PhysicalSize
 }> {
   const windowSize = await windowClientPhysicalSize()
+
+  if (chromeOverlayFullClient) {
+    return {
+      position:
+        new PhysicalPosition(
+          0,
+          0,
+        ),
+      size:
+        new PhysicalSize(
+          Math.max(
+            1,
+            windowSize.width,
+          ),
+          Math.max(
+            1,
+            windowSize.height,
+          ),
+        ),
+    }
+  }
   const scaleFactor = await getCurrentWindow().scaleFactor()
   const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1)
   const requestedPhysicalWidth = Math.ceil(
@@ -137,10 +163,12 @@ export function setChromeWebviewHeight(logicalHeight: number): void {
 export async function setChromeOverlayLogicalBounds(
   logicalHeight: number,
   logicalWidth?: number,
+  fullClient = false,
 ): Promise<void> {
   if (!isTauri) return
 
   chromeOverlayLogicalHeight = Math.max(1, logicalHeight)
+  chromeOverlayFullClient = fullClient
   if (logicalWidth !== undefined && Number.isFinite(logicalWidth)) {
     chromeOverlayLogicalWidth = Math.max(1, logicalWidth)
   }
@@ -195,6 +223,86 @@ export async function getChromeWebview(): Promise<Webview | null> {
   return webview
 }
 
+/**
+ * Force the native chrome child back to a shallow top strip.
+ *
+ * BrowserShell and ChromeApp have separate JS module state. During a
+ * fullscreen handoff, stale hover-preview state in ChromeApp can otherwise
+ * leave this transparent WebView full-client and intercept site clicks.
+ */
+export async function forceChromeWebviewCompactBounds(): Promise<void> {
+  if (!isTauri) return
+
+  const webview =
+    await Webview.getByLabel(
+      CHROME_WEBVIEW_LABEL,
+    )
+
+  if (!webview) return
+
+  const windowSize =
+    await windowClientPhysicalSize()
+  const scaleFactor =
+    await getCurrentWindow()
+      .scaleFactor()
+
+  const requestedLogicalWidth =
+    chromeOverlayLogicalWidth ??
+    1100
+  const width =
+    Math.max(
+      1,
+      Math.min(
+        windowSize.width,
+        Math.ceil(
+          (
+            requestedLogicalWidth +
+            CHROME_OVERLAY_WIDTH_GUTTER
+          ) *
+            scaleFactor,
+        ),
+      ),
+    )
+  const height =
+    Math.max(
+      1,
+      Math.min(
+        windowSize.height,
+        Math.ceil(
+          SEMI_LUNAR_HIT_ZONE_HEIGHT *
+            scaleFactor,
+        ),
+      ),
+    )
+  const x =
+    Math.max(
+      0,
+      Math.round(
+        (
+          windowSize.width -
+          width
+        ) /
+          2,
+      ),
+    )
+
+  await webview.setPosition(
+    new PhysicalPosition(
+      x,
+      0,
+    ),
+  )
+  await webview.setSize(
+    new PhysicalSize(
+      width,
+      height,
+    ),
+  )
+  await webview.setAutoResize(
+    false,
+  )
+}
+
 export async function ensureChromeWebviewVisible(): Promise<void> {
   if (!isTauri || chromeVisibilitySuppressed) return
 
@@ -204,7 +312,10 @@ export async function ensureChromeWebviewVisible(): Promise<void> {
   await webview.show()
 }
 
-export async function showChromeWebview(logicalHeight: number): Promise<void> {
+export async function showChromeWebview(
+  logicalHeight: number,
+  options?: ShowChromeWebviewOptions,
+): Promise<void> {
   if (!isTauri) return
 
   if (chromeVisibilitySuppressed) {
@@ -252,7 +363,15 @@ export async function showChromeWebview(logicalHeight: number): Promise<void> {
   // of this module state and would race the overlay back to bootstrap size on
   // every Home/Browsing transition.
   await webview.show()
-  await stackBrowsingChromeAboveBrowser(getActiveBrowseTabId())
+
+  if (
+    options?.stack !==
+    false
+  ) {
+    await stackBrowsingChromeAboveBrowser(
+      getActiveBrowseTabId(),
+    )
+  }
 }
 
 
@@ -284,6 +403,7 @@ export async function hideChromeWebview(): Promise<void> {
   unbindResizeListeners()
   activeChromeWebview = null
   lastChromeBoundsKey = null
+  chromeOverlayFullClient = false
   chromeOverlayLogicalWidth = null
   chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
 

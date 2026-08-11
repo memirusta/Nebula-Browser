@@ -9,6 +9,7 @@ import {
   loadClosedTabs,
   initializeBrowserRunState,
   loadCurrentSessionSnapshot,
+  clearCurrentSessionSnapshot,
   persistBrowsingHistory,
   persistClosedTabs,
   markBrowserRunClean,
@@ -24,7 +25,9 @@ import { useStorageSync } from '../core/storageSync'
 export function useBrowsingHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadBrowsingHistory)
   const [closedTabs, setClosedTabs] = useState<ClosedTabEntry[]>(loadClosedTabs)
-  const [previousSession] = useState<BrowserSessionSnapshot | null>(loadCurrentSessionSnapshot)
+  const [previousSession, setPreviousSession] = useState<BrowserSessionSnapshot | null>(
+    loadCurrentSessionSnapshot,
+  )
   const [previousRunUnclean] = useState(() => initializeBrowserRunState().previousRunUnclean)
   const entriesRef = useRef(entries)
   const closedTabsRef = useRef(closedTabs)
@@ -102,6 +105,11 @@ export function useBrowsingHistory() {
     persistCurrentSessionSnapshot(tabs, activeTabId)
   }, [])
 
+  const clearCurrentSession = useCallback(() => {
+    clearCurrentSessionSnapshot()
+    setPreviousSession(null)
+  }, [])
+
   const hosts = useMemo(
     () => [...new Set(entries.map((entry) => entry.host))].sort((a, b) => a.localeCompare(b)),
     [entries],
@@ -123,5 +131,6 @@ export function useBrowsingHistory() {
     removeClosedTab,
     clearClosedTabs,
     saveCurrentSession,
+    clearCurrentSession,
   }
 }

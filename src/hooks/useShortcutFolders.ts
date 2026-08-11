@@ -27,8 +27,13 @@ export type RemoveMemberResult =
   | { action: 'updated' }
   | { action: 'dissolved'; remainingMemberId: string }
 
-export function useShortcutFolders(visibleShortcuts: Shortcut[]) {
-  const [folders, setFolders] = useState<ShortcutFolder[]>(() => loadFolders().folders)
+export function useShortcutFolders(
+  visibleShortcuts: Shortcut[],
+  restorePersisted = true,
+) {
+  const [folders, setFolders] = useState<ShortcutFolder[]>(() =>
+    restorePersisted ? loadFolders().folders : [],
+  )
 
   const reloadFolders = useCallback(() => {
     const next = loadFolders().folders

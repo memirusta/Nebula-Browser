@@ -237,148 +237,437 @@ mod imp {
     }
 
     fn cookie_shield_script(enabled: bool) -> String {
-        format!(
-            r#"(() => {{
+        let script = r#"(() => {
   const stateKey = '__nebulaCookieShield';
   const existing = window[stateKey];
-  const restore = () => {{
-    existing?.observer?.disconnect();
-    document.querySelectorAll('[data-nebula-cookie-hidden]').forEach((element) => {{
+
+  const collectRoots = () => {
+    const roots = [document];
+    const seen = new Set(roots);
+
+    for (let index = 0; index < roots.length; index += 1) {
+      const root = roots[index];
+
+      try {
+        root.querySelectorAll('*').forEach((element) => {
+          const shadow = element.shadowRoot;
+          if (!shadow || seen.has(shadow)) return;
+          seen.add(shadow);
+          roots.push(shadow);
+        });
+      } catch (_) {}
+    }
+
+    return roots;
+  };
+
+  const forEachMatch = (selector, callback) => {
+    for (const root of collectRoots()) {
+      try {
+        root.querySelectorAll(selector).forEach(callback);
+      } catch (_) {}
+    }
+  };
+
+  const restoreHiddenElements = () => {
+    forEachMatch('[data-nebula-cookie-hidden]', (element) => {
       const original = element.getAttribute('data-nebula-cookie-style');
       if (original === '__none__') element.removeAttribute('style');
       else if (original !== null) element.setAttribute('style', original);
       element.removeAttribute('data-nebula-cookie-hidden');
       element.removeAttribute('data-nebula-cookie-style');
-    }});
-    if (existing?.htmlOverflow !== undefined) document.documentElement.style.overflow = existing.htmlOverflow;
-    if (existing?.bodyOverflow !== undefined && document.body) document.body.style.overflow = existing.bodyOverflow;
+    });
+  };
+
+  const restore = () => {
+    existing?.observer?.disconnect?.();
+    existing?.observers?.forEach?.((observer) => observer.disconnect());
+    restoreHiddenElements();
+
+    if (existing?.htmlOverflow !== undefined) {
+      document.documentElement.style.overflow = existing.htmlOverflow;
+    }
+
+    if (existing?.bodyOverflow !== undefined && document.body) {
+      document.body.style.overflow = existing.bodyOverflow;
+    }
+
     delete window[stateKey];
-  }};
-  if (!{enabled}) {{ restore(); return; }}
+  };
+
+  if (!__NEBULA_COOKIE_SHIELD_ENABLED__) {
+    restore();
+    return;
+  }
+
   if (existing?.enabled) return;
+
   const knownRoots = [
-    '#onetrust-banner-sdk', '.onetrust-pc-dark-filter', '#CybotCookiebotDialog',
-    '#CybotCookiebotDialogBodyUnderlay', '#didomi-host', '.didomi-popup-backdrop',
-    '.qc-cmp2-container', '.qc-cmp2-persistent-link', '.iubenda-cs-container',
-    '#iubenda-cs-banner', '.cc-window', '.cc-banner', '#cookie-banner',
-    '.cookie-banner', '.cookie-consent', '.cookie-notice', '.cookie-popup',
+    '#onetrust-banner-sdk', '.onetrust-pc-dark-filter',
+    '#CybotCookiebotDialog', '#CybotCookiebotDialogBodyUnderlay',
+    '#didomi-host', '.didomi-popup-backdrop',
+    '.qc-cmp2-container', '.qc-cmp2-persistent-link',
+    '.iubenda-cs-container', '#iubenda-cs-banner',
+    '.cc-window', '.cc-banner',
+    '#cookie-banner', '.cookie-banner',
+    '.cookie-consent', '.cookie-notice', '.cookie-popup',
     '.cookies-banner', '.cookie-policy', '.cookie-policy-container',
-    '#cookieConsent', '#cookie-consent', '#consent-banner', '.consent-banner',
-    '#cmpbox', '.cmpbox', '.fc-consent-root', '#usercentrics-root',
-    '[data-testid="cookie-policy-dialog"]', '[data-testid="cookie-banner"]',
-    '[aria-label*="cookie" i][role="dialog"]', '[id^="sp_message_container_"]'
+    '#cookieConsent', '#cookie-consent',
+    '#consent-banner', '.consent-banner',
+    '#cmpbox', '.cmpbox', '.fc-consent-root',
+    '#usercentrics-root', '#usercentrics-cmp-ui',
+    '[data-testid="cookie-policy-dialog"]',
+    '[data-testid="cookie-banner"]',
+    '[data-testid="dl-cookieBanner"]',
+    '[aria-label*="cookie" i][role="dialog"]',
+    '[id^="sp_message_container_"]'
   ];
+
   const rejectSelectors = [
-    '#onetrust-reject-all-handler', '#CybotCookiebotDialogBodyButtonDecline',
-    '#didomi-notice-disagree-button', '[data-testid="uc-deny-all-button"]',
-    '[data-testid="consent-reject-all"]', '.qc-cmp2-summary-buttons button:first-child',
-    '.iubenda-cs-reject-btn', '.sp_choice_type_12', '[id*="reject-all" i]',
-    '[class*="reject-all" i]', '[id*="deny-all" i]', '[class*="deny-all" i]'
+    '#onetrust-reject-all-handler',
+    '#CybotCookiebotDialogBodyButtonDecline',
+    '#didomi-notice-disagree-button',
+    '[data-testid="uc-deny-all-button"]',
+    '[data-testid="consent-reject-all"]',
+    '.qc-cmp2-summary-buttons button:first-child',
+    '.iubenda-cs-reject-btn',
+    '.sp_choice_type_12',
+    '[id*="reject-all" i]',
+    '[class*="reject-all" i]',
+    '[id*="deny-all" i]',
+    '[class*="deny-all" i]'
   ];
-  const consentWords = /(çerez|cerez|cookie|consent|gizlilik|kişisel veri|kisisel veri|privacy|tracking|izleme)/i;
+
   const rejectLabels = new Set([
-    'tümünü reddet', 'tumunu reddet', 'hepsini reddet', 'reddet',
-    'sadece gerekli çerezler', 'sadece gerekli cerezler', 'yalnızca gerekli',
-    'yalnizca gerekli', 'gerekli olanlara izin ver', 'reject all', 'decline all',
-    'deny all', 'refuse all', 'only necessary', 'necessary only', 'essential only',
-    'alle ablehnen', 'tout refuser', 'refuser tout', 'rifiuta tutto',
-    'rechazar todo', 'rejeitar tudo'
+    'tÃ¼mÃ¼nÃ¼ reddet', 'tumunu reddet', 'hepsini reddet', 'reddet',
+    'sadece gerekli Ã§erezler', 'sadece gerekli cerezler',
+    'yalnÄ±zca gerekli', 'yalnizca gerekli',
+    'gerekli olanlara izin ver',
+    'reject all', 'decline all', 'deny all', 'refuse all',
+    'only necessary', 'necessary only', 'essential only',
+    'alle ablehnen', 'tout refuser', 'refuser tout',
+    'rifiuta tutto', 'rechazar todo', 'rejeitar tudo'
   ]);
+
   const noticeActionLabels = new Set([
     'accept all', 'accept', 'agree', 'allow all', 'i agree', 'continue',
     'manage preferences', 'manage settings', 'cookie settings',
     'preferences', 'settings'
   ]);
+
+  const consentWords =
+    /(Ã§erez|cerez|cookie|consent|gizlilik|kiÅŸisel veri|kisisel veri|privacy|tracking|izleme)/i;
+
   const normalize = (value) => (value || '')
     .normalize('NFKC')
     .toLocaleLowerCase('tr-TR')
-    .replace(/[.!…,:;]+$/g, '')
+    .replace(/[.!â€¦,:;]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const state = {{
+
+  const state = {
     enabled: true,
-    observer: null,
     scheduled: false,
     processed: new WeakSet(),
+    observedRoots: new WeakSet(),
+    observers: [],
+    providerActionInFlight: false,
+    usercentricsAttempted: false,
+    deepLLegacyAttempted: false,
     htmlOverflow: document.documentElement.style.overflow,
     bodyOverflow: document.body?.style.overflow
-  }};
+  };
+
   window[stateKey] = state;
-  const hideElement = (element) => {{
+
+  const unlockPage = () => {
+    document.documentElement.style.setProperty('overflow', 'auto', 'important');
+    if (document.body) {
+      document.body.style.setProperty('overflow', 'auto', 'important');
+    }
+  };
+
+  const hideElement = (element) => {
     if (!(element instanceof HTMLElement)) return false;
     if (element.hasAttribute('data-nebula-cookie-hidden')) return false;
-    element.setAttribute('data-nebula-cookie-style', element.getAttribute('style') ?? '__none__');
+
+    element.setAttribute(
+      'data-nebula-cookie-style',
+      element.getAttribute('style') ?? '__none__'
+    );
     element.setAttribute('data-nebula-cookie-hidden', '');
     element.style.setProperty('display', 'none', 'important');
     return true;
-  }};
-  const looksLikeConsentRoot = (element) => {{
+  };
+
+  const isKnownRoot = (element) => {
+    if (!(element instanceof Element)) return false;
+
+    try {
+      return element.matches(knownRoots.join(','));
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const looksLikeConsentRoot = (element) => {
     if (!(element instanceof HTMLElement)) return false;
+
+    if (isKnownRoot(element)) return true;
+
     const text = element.innerText || element.textContent || '';
     if (!consentWords.test(text) || text.length > 5000) return false;
+
     const style = getComputedStyle(element);
-    return element.matches(knownRoots.join(',')) ||
+    return (
       element.getAttribute('role') === 'dialog' ||
       element.getAttribute('aria-modal') === 'true' ||
-      style.position === 'fixed' || style.position === 'sticky';
-  }};
-  const consentRootFor = (element) => {{
+      style.position === 'fixed' ||
+      style.position === 'sticky'
+    );
+  };
+
+  const parentAcrossShadow = (element) => {
+    if (element?.parentElement) return element.parentElement;
+
+    try {
+      const root = element?.getRootNode?.();
+      return root?.host instanceof HTMLElement ? root.host : null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const consentRootFor = (element) => {
     let current = element;
-    for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {{
+
+    for (let depth = 0; current && depth < 14; depth += 1) {
       if (looksLikeConsentRoot(current)) return current;
-    }}
+      current = parentAcrossShadow(current);
+    }
+
     return null;
-  }};
+  };
+
   const rejectText = (element) => normalize(
-    element instanceof HTMLInputElement ? element.value :
-      element.getAttribute('aria-label') || element.textContent
+    element instanceof HTMLInputElement
+      ? element.value
+      : element.getAttribute('aria-label') || element.textContent
   );
-  const tryReject = () => {{
+
+  const queryAll = (selector) => {
+    const result = [];
+
+    for (const root of collectRoots()) {
+      try {
+        root.querySelectorAll(selector).forEach((element) => {
+          result.push(element);
+        });
+      } catch (_) {}
+    }
+
+    return result;
+  };
+
+  const schedule = () => {
+    if (state.scheduled) return;
+    state.scheduled = true;
+    requestAnimationFrame(scan);
+  };
+
+  const observeRoot = (root) => {
+    if (!root || state.observedRoots.has(root)) return;
+
+    const target =
+      root === document
+        ? document.documentElement
+        : root;
+
+    if (!target) return;
+
+    try {
+      const observer = new MutationObserver(schedule);
+      observer.observe(target, {
+        childList: true,
+        subtree: true
+      });
+      state.observedRoots.add(root);
+      state.observers.push(observer);
+    } catch (_) {}
+  };
+
+  const observeComposedTree = () => {
+    for (const root of collectRoots()) {
+      observeRoot(root);
+    }
+  };
+
+  const finishProviderAction = () => {
+    state.providerActionInFlight = false;
+    window.setTimeout(schedule, 0);
+  };
+
+  const invokeProviderMethod = (target, methodName) => {
+    if (!target || typeof target[methodName] !== 'function') return false;
+
+    try {
+      state.providerActionInFlight = true;
+      const result = target[methodName].call(target);
+
+      Promise.resolve(result).then(
+        finishProviderAction,
+        finishProviderAction
+      );
+
+      return true;
+    } catch (_) {
+      state.providerActionInFlight = false;
+      return false;
+    }
+  };
+
+  const tryDeepLLegacyOptOut = () => {
+    const hostname = location.hostname.toLowerCase();
+    const isDeepL =
+      hostname === 'deepl.com' ||
+      hostname.endsWith('.deepl.com');
+
+    if (!isDeepL || state.deepLLegacyAttempted) return false;
+
+    const button = queryAll(
+      '[data-testid="cookie-banner-strict-accept-selected"]'
+    )[0];
+
+    if (!(button instanceof HTMLElement)) return false;
+
+    state.deepLLegacyAttempted = true;
+    state.providerActionInFlight = true;
+    button.click();
+
+    window.setTimeout(() => {
+      state.providerActionInFlight = false;
+      schedule();
+    }, 500);
+
+    return true;
+  };
+
+  const usercentricsDetected = () => {
+    if (
+      window.__consentManager ||
+      window.__ucCmp ||
+      window.UC_UI
+    ) {
+      return true;
+    }
+
+    if (
+      document.querySelector('#usercentrics-root, #usercentrics-cmp-ui')
+    ) {
+      return true;
+    }
+
+    return Array.from(document.scripts).some((script) =>
+      /web\.cmp\.usercentrics\.(?:eu|com)/i.test(script.src || '')
+    );
+  };
+
+  const tryUsercentricsOptOut = () => {
+    if (!usercentricsDetected()) return false;
+    if (state.providerActionInFlight) return true;
+    if (state.usercentricsAttempted) return false;
+
+    state.usercentricsAttempted = true;
+
+    if (invokeProviderMethod(window.__consentManager, 'denyAll')) {
+      return true;
+    }
+
+    if (invokeProviderMethod(window.__ucCmp, 'denyAllConsents')) {
+      return true;
+    }
+
+    if (invokeProviderMethod(window.UC_UI, 'denyAllConsents')) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const tryProviderConsent = () => {
+    if (state.providerActionInFlight) return true;
+    if (tryDeepLLegacyOptOut()) return true;
+    if (tryUsercentricsOptOut()) return true;
+    return false;
+  };
+
+  const tryReject = () => {
     const candidates = new Set();
-    for (const selector of rejectSelectors) {{
-      document.querySelectorAll(selector).forEach((element) => candidates.add(element));
-    }}
-    document.querySelectorAll('button, input[type="button"], input[type="submit"], a[role="button"]').forEach((element) => {{
-      if (rejectLabels.has(rejectText(element))) candidates.add(element);
-    }});
-    for (const element of candidates) {{
-      if (!(element instanceof HTMLElement) || state.processed.has(element)) continue;
+
+    for (const selector of rejectSelectors) {
+      queryAll(selector).forEach((element) => candidates.add(element));
+    }
+
+    queryAll(
+      'button, input[type="button"], input[type="submit"], a[role="button"], [role="button"]'
+    ).forEach((element) => {
+      if (rejectLabels.has(rejectText(element))) {
+        candidates.add(element);
+      }
+    });
+
+    for (const element of candidates) {
+      if (!(element instanceof HTMLElement) || state.processed.has(element)) {
+        continue;
+      }
+
       const root = consentRootFor(element);
       if (!root) continue;
+
       state.processed.add(element);
       element.click();
-      setTimeout(() => {{
-        if (document.contains(root)) {{
+
+      window.setTimeout(() => {
+        if (document.contains(root) || root.isConnected) {
           hideElement(root);
-          document.documentElement.style.setProperty('overflow', 'auto', 'important');
-          if (document.body) document.body.style.setProperty('overflow', 'auto', 'important');
-        }}
-      }}, 350);
+          unlockPage();
+        }
+      }, 350);
+
       return true;
-    }}
+    }
+
     return false;
-  }};
-  const hideCompactConsentNotice = () => {{
-    const controls = document.querySelectorAll(
-      'button, input[type="button"], input[type="submit"], a[role="button"]'
+  };
+
+  const hideCompactConsentNotice = () => {
+    const controls = queryAll(
+      'button, input[type="button"], input[type="submit"], a[role="button"], [role="button"]'
     );
 
-    for (const control of controls) {{
+    for (const control of controls) {
       if (!(control instanceof HTMLElement)) continue;
+
       const label = rejectText(control);
       if (!noticeActionLabels.has(label)) continue;
 
-      let current = control.parentElement;
-      for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {{
-        if (current === document.body || current === document.documentElement) break;
+      let current = parentAcrossShadow(control);
+
+      for (let depth = 0; current && depth < 10; depth += 1) {
+        if (current === document.body || current === document.documentElement) {
+          break;
+        }
 
         const text = current.innerText || current.textContent || '';
-        if (!consentWords.test(text) || text.length > 2500) continue;
+        if (!consentWords.test(text) || text.length > 2500) {
+          current = parentAcrossShadow(current);
+          continue;
+        }
 
         const rect = current.getBoundingClientRect();
-        const actionCount = current.querySelectorAll(
-          'button, input[type="button"], input[type="submit"], a[role="button"]'
-        ).length;
+        const actionCount = current.querySelectorAll?.(
+          'button, input[type="button"], input[type="submit"], a[role="button"], [role="button"]'
+        ).length ?? 0;
 
         const compact =
           rect.width >= 220 &&
@@ -388,54 +677,91 @@ mod imp {
           actionCount > 0 &&
           actionCount <= 12;
 
-        if (!compact) continue;
+        if (!compact) {
+          current = parentAcrossShadow(current);
+          continue;
+        }
 
-        if (hideElement(current)) {{
-          document.documentElement.style.setProperty('overflow', 'auto', 'important');
-          if (document.body) document.body.style.setProperty('overflow', 'auto', 'important');
+        if (hideElement(current)) {
+          unlockPage();
           return true;
-        }}
-      }}
-    }}
+        }
 
-    return false;
-  }};
-  const scan = () => {{
-    state.scheduled = false;
-    const rejected = tryReject();
-    let changed = false;
-    if (!rejected) changed = hideCompactConsentNotice() || changed;
-    if (!rejected && !changed) for (const selector of knownRoots) {{
-      for (const element of document.querySelectorAll(selector)) {{
-        if (looksLikeConsentRoot(element)) changed = hideElement(element) || changed;
-      }}
-    }}
-    if (!rejected && !changed) {{
-      const generic = document.querySelectorAll(
-        '[role="dialog"], [aria-modal="true"], [id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i], [id*="kvkk" i], [class*="kvkk" i]'
-      );
-      for (const element of generic) {{
-        if (looksLikeConsentRoot(element)) changed = hideElement(element) || changed;
-      }}
-    }}
-    if (changed) {{
-      document.documentElement.style.setProperty('overflow', 'auto', 'important');
-      if (document.body) document.body.style.setProperty('overflow', 'auto', 'important');
-    }}
-  }};
-  const schedule = () => {{
-    if (state.scheduled) return;
-    state.scheduled = true;
-    requestAnimationFrame(scan);
-  }};
-  scan();
-  state.observer = new MutationObserver(schedule);
-  state.observer.observe(document.documentElement, {{ childList: true, subtree: true }});
-}})();"#,
-            enabled = if enabled { "true" } else { "false" }
-        )
+        current = parentAcrossShadow(current);
+      }
     }
 
+    return false;
+  };
+
+  const hideKnownRoots = () => {
+    let changed = false;
+
+    for (const selector of knownRoots) {
+      for (const element of queryAll(selector)) {
+        if (looksLikeConsentRoot(element)) {
+          changed = hideElement(element) || changed;
+        }
+      }
+    }
+
+    return changed;
+  };
+
+  const hideGenericConsentRoots = () => {
+    let changed = false;
+
+    const generic = queryAll(
+      '[role="dialog"], [aria-modal="true"], ' +
+      '[id*="cookie" i], [class*="cookie" i], ' +
+      '[id*="consent" i], [class*="consent" i], ' +
+      '[id*="kvkk" i], [class*="kvkk" i]'
+    );
+
+    for (const element of generic) {
+      if (looksLikeConsentRoot(element)) {
+        changed = hideElement(element) || changed;
+      }
+    }
+
+    return changed;
+  };
+
+  function scan() {
+    state.scheduled = false;
+    observeComposedTree();
+
+    if (tryProviderConsent()) return;
+
+    const rejected = tryReject();
+    let changed = false;
+
+    if (!rejected) {
+      changed = hideCompactConsentNotice() || changed;
+    }
+
+    if (!rejected && !changed) {
+      changed = hideKnownRoots() || changed;
+    }
+
+    if (!rejected && !changed) {
+      changed = hideGenericConsentRoots() || changed;
+    }
+
+    if (changed) {
+      unlockPage();
+    }
+  }
+
+  observeComposedTree();
+  scan();
+})();"#;
+
+        script.replace(
+            "__NEBULA_COOKIE_SHIELD_ENABLED__",
+            if enabled { "true" } else { "false" },
+        )
+    }
     unsafe fn apply_cookie_shield(core: &ICoreWebView2, current: &PrivacyOptions) {
         let uri = take_string(|value| core.Source(value));
         let enabled =

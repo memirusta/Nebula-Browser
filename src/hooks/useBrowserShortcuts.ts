@@ -3,18 +3,26 @@ import { listen } from '@tauri-apps/api/event'
 import {
   matchBrowserShortcut,
   shouldIgnoreShellShortcut,
+  type BrowserShortcutBindings,
   type BrowserShortcutId,
 } from '../core/browserShortcuts'
 import { isTauri } from '../platform/runtime'
 
 export interface BrowserShortcutHandlers {
   onAction: (action: BrowserShortcutId) => void
+  bindings: BrowserShortcutBindings
   enabled?: boolean
 }
 
-export function useBrowserShortcuts({ onAction, enabled = true }: BrowserShortcutHandlers): void {
+export function useBrowserShortcuts({
+  onAction,
+  bindings,
+  enabled = true,
+}: BrowserShortcutHandlers): void {
   const onActionRef = useRef(onAction)
+  const bindingsRef = useRef(bindings)
   onActionRef.current = onAction
+  bindingsRef.current = bindings
 
   useEffect(() => {
     if (!enabled) return
@@ -24,8 +32,8 @@ export function useBrowserShortcuts({ onAction, enabled = true }: BrowserShortcu
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreShellShortcut(event)) return
-      const action = matchBrowserShortcut(event)
+      if (shouldIgnoreShellShortcut(event, bindingsRef.current)) return
+      const action = matchBrowserShortcut(event, bindingsRef.current)
       if (!action) return
       event.preventDefault()
       dispatch(action)

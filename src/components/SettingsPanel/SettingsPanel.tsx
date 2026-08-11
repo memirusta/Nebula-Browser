@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import {
   getSettingsCategories,
@@ -21,6 +27,14 @@ import { AccountSettingsSection } from './AccountSettingsSection'
 import styles from './SettingsPanel.module.css'
 import type { NebulaAccount } from '../../core/nebulaAccount'
 import type { BrowsingDataKind } from '../../platform/tauriBrowser'
+import {
+  browserShortcutBindingFromEvent,
+  findBrowserShortcutConflict,
+  formatBrowserShortcutBinding,
+  validateBrowserShortcutBinding,
+  type BrowserShortcutBindings,
+  type ConfigurableBrowserShortcutId,
+} from '../../core/browserShortcuts'
 
 export interface SettingsAnchor {
   x: number
@@ -28,7 +42,7 @@ export interface SettingsAnchor {
 }
 
 interface ShortcutReferenceItem {
-  keys: string[]
+  id: ConfigurableBrowserShortcutId
   tr: string
   en: string
   noteTr?: string
@@ -46,107 +60,256 @@ const SHORTCUT_REFERENCE: ShortcutReferenceGroup[] = [
     tr: 'Sekmeler',
     en: 'Tabs',
     items: [
-      { keys: ['Ctrl + W'], tr: 'Aktif sekmeyi kapat', en: 'Close the active tab' },
-      { keys: ['Ctrl + Shift + T'], tr: 'Son kapatılan sekmeyi yeniden aç', en: 'Reopen the last closed tab' },
-      { keys: ['Ctrl + Tab'], tr: 'Sonraki sekmeye geç', en: 'Switch to the next tab' },
-      { keys: ['Ctrl + Shift + Tab'], tr: 'Önceki sekmeye geç', en: 'Switch to the previous tab' },
-      { keys: ['Ctrl + 1 … Ctrl + 8'], tr: 'Numaralı sekmeye geç', en: 'Switch to a numbered tab' },
-      { keys: ['Ctrl + 9'], tr: 'Son sekmeye geç', en: 'Switch to the last tab' },
+      { id: 'close-tab', tr: 'Aktif sekmeyi kapat', en: 'Close the active tab' },
+      { id: 'reopen-tab', tr: 'Son kapatılan sekmeyi yeniden aç', en: 'Reopen the last closed tab' },
+      { id: 'next-tab', tr: 'Sonraki sekmeye geç', en: 'Switch to the next tab' },
+      { id: 'prev-tab', tr: 'Önceki sekmeye geç', en: 'Switch to the previous tab' },
+      { id: 'switch-tab-1', tr: '1. sekmeye geç', en: 'Switch to tab 1' },
+      { id: 'switch-tab-2', tr: '2. sekmeye geç', en: 'Switch to tab 2' },
+      { id: 'switch-tab-3', tr: '3. sekmeye geç', en: 'Switch to tab 3' },
+      { id: 'switch-tab-4', tr: '4. sekmeye geç', en: 'Switch to tab 4' },
+      { id: 'switch-tab-5', tr: '5. sekmeye geç', en: 'Switch to tab 5' },
+      { id: 'switch-tab-6', tr: '6. sekmeye geç', en: 'Switch to tab 6' },
+      { id: 'switch-tab-7', tr: '7. sekmeye geç', en: 'Switch to tab 7' },
+      { id: 'switch-tab-8', tr: '8. sekmeye geç', en: 'Switch to tab 8' },
+      { id: 'switch-tab-last', tr: 'Son sekmeye geç', en: 'Switch to the last tab' },
     ],
   },
   {
     tr: 'Gezinme',
     en: 'Navigation',
     items: [
-      { keys: ['Ctrl + T'], tr: 'Ana sayfaya dön', en: 'Go to Home' },
-      { keys: ['Ctrl + H'], tr: 'Geçmişi aç', en: 'Open History' },
-      { keys: ['Ctrl + L', 'Alt + D'], tr: 'Adres çubuğuna odaklan', en: 'Focus the address bar' },
-      { keys: ['Alt + ←'], tr: 'Geri git', en: 'Go back' },
-      { keys: ['Alt + →'], tr: 'İleri git', en: 'Go forward' },
-      { keys: ['Ctrl + R', 'F5'], tr: 'Sayfayı yenile', en: 'Reload the page' },
+      { id: 'go-home', tr: 'Ana sayfaya dön', en: 'Go to Home' },
+      { id: 'open-history', tr: 'Geçmişi aç', en: 'Open History' },
+      { id: 'focus-url-bar', tr: 'Adres çubuğuna odaklan', en: 'Focus the address bar' },
+      { id: 'go-back', tr: 'Geri git', en: 'Go back' },
+      { id: 'go-forward', tr: 'İleri git', en: 'Go forward' },
+      { id: 'reload', tr: 'Sayfayı yenile', en: 'Reload the page' },
     ],
   },
   {
     tr: 'Görünüm ve geliştirici',
     en: 'View and developer',
     items: [
-      { keys: ['Ctrl + +'], tr: 'Yakınlaştır', en: 'Zoom in' },
-      { keys: ['Ctrl + -'], tr: 'Uzaklaştır', en: 'Zoom out' },
-      { keys: ['Ctrl + 0'], tr: 'Yakınlaştırmayı sıfırla', en: 'Reset zoom' },
-      { keys: ['Ctrl + P'], tr: 'Sayfayı yazdır', en: 'Print the current page' },
-      { keys: ['F11'], tr: 'Tam ekranı aç/kapat', en: 'Toggle fullscreen' },
-      {
-        keys: ['Ctrl + Shift + I', 'F12'],
-        tr: 'Geliştirici araçlarını aç',
-        en: 'Open Developer Tools',
-      },
-    ],
-  },
-  {
-    tr: 'Klavye navigasyonu',
-    en: 'Keyboard navigation',
-    items: [
-      { keys: ['Esc'], tr: 'Açık paneli veya overlay’i kapat', en: 'Close the current panel or overlay' },
-      {
-        keys: ['Tab', 'Shift + Tab'],
-        tr: 'Odaklanabilir öğeler arasında ilerle',
-        en: 'Move between focusable controls',
-        noteTr: 'Modal pencerelerde odak panelin içinde tutulur',
-        noteEn: 'Focus stays trapped inside modal dialogs',
-      },
-      {
-        keys: ['↑', '↓'],
-        tr: 'Sağ araç çubuğunda önceki/sonraki düğmeye geç',
-        en: 'Move to the previous/next right-toolbar button',
-        noteTr: 'Araç çubuğu odaktayken',
-        noteEn: 'When the toolbar has focus',
-      },
-      {
-        keys: ['Home', 'End'],
-        tr: 'Sağ araç çubuğunda ilk/son düğmeye geç',
-        en: 'Move to the first/last right-toolbar button',
-        noteTr: 'Araç çubuğu odaktayken',
-        noteEn: 'When the toolbar has focus',
-      },
-      { keys: ['Enter', 'Space'], tr: 'Odaktaki düğmeyi çalıştır', en: 'Activate the focused button' },
+      { id: 'zoom-in', tr: 'Yakınlaştır', en: 'Zoom in' },
+      { id: 'zoom-out', tr: 'Uzaklaştır', en: 'Zoom out' },
+      { id: 'zoom-reset', tr: 'Yakınlaştırmayı sıfırla', en: 'Reset zoom' },
+      { id: 'print', tr: 'Sayfayı yazdır', en: 'Print the current page' },
+      { id: 'toggle-fullscreen', tr: 'Tam ekranı aç/kapat', en: 'Toggle fullscreen' },
+      { id: 'devtools', tr: 'Geliştirici araçlarını aç', en: 'Open Developer Tools' },
     ],
   },
 ]
 
-function ShortcutReference({ locale }: { locale: NebulaLocale }) {
+const SHORTCUT_LABELS = new Map(
+  SHORTCUT_REFERENCE.flatMap((group) =>
+    group.items.map((item) => [item.id, item] as const),
+  ),
+)
+
+function ShortcutReference({
+  locale,
+  bindings,
+  onSetBinding,
+  onResetBinding,
+  onResetAll,
+}: {
+  locale: NebulaLocale
+  bindings: BrowserShortcutBindings
+  onSetBinding: (action: ConfigurableBrowserShortcutId, binding: string) => boolean
+  onResetBinding: (action: ConfigurableBrowserShortcutId) => boolean
+  onResetAll: () => void
+}) {
   const isTr = locale === 'tr'
+  const [recordingAction, setRecordingAction] =
+    useState<ConfigurableBrowserShortcutId | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const actionLabel = useCallback(
+    (action: ConfigurableBrowserShortcutId) => {
+      const item = SHORTCUT_LABELS.get(action)
+      return item ? (isTr ? item.tr : item.en) : action
+    },
+    [isTr],
+  )
+
+  const stopRecording = useCallback(() => {
+    setRecordingAction(null)
+    setMessage(null)
+  }, [])
+
+  const handleRecordingKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!recordingAction) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (
+        event.key === 'Escape' &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.metaKey
+      ) {
+        stopRecording()
+        return
+      }
+
+      const binding = browserShortcutBindingFromEvent(event.nativeEvent)
+      if (!binding) return
+
+      const validation = validateBrowserShortcutBinding(binding)
+      if (!validation.ok) {
+        setMessage(
+          validation.reason === 'reserved'
+            ? isTr
+              ? 'Bu kombinasyon Windows veya Nebula tarafından ayrılmış.'
+              : 'This combination is reserved by Windows or Nebula.'
+            : validation.reason === 'needs-modifier'
+              ? isTr
+                ? 'Harf, sayı ve gezinme tuşları için Ctrl veya Alt kullan.'
+                : 'Use Ctrl or Alt with letters, numbers, and navigation keys.'
+              : isTr
+                ? 'Bu tuş kombinasyonu site WebView’larında güvenilir biçimde desteklenmiyor.'
+                : 'This key combination is not reliably supported inside site WebViews.',
+        )
+        return
+      }
+
+      const conflict = findBrowserShortcutConflict(bindings, binding, recordingAction)
+      if (conflict) {
+        setMessage(
+          isTr
+            ? `${formatBrowserShortcutBinding(binding)} zaten “${actionLabel(conflict)}” için kullanılıyor.`
+            : `${formatBrowserShortcutBinding(binding)} is already used by “${actionLabel(conflict)}”.`,
+        )
+        return
+      }
+
+      if (!onSetBinding(recordingAction, binding)) {
+        setMessage(
+          isTr
+            ? 'Kısayol değiştirilemedi; çakışma olup olmadığını kontrol et.'
+            : 'The shortcut could not be changed; check for a conflict.',
+        )
+        return
+      }
+
+      setRecordingAction(null)
+      setMessage(
+        isTr
+          ? `${formatBrowserShortcutBinding(binding)} kaydedildi.`
+          : `${formatBrowserShortcutBinding(binding)} saved.`,
+      )
+    },
+    [actionLabel, bindings, isTr, onSetBinding, recordingAction, stopRecording],
+  )
+
   return (
-    <div className={styles.shortcutGroups}>
+    <div className={styles.shortcutGroups} onKeyDownCapture={handleRecordingKeyDown}>
       <p className={styles.shortcutIntro}>
         {isTr
-          ? 'Kısayollar uygulama kabuğunda ve site sekmesi odaktayken çalışır. Ctrl+T Ana Sayfa, Ctrl+H Geçmiş olarak ayarlanmıştır.'
-          : 'Shortcuts work both in the app shell and while a site tab has focus. Ctrl+T opens Home and Ctrl+H opens History.'}
+          ? 'Bir eylemde Değiştir’e basıp yeni kombinasyona bas. Değişiklikler Home, Semi-Lunar ve site sekmeleri arasında anında eşitlenir.'
+          : 'Choose Change on an action, then press the new combination. Changes sync immediately across Home, Semi-Lunar, and site tabs.'}
       </p>
+
+      {message && (
+        <div className={styles.shortcutMessage} role="status" aria-live="polite">
+          {message}
+        </div>
+      )}
+
       {SHORTCUT_REFERENCE.map((group) => (
         <section key={group.en} className={styles.shortcutGroup}>
           <h3 className={styles.shortcutGroupTitle}>{isTr ? group.tr : group.en}</h3>
           <div className={styles.shortcutList}>
-            {group.items.map((item) => (
-              <div key={`${group.en}-${item.keys.join('-')}`} className={styles.shortcutRow}>
-                <div className={styles.shortcutKeySet} aria-label={item.keys.join(' / ')}>
-                  {item.keys.map((keys, index) => (
-                    <span key={keys} className={styles.shortcutKeyWrap}>
-                      {index > 0 && <span className={styles.shortcutOr}>/</span>}
-                      <kbd className={styles.shortcutKey}>{keys}</kbd>
-                    </span>
-                  ))}
+            {group.items.map((item) => {
+              const isRecording = recordingAction === item.id
+              return (
+                <div key={item.id} className={styles.shortcutRow}>
+                  <div className={styles.shortcutText}>
+                    <div className={styles.shortcutLabel}>{isTr ? item.tr : item.en}</div>
+                    {(isTr ? item.noteTr : item.noteEn) && (
+                      <div className={styles.shortcutNote}>{isTr ? item.noteTr : item.noteEn}</div>
+                    )}
+                  </div>
+
+                  <div className={styles.shortcutEditor}>
+                    <div className={styles.shortcutKeySet} aria-label={bindings[item.id].join(' / ')}>
+                      {bindings[item.id].map((binding, index) => (
+                        <span key={binding} className={styles.shortcutKeyWrap}>
+                          {index > 0 && <span className={styles.shortcutOr}>/</span>}
+                          <kbd className={styles.shortcutKey}>
+                            {formatBrowserShortcutBinding(binding)}
+                          </kbd>
+                        </span>
+                      ))}
+                    </div>
+                    <div className={styles.shortcutActions}>
+                      <button
+                        type="button"
+                        className={`${styles.actionBtn} ${isRecording ? styles.shortcutRecordingBtn : ''}`}
+                        onClick={() => {
+                          setMessage(null)
+                          setRecordingAction((current) => (current === item.id ? null : item.id))
+                        }}
+                      >
+                        {isRecording
+                          ? isTr
+                            ? 'Tuşlara bas…'
+                            : 'Press keys…'
+                          : isTr
+                            ? 'Değiştir'
+                            : 'Change'}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.shortcutResetBtn}
+                        onClick={() => {
+                          setRecordingAction(null)
+                          const ok = onResetBinding(item.id)
+                          setMessage(
+                            ok
+                              ? null
+                              : isTr
+                                ? 'Varsayılan kombinasyon başka bir eylem tarafından kullanılıyor. Önce o kısayolu değiştir veya tümünü sıfırla.'
+                                : 'The default combination is used by another action. Change that shortcut first or reset all.',
+                          )
+                        }}
+                      >
+                        {isTr ? 'Sıfırla' : 'Reset'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className={styles.shortcutText}>
-                  <div className={styles.shortcutLabel}>{isTr ? item.tr : item.en}</div>
-                  {(isTr ? item.noteTr : item.noteEn) && (
-                    <div className={styles.shortcutNote}>{isTr ? item.noteTr : item.noteEn}</div>
-                  )}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
       ))}
+
+      <div className={styles.shortcutFooter}>
+        <div>
+          <div className={styles.rowLabel}>{isTr ? 'Klavye navigasyonu' : 'Keyboard navigation'}</div>
+          <div className={styles.rowHint}>
+            {isTr
+              ? 'Esc, Tab / Shift+Tab, Enter, Space, ok tuşları, Home ve End erişilebilirlik için sabit kalır.'
+              : 'Esc, Tab / Shift+Tab, Enter, Space, arrow keys, Home, and End stay fixed for accessibility.'}
+          </div>
+        </div>
+        <button
+          type="button"
+          className={styles.actionBtn}
+          onClick={() => {
+            setRecordingAction(null)
+            setMessage(null)
+            onResetAll()
+          }}
+        >
+          {isTr ? 'Tümünü varsayılana döndür' : 'Reset all to defaults'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -158,6 +321,13 @@ interface SettingsPanelProps {
   onPickWallpaper: () => void
   onResetWallpaper: () => void
   onResetShortcuts: () => void
+  onClearSavedSession: () => void
+  onResetSemiLunarLayout: () => void
+  onResetFolders: () => void
+  shortcutBindings: BrowserShortcutBindings
+  onSetShortcutBinding: (action: ConfigurableBrowserShortcutId, binding: string) => boolean
+  onResetShortcutBinding: (action: ConfigurableBrowserShortcutId) => boolean
+  onResetAllShortcutBindings: () => void
   settings: NebulaSettings
   onUpdate: <C extends keyof NebulaSettings, K extends keyof NebulaSettings[C]>(
     category: C,
@@ -184,6 +354,13 @@ function CategoryContent({
   onPickWallpaper,
   onResetWallpaper,
   onResetShortcuts,
+  onClearSavedSession,
+  onResetSemiLunarLayout,
+  onResetFolders,
+  shortcutBindings,
+  onSetShortcutBinding,
+  onResetShortcutBinding,
+  onResetAllShortcutBindings,
   settings,
   onUpdate,
   onResetCategory,
@@ -204,6 +381,13 @@ function CategoryContent({
   onPickWallpaper: () => void
   onResetWallpaper: () => void
   onResetShortcuts: () => void
+  onClearSavedSession: () => void
+  onResetSemiLunarLayout: () => void
+  onResetFolders: () => void
+  shortcutBindings: BrowserShortcutBindings
+  onSetShortcutBinding: (action: ConfigurableBrowserShortcutId, binding: string) => boolean
+  onResetShortcutBinding: (action: ConfigurableBrowserShortcutId) => boolean
+  onResetAllShortcutBindings: () => void
   settings: NebulaSettings
   onUpdate: SettingsPanelProps['onUpdate']
   onResetCategory: SettingsPanelProps['onResetCategory']
@@ -486,6 +670,33 @@ function CategoryContent({
               onUpdate('home', 'searchEngine', v as NebulaSettings['home']['searchEngine'])
             }
           />
+          <SettingToggleRow
+            label={locale === 'tr' ? 'Son oturumdaki sekmeleri yeniden aç' : 'Reopen tabs from the last session'}
+            hint={
+              locale === 'tr'
+                ? 'Nebula normal şekilde kapatıldığında açık sekmeleri bir sonraki açılışta geri getirir. Çökme kurtarma sistemi bundan bağımsız çalışır.'
+                : 'Restores open tabs on the next launch after Nebula closes normally. Crash recovery remains independent.'
+            }
+            checked={browsing.restoreTabsOnStartup}
+            onChange={() =>
+              onUpdate('browsing', 'restoreTabsOnStartup', !browsing.restoreTabsOnStartup)
+            }
+          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>
+                {locale === 'tr' ? 'Kaydedilmiş sekme oturumunu temizle' : 'Clear saved tab session'}
+              </div>
+              <div className={styles.rowHint}>
+                {locale === 'tr'
+                  ? 'Şu anda saklanan önceki oturum anlık olarak silinir. Açık sekmeler çalışmaya devam eder.'
+                  : 'Deletes the currently saved previous-session snapshot. Open tabs keep running.'}
+              </div>
+            </div>
+            <button type="button" className={styles.actionBtn} onClick={onClearSavedSession}>
+              {locale === 'tr' ? 'Temizle' : 'Clear'}
+            </button>
+          </div>
           <div className={styles.row}>
             <div className={styles.rowText}>
               <div className={styles.rowLabel}>{t('resetShortcuts')}</div>
@@ -682,6 +893,60 @@ function CategoryContent({
             unit="%"
             onChange={(v) => onUpdate('browsing', 'overlayBrightnessPercent', v)}
           />
+          <SettingToggleRow
+            label={locale === 'tr' ? 'İkon yerleşimini hatırla' : 'Remember icon layout'}
+            hint={
+              locale === 'tr'
+                ? 'Semi-Lunar ikon konumlarını normal kapanışlar arasında saklar.'
+                : 'Keeps Semi-Lunar icon positions between normal restarts.'
+            }
+            checked={semiLunar.rememberLayout}
+            onChange={() =>
+              onUpdate('semiLunar', 'rememberLayout', !semiLunar.rememberLayout)
+            }
+          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>
+                {locale === 'tr' ? 'Semi-Lunar yerleşimini sıfırla' : 'Reset Semi-Lunar layout'}
+              </div>
+              <div className={styles.rowHint}>
+                {locale === 'tr'
+                  ? 'Kaydedilmiş ikon konumlarını silip varsayılan yerleşime döner.'
+                  : 'Clears saved icon positions and returns to the default layout.'}
+              </div>
+            </div>
+            <button type="button" className={styles.actionBtn} onClick={onResetSemiLunarLayout}>
+              {locale === 'tr' ? 'Sıfırla' : 'Reset'}
+            </button>
+          </div>
+          <SettingToggleRow
+            label={locale === 'tr' ? 'Klasörleri hatırla' : 'Remember folders'}
+            hint={
+              locale === 'tr'
+                ? 'Semi-Lunar klasör yapısını normal kapanışlar arasında saklar.'
+                : 'Keeps the Semi-Lunar folder structure between normal restarts.'
+            }
+            checked={semiLunar.rememberFolders}
+            onChange={() =>
+              onUpdate('semiLunar', 'rememberFolders', !semiLunar.rememberFolders)
+            }
+          />
+          <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>
+                {locale === 'tr' ? 'Klasörleri sıfırla' : 'Reset folders'}
+              </div>
+              <div className={styles.rowHint}>
+                {locale === 'tr'
+                  ? 'Tüm Semi-Lunar klasörlerini çözer; sekme ve site kısayollarını silmez.'
+                  : 'Dissolves all Semi-Lunar folders without deleting tabs or site shortcuts.'}
+              </div>
+            </div>
+            <button type="button" className={styles.actionBtn} onClick={onResetFolders}>
+              {locale === 'tr' ? 'Sıfırla' : 'Reset'}
+            </button>
+          </div>
           <SettingResetRow
             label={t('slReset')}
             hint={t('slResetHint')}
@@ -690,7 +955,15 @@ function CategoryContent({
         </>
       )
     case 'shortcuts':
-      return <ShortcutReference locale={locale} />
+      return (
+        <ShortcutReference
+          locale={locale}
+          bindings={shortcutBindings}
+          onSetBinding={onSetShortcutBinding}
+          onResetBinding={onResetShortcutBinding}
+          onResetAll={onResetAllShortcutBindings}
+        />
+      )
     case 'account':
       return (
         <AccountSettingsSection
@@ -889,6 +1162,13 @@ export function SettingsPanel({
   onPickWallpaper,
   onResetWallpaper,
   onResetShortcuts,
+  onClearSavedSession,
+  onResetSemiLunarLayout,
+  onResetFolders,
+  shortcutBindings,
+  onSetShortcutBinding,
+  onResetShortcutBinding,
+  onResetAllShortcutBindings,
   settings,
   onUpdate,
   onResetCategory,
@@ -1035,6 +1315,13 @@ export function SettingsPanel({
               onPickWallpaper={onPickWallpaper}
               onResetWallpaper={onResetWallpaper}
               onResetShortcuts={onResetShortcuts}
+              onClearSavedSession={onClearSavedSession}
+              onResetSemiLunarLayout={onResetSemiLunarLayout}
+              onResetFolders={onResetFolders}
+              shortcutBindings={shortcutBindings}
+              onSetShortcutBinding={onSetShortcutBinding}
+              onResetShortcutBinding={onResetShortcutBinding}
+              onResetAllShortcutBindings={onResetAllShortcutBindings}
               settings={settings}
               onUpdate={onUpdate}
               onResetCategory={onResetCategory}

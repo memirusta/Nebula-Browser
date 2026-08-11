@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Shortcut, ShortcutFolder } from '../../core/types'
 import { folderDockId, isFolderDockId, parseFolderDockId } from '../../core/types'
 import { findDropTarget } from '../../core/shortcutDrop'
@@ -71,6 +72,7 @@ interface SemiLunarMenuProps {
   iconSizePx?: number
   lunarWidthPx?: number
   lunarHeightPx?: number
+  rememberLayout?: boolean
   onRemoveMemberFromFolder?: (
     folderId: string,
     shortcutId: string,
@@ -120,6 +122,7 @@ export function SemiLunarMenu({
   iconSizePx = DEFAULT_NEBULA_SETTINGS.semiLunar.iconSizePx,
   lunarWidthPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarWidthPx,
   lunarHeightPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarHeightPx,
+  rememberLayout = DEFAULT_NEBULA_SETTINGS.semiLunar.rememberLayout,
   onRemoveMemberFromFolder,
   mode = 'home',
   shellViewMode = 'browsing',
@@ -144,6 +147,7 @@ export function SemiLunarMenu({
     isHome && homeAlwaysOpen ? 'expanded' : 'closed',
   )
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
+  const [previewTabId, setPreviewTabId] = useState<string | null>(null)
   const [openFolderId, setOpenFolderId] = useState<string | null>(null)
   const [mergeAnim, setMergeAnim] = useState<{
     sourceId: string
@@ -179,6 +183,7 @@ export function SemiLunarMenu({
   const folderOpenRef = useRef(false)
   const anchorRef = useRef<HTMLDivElement>(null)
   const shellLayoutResyncRef = useRef<() => void>(() => {})
+  const shellBoundedLayoutResyncRef = useRef<() => void>(() => {})
 
   const lunarMetrics = useMemo(
     () => createLunarMetrics(lunarWidthPx, lunarHeightPx),
@@ -209,7 +214,13 @@ export function SemiLunarMenu({
   }, [dockItemIds, openTabIds, folders, shortcutMap])
 
   const { positions, moveShortcut, removePosition, setPosition, replacePositionId } =
-    useShortcutPositions(visibleDockItemIds, iconSizePx, lunarWidthPx, lunarHeightPx)
+    useShortcutPositions(
+      visibleDockItemIds,
+      iconSizePx,
+      lunarWidthPx,
+      lunarHeightPx,
+      rememberLayout,
+    )
 
   dragHoverRef.current = dragHover
   positionsRef.current = positions
@@ -412,6 +423,7 @@ export function SemiLunarMenu({
     setOpenFolderId(null)
     setContextMenu(null)
     setPreviewShortcut(null)
+    setPreviewTabId(null)
     setIsAnyDragging(false)
     setStage('closed')
   }, [clearMergeHoldTimer, clearTimers])
@@ -564,6 +576,7 @@ const handleContextMenuOpen = useCallback(
     clearTimers()
     setStage('expanded')
     setPreviewShortcut(null)
+    setPreviewTabId(null)
     contextMenuOpenRef.current = false
     contextMenuHoverRef.current = false
     setContextMenu(null)
@@ -573,6 +586,7 @@ const handleContextMenuOpen = useCallback(
     isDraggingRef.current = false
     clearMergeHoldTimer()
     mergeStartedRef.current = false
+    setDragHover(null)
     setIsAnyDragging(false)
   }, [clearMergeHoldTimer])
 
@@ -665,6 +679,38 @@ const handleFolderMemberClose = useCallback(
     [getTab, resolveCloseTabId],
   )
 
+  const previewTab =
+    previewTabId !== null
+      ? (getTab?.(previewTabId) ?? null)
+      : null
+
+  const previewResolvedShortcut: Shortcut | null =
+    previewTab && previewShortcut
+      ? {
+          ...previewShortcut,
+          id: previewTab.shortcutId,
+          label: previewTab.title,
+          url: previewTab.url,
+          favicon: previewTab.favicon,
+        }
+      : previewShortcut
+
+  const previewSession: BrowseSession | null =
+    previewTab
+      ? {
+          url: previewTab.url,
+          label: previewTab.title,
+          updatedAt: Date.now(),
+        }
+      : previewShortcut
+        ? (getSession?.(previewShortcut.url) ?? null)
+        : null
+
+  const previewLive =
+    previewTabId !== null
+      ? activeTabId === previewTabId
+      : undefined
+
   const previewActive = previewShortcut !== null
   const shortcutInteractionActive = previewActive || isAnyDragging
 
@@ -693,6 +739,7 @@ const handleFolderMemberClose = useCallback(
 
     clearTimers()
     setPreviewShortcut(null)
+    setPreviewTabId(null)
     setContextMenu(null)
     contextMenuOpenRef.current = false
     contextMenuHoverRef.current = false
@@ -730,6 +777,18 @@ const handleFolderMemberClose = useCallback(
     stage === 'expanded' ||
     (isHome && homeAlwaysOpen)
 
+  shellBoundedLayoutResyncRef.current = () => {
+    if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
+    if (contextMenu) return
+
+    void syncChromeShellLayout(
+      isExpanded,
+      lunarHeightPx,
+      Boolean(openFolderId) || downloadPanelOpen,
+      false,
+      lunarWidthPx,
+    )
+  }
   shellLayoutResyncRef.current = () => {
     if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
     if (contextMenu) return
@@ -774,7 +833,15 @@ const handleFolderMemberClose = useCallback(
     let cancelled = false
 
     void listen(SITE_FULLSCREEN_EXIT_EVENT, () => {
-      shellLayoutResyncRef.current()
+      setPreviewShortcut(null)
+      setPreviewTabId(null)
+      shellBoundedLayoutResyncRef.current()
+      window.requestAnimationFrame(() => {
+        shellBoundedLayoutResyncRef.current()
+      })
+      window.setTimeout(() => {
+        shellBoundedLayoutResyncRef.current()
+      }, 80)
     }).then((dispose) => {
       if (cancelled) {
         dispose()
@@ -1196,8 +1263,14 @@ const members = memberIds
                     displayTitle={displayTitle}
                     hoverTitle={hoverTitle}
                     onContextMenu={(x, y) => handleContextMenuOpen(item, x, y)}
-                    onPreviewShow={() => setPreviewShortcut(item)}
-                    onPreviewHide={() => setPreviewShortcut(null)}
+                    onPreviewShow={() => {
+                      setPreviewShortcut(item)
+                      setPreviewTabId(openTabId)
+                    }}
+                    onPreviewHide={() => {
+                      setPreviewShortcut(null)
+                      setPreviewTabId(null)
+                    }}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     onDragMove={(x, y) => setDragHover({ id: dockId, x, y })}
@@ -1263,10 +1336,11 @@ const members = memberIds
   const overlays = (
     <>
       <ShortcutPreviewOverlay
-        shortcut={previewShortcut}
-        visible={previewShortcut !== null}
+        shortcut={previewResolvedShortcut}
+        visible={previewResolvedShortcut !== null}
         activeUrl={activeUrl}
-        session={previewShortcut ? (getSession?.(previewShortcut.url) ?? null) : null}
+        session={previewSession}
+        liveOverride={previewLive}
       />
 
       {contextMenu && (
@@ -1353,8 +1427,14 @@ const members = memberIds
       onMouseLeave={handleFolderPanelLeave}
       previewOnHover={previewOnHover}
       previewDelayMs={previewDelayMs}
-      onPreviewShow={setPreviewShortcut}
-      onPreviewHide={() => setPreviewShortcut(null)}
+      onPreviewShow={(shortcut) => {
+        setPreviewShortcut(shortcut)
+        setPreviewTabId(resolveCloseTabId(shortcut.id))
+      }}
+      onPreviewHide={() => {
+        setPreviewShortcut(null)
+        setPreviewTabId(null)
+      }}
     />
   )
 })()}
@@ -1474,6 +1554,10 @@ function DraggableShortcut({
   const [isDragging, setIsDragging] = useState(false)
   const [dragPos, setDragPos] = useState({ x, y })
   const [isShortcutHovered, setIsShortcutHovered] = useState(false)
+  const [hoverLabelPosition, setHoverLabelPosition] = useState<{
+    left: number
+    top: number
+  } | null>(null)
   const [showCloseBtn, setShowCloseBtn] = useState(false)
   const dragState = useRef({
     active: false,
@@ -1563,14 +1647,32 @@ function DraggableShortcut({
 
   const handleWrapLeave = () => {
     setIsShortcutHovered(false)
+    setHoverLabelPosition(null)
     setShowCloseBtn(false)
     clearPreviewTimer()
     clearCloseBtnTimer()
     onPreviewHide()
   }
 
-  const handleShortcutEnter = () => {
+  const handleShortcutEnter = (
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
     if (isDragging) return
+
+    const rect =
+      event.currentTarget.getBoundingClientRect()
+
+    setHoverLabelPosition({
+      left:
+        rect.left +
+        rect.width / 2 +
+        22,
+      top:
+        rect.top +
+        rect.height / 2 +
+        22,
+    })
+
     setIsShortcutHovered(true)
     clearPreviewTimer()
     if (previewOnHover) {
@@ -1580,6 +1682,7 @@ function DraggableShortcut({
 
   const handleShortcutLeave = () => {
     setIsShortcutHovered(false)
+    setHoverLabelPosition(null)
     clearPreviewTimer()
     onPreviewHide()
   }
@@ -1620,6 +1723,7 @@ function DraggableShortcut({
         dragState.current.moved = true
         setIsDragging(true)
         setIsShortcutHovered(false)
+        setHoverLabelPosition(null)
         setShowCloseBtn(false)
         clearPreviewTimer()
         clearCloseBtnTimer()
@@ -1653,6 +1757,36 @@ function DraggableShortcut({
     [getLocalPosition, onDragEnd, scheduleMove],
   )
 
+  const cancelPointerInteraction = useCallback(() => {
+    if (!dragState.current.active) return
+
+    const wasMoved = dragState.current.moved
+    dragState.current.active = false
+    dragState.current.moved = false
+
+    cancelMoveRaf()
+    setIsDragging(false)
+    setDragPos({ x, y })
+    setIsShortcutHovered(false)
+    setHoverLabelPosition(null)
+    setShowCloseBtn(false)
+    clearPreviewTimer()
+    clearCloseBtnTimer()
+    onPreviewHide()
+
+    if (wasMoved) {
+      onDragEnd()
+    }
+  }, [
+    cancelMoveRaf,
+    clearCloseBtnTimer,
+    clearPreviewTimer,
+    onDragEnd,
+    onPreviewHide,
+    x,
+    y,
+  ])
+
   useEffect(() => {
     if (!isDragging) return
     const onWindowPointerMove = (e: PointerEvent) => {
@@ -1668,15 +1802,19 @@ function DraggableShortcut({
         onNavigate()
       }
     }
+    const onWindowPointerCancel = (e: PointerEvent) => {
+      if (e.pointerId !== dragState.current.pointerId) return
+      cancelPointerInteraction()
+    }
     window.addEventListener('pointermove', onWindowPointerMove)
     window.addEventListener('pointerup', onWindowPointerUp)
-    window.addEventListener('pointercancel', onWindowPointerUp)
+    window.addEventListener('pointercancel', onWindowPointerCancel)
     return () => {
       window.removeEventListener('pointermove', onWindowPointerMove)
       window.removeEventListener('pointerup', onWindowPointerUp)
-      window.removeEventListener('pointercancel', onWindowPointerUp)
+      window.removeEventListener('pointercancel', onWindowPointerCancel)
     }
-  }, [finishDrag, isDragging, onNavigate, processPointerMove])
+  }, [cancelPointerInteraction, finishDrag, isDragging, onNavigate, processPointerMove])
 
   const handlePointerMove = (e: React.PointerEvent) => {
     processPointerMove(e.clientX, e.clientY)
@@ -1693,6 +1831,14 @@ function DraggableShortcut({
       dragState.current.active = false
       onNavigate()
     }
+  }
+
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    if (!dragState.current.active) return
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    cancelPointerInteraction()
   }
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -1753,7 +1899,7 @@ function DraggableShortcut({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onContextMenu={handleContextMenu}
         aria-label={tf('shortcutAria', { label: item.label })}
         tabIndex={-1}
@@ -1781,11 +1927,25 @@ function DraggableShortcut({
           </span>
         )}
       </button>
-      {isShortcutHovered && !isDragging && (
-        <span className={styles.shortcutHoverLabel} aria-hidden="true">
-          {resolvedHoverTitle}
-        </span>
-      )}
+      {isShortcutHovered &&
+        !isDragging &&
+        hoverLabelPosition &&
+        createPortal(
+          <span
+            className={styles.shortcutHoverLabel}
+            style={{
+              position: 'fixed',
+              left: `${hoverLabelPosition.left}px`,
+              top: `${hoverLabelPosition.top}px`,
+              transform: 'translate(-4px, -100%)',
+              zIndex: 100000,
+            }}
+            aria-hidden="true"
+          >
+            {resolvedHoverTitle}
+          </span>,
+          document.body,
+        )}
     </div>
   )
 }

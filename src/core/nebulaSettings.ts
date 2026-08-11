@@ -72,11 +72,14 @@ export interface SemiLunarSettings {
   lunarWidthPx: number
   lunarHeightPx: number
   reducedMotion: boolean
+  rememberLayout: boolean
+  rememberFolders: boolean
 }
 
 export interface BrowsingSettings {
   overlayBlurPx: number
   overlayBrightnessPercent: number
+  restoreTabsOnStartup: boolean
 }
 
 export interface PrivacySettings {
@@ -161,10 +164,13 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     lunarWidthPx: 1100,
     lunarHeightPx: 152,
     reducedMotion: false,
+    rememberLayout: true,
+    rememberFolders: true,
   },
   browsing: {
     overlayBlurPx: 24,
     overlayBrightnessPercent: 45,
+    restoreTabsOnStartup: false,
   },
   privacy: {
     blockTrackers: false,
@@ -347,6 +353,10 @@ export function normalizeNebulaSettings(
       lunarHeightPx: clampNum(s?.lunarHeightPx, 100, 220, d.semiLunar.lunarHeightPx),
       reducedMotion:
         typeof s?.reducedMotion === 'boolean' ? s.reducedMotion : d.semiLunar.reducedMotion,
+      rememberLayout:
+        typeof s?.rememberLayout === 'boolean' ? s.rememberLayout : d.semiLunar.rememberLayout,
+      rememberFolders:
+        typeof s?.rememberFolders === 'boolean' ? s.rememberFolders : d.semiLunar.rememberFolders,
     },
     browsing: {
       overlayBlurPx: clampNum(b?.overlayBlurPx, 0, 40, d.browsing.overlayBlurPx),
@@ -356,6 +366,10 @@ export function normalizeNebulaSettings(
         100,
         d.browsing.overlayBrightnessPercent,
       ),
+      restoreTabsOnStartup:
+        typeof b?.restoreTabsOnStartup === 'boolean'
+          ? b.restoreTabsOnStartup
+          : d.browsing.restoreTabsOnStartup,
     },
     privacy: {
       blockTrackers:

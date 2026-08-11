@@ -19,6 +19,7 @@ import { shortcutFromTab, type BrowserTab } from './core/browserTab'
 import { computeAdaptiveLunarSize } from './core/lunarSizing'
 import type { Shortcut } from './core/types'
 import { useBrowseSessions } from './hooks/useBrowseSessions'
+import { useBrowserShortcutBindings } from './hooks/useBrowserShortcutBindings'
 import { useNebulaSettings } from './hooks/useNebulaSettings'
 import { usePinnedShortcuts } from './hooks/usePinnedShortcuts'
 import { useShortcutFolders } from './hooks/useShortcutFolders'
@@ -35,6 +36,7 @@ import './styles/global.css'
 export function ChromeApp() {
   const { settings } = useNebulaSettings()
   const semiLunar = settings.semiLunar
+  const { bindings: browserShortcutBindings } = useBrowserShortcutBindings({ syncNative: false })
 
   const {
     visibleShortcuts,
@@ -58,7 +60,7 @@ export function ChromeApp() {
     removeShortcutFromFolders,
     removeMemberFromFolder,
     renameFolder,
-  } = useShortcutFolders(visibleShortcuts)
+  } = useShortcutFolders(visibleShortcuts, semiLunar.rememberFolders)
 
   const { getSession } = useBrowseSessions()
 
@@ -116,8 +118,8 @@ export function ChromeApp() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreShellShortcut(event)) return
-      const action = matchBrowserShortcut(event)
+      if (shouldIgnoreShellShortcut(event, browserShortcutBindings)) return
+      const action = matchBrowserShortcut(event, browserShortcutBindings)
       if (!action) return
       event.preventDefault()
       void emit('nebula-browser-shortcut', action)
@@ -127,7 +129,7 @@ export function ChromeApp() {
     // not swallow browser-level shortcuts such as Ctrl+Tab.
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [])
+  }, [browserShortcutBindings])
 
   const openTabIds = useMemo(
     () => catalog.tabs.map((tab) => tab.shortcutId),
@@ -286,6 +288,7 @@ export function ChromeApp() {
       iconSizePx={semiLunar.iconSizePx}
       lunarWidthPx={adaptiveLunar.width}
       lunarHeightPx={adaptiveLunar.height}
+      rememberLayout={semiLunar.rememberLayout}
       mode={mode}
       shellViewMode={viewMode}
       onHomeClick={

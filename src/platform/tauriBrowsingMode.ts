@@ -6,9 +6,14 @@ import {
   hideAllBrowseTabs,
   syncTauriBrowserBounds,
 } from './tauriBrowser'
-import { hideChromeWebview, showChromeWebview } from './tauriChromeWebview'
+import {
+  forceChromeWebviewCompactBounds,
+  hideChromeWebview,
+  showChromeWebview,
+} from './tauriChromeWebview'
 import { showMainWebview } from './tauriMainWebview'
 import {
+  consumeSiteFullscreenTabSwitchHandoff,
   forceExitSiteFullscreen,
   isSiteFullscreenActive,
 } from './tauriSiteFullscreen'
@@ -136,7 +141,13 @@ async function applyBrowsingMode(
   setOverlayModeActive(false)
   setBrowsingChromeExpected(true)
 
-  if (isSiteFullscreenActive()) {
+  const fullscreenHandoff =
+    consumeSiteFullscreenTabSwitchHandoff()
+
+  if (
+    !fullscreenHandoff &&
+    isSiteFullscreenActive()
+  ) {
     await traceTransitionCall(
       traceId,
       'mode.browsing.exit-site-fullscreen',
@@ -162,7 +173,14 @@ async function applyBrowsingMode(
     traceId,
     'mode.browsing.show-chrome',
     { tabId: tab.tabId },
-    () => showChromeWebview(SEMI_LUNAR_HIT_ZONE_HEIGHT),
+    () =>
+      showChromeWebview(
+        SEMI_LUNAR_HIT_ZONE_HEIGHT,
+        {
+          stack:
+            !fullscreenHandoff,
+        },
+      ),
   )
 
   if (!isCurrentTransition(requestId)) return
@@ -185,28 +203,65 @@ async function applyBrowsingMode(
 
   if (!isCurrentTransition(requestId)) return
 
-  try {
+  if (fullscreenHandoff) {
+    /*
+     * activateBrowseTab already bound/sized the incoming tab and performs the
+     * final active-tab/chrome stack. Skip the generic second bounds sync and
+     * second stack used by ordinary mode transitions.
+     */
+    cancelScheduledStack()
+
+    try {
+      await forceChromeWebviewCompactBounds()
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[nebula] final compact chrome handoff repair failed',
+          error,
+        )
+      }
+    }
+
+    await writeTransitionLog(
+      'mode.browsing.fullscreen-handoff-fast-path',
+      'ok',
+      {
+        traceId,
+        requestId,
+        tabId:
+          tab.tabId,
+      },
+    )
+  } else {
+    try {
+      await traceTransitionCall(
+        traceId,
+        'mode.browsing.post-sync-bounds',
+        { tabId: tab.tabId },
+        syncTauriBrowserBounds,
+      )
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[nebula] post-activation bounds sync failed',
+          error,
+        )
+      }
+    }
+
+    if (!isCurrentTransition(requestId)) return
+
+    cancelScheduledStack()
     await traceTransitionCall(
       traceId,
-      'mode.browsing.post-sync-bounds',
+      'mode.browsing.stack-separated-surfaces',
       { tabId: tab.tabId },
-      syncTauriBrowserBounds,
+      () =>
+        stackBrowsingChromeAboveBrowser(
+          tab.tabId,
+        ),
     )
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.warn('[nebula] post-activation bounds sync failed', error)
-    }
   }
-
-  if (!isCurrentTransition(requestId)) return
-
-  cancelScheduledStack()
-  await traceTransitionCall(
-    traceId,
-    'mode.browsing.stack-separated-surfaces',
-    { tabId: tab.tabId },
-    () => stackBrowsingChromeAboveBrowser(tab.tabId),
-  )
 
   if (!isCurrentTransition(requestId)) return
 

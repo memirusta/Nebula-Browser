@@ -110,6 +110,7 @@ export function useShortcutPositions(
   iconSizePx?: number,
   lunarWidthPx?: number,
   lunarHeightPx?: number,
+  restorePersisted = true,
 ) {
   const shortcutIdsKey = shortcutIds.join('\0')
   const metrics = useMemo(
@@ -117,9 +118,12 @@ export function useShortcutPositions(
     [lunarWidthPx, lunarHeightPx],
   )
   const prevMetricsRef = useRef(metrics)
+  const ignoreStoredOnFirstSyncRef = useRef(!restorePersisted)
 
   const [positions, setPositions] = useState<ShortcutPosition[]>(() =>
-    loadInitialPositions(shortcutIds, metrics, iconSizePx),
+    restorePersisted
+      ? loadInitialPositions(shortcutIds, metrics, iconSizePx)
+      : buildDefaultPositions(shortcutIds, metrics, iconSizePx),
   )
 
   const reloadPositions = useCallback(() => {
@@ -130,6 +134,12 @@ export function useShortcutPositions(
 
   useEffect(() => {
     setPositions((prev) => {
+      if (ignoreStoredOnFirstSyncRef.current) {
+        ignoreStoredOnFirstSyncRef.current = false
+        persistPositionsSnapshot(prev, metrics)
+        return prev
+      }
+
       const merged = mergePositionsFromStorage(shortcutIds, metrics, iconSizePx, prev)
       if (merged === prev) return prev
 

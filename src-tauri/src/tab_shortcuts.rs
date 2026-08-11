@@ -12,72 +12,193 @@ mod imp {
         COREWEBVIEW2_PHYSICAL_KEY_STATUS,
     };
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, VK_ADD, VK_CONTROL, VK_MENU, VK_SHIFT,
+        GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
     };
 
     static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, i64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static SHORTCUT_BINDINGS: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
+        LazyLock::new(|| Mutex::new(default_bindings()));
+
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, ICoreWebView2AcceleratorKeyPressedEventHandler>> =
             RefCell::new(HashMap::new());
+    }
+
+    fn default_bindings() -> HashMap<String, Vec<String>> {
+        HashMap::from([
+            ("close-tab".into(), vec!["Ctrl+W".into()]),
+            ("reopen-tab".into(), vec!["Ctrl+Shift+T".into()]),
+            ("next-tab".into(), vec!["Ctrl+Tab".into()]),
+            ("prev-tab".into(), vec!["Ctrl+Shift+Tab".into()]),
+            ("switch-tab-1".into(), vec!["Ctrl+1".into()]),
+            ("switch-tab-2".into(), vec!["Ctrl+2".into()]),
+            ("switch-tab-3".into(), vec!["Ctrl+3".into()]),
+            ("switch-tab-4".into(), vec!["Ctrl+4".into()]),
+            ("switch-tab-5".into(), vec!["Ctrl+5".into()]),
+            ("switch-tab-6".into(), vec!["Ctrl+6".into()]),
+            ("switch-tab-7".into(), vec!["Ctrl+7".into()]),
+            ("switch-tab-8".into(), vec!["Ctrl+8".into()]),
+            ("switch-tab-last".into(), vec!["Ctrl+9".into()]),
+            ("reload".into(), vec!["Ctrl+R".into(), "F5".into()]),
+            (
+                "focus-url-bar".into(),
+                vec!["Ctrl+L".into(), "Alt+D".into()],
+            ),
+            ("go-back".into(), vec!["Alt+ArrowLeft".into()]),
+            ("go-forward".into(), vec!["Alt+ArrowRight".into()]),
+            ("go-home".into(), vec!["Ctrl+T".into()]),
+            ("open-history".into(), vec!["Ctrl+H".into()]),
+            (
+                "zoom-in".into(),
+                vec!["Ctrl++".into(), "Ctrl+=".into()],
+            ),
+            ("zoom-out".into(), vec!["Ctrl+-".into()]),
+            ("zoom-reset".into(), vec!["Ctrl+0".into()]),
+            ("print".into(), vec!["Ctrl+P".into()]),
+            ("toggle-fullscreen".into(), vec!["F11".into()]),
+            (
+                "devtools".into(),
+                vec!["Ctrl+Shift+I".into(), "F12".into()],
+            ),
+        ])
     }
 
     fn pressed(key: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
         unsafe { GetKeyState(key.0 as i32) < 0 }
     }
 
-    fn shortcut_for_key(
+    fn key_name(virtual_key: u32, shift: bool) -> Option<(&'static str, bool)> {
+        let key = match virtual_key {
+            0x30..=0x39 => match virtual_key {
+                0x30 => "0",
+                0x31 => "1",
+                0x32 => "2",
+                0x33 => "3",
+                0x34 => "4",
+                0x35 => "5",
+                0x36 => "6",
+                0x37 => "7",
+                0x38 => "8",
+                _ => "9",
+            },
+            0x41..=0x5A => match virtual_key {
+                0x41 => "A",
+                0x42 => "B",
+                0x43 => "C",
+                0x44 => "D",
+                0x45 => "E",
+                0x46 => "F",
+                0x47 => "G",
+                0x48 => "H",
+                0x49 => "I",
+                0x4A => "J",
+                0x4B => "K",
+                0x4C => "L",
+                0x4D => "M",
+                0x4E => "N",
+                0x4F => "O",
+                0x50 => "P",
+                0x51 => "Q",
+                0x52 => "R",
+                0x53 => "S",
+                0x54 => "T",
+                0x55 => "U",
+                0x56 => "V",
+                0x57 => "W",
+                0x58 => "X",
+                0x59 => "Y",
+                _ => "Z",
+            },
+            0x09 => "Tab",
+            0x0D => "Enter",
+            0x1B => "Escape",
+            0x08 => "Backspace",
+            0x2D => "Insert",
+            0x2E => "Delete",
+            0x24 => "Home",
+            0x23 => "End",
+            0x21 => "PageUp",
+            0x22 => "PageDown",
+            0x25 => "ArrowLeft",
+            0x26 => "ArrowUp",
+            0x27 => "ArrowRight",
+            0x28 => "ArrowDown",
+            0x70 => "F1",
+            0x71 => "F2",
+            0x72 => "F3",
+            0x73 => "F4",
+            0x74 => "F5",
+            0x75 => "F6",
+            0x76 => "F7",
+            0x77 => "F8",
+            0x78 => "F9",
+            0x79 => "F10",
+            0x7A => "F11",
+            0x7B => "F12",
+            0x6B => "+", // VK_ADD
+            0xBD => "-", // VK_OEM_MINUS
+            0xBB if shift => "+", // VK_OEM_PLUS with Shift
+            0xBB => "=",
+            _ => return None,
+        };
+
+        // Shift is only a glyph-producing detail for '+'.
+        Some((key, key == "+" && shift))
+    }
+
+    fn canonical_binding(
         virtual_key: u32,
         ctrl: bool,
         shift: bool,
         alt: bool,
-    ) -> Option<&'static str> {
-        if ctrl && !alt {
-            return match virtual_key {
-                0x54 if shift => Some("reopen-tab"),
-                0x54 => Some("go-home"),
-                0x57 if !shift => Some("close-tab"),
-                0x09 if shift => Some("prev-tab"),
-                0x09 => Some("next-tab"),
-                0x31..=0x38 if !shift => Some(match virtual_key {
-                    0x31 => "switch-tab-1",
-                    0x32 => "switch-tab-2",
-                    0x33 => "switch-tab-3",
-                    0x34 => "switch-tab-4",
-                    0x35 => "switch-tab-5",
-                    0x36 => "switch-tab-6",
-                    0x37 => "switch-tab-7",
-                    _ => "switch-tab-8",
-                }),
-                0x39 if !shift => Some("switch-tab-last"),
-                0x52 if !shift => Some("reload"),
-                0x4C if !shift => Some("focus-url-bar"),
-                0x48 if !shift => Some("open-history"),
-                0x49 if shift => Some("devtools"),
-                0x50 if !shift => Some("print"),
-                0x30 if !shift => Some("zoom-reset"),
-                0xBD if !shift => Some("zoom-out"),
-                0xBB => Some("zoom-in"),
-                value if value == VK_ADD.0 as u32 => Some("zoom-in"),
-                _ => None,
-            };
+    ) -> Option<String> {
+        let (key, implicit_shift) = key_name(virtual_key, shift)?;
+        let mut parts: Vec<&str> = Vec::new();
+
+        if ctrl {
+            parts.push("Ctrl");
+        }
+        if alt {
+            parts.push("Alt");
+        }
+        if shift && !implicit_shift {
+            parts.push("Shift");
+        }
+        parts.push(key);
+
+        Some(parts.join("+"))
+    }
+
+    fn action_for_binding(binding: &str) -> Option<String> {
+        let bindings = SHORTCUT_BINDINGS.lock().ok()?;
+        bindings.iter().find_map(|(action, values)| {
+            values
+                .iter()
+                .any(|candidate| candidate == binding)
+                .then(|| action.clone())
+        })
+    }
+
+    pub fn set_shortcut_bindings(
+        bindings: HashMap<String, Vec<String>>,
+    ) -> Result<(), String> {
+        let defaults = default_bindings();
+        let mut next = HashMap::new();
+
+        for (action, default_values) in defaults {
+            let values = bindings
+                .get(&action)
+                .filter(|values| !values.is_empty())
+                .cloned()
+                .unwrap_or(default_values);
+            next.insert(action, values);
         }
 
-        if alt && !ctrl {
-            return match virtual_key {
-                0x25 => Some("go-back"),
-                0x27 => Some("go-forward"),
-                0x44 if !shift => Some("focus-url-bar"),
-                _ => None,
-            };
-        }
-
-        match virtual_key {
-            0x74 => Some("reload"),
-            0x7A => Some("toggle-fullscreen"),
-            0x7B => Some("devtools"),
-            _ => None,
-        }
+        *SHORTCUT_BINDINGS
+            .lock()
+            .map_err(|error| error.to_string())? = next;
+        Ok(())
     }
 
     pub fn setup_tab_shortcuts(app: &AppHandle, label: &str) -> Result<(), String> {
@@ -123,12 +244,18 @@ mod imp {
                         if status.WasKeyDown.as_bool() {
                             return Ok(());
                         }
-                        if let Some(action) = shortcut_for_key(
+
+                        let binding = canonical_binding(
                             virtual_key,
                             pressed(VK_CONTROL),
                             pressed(VK_SHIFT),
                             pressed(VK_MENU),
-                        ) {
+                        );
+
+                        if let Some(action) = binding
+                            .as_deref()
+                            .and_then(action_for_binding)
+                        {
                             let _ = args.SetHandled(true);
                             let _ = app_handle.emit("nebula-browser-shortcut", action);
                         }
@@ -184,31 +311,45 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::shortcut_for_key;
+        use super::{canonical_binding, default_bindings, set_shortcut_bindings};
+        use std::collections::HashMap;
 
         #[test]
-        fn maps_browser_shortcuts_with_exact_modifiers() {
-            assert_eq!(shortcut_for_key(0x4E, true, false, false), None);
-            assert_eq!(shortcut_for_key(0x54, true, false, false), Some("go-home"));
-            assert_eq!(shortcut_for_key(0x48, true, false, false), Some("open-history"));
-            assert_eq!(shortcut_for_key(0x50, true, false, false), Some("print"));
+        fn canonicalizes_browser_shortcuts() {
+            assert_eq!(canonical_binding(0x54, true, false, false).as_deref(), Some("Ctrl+T"));
             assert_eq!(
-                shortcut_for_key(0x54, true, true, false),
-                Some("reopen-tab")
+                canonical_binding(0x54, true, true, false).as_deref(),
+                Some("Ctrl+Shift+T")
             );
-            assert_eq!(shortcut_for_key(0x25, false, false, true), Some("go-back"));
-            assert_eq!(shortcut_for_key(0x74, false, false, false), Some("reload"));
             assert_eq!(
-                shortcut_for_key(0x7A, false, false, false),
-                Some("toggle-fullscreen")
+                canonical_binding(0x25, false, false, true).as_deref(),
+                Some("Alt+ArrowLeft")
             );
-            assert_eq!(shortcut_for_key(0x54, true, false, true), None);
+            assert_eq!(canonical_binding(0x7A, false, false, false).as_deref(), Some("F11"));
+            assert_eq!(canonical_binding(0xBB, true, true, false).as_deref(), Some("Ctrl++"));
+        }
+
+        #[test]
+        fn custom_binding_map_can_replace_defaults() {
+            let mut custom: HashMap<String, Vec<String>> = HashMap::new();
+            custom.insert("go-home".into(), vec!["Ctrl+G".into()]);
+            set_shortcut_bindings(custom).unwrap();
+
+            let defaults = default_bindings();
+            assert_eq!(defaults.get("go-home").unwrap(), &vec!["Ctrl+T".to_string()]);
         }
     }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{setup_tab_shortcuts, teardown_tab_shortcuts};
+pub use imp::{set_shortcut_bindings, setup_tab_shortcuts, teardown_tab_shortcuts};
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_shortcut_bindings(
+    _bindings: std::collections::HashMap<String, Vec<String>>,
+) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_shortcuts(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {

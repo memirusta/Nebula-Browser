@@ -24,6 +24,10 @@ import { ModuleOffsetWrap } from './ModuleOffsetWrap'
 import { PinnedStrip } from './PinnedStrip'
 import styles from './HomeCenter.module.css'
 import { fetchSearchSuggestions } from '../../platform/searchSuggestions'
+import {
+  buildHomeHistorySuggestions,
+  filterHomeWebSuggestions,
+} from '../../core/homeSearchSuggestions'
 
 interface HomeCenterProps {
   onNavigate: (url: string) => void
@@ -122,80 +126,19 @@ export function HomeCenter({
    * ---------------------------------------------------------
    */
 
-  const historySuggestions = useMemo(() => {
-    const needle =
-      query.trim().toLocaleLowerCase()
-
-    if (!needle || editMode) {
-      return []
-    }
-
-    const seen = new Set<string>()
-
-    return historyEntries
-      .filter((entry) => {
-        const haystack =
-          `${entry.title} ${entry.host} ${entry.url}`.toLocaleLowerCase()
-
-        return haystack.includes(needle)
-      })
-      .sort((a, b) => {
-        const aHost =
-          a.host.toLocaleLowerCase()
-
-        const bHost =
-          b.host.toLocaleLowerCase()
-
-        const aTitle =
-          a.title.toLocaleLowerCase()
-
-        const bTitle =
-          b.title.toLocaleLowerCase()
-
-        const score = (
-          host: string,
-          title: string,
-        ) => {
-          if (host.startsWith(needle)) {
-            return 0
-          }
-
-          if (title.startsWith(needle)) {
-            return 1
-          }
-
-          if (host.includes(needle)) {
-            return 2
-          }
-
-          return 3
-        }
-
-        const scoreDifference =
-          score(aHost, aTitle) -
-          score(bHost, bTitle)
-
-        if (scoreDifference !== 0) {
-          return scoreDifference
-        }
-
-        return b.visitedAt - a.visitedAt
-      })
-      .filter((entry) => {
-        if (seen.has(entry.url)) {
-          return false
-        }
-
-        seen.add(entry.url)
-        return true
-      })
-      .slice(0, 5)
-  }, [
-    editMode,
-    historyEntries,
-    query,
-  ])
-
+  const historySuggestions = useMemo(
+    () =>
+      buildHomeHistorySuggestions(
+        historyEntries,
+        pinnedShortcuts,
+        query,
+      ),
+    [
+      historyEntries,
+      pinnedShortcuts,
+      query,
+    ],
+  )
   /*
    * ---------------------------------------------------------
    * WEB SEARCH SUGGESTIONS
@@ -224,7 +167,7 @@ useEffect(() => {
       if (cancelled) return
 
       setWebSuggestions(
-        suggestions.slice(0, 6),
+        suggestions.slice(0, 8),
       )
     })
   }, 180)
@@ -246,6 +189,19 @@ useEffect(() => {
    * ---------------------------------------------------------
    */
 
+  const displayWebSuggestions = useMemo(
+    () =>
+      filterHomeWebSuggestions(
+        webSuggestions,
+        historySuggestions,
+        query,
+      ),
+    [
+      historySuggestions,
+      query,
+      webSuggestions,
+    ],
+  )
   const suggestionsOpen =
     isEditing &&
     !editMode &&
@@ -253,7 +209,7 @@ useEffect(() => {
 
   const searchSuggestionIndex =
     historySuggestions.length +
-    webSuggestions.length
+    displayWebSuggestions.length
 
   const suggestionCount =
     searchSuggestionIndex + 1
@@ -409,10 +365,10 @@ useEffect(() => {
     if (
       webIndex >= 0 &&
       webIndex <
-        webSuggestions.length
+        displayWebSuggestions.length
     ) {
       const suggestion =
-        webSuggestions[webIndex]
+        displayWebSuggestions[webIndex]
 
       setQuery(suggestion)
       navigateQuery(suggestion)
@@ -753,9 +709,9 @@ useEffect(() => {
            */}
 
           {historySuggestions.map(
-            (entry, index) => (
+            (suggestion, index) => (
               <button
-                key={entry.id}
+                key={suggestion.key}
                 type="button"
                 role="option"
                 aria-selected={
@@ -790,14 +746,14 @@ useEffect(() => {
                   className={
                     styles.suggestionSiteIcon
                   }
+                  aria-hidden="true"
                 >
-                  {entry.host
-                    .replace(
-                      /^www\./,
-                      '',
-                    )
-                    .charAt(0)
-                    .toUpperCase()}
+                  {suggestion.kind ===
+                  'site'
+                    ? suggestion.title
+                        .charAt(0)
+                        .toUpperCase()
+                    : '\u21BB'}
                 </span>
 
                 <span
@@ -806,24 +762,17 @@ useEffect(() => {
                   }
                 >
                   <strong>
-                    {entry.title}
+                    {suggestion.title}
                   </strong>
 
                   <span>
-                    {entry.url}
+                    {suggestion.subtitle}
                   </span>
                 </span>
               </button>
             ),
           )}
-
-          {/*
-           * -----------------------------------
-           * LIVE WEB SUGGESTIONS
-           * -----------------------------------
-           */}
-
-          {webSuggestions.map(
+          {displayWebSuggestions.map(
             (
               suggestion,
               index,

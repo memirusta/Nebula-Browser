@@ -1,13 +1,13 @@
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 280;
+  z-index: 20000;
   pointer-events: none;
   animation: previewIn 0.35s var(--ease-out-expo);
 }
 
 .overlayLive {
-  z-index: 180;
+  z-index: 20000;
 }
 
 .dim {

@@ -150,6 +150,24 @@ useEffect(
     [clearCloseBtnTimer, clearPreviewTimer, onDragStart, onPreviewHide],
   )
 
+  const cancelPointerInteraction = useCallback(() => {
+    if (!dragState.current.active) return
+
+    const wasMoved = dragState.current.moved
+    dragState.current.active = false
+    dragState.current.moved = false
+
+    setIsDragging(false)
+    setShowCloseBtn(false)
+    clearPreviewTimer()
+    clearCloseBtnTimer()
+    onPreviewHide?.()
+
+    if (wasMoved) {
+      onDragEnd?.()
+    }
+  }, [clearCloseBtnTimer, clearPreviewTimer, onDragEnd, onPreviewHide])
+
   useEffect(() => {
     if (!isDragging) return
     const onWindowPointerMove = (e: PointerEvent) => {
@@ -160,15 +178,19 @@ useEffect(
       if (e.pointerId !== dragState.current.pointerId) return
       finishDrag(e.clientX, e.clientY)
     }
+    const onWindowPointerCancel = (e: PointerEvent) => {
+      if (e.pointerId !== dragState.current.pointerId) return
+      cancelPointerInteraction()
+    }
     window.addEventListener('pointermove', onWindowPointerMove)
     window.addEventListener('pointerup', onWindowPointerUp)
-    window.addEventListener('pointercancel', onWindowPointerUp)
+    window.addEventListener('pointercancel', onWindowPointerCancel)
     return () => {
       window.removeEventListener('pointermove', onWindowPointerMove)
       window.removeEventListener('pointerup', onWindowPointerUp)
-      window.removeEventListener('pointercancel', onWindowPointerUp)
+      window.removeEventListener('pointercancel', onWindowPointerCancel)
     }
-  }, [finishDrag, isDragging, processPointerMove])
+  }, [cancelPointerInteraction, finishDrag, isDragging, processPointerMove])
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
@@ -205,6 +227,14 @@ useEffect(
   }
   
   
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    if (!dragState.current.active) return
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    cancelPointerInteraction()
+  }
+
   const handleWrapEnter = () => {
   if (isDragging) return
 
@@ -280,7 +310,7 @@ return (
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}

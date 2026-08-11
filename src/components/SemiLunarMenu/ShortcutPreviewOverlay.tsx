@@ -14,6 +14,7 @@ interface ShortcutPreviewOverlayProps {
   visible: boolean
   activeUrl?: string | null
   session?: BrowseSession | null
+  liveOverride?: boolean
 }
 
 export function ShortcutPreviewOverlay({
@@ -21,13 +22,15 @@ export function ShortcutPreviewOverlay({
   visible,
   activeUrl = null,
   session = null,
+  liveOverride,
 }: ShortcutPreviewOverlayProps) {
   const { t, locale } = useLocale()
 
   if (!visible || !shortcut) return null
 
   const isLive =
-    Boolean(activeUrl) && hostsMatch(activeUrl!, shortcut.url)
+    liveOverride ??
+    (Boolean(activeUrl) && hostsMatch(activeUrl!, shortcut.url))
   const resumeSession =
     isLive && activeUrl
       ? { url: activeUrl, label: shortcut.label, updatedAt: Date.now() }
