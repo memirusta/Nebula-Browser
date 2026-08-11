@@ -39,6 +39,7 @@ import { setChromeWebviewSuppressed } from '../../platform/tauriChromeWebview'
 import {
   listenSiteCloseWindows,
   listenSiteNewWindows,
+  listenSitePointerDown,
   listenSiteUiCancelled,
   listenSiteUiRequests,
   respondToSiteUi,
@@ -544,6 +545,42 @@ export function BrowserShell() {
         false,
       )
     }, [])
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    let disposed =
+      false
+
+    let unlisten:
+      | (() => void)
+      | undefined
+
+    void listenSitePointerDown(
+      () => {
+        closeDownloadPanel()
+      },
+    ).then(
+      (dispose) => {
+        if (disposed) {
+          dispose()
+          return
+        }
+
+        unlisten =
+          dispose
+      },
+    )
+
+    return () => {
+      disposed =
+        true
+
+      unlisten?.()
+    }
+  }, [
+    closeDownloadPanel,
+  ])
 
   const toggleNotificationPanel =
     useCallback(() => {

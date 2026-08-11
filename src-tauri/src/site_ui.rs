@@ -33,6 +33,7 @@ mod imp {
     const SITE_UI_CANCELLED_EVENT: &str = "nebula-site-ui-cancelled";
     const SITE_NEW_WINDOW_EVENT: &str = "nebula-site-new-window";
     const SITE_CLOSE_WINDOW_EVENT: &str = "nebula-site-close-window";
+    const SITE_POINTER_DOWN_EVENT: &str = "nebula-site-pointer-down";
 
     static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -157,7 +158,22 @@ mod imp {
   window.__nebulaProtocolHandlerHookInstalled = true;
 
   const bridge = window.chrome && window.chrome.webview;
-  if (!bridge || typeof Navigator === 'undefined') return;
+  if (!bridge) return;
+
+  // Report real user clicks on the actual site surface to the Nebula shell.
+  // The captured bridge stays usable after later hardening masks
+  // window.chrome.webview from ordinary page code.
+  window.addEventListener('pointerdown', function (event) {
+    if (!event.isTrusted) return;
+
+    try {
+      bridge.postMessage(JSON.stringify({
+        type: 'nebula-site-pointer-down'
+      }));
+    } catch (_) {}
+  }, true);
+
+  if (typeof Navigator === 'undefined') return;
 
   const proto = Navigator.prototype;
   if (!proto || typeof proto.registerProtocolHandler !== 'function') return;
@@ -400,8 +416,26 @@ mod imp {
                         move |_, args| {
                             let Some(args) = args else { return Ok(()) };
                             let raw = take_string(|value| args.TryGetWebMessageAsString(value));
+                            let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                                return Ok(());
+                            };
+
+                            if value
+                                .get("type")
+                                .and_then(serde_json::Value::as_str)
+                                == Some("nebula-site-pointer-down")
+                            {
+                                let _ = protocol_app.emit(
+                                    SITE_POINTER_DOWN_EVENT,
+                                    serde_json::json!({
+                                        "tabLabel": protocol_label.clone(),
+                                    }),
+                                );
+                                return Ok(());
+                            }
+
                             let Ok(message) =
-                                serde_json::from_str::<ProtocolHandlerMessage>(&raw)
+                                serde_json::from_value::<ProtocolHandlerMessage>(value)
                             else {
                                 return Ok(());
                             };
@@ -410,7 +444,6 @@ mod imp {
                             else {
                                 return Ok(());
                             };
-
                             let id = next_request_id("protocol-handler");
                             PENDING.with(|pending| {
                                 pending.borrow_mut().insert(

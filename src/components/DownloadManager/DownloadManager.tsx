@@ -98,6 +98,7 @@ export function DownloadManager({
 
   return (
     <section
+      data-nebula-download-panel="true"
       className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
       style={variant === 'browsing' ? { top: browsingTop } : undefined}
       role="dialog"

@@ -1030,6 +1030,7 @@ const handleFolderMemberClose = useCallback(
               )}
               {isBrowsing && downloadCount > 0 && onDownloadsClick && (
                 <button
+                  data-nebula-download-toggle="true"
                   type="button"
                   className={[
                     styles.evBtn,

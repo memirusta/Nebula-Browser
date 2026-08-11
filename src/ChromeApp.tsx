@@ -222,6 +222,33 @@ export function ChromeApp() {
   const browsingDownloadPanelOpen =
     viewMode === 'browsing' && downloadUi.panelOpen
 
+  useEffect(() => {
+    if (!browsingDownloadPanelOpen) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+
+      if (!(target instanceof Element)) {
+        closeDownloads()
+        return
+      }
+
+      if (
+        target.closest('[data-nebula-download-panel="true"]') ||
+        target.closest('[data-nebula-download-toggle="true"]')
+      ) {
+        return
+      }
+
+      closeDownloads()
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [
+    browsingDownloadPanelOpen,
+    closeDownloads,
+  ])
   return (
     <>
       <SemiLunarMenu

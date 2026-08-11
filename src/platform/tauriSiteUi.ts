@@ -47,6 +47,10 @@ export interface SiteCloseWindowPayload {
   tabLabel: string
 }
 
+export interface SitePointerDownPayload {
+  tabLabel: string
+}
+
 export async function respondToSiteUi(
   requestId: string,
   response: SiteUiResponse,
@@ -95,5 +99,14 @@ export function listenSiteCloseWindows(
   if (!isTauri) return Promise.resolve(() => {})
   return listen<SiteCloseWindowPayload>('nebula-site-close-window', ({ payload }) =>
     onCloseWindow(payload),
+  )
+}
+
+export function listenSitePointerDown(
+  onPointerDown: (payload: SitePointerDownPayload) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<SitePointerDownPayload>('nebula-site-pointer-down', ({ payload }) =>
+    onPointerDown(payload),
   )
 }
