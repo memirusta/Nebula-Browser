@@ -54,6 +54,7 @@ mod imp {
                 0x4C if !shift => Some("focus-url-bar"),
                 0x48 if !shift => Some("open-history"),
                 0x49 if shift => Some("devtools"),
+                0x50 if !shift => Some("print"),
                 0x30 if !shift => Some("zoom-reset"),
                 0xBD if !shift => Some("zoom-out"),
                 0xBB => Some("zoom-in"),
@@ -73,6 +74,7 @@ mod imp {
 
         match virtual_key {
             0x74 => Some("reload"),
+            0x7A => Some("toggle-fullscreen"),
             0x7B => Some("devtools"),
             _ => None,
         }
@@ -189,12 +191,17 @@ mod imp {
             assert_eq!(shortcut_for_key(0x4E, true, false, false), None);
             assert_eq!(shortcut_for_key(0x54, true, false, false), Some("go-home"));
             assert_eq!(shortcut_for_key(0x48, true, false, false), Some("open-history"));
+            assert_eq!(shortcut_for_key(0x50, true, false, false), Some("print"));
             assert_eq!(
                 shortcut_for_key(0x54, true, true, false),
                 Some("reopen-tab")
             );
             assert_eq!(shortcut_for_key(0x25, false, false, true), Some("go-back"));
             assert_eq!(shortcut_for_key(0x74, false, false, false), Some("reload"));
+            assert_eq!(
+                shortcut_for_key(0x7A, false, false, false),
+                Some("toggle-fullscreen")
+            );
             assert_eq!(shortcut_for_key(0x54, true, false, true), None);
         }
     }

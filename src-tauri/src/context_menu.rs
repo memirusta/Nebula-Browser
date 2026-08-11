@@ -19,6 +19,7 @@ mod imp {
 
     const CONTEXT_MENU_EVENT: &str = "nebula-site-context-menu";
     const CONTEXT_MENU_CANCELLED_EVENT: &str = "nebula-site-context-menu-cancelled";
+    const NEBULA_PRINT_COMMAND_ID: i32 = -10_001;
 
     static NEXT_ID: AtomicU64 = AtomicU64::new(1);
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -147,11 +148,16 @@ mod imp {
         let mut items = Vec::with_capacity(count as usize);
         for index in 0..count {
             let item = collection.GetValueAtIndex(index)?;
-            let payload = item_payload(&item, depth)?;
+            let mut payload = item_payload(&item, depth)?;
             // The native "Inspect" command opens Edge DevTools. Nebula has its own
             // inspector, so never expose that Edge-branded entry in our menu.
             if payload.name == "inspect" {
                 continue;
+            }
+            // Keep the visible Print entry, but route it through Nebula so the
+            // system print dialog is used instead of Edge's browser preview.
+            if payload.name == "print" {
+                payload.command_id = NEBULA_PRINT_COMMAND_ID;
             }
             items.push(payload);
         }
@@ -186,38 +192,36 @@ mod imp {
                     let handler = ContextMenuRequestedEventHandler::create(Box::new(
                         move |_, args| {
                             let Some(args) = args else { return Ok(()) };
-                            let deferral = args.GetDeferral()?;
+
+                            // Suppress WebView2's visible menu first. If any later
+                            // payload read fails, Nebula fails closed instead of
+                            // leaking Edge UI.
                             args.SetHandled(true)?;
 
-                            let target = args.ContextMenuTarget()?;
-                            let collection = args.MenuItems()?;
-                            let items = collection_payload(&collection, 0)?;
-                            let mut location = POINT::default();
-                            let _ = args.Location(&mut location);
-                            let scale = handler_app
-                                .get_window("main")
-                                .and_then(|window| window.scale_factor().ok())
-                                .filter(|value| *value > 0.0)
-                                .unwrap_or(1.0);
-                            let mut editable = windows_core::BOOL::default();
-                            let _ = target.IsEditable(&mut editable);
+                            let deferral = match args.GetDeferral() {
+                                Ok(deferral) => deferral,
+                                Err(_) => return Ok(()),
+                            };
 
-                            let id = format!("context-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
-                            PENDING.with(|pending| {
-                                pending.borrow_mut().insert(
-                                    id.clone(),
-                                    PendingContextMenu {
-                                        tab_label: handler_label.clone(),
-                                        args,
-                                        deferral,
-                                    },
-                                );
-                            });
+                            let payload = (|| -> windows_core::Result<ContextMenuPayload> {
+                                let target = args.ContextMenuTarget()?;
+                                let collection = args.MenuItems()?;
+                                let items = collection_payload(&collection, 0)?;
+                                let mut location = POINT::default();
+                                let _ = args.Location(&mut location);
+                                let scale = handler_app
+                                    .get_window("main")
+                                    .and_then(|window| window.scale_factor().ok())
+                                    .filter(|value| *value > 0.0)
+                                    .unwrap_or(1.0);
+                                let mut editable = windows_core::BOOL::default();
+                                let _ = target.IsEditable(&mut editable);
 
-                            let _ = handler_app.emit(
-                                CONTEXT_MENU_EVENT,
-                                ContextMenuPayload {
-                                    id,
+                                Ok(ContextMenuPayload {
+                                    id: format!(
+                                        "context-{}",
+                                        NEXT_ID.fetch_add(1, Ordering::Relaxed)
+                                    ),
                                     tab_label: handler_label.clone(),
                                     x: location.x as f64 / scale,
                                     y: location.y as f64 / scale,
@@ -228,8 +232,30 @@ mod imp {
                                     selection_text: take_string(|value| target.SelectionText(value)),
                                     editable: editable.as_bool(),
                                     items,
-                                },
-                            );
+                                })
+                            })();
+
+                            let payload = match payload {
+                                Ok(payload) => payload,
+                                Err(_) => {
+                                    let _ = deferral.Complete();
+                                    return Ok(());
+                                }
+                            };
+
+                            let id = payload.id.clone();
+                            PENDING.with(|pending| {
+                                pending.borrow_mut().insert(
+                                    id,
+                                    PendingContextMenu {
+                                        tab_label: handler_label.clone(),
+                                        args,
+                                        deferral,
+                                    },
+                                );
+                            });
+
+                            let _ = handler_app.emit(CONTEXT_MENU_EVENT, payload);
                             Ok(())
                         },
                     ));

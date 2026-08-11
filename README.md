@@ -16,7 +16,7 @@ Built with <strong>Tauri 2</strong>, <strong>React 19</strong>, <strong>TypeScri
 </p>
 
 <a href="https://github.com/memirusta/Nebula-Browser/releases">
-  <img src="https://img.shields.io/badge/version-1.3.1-7ec8e3?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.3.2-7ec8e3?style=flat-square" alt="Version">
 </a>
 <a href="https://github.com/memirusta/Nebula-Browser/releases/latest">
   <img src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white" alt="Windows">

@@ -2,7 +2,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { isTauri } from './runtime'
 
-export type SiteUiRequestType = 'script-dialog' | 'permission' | 'basic-auth'
+export type SiteUiRequestType =
+  | 'script-dialog'
+  | 'permission'
+  | 'basic-auth'
+  | 'protocol-handler'
+  | 'external-uri'
 export type SiteDialogKind = 'alert' | 'confirm' | 'prompt' | 'beforeunload' | 'unknown'
 
 export interface SiteUiRequest {

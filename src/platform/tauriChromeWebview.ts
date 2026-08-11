@@ -243,6 +243,10 @@ export async function showChromeWebview(logicalHeight: number): Promise<void> {
     activeChromeWebview = webview
   }
 
+  // Idempotent repair for an already-created chrome WebView: native browser
+  // UI must remain suppressed even if the surface was created very early.
+  await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
+
   // Existing chrome keeps the bounds last published by ChromeApp. Never
   // resize it from the main/Home JS context: that context has a separate copy
   // of this module state and would race the overlay back to bootstrap size on

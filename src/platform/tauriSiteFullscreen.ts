@@ -244,3 +244,30 @@ export function forceExitSiteFullscreen(): Promise<void> {
     await exitSiteFullscreen()
   })
 }
+
+/** Toggle Nebula's browser-window fullscreen (F11), separate from HTML5 site fullscreen. */
+export async function toggleBrowserWindowFullscreen(): Promise<void> {
+  if (!isTauri) return
+
+  // If a page currently owns HTML5 fullscreen, F11 first returns to normal
+  // browsing. A second F11 can then enter browser-window fullscreen.
+  if (siteFullscreenActive) {
+    await forceExitSiteFullscreen()
+    return
+  }
+
+  const appWindow = getCurrentWindow()
+  const fullscreen = await appWindow.isFullscreen()
+  await appWindow.setFullscreen(!fullscreen)
+  await waitForWindowLayoutSettle(appWindow)
+
+  // Child webviews have their own physical bounds. Repair them after the host
+  // window changes mode instead of relying on a compositor race.
+  await forceSyncActiveTabBounds()
+
+  try {
+    await syncChromeWebviewBounds()
+  } catch {
+    // Chrome may not exist on first Home paint.
+  }
+}

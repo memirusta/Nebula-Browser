@@ -71,6 +71,29 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
       }
     }
 
+    if (request.requestType === 'protocol-handler') {
+      const scheme = request.permissionKind ?? 'link'
+      const label = scheme === 'mailto' ? 'email links' : `${scheme}: links`
+      return {
+        eyebrow: 'Protocol handler',
+        title: `${request.title} wants to open ${label}`,
+        message: `Allow ${originText(request.uri, request.title)} to handle ${label} in Nebula?`,
+        accept: 'Allow',
+        cancel: 'Block',
+      }
+    }
+
+    if (request.requestType === 'external-uri') {
+      const scheme = request.permissionKind ?? 'external'
+      return {
+        eyebrow: 'Open external app?',
+        title: `${request.title} wants to open another application`,
+        message: `Allow this site to open a ${scheme}: link outside Nebula?`,
+        accept: 'Open',
+        cancel: 'Block',
+      }
+    }
+
     switch (request.dialogKind) {
       case 'beforeunload':
         return {

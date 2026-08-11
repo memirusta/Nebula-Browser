@@ -10,6 +10,7 @@ import {
 import { createPortal } from 'react-dom'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
+import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
 import { isTauri } from '../../platform/runtime'
 import {
@@ -30,6 +31,7 @@ import {
 import {
   initSiteFullscreenBridge,
   forceExitSiteFullscreen,
+  toggleBrowserWindowFullscreen,
 } from '../../platform/tauriSiteFullscreen'
 import { writeTransitionLog } from '../../platform/tauriTransitionLog'
 import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
@@ -47,9 +49,15 @@ import {
   listenSiteContextMenuCancelled,
   listenSiteContextMenus,
   respondToSiteContextMenu,
+  NEBULA_PRINT_COMMAND_ID,
   type SiteContextMenuRequest,
 } from '../../platform/tauriContextMenu'
 import { DEFAULT_SHORTCUTS } from '../../core/constants'
+import {
+  matchingProtocolHandlerDecision,
+  resolveProtocolHandler,
+  saveProtocolHandlerDecision,
+} from '../../core/protocolHandlers'
 import { loadBrowseSessions } from '../../core/browseSession'
 import { resolveShortcutForOpen } from '../../core/navigateShortcut'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
@@ -65,6 +73,7 @@ import {
   prepareBrowseTabInBackground,
   reloadBrowseTab,
   listenTabWebviewSnapshots,
+  printBrowseTab,
   zoomBrowseTab,
   setBrowsePrivacyOptions,
   clearBrowseData,
@@ -328,6 +337,13 @@ export function BrowserShell() {
     historyPanelOpen,
     setHistoryPanelOpen,
   ] = useState(false)
+
+  const [
+    printDialogTabId,
+    setPrintDialogTabId,
+  ] = useState<string | null>(
+    null,
+  )
 
   const downloadUiStateRef =
     useRef<DownloadUiStatePayload>({
@@ -2744,6 +2760,56 @@ export function BrowserShell() {
           await Promise.all([
             listenSiteUiRequests(
               (request) => {
+                if (
+                  request.requestType ===
+                    'protocol-handler' &&
+                  request.permissionKind
+                ) {
+                  const existing =
+                    matchingProtocolHandlerDecision(
+                      request.permissionKind,
+                      request.message,
+                      request.uri,
+                    )
+
+                  if (existing) {
+                    void respondToSiteUi(
+                      request.id,
+                      {
+                        accepted:
+                          existing.allowed,
+                      },
+                    )
+                    return
+                  }
+                }
+
+                if (
+                  request.requestType ===
+                    'external-uri'
+                ) {
+                  const handlerUrl =
+                    resolveProtocolHandler(
+                      request.message,
+                    )
+
+                  if (handlerUrl) {
+                    void respondToSiteUi(
+                      request.id,
+                      {
+                        // Cancel the OS launch. Nebula routes this
+                        // scheme to the web handler the user allowed.
+                        accepted: false,
+                      },
+                    ).then(() => {
+                      openUrlInNewTab(
+                        handlerUrl,
+                      )
+                    })
+                    return
+                  }
+                }
+
                 setSiteUiQueue(
                   (queue) =>
                     queue.some(
@@ -2840,7 +2906,9 @@ export function BrowserShell() {
   useEffect(() => {
     const open =
       siteUiQueue.length > 0 ||
-      siteContextMenu !== null
+      siteContextMenu !== null ||
+      printDialogTabId !== null ||
+      printDialogTabId !== null
 
     if (
       open &&
@@ -2923,6 +2991,7 @@ export function BrowserShell() {
     activeTabIdRef,
     siteContextMenu,
     siteUiQueue.length,
+    printDialogTabId,
   ])
 
   const handleSiteContextMenuSelect =
@@ -2944,6 +3013,22 @@ export function BrowserShell() {
             request.id,
             commandId,
           )
+
+          if (
+            commandId ===
+              NEBULA_PRINT_COMMAND_ID
+          ) {
+            const shortcutId =
+              shortcutIdForTabWebviewLabel(
+                request.tabLabel,
+              )
+
+            if (shortcutId) {
+              setPrintDialogTabId(
+                shortcutId,
+              )
+            }
+          }
         } catch (error) {
           if (import.meta.env.DEV) {
             console.warn(
@@ -2968,6 +3053,20 @@ export function BrowserShell() {
         if (!request) return
 
         try {
+          if (
+            request.requestType ===
+              'protocol-handler' &&
+            request.permissionKind
+          ) {
+            saveProtocolHandlerDecision(
+              request.permissionKind,
+              request.message,
+              request.uri,
+              request.title,
+              response.accepted,
+            )
+          }
+
           await respondToSiteUi(
             request.id,
             response,
@@ -3501,6 +3600,21 @@ export function BrowserShell() {
         }
 
         if (
+          printDialogTabId
+        ) {
+          if (
+            action ===
+            'close-overlay'
+          ) {
+            setPrintDialogTabId(
+              null,
+            )
+          }
+
+          return
+        }
+
+        if (
           settingsOpen ||
           onboardingOpen
         ) {
@@ -3600,6 +3714,21 @@ export function BrowserShell() {
             toggleHistoryPanel()
             break
 
+          case 'print':
+            if (
+              activeTabIdRef.current &&
+              isTauri
+            ) {
+              setPrintDialogTabId(
+                activeTabIdRef.current,
+              )
+            }
+            break
+
+          case 'toggle-fullscreen':
+            void toggleBrowserWindowFullscreen()
+            break
+
           case 'zoom-in':
           case 'zoom-out':
           case 'zoom-reset': {
@@ -3648,6 +3777,7 @@ export function BrowserShell() {
         goHome,
         handleCloseTab,
         onboardingOpen,
+        printDialogTabId,
         openNewBlankTab,
         reloadActiveTab,
         reopenLastClosedTab,
@@ -5160,6 +5290,46 @@ export function BrowserShell() {
               )
             }
           }
+        />
+      )}
+
+      {printDialogTabId && (
+        <PrintDialog
+          title={
+            getTab(
+              printDialogTabId,
+            )?.title ??
+            'Untitled page'
+          }
+          url={
+            getTab(
+              printDialogTabId,
+            )?.url ??
+            activeUrl ??
+            ''
+          }
+          onCancel={() => {
+            setPrintDialogTabId(
+              null,
+            )
+          }}
+          onPrint={async (
+            options,
+          ) => {
+            const tabId =
+              printDialogTabId
+
+            if (!tabId) return
+
+            await printBrowseTab(
+              tabId,
+              options,
+            )
+
+            setPrintDialogTabId(
+              null,
+            )
+          }}
         />
       )}
 

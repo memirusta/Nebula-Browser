@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { isTauri } from './runtime'
 
+export const NEBULA_PRINT_COMMAND_ID = -10_001
+
 export type SiteContextMenuItemKind = 'command' | 'check' | 'radio' | 'separator' | 'submenu'
 
 export interface SiteContextMenuItem {

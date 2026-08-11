@@ -10,6 +10,8 @@ commands.allow = [
   "webview_go_forward",
   "webview_reload",
   "webview_zoom",
+  "webview_list_printers",
+  "webview_print",
   "webview_open_devtools",
   "webview_set_memory_usage",
   "webview_is_playing_audio",

@@ -284,6 +284,11 @@ mod imp {
     'alle ablehnen', 'tout refuser', 'refuser tout', 'rifiuta tutto',
     'rechazar todo', 'rejeitar tudo'
   ]);
+  const noticeActionLabels = new Set([
+    'accept all', 'accept', 'agree', 'allow all', 'i agree', 'continue',
+    'manage preferences', 'manage settings', 'cookie settings',
+    'preferences', 'settings'
+  ]);
   const normalize = (value) => (value || '')
     .normalize('NFKC')
     .toLocaleLowerCase('tr-TR')
@@ -353,16 +358,59 @@ mod imp {
     }}
     return false;
   }};
+  const hideCompactConsentNotice = () => {{
+    const controls = document.querySelectorAll(
+      'button, input[type="button"], input[type="submit"], a[role="button"]'
+    );
+
+    for (const control of controls) {{
+      if (!(control instanceof HTMLElement)) continue;
+      const label = rejectText(control);
+      if (!noticeActionLabels.has(label)) continue;
+
+      let current = control.parentElement;
+      for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {{
+        if (current === document.body || current === document.documentElement) break;
+
+        const text = current.innerText || current.textContent || '';
+        if (!consentWords.test(text) || text.length > 2500) continue;
+
+        const rect = current.getBoundingClientRect();
+        const actionCount = current.querySelectorAll(
+          'button, input[type="button"], input[type="submit"], a[role="button"]'
+        ).length;
+
+        const compact =
+          rect.width >= 220 &&
+          rect.width <= Math.min(window.innerWidth * 0.96, 960) &&
+          rect.height >= 70 &&
+          rect.height <= 650 &&
+          actionCount > 0 &&
+          actionCount <= 12;
+
+        if (!compact) continue;
+
+        if (hideElement(current)) {{
+          document.documentElement.style.setProperty('overflow', 'auto', 'important');
+          if (document.body) document.body.style.setProperty('overflow', 'auto', 'important');
+          return true;
+        }}
+      }}
+    }}
+
+    return false;
+  }};
   const scan = () => {{
     state.scheduled = false;
     const rejected = tryReject();
     let changed = false;
-    if (!rejected) for (const selector of knownRoots) {{
+    if (!rejected) changed = hideCompactConsentNotice() || changed;
+    if (!rejected && !changed) for (const selector of knownRoots) {{
       for (const element of document.querySelectorAll(selector)) {{
         if (looksLikeConsentRoot(element)) changed = hideElement(element) || changed;
       }}
     }}
-    if (!rejected) {{
+    if (!rejected && !changed) {{
       const generic = document.querySelectorAll(
         '[role="dialog"], [aria-modal="true"], [id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i], [id*="kvkk" i], [class*="kvkk" i]'
       );

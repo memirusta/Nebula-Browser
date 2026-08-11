@@ -77,7 +77,15 @@ export function ChromeApp() {
 
   useEffect(() => {
     document.documentElement.dataset.nebulaChrome = 'true'
+
+    const blockNativeContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+    }
+
+    window.addEventListener('contextmenu', blockNativeContextMenu, true)
+
     return () => {
+      window.removeEventListener('contextmenu', blockNativeContextMenu, true)
       delete document.documentElement.dataset.nebulaChrome
     }
   }, [])
@@ -115,8 +123,10 @@ export function ChromeApp() {
       void emit('nebula-browser-shortcut', action)
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    // Capture phase is intentional: folder portals and focused controls must
+    // not swallow browser-level shortcuts such as Ctrl+Tab.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [])
 
   const openTabIds = useMemo(

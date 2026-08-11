@@ -11,16 +11,22 @@ mod imp {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2BasicAuthenticationRequestedEventArgs,
         ICoreWebView2BasicAuthenticationRequestedEventHandler, ICoreWebView2Deferral,
+        ICoreWebView2LaunchingExternalUriSchemeEventArgs,
+        ICoreWebView2LaunchingExternalUriSchemeEventHandler,
         ICoreWebView2NewWindowRequestedEventHandler, ICoreWebView2PermissionRequestedEventArgs,
         ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2ScriptDialogOpeningEventArgs,
-        ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WindowCloseRequestedEventHandler,
-        ICoreWebView2_10, COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WebMessageReceivedEventHandler,
+        ICoreWebView2WindowCloseRequestedEventHandler, ICoreWebView2_10, ICoreWebView2_18,
+        COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
         COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_SCRIPT_DIALOG_KIND,
     };
     use webview2_com::{
-        BasicAuthenticationRequestedEventHandler, NewWindowRequestedEventHandler,
-        ScriptDialogOpeningEventHandler, WindowCloseRequestedEventHandler,
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler,
+        BasicAuthenticationRequestedEventHandler, LaunchingExternalUriSchemeEventHandler,
+        NewWindowRequestedEventHandler, ScriptDialogOpeningEventHandler,
+        WebMessageReceivedEventHandler, WindowCloseRequestedEventHandler,
     };
+    use windows::core::PCWSTR;
     use windows_core::{HSTRING, Interface, PWSTR};
 
     const SITE_UI_EVENT: &str = "nebula-site-ui-request";
@@ -39,6 +45,8 @@ mod imp {
         basic_auth: Option<i64>,
         new_window: i64,
         window_close: i64,
+        web_message: i64,
+        external_uri: Option<i64>,
     }
 
     struct Handlers {
@@ -46,6 +54,8 @@ mod imp {
         _basic_auth: Option<ICoreWebView2BasicAuthenticationRequestedEventHandler>,
         _new_window: ICoreWebView2NewWindowRequestedEventHandler,
         _window_close: ICoreWebView2WindowCloseRequestedEventHandler,
+        _web_message: ICoreWebView2WebMessageReceivedEventHandler,
+        _external_uri: Option<ICoreWebView2LaunchingExternalUriSchemeEventHandler>,
     }
 
     enum PendingRequest {
@@ -65,6 +75,14 @@ mod imp {
             args: ICoreWebView2BasicAuthenticationRequestedEventArgs,
             deferral: ICoreWebView2Deferral,
         },
+        ProtocolHandler {
+            tab_label: String,
+        },
+        ExternalUri {
+            tab_label: String,
+            args: ICoreWebView2LaunchingExternalUriSchemeEventArgs,
+            deferral: ICoreWebView2Deferral,
+        },
     }
 
     impl PendingRequest {
@@ -72,7 +90,9 @@ mod imp {
             match self {
                 Self::ScriptDialog { tab_label, .. }
                 | Self::Permission { tab_label, .. }
-                | Self::BasicAuth { tab_label, .. } => tab_label,
+                | Self::BasicAuth { tab_label, .. }
+                | Self::ProtocolHandler { tab_label, .. }
+                | Self::ExternalUri { tab_label, .. } => tab_label,
             }
         }
     }
@@ -118,6 +138,55 @@ mod imp {
     struct CloseWindowPayload {
         tab_label: String,
     }
+
+    #[derive(Debug, Deserialize)]
+    struct ProtocolHandlerMessage {
+        #[serde(rename = "type")]
+        kind: String,
+        scheme: String,
+        #[serde(rename = "handlerUrl")]
+        handler_url: String,
+        origin: String,
+        #[serde(default)]
+        title: String,
+    }
+
+    const PROTOCOL_HANDLER_BRIDGE_SCRIPT: &str = r#"
+(function () {
+  if (window.__nebulaProtocolHandlerHookInstalled) return;
+  window.__nebulaProtocolHandlerHookInstalled = true;
+
+  const bridge = window.chrome && window.chrome.webview;
+  if (!bridge || typeof Navigator === 'undefined') return;
+
+  const proto = Navigator.prototype;
+  if (!proto || typeof proto.registerProtocolHandler !== 'function') return;
+
+  try {
+    Object.defineProperty(proto, 'registerProtocolHandler', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: function (scheme, handlerUrl) {
+        const normalizedScheme = String(scheme || '').trim().toLowerCase();
+        const resolved = new URL(String(handlerUrl), window.location.href);
+
+        if (!resolved.href.includes('%s')) {
+          throw new DOMException('The handler URL must include %s.', 'SyntaxError');
+        }
+
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-register-protocol-handler',
+          scheme: normalizedScheme,
+          handlerUrl: resolved.href,
+          origin: window.location.origin,
+          title: document.title || window.location.hostname || 'Website'
+        }));
+      }
+    });
+  } catch (_) {}
+})();
+"#;
 
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -189,6 +258,59 @@ mod imp {
         }
     }
 
+    fn valid_protocol_scheme(scheme: &str) -> bool {
+        const SAFE: &[&str] = &[
+            "bitcoin", "geo", "im", "irc", "ircs", "magnet", "mailto", "matrix", "mms",
+            "news", "nntp", "openpgp4fpr", "sip", "sms", "smsto", "ssh", "tel", "urn",
+            "webcal", "wtai",
+        ];
+
+        SAFE.contains(&scheme)
+            || scheme
+                .strip_prefix("web+")
+                .is_some_and(|rest| {
+                    !rest.is_empty()
+                        && rest
+                            .chars()
+                            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+                })
+    }
+
+    fn valid_protocol_registration(
+        message: &ProtocolHandlerMessage,
+    ) -> Option<(String, String, String, String)> {
+        if message.kind != "nebula-register-protocol-handler" {
+            return None;
+        }
+
+        let scheme = message.scheme.trim().to_ascii_lowercase();
+        if !valid_protocol_scheme(&scheme) || !message.handler_url.contains("%s") {
+            return None;
+        }
+
+        let origin = url::Url::parse(message.origin.trim()).ok()?;
+        let handler = url::Url::parse(message.handler_url.trim()).ok()?;
+
+        if origin.scheme() != "https"
+            || handler.scheme() != "https"
+            || origin.origin() != handler.origin()
+        {
+            return None;
+        }
+
+        let title = message.title.trim();
+        Some((
+            scheme,
+            handler.to_string(),
+            origin.to_string(),
+            if title.is_empty() {
+                host_label(origin.as_str())
+            } else {
+                title.to_string()
+            },
+        ))
+    }
+
     fn emit_request(app: &AppHandle, payload: SiteUiRequest) {
         let _ = app.emit(SITE_UI_EVENT, payload);
     }
@@ -257,6 +379,141 @@ mod imp {
                 let result = (|| -> windows_core::Result<(HandlerTokens, Handlers)> {
                     let core = inner.controller().CoreWebView2()?;
                     core.Settings()?.SetAreDefaultScriptDialogsEnabled(false)?;
+
+                    // Replace Chromium's protocol-handler bubble with Nebula UI.
+                    // This script executes before page scripts and captures the
+                    // WebView2 message bridge before the later fullscreen bridge
+                    // masks window.chrome.webview from site code.
+                    let protocol_script = HSTRING::from(PROTOCOL_HANDLER_BRIDGE_SCRIPT);
+                    let protocol_script_complete =
+                        AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(
+                            |_result, _id| Ok(()),
+                        ));
+                    core.AddScriptToExecuteOnDocumentCreated(
+                        PCWSTR(protocol_script.as_ptr()),
+                        &protocol_script_complete,
+                    )?;
+
+                    let protocol_app = app_for_handlers.clone();
+                    let protocol_label = label_for_handlers.clone();
+                    let web_message = WebMessageReceivedEventHandler::create(Box::new(
+                        move |_, args| {
+                            let Some(args) = args else { return Ok(()) };
+                            let raw = take_string(|value| args.TryGetWebMessageAsString(value));
+                            let Ok(message) =
+                                serde_json::from_str::<ProtocolHandlerMessage>(&raw)
+                            else {
+                                return Ok(());
+                            };
+                            let Some((scheme, handler_url, origin, title)) =
+                                valid_protocol_registration(&message)
+                            else {
+                                return Ok(());
+                            };
+
+                            let id = next_request_id("protocol-handler");
+                            PENDING.with(|pending| {
+                                pending.borrow_mut().insert(
+                                    id.clone(),
+                                    PendingRequest::ProtocolHandler {
+                                        tab_label: protocol_label.clone(),
+                                    },
+                                );
+                            });
+
+                            emit_request(
+                                &protocol_app,
+                                SiteUiRequest {
+                                    id,
+                                    tab_label: protocol_label.clone(),
+                                    request_type: "protocol-handler".to_string(),
+                                    uri: origin,
+                                    title,
+                                    message: handler_url,
+                                    default_text: String::new(),
+                                    dialog_kind: None,
+                                    permission_kind: Some(scheme),
+                                    challenge: None,
+                                    is_user_initiated: false,
+                                },
+                            );
+                            Ok(())
+                        },
+                    ));
+                    let mut web_message_token = 0i64;
+                    core.add_WebMessageReceived(&web_message, &mut web_message_token)?;
+
+                    // External schemes (mailto:, tel:, custom application URLs)
+                    // use Nebula's permission surface instead of WebView2's
+                    // built-in Edge dialog.
+                    let mut external_uri_handler = None;
+                    let mut external_uri_token = None;
+                    if let Ok(core18) = core.cast::<ICoreWebView2_18>() {
+                        let external_app = app_for_handlers.clone();
+                        let external_label = label_for_handlers.clone();
+                        let handler =
+                            LaunchingExternalUriSchemeEventHandler::create(Box::new(
+                                move |_, args| {
+                                    let Some(args) = args else { return Ok(()) };
+
+                                    // Default-deny immediately. The response path
+                                    // flips this to false only after explicit Allow.
+                                    args.SetCancel(true)?;
+                                    let deferral = args.GetDeferral()?;
+                                    let external_uri =
+                                        take_string(|value| args.Uri(value));
+                                    let initiating_origin =
+                                        take_string(|value| args.InitiatingOrigin(value));
+                                    let mut initiated = windows_core::BOOL::default();
+                                    let _ = args.IsUserInitiated(&mut initiated);
+
+                                    let scheme = url::Url::parse(&external_uri)
+                                        .ok()
+                                        .map(|parsed| parsed.scheme().to_string())
+                                        .unwrap_or_else(|| {
+                                            external_uri
+                                                .split_once(':')
+                                                .map(|(scheme, _)| scheme.to_string())
+                                                .unwrap_or_else(|| "external".to_string())
+                                        });
+
+                                    let id = next_request_id("external-uri");
+                                    PENDING.with(|pending| {
+                                        pending.borrow_mut().insert(
+                                            id.clone(),
+                                            PendingRequest::ExternalUri {
+                                                tab_label: external_label.clone(),
+                                                args,
+                                                deferral,
+                                            },
+                                        );
+                                    });
+
+                                    emit_request(
+                                        &external_app,
+                                        SiteUiRequest {
+                                            id,
+                                            tab_label: external_label.clone(),
+                                            request_type: "external-uri".to_string(),
+                                            uri: initiating_origin.clone(),
+                                            title: host_label(&initiating_origin),
+                                            message: external_uri,
+                                            default_text: String::new(),
+                                            dialog_kind: None,
+                                            permission_kind: Some(scheme),
+                                            challenge: None,
+                                            is_user_initiated: initiated.as_bool(),
+                                        },
+                                    );
+                                    Ok(())
+                                },
+                            ));
+
+                        let mut token = 0i64;
+                        core18.add_LaunchingExternalUriScheme(&handler, &mut token)?;
+                        external_uri_token = Some(token);
+                        external_uri_handler = Some(handler);
+                    }
 
                     let script_app = app_for_handlers.clone();
                     let script_label = label_for_handlers.clone();
@@ -401,12 +658,16 @@ mod imp {
                             basic_auth: basic_auth_token,
                             new_window: new_window_token,
                             window_close: window_close_token,
+                            web_message: web_message_token,
+                            external_uri: external_uri_token,
                         },
                         Handlers {
                             _script_dialog: script_dialog,
                             _basic_auth: basic_auth_handler,
                             _new_window: new_window,
                             _window_close: window_close,
+                            _web_message: web_message,
+                            _external_uri: external_uri_handler,
                         },
                     ))
                 })();
@@ -504,6 +765,11 @@ mod imp {
                                 }
                                 deferral.Complete()?;
                             }
+                            PendingRequest::ProtocolHandler { .. } => {}
+                            PendingRequest::ExternalUri { args, deferral, .. } => {
+                                args.SetCancel(!response.accepted)?;
+                                deferral.Complete()?;
+                            }
                         }
                         Ok(())
                     })()
@@ -529,6 +795,11 @@ mod imp {
                     let _ = deferral.Complete();
                 }
                 PendingRequest::BasicAuth { args, deferral, .. } => {
+                    let _ = args.SetCancel(true);
+                    let _ = deferral.Complete();
+                }
+                PendingRequest::ProtocolHandler { .. } => {}
+                PendingRequest::ExternalUri { args, deferral, .. } => {
                     let _ = args.SetCancel(true);
                     let _ = deferral.Complete();
                 }
@@ -579,10 +850,16 @@ mod imp {
                     let _ = core.remove_ScriptDialogOpening(tokens.script_dialog);
                     let _ = core.remove_NewWindowRequested(tokens.new_window);
                     let _ = core.remove_WindowCloseRequested(tokens.window_close);
+                    let _ = core.remove_WebMessageReceived(tokens.web_message);
                     if let (Some(token), Ok(core10)) =
                         (tokens.basic_auth, core.cast::<ICoreWebView2_10>())
                     {
                         let _ = core10.remove_BasicAuthenticationRequested(token);
+                    }
+                    if let (Some(token), Ok(core18)) =
+                        (tokens.external_uri, core.cast::<ICoreWebView2_18>())
+                    {
+                        let _ = core18.remove_LaunchingExternalUriScheme(token);
                     }
                 }
                 HANDLERS.with(|slots| {

@@ -968,6 +968,8 @@ pub fn run() {
     webview_controls::webview_go_forward,
     webview_controls::webview_reload,
     webview_controls::webview_zoom,
+    webview_controls::webview_list_printers,
+    webview_controls::webview_print,
     webview_controls::webview_open_devtools,
     webview_controls::webview_set_memory_usage,
     webview_controls::webview_is_playing_audio,

@@ -23,6 +23,8 @@ export type BrowserShortcutId =
   | 'zoom-in'
   | 'zoom-out'
   | 'zoom-reset'
+  | 'print'
+  | 'toggle-fullscreen'
   | 'devtools'
   | 'close-overlay'
 
@@ -59,6 +61,8 @@ export function matchBrowserShortcut(event: KeyboardEvent): BrowserShortcutId | 
   if (mod && !event.altKey && (key === '=' || key === '+')) return 'zoom-in'
   if (mod && !event.altKey && key === '-') return 'zoom-out'
   if (mod && !event.altKey && key === '0') return 'zoom-reset'
+  if (mod && !event.altKey && !event.shiftKey && (key === 'p' || key === 'P')) return 'print'
+  if (!mod && !event.altKey && key === 'F11') return 'toggle-fullscreen'
   if (mod && !event.altKey && event.shiftKey && (key === 'i' || key === 'I')) return 'devtools'
   if (!mod && !event.altKey && key === 'F12') return 'devtools'
   if (!mod && !event.altKey && key === 'Escape') return 'close-overlay'

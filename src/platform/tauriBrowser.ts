@@ -3359,6 +3359,74 @@ export async function reloadBrowseTab(
   }
 }
 
+export interface BrowsePrinterInfo {
+  name: string
+  isDefault: boolean
+}
+
+export async function listBrowsePrinters(): Promise<BrowsePrinterInfo[]> {
+  if (!isTauri) return []
+
+  try {
+    return await invoke<BrowsePrinterInfo[]>(
+      'webview_list_printers',
+    )
+  } catch (error) {
+    if (
+      import.meta.env.DEV
+    ) {
+      console.warn(
+        '[nebula] webview_list_printers failed',
+        error,
+      )
+    }
+
+    return []
+  }
+}
+
+export interface BrowsePrintOptions {
+  printerName: string
+  pageRanges: string
+  landscape: boolean
+  copies: number
+  scale: number
+  backgrounds: boolean
+  headersAndFooters: boolean
+  selectionOnly: boolean
+}
+
+export async function printBrowseTab(
+  shortcutId: string,
+  options: BrowsePrintOptions,
+): Promise<void> {
+  if (!isTauri) return
+
+  try {
+    await invoke(
+      'webview_print',
+      {
+        label:
+          tabWebviewLabel(
+            shortcutId,
+          ),
+        options,
+      },
+    )
+  } catch (error) {
+    if (
+      import.meta.env.DEV
+    ) {
+      console.warn(
+        '[nebula] webview_print failed',
+        error,
+      )
+    }
+
+    throw error
+  }
+}
+
 export async function zoomBrowseTab(
   shortcutId: string,
   action:
