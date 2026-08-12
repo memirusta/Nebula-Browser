@@ -5,11 +5,10 @@ import {
   buildPasswordBridgeTickScript,
   buildPasswordBridgePollScript,
   buildPasswordFillScript,
-  buildPasswordPromptDismissScript,
   PASSWORD_BRIDGE_NEEDS_BOOTSTRAP,
   parsePasswordBridgePoll,
-  type BridgePromptConfig,
   type PasswordBridgePollResult,
+  type PasswordFillTarget,
 } from '../core/passwordBridgeScript'
 import { isTauri } from './runtime'
 
@@ -47,42 +46,43 @@ function runTabScriptExclusive(shortcutId: string, script: string): Promise<stri
 
 export async function tickPasswordBridge(
   shortcutId: string,
-  locale: 'tr' | 'en',
-  prompt: BridgePromptConfig | null,
 ): Promise<PasswordBridgePollResult | null> {
   let raw = await runTabScriptExclusive(
     shortcutId,
-    buildPasswordBridgePollScript(locale, prompt),
+    buildPasswordBridgePollScript(),
   )
   if (raw?.includes(PASSWORD_BRIDGE_NEEDS_BOOTSTRAP)) {
     raw = await runTabScriptExclusive(
       shortcutId,
-      buildPasswordBridgeTickScript(locale, prompt),
+      buildPasswordBridgeTickScript(),
     )
   }
   if (!raw) return null
   return parsePasswordBridgePoll(raw)
 }
 
-export async function dismissInPagePasswordPrompt(shortcutId: string): Promise<void> {
-  await runTabScriptExclusive(shortcutId, buildPasswordPromptDismissScript())
-}
+export type PasswordFillResult = 'username' | 'password' | 'both'
 
 export async function fillPasswordOnTab(
   shortcutId: string,
   username: string,
   password: string,
-): Promise<boolean> {
+  target: PasswordFillTarget = 'both',
+): Promise<PasswordFillResult | null> {
   const raw = await runTabScriptExclusive(
     shortcutId,
-    buildPasswordFillScript(username, password),
+    buildPasswordFillScript(username, password, target),
   )
-  if (!raw) return false
+  if (!raw) return null
   try {
     const parsed = JSON.parse(raw) as unknown
-    return parsed === true || parsed === 'true'
+    if (parsed === 'username' || parsed === 'password' || parsed === 'both') return parsed
+    return null
   } catch {
-    return raw.includes('true')
+    if (raw.includes('username')) return 'username'
+    if (raw.includes('password')) return 'password'
+    if (raw.includes('both')) return 'both'
+    return null
   }
 }
 

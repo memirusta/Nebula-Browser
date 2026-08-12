@@ -869,6 +869,8 @@ catShortcutsDesc: {
     en: 'Saved sign-in for {site}.',
   },
   pwdFillBtn: { tr: 'Doldur', en: 'Fill' },
+  pwdChooseAccount: { tr: 'Bir hesap seç', en: 'Choose an account' },
+  pwdAccountFillHint: { tr: 'Bu hesapla doldur', en: 'Fill with this account' },
   pwdSaveTitle: { tr: 'Şifreyi kaydet?', en: 'Save password?' },
   pwdSaveLead: {
     tr: '{site} için {user} girişini kaydedelim mi?',

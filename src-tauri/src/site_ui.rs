@@ -237,6 +237,50 @@ mod imp {
     return best;
   }
 
+  function rememberedUsernameValue(inputs) {
+    // Some two-step providers remove the visible username field on the
+    // password step but keep the account in an explicit hidden login field.
+    // Read only high-confidence identity fields; never scrape arbitrary hidden
+    // inputs because they commonly contain tokens and opaque state.
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i];
+      if (!input || input.tagName !== 'INPUT' || isPasswordInput(input)) continue;
+      const autocomplete = String(input.getAttribute('autocomplete') || '').toLowerCase();
+      const name = String(input.getAttribute('name') || '').toLowerCase();
+      const id = String(input.getAttribute('id') || '').toLowerCase();
+      const explicitIdentity =
+        autocomplete === 'username' ||
+        autocomplete === 'email' ||
+        name === 'login' ||
+        name === 'loginfmt' ||
+        name === 'username' ||
+        name === 'email' ||
+        id === 'login' ||
+        id === 'loginfmt' ||
+        id === 'username' ||
+        id === 'email';
+      if (!explicitIdentity) continue;
+      const value = String(input.value || '').trim();
+      if (value) return value;
+    }
+
+    // Microsoft-style password-only pages expose the selected account in a
+    // visible #displayName element. Accept displayed text only when it looks
+    // like an e-mail address or phone number to avoid mistaking a person's
+    // display name for a login identifier.
+    const display = document.querySelector('#displayName, [data-username], [data-email]');
+    if (!display) return '';
+    const candidate = String(
+      display.getAttribute('data-username') ||
+      display.getAttribute('data-email') ||
+      display.textContent ||
+      ''
+    ).trim();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate)) return candidate;
+    if (/^\+?[0-9][0-9 ()-]{5,}$/.test(candidate)) return candidate;
+    return '';
+  }
+
   function isCredentialActionTarget(target) {
     if (!target || !target.closest) return false;
     const control = target.closest('button, input[type="submit"], [role="button"]');
@@ -306,7 +350,10 @@ mod imp {
       const form = passwordInput.closest && passwordInput.closest('form');
       const scope = form ? form.querySelectorAll('input') : inputs;
       const usernameInput = findUsernameInput(scope);
-      postPasswordStep('submit', usernameInput ? usernameInput.value : '', password);
+      const username = usernameInput
+        ? String(usernameInput.value || '').trim()
+        : rememberedUsernameValue(inputs);
+      postPasswordStep('submit', username, password);
       return;
     }
 
@@ -714,9 +761,7 @@ mod imp {
                                     && username.len() <= 1024
                                     && password.len() <= 16_384;
                                 let payload_ok = match message_kind {
-                                    Some("nebula-password-step-identity") => {
-                                        !username.trim().is_empty()
-                                    }
+                                    Some("nebula-password-step-identity") => !username.trim().is_empty(),
                                     Some("nebula-password-step-submit") => !password.is_empty(),
                                     _ => false,
                                 };

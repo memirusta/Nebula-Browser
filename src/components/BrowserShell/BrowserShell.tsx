@@ -12,6 +12,8 @@ import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
 import { getAppDialogsSnapshot } from '../../core/appDialog'
 import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
+import { PasswordSavePrompt } from '../PasswordSavePrompt/PasswordSavePrompt'
+import { PasswordFillPrompt } from '../PasswordFillPrompt/PasswordFillPrompt'
 import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
 import { isTauri } from '../../platform/runtime'
@@ -196,6 +198,18 @@ export function BrowserShell() {
 
   const [viewMode, setViewMode] =
     useState<ViewMode>('home')
+
+  const isHome =
+    viewMode ===
+    'home'
+
+  const isBrowsing =
+    viewMode ===
+    'browsing'
+
+  const isOverlay =
+    viewMode ===
+    'overlay'
 
   const [, setNativeTabReady] =
     useState(false)
@@ -848,6 +862,37 @@ export function BrowserShell() {
     string | null
   >(null)
 
+  const passwordBridge =
+    usePasswordBridge({
+      enabled:
+        isBrowsing &&
+        isTauri,
+      preserveStateWhenDisabled:
+        viewMode ===
+        'overlay',
+      activeTabId,
+      activeUrl,
+      entries:
+        passwordEntries,
+      onVaultChange:
+        reloadPasswordVault,
+    })
+
+  const passwordPromptOffer =
+    passwordBridge.offer
+
+  const passwordSaveOffer =
+    passwordPromptOffer?.mode ===
+    'save'
+      ? passwordPromptOffer
+      : null
+
+  const passwordFillOffer =
+    passwordPromptOffer?.mode ===
+    'fill'
+      ? passwordPromptOffer
+      : null
+
   const [
     ,
     setTabSwitchHistory,
@@ -914,7 +959,8 @@ export function BrowserShell() {
 
   const siteSurfaceActive =
     siteUiQueue.length > 0 ||
-    siteContextMenu !== null
+    siteContextMenu !== null ||
+    passwordPromptOffer !== null
 
   const siteUiPreviousModeRef =
     useRef<ViewMode>('home')
@@ -944,6 +990,7 @@ export function BrowserShell() {
         crashRecoveryOpen ||
         siteUiQueue.length > 0 ||
         siteContextMenu !== null ||
+        passwordPromptOffer !== null ||
         (
           viewMode !== 'browsing' &&
           (
@@ -959,6 +1006,7 @@ export function BrowserShell() {
     downloadPanelOpen,
     historyPanelOpen,
     notificationPanelOpen,
+    passwordPromptOffer,
     settingsOpen,
     siteContextMenu,
     siteUiQueue.length,
@@ -3161,7 +3209,8 @@ export function BrowserShell() {
     const open =
       siteUiQueue.length > 0 ||
       siteContextMenu !== null ||
-      printDialogTabId !== null
+      printDialogTabId !== null ||
+      passwordPromptOffer !== null
 
     if (
       open &&
@@ -3242,6 +3291,7 @@ export function BrowserShell() {
       open
   }, [
     activeTabIdRef,
+    passwordPromptOffer,
     siteContextMenu,
     siteUiQueue.length,
     printDialogTabId,
@@ -4166,35 +4216,11 @@ export function BrowserShell() {
     siteSurfaceActive,
   ])
 
-  const isHome =
-    viewMode ===
-    'home'
-
-  const isBrowsing =
-    viewMode ===
-    'browsing'
-
-  const isOverlay =
-    viewMode ===
-    'overlay'
-
   // In Tauri the main WebView is now the persistent Home surface.
   // Browser tabs cover it while browsing; overlay mode intentionally hides it.
   const showHomeSurface =
     isHome ||
     (isTauri && isBrowsing)
-
-  usePasswordBridge({
-    enabled:
-      isBrowsing &&
-      isTauri,
-    activeTabId,
-    activeUrl,
-    entries:
-      passwordEntries,
-    onVaultChange:
-      reloadPasswordVault,
-  })
 
   const showBrowser =
     (
@@ -5678,6 +5704,46 @@ export function BrowserShell() {
                 response,
               )
             }
+          }
+        />
+      )}
+
+      {passwordFillOffer && (
+        <PasswordFillPrompt
+          site={
+            passwordFillOffer.label
+          }
+          pageUrl={
+            passwordFillOffer.pageUrl
+          }
+          matches={
+            passwordFillOffer.matches ?? []
+          }
+          onFill={
+            passwordBridge.acceptFill
+          }
+          onDismiss={
+            passwordBridge.dismissOffer
+          }
+        />
+      )}
+
+      {passwordSaveOffer && (
+        <PasswordSavePrompt
+          site={
+            passwordSaveOffer.label
+          }
+          pageUrl={
+            passwordSaveOffer.pageUrl
+          }
+          username={
+            passwordSaveOffer.username
+          }
+          onSave={
+            passwordBridge.acceptSave
+          }
+          onDismiss={
+            passwordBridge.dismissOffer
           }
         />
       )}

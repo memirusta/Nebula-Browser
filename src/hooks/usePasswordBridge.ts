@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { BridgePromptConfig } from '../core/passwordBridgeScript'
-import { findExistingPassword, labelFromUrl, matchPasswordsForUrl } from '../core/passwordMatch'
+import {
+  findExistingPassword,
+  labelFromUrl,
+  matchPasswordsForUrl,
+  normalizePasswordOrigins,
+  passwordEntryMatchesUrl,
+} from '../core/passwordMatch'
 import { PasswordStepFlowTracker } from '../core/passwordStepFlow'
 import type { SavedPassword } from '../core/passwordVault'
 import { upsertPasswordEntry } from '../core/passwordVault'
-import { useLocale } from './useLocale'
 import {
-  dismissInPagePasswordPrompt,
   fillPasswordOnTab,
   listenForPasswordStepEvents,
   tickPasswordBridge,
@@ -28,10 +31,15 @@ export interface PasswordBridgeOffer {
   password: string
   label: string
   matches?: SavedPassword[]
+  fillTarget?: 'username' | 'password' | 'both'
+  vaultUrl?: string
+  usernameOrigins?: string[]
+  passwordOrigins?: string[]
 }
 
 interface UsePasswordBridgeOptions {
   enabled: boolean
+  preserveStateWhenDisabled?: boolean
   activeTabId: string | null
   activeUrl: string | null
   entries: SavedPassword[]
@@ -45,12 +53,12 @@ function isHttpUrl(url: string | null): url is string {
 
 export function usePasswordBridge({
   enabled,
+  preserveStateWhenDisabled = false,
   activeTabId,
   activeUrl,
   entries,
   onVaultChange,
 }: UsePasswordBridgeOptions) {
-  const { locale } = useLocale()
   const [offer, setOffer] = useState<PasswordBridgeOffer | null>(null)
   const offerRef = useRef<PasswordBridgeOffer | null>(null)
   const dismissedFillRef = useRef<Map<string, number>>(new Map())
@@ -58,7 +66,21 @@ export function usePasswordBridge({
   const passwordStepFlowRef = useRef(new PasswordStepFlowTracker())
   const tickInFlightRef = useRef(false)
   const pollDelayRef = useRef(IDLE_POLL_MS)
-  const saveDraftRef = useRef<{ pageUrl: string; username: string; password: string } | null>(null)
+  const saveDraftRef = useRef<{
+    pageUrl: string
+    vaultUrl: string
+    username: string
+    password: string
+    usernameOrigins?: string[]
+    passwordOrigins?: string[]
+  } | null>(null)
+  const filledUsernameRef = useRef<{
+    tabId: string
+    entryId: string
+    pageUrl: string
+    username: string
+    at: number
+  } | null>(null)
   const entriesRef = useRef(entries)
   const activeTabIdRef = useRef(activeTabId)
   const activeUrlRef = useRef(activeUrl)
@@ -78,7 +100,21 @@ export function usePasswordBridge({
 
   useEffect(() => {
     if (!enabled || !isTauri) {
-      passwordStepFlowRef.current.clearAll()
+      // Password prompts are rendered by the main app webview. Opening one
+      // temporarily switches BrowserShell from `browsing` to `overlay`, which
+      // intentionally disables site polling. Do not destroy the offer/flow
+      // during that temporary overlay or the prompt immediately closes and
+      // BrowserShell bounces back to browsing (visible as a home-screen flicker).
+      if (!preserveStateWhenDisabled) {
+        passwordStepFlowRef.current.clearAll()
+        dismissedFillRef.current.clear()
+        handledPendingRef.current.clear()
+        saveDraftRef.current = null
+        filledUsernameRef.current = null
+        offerRef.current = null
+        setOffer(null)
+      }
+      pollDelayRef.current = IDLE_POLL_MS
       return
     }
 
@@ -94,14 +130,14 @@ export function usePasswordBridge({
         return
       }
 
-      // Keep the existing single-page save path unchanged. The native handoff
-      // is only needed when step 2 contains a password but no username field.
-      if (event.username.trim()) return
+      // Native submit capture is the navigation-safe source of truth. Keep it
+      // even when the provider can recover the username on the password step;
+      // the polling path remains as a fallback for ordinary single-page forms.
       passwordStepFlowRef.current.captureSubmission({
         shortcutId: event.shortcutId,
         origin: event.origin,
         url: event.url,
-        username: '',
+        username: event.username,
         password: event.password,
       })
     })
@@ -119,54 +155,101 @@ export function usePasswordBridge({
       disposed = true
       unlisten?.()
     }
-  }, [enabled])
-
-  const buildPrompt = useCallback((nextOffer: PasswordBridgeOffer | null): BridgePromptConfig | null => {
-    if (!nextOffer) return null
-    if (nextOffer.mode === 'fill') {
-      return {
-        mode: 'fill',
-        site: nextOffer.label,
-        accounts: (nextOffer.matches ?? []).map((entry) => entry.username),
-      }
-    }
-    return {
-      mode: 'save',
-      site: nextOffer.label,
-      user: nextOffer.username,
-    }
-  }, [])
+  }, [enabled, preserveStateWhenDisabled])
 
   const stageSaveCandidate = useCallback((
     shortcutId: string,
     pageUrl: string,
     username: string,
     password: string,
+    observed?: {
+      usernameOrigins?: string[]
+      passwordOrigins?: string[]
+    },
   ): boolean => {
-    const existing = findExistingPassword(entriesRef.current, pageUrl, username)
-    if (existing?.password === password) return false
+    const normalizedUser = username.trim().toLowerCase()
+    const usernameOrigins = normalizePasswordOrigins(observed?.usernameOrigins)
+    const passwordOrigins = normalizePasswordOrigins(observed?.passwordOrigins)
 
-    saveDraftRef.current = { pageUrl, username, password }
+    let existing = findExistingPassword(entriesRef.current, pageUrl, username)
+
+    // A split-login credential may have been saved under the normal/username
+    // origin before this password origin was learned. Reuse that same entry
+    // instead of creating a duplicate.
+    if (!existing && usernameOrigins.length > 0) {
+      existing =
+        entriesRef.current.find(
+          (entry) =>
+            entry.username.trim().toLowerCase() === normalizedUser &&
+            usernameOrigins.some((origin) =>
+              passwordEntryMatchesUrl(origin, entry, 'username'),
+            ),
+        ) ?? null
+    }
+
+    const vaultUrl = existing?.url ?? pageUrl
+    const mergedUsernameOrigins = normalizePasswordOrigins([
+      ...(existing?.usernameOrigins ?? []),
+      ...usernameOrigins,
+    ])
+    const mergedPasswordOrigins = normalizePasswordOrigins([
+      ...(existing?.passwordOrigins ?? []),
+      ...passwordOrigins,
+    ])
+
+    if (existing?.password === password) {
+      const usernameOriginsChanged =
+        mergedUsernameOrigins.join('\0') !==
+        normalizePasswordOrigins(existing.usernameOrigins).join('\0')
+      const passwordOriginsChanged =
+        mergedPasswordOrigins.join('\0') !==
+        normalizePasswordOrigins(existing.passwordOrigins).join('\0')
+
+      if (usernameOriginsChanged || passwordOriginsChanged) {
+        void upsertPasswordEntry({
+          label: existing.label || labelFromUrl(pageUrl),
+          url: vaultUrl,
+          username,
+          password,
+          usernameOrigins: mergedUsernameOrigins,
+          passwordOrigins: mergedPasswordOrigins,
+        })
+          .then(() => onVaultChange())
+          .catch((error) => {
+            console.error('Password origin metadata update failed', error)
+          })
+      }
+      return false
+    }
+
+    saveDraftRef.current = {
+      pageUrl,
+      vaultUrl,
+      username,
+      password,
+      usernameOrigins: mergedUsernameOrigins,
+      passwordOrigins: mergedPasswordOrigins,
+    }
     const saveOffer: PasswordBridgeOffer = {
       mode: 'save',
       shortcutId,
       pageUrl,
+      vaultUrl,
       username,
       password,
-      label: labelFromUrl(pageUrl),
+      label: existing?.label || labelFromUrl(pageUrl),
+      usernameOrigins: mergedUsernameOrigins,
+      passwordOrigins: mergedPasswordOrigins,
     }
     offerRef.current = saveOffer
     setOffer(saveOffer)
     return true
-  }, [])
+  }, [onVaultChange])
 
-  const clearOffer = useCallback((shortcutId?: string) => {
+  const clearOffer = useCallback((_shortcutId?: string) => {
     saveDraftRef.current = null
     setOffer(null)
     offerRef.current = null
-    if (shortcutId) {
-      void dismissInPagePasswordPrompt(shortcutId)
-    }
   }, [])
 
   const dismissOffer = useCallback(() => {
@@ -177,23 +260,72 @@ export function usePasswordBridge({
     clearOffer(current?.shortcutId)
   }, [clearOffer])
 
-  const acceptFill = useCallback(async (entry: SavedPassword, shortcutId: string, pageUrl: string) => {
-    const ok = await fillPasswordOnTab(shortcutId, entry.username, entry.password)
-    if (ok) {
+  const acceptFill = useCallback(async (
+    entry: SavedPassword,
+    shortcutId: string,
+    pageUrl: string,
+    fillTarget?: 'username' | 'password' | 'both',
+    rememberExplicitSelection = false,
+  ): Promise<boolean> => {
+    const target = fillTarget ?? 'both'
+    const result = await fillPasswordOnTab(
+      shortcutId,
+      entry.username,
+      entry.password,
+      target,
+    )
+    if (!result) return false
+
+    if (rememberExplicitSelection) {
+      // The user explicitly chose this credential from Nebula's account picker.
+      // Keep that exact choice for the next password step even if the provider
+      // has a decoy/hidden password input and the fill script reports "both".
+      filledUsernameRef.current = {
+        tabId: shortcutId,
+        entryId: entry.id,
+        pageUrl,
+        username: entry.username,
+        at: Date.now(),
+      }
+    } else if (result === 'username' || fillTarget === 'username') {
+      // Do not apply the normal 5-minute dismissal here: many split-login
+      // providers keep the same URL when they swap the username step for the
+      // password step. Suppress only the repeated username-stage offer.
+      filledUsernameRef.current = {
+        tabId: shortcutId,
+        entryId: entry.id,
+        pageUrl,
+        username: entry.username,
+        at: Date.now(),
+      }
+    } else {
+      filledUsernameRef.current = null
       dismissedFillRef.current.set(pageUrl, Date.now())
-      clearOffer(shortcutId)
     }
+    clearOffer(shortcutId)
+    return true
   }, [clearOffer])
 
   const acceptSave = useCallback(
-    async (draft: { pageUrl: string; username: string; password: string; label: string }) => {
+    async (draft: {
+      pageUrl: string
+      vaultUrl?: string
+      username: string
+      password: string
+      label: string
+      usernameOrigins?: string[]
+      passwordOrigins?: string[]
+    }) => {
       await upsertPasswordEntry({
         label: draft.label,
-        url: draft.pageUrl,
+        url: draft.vaultUrl ?? draft.pageUrl,
         username: draft.username,
         password: draft.password,
+        usernameOrigins: normalizePasswordOrigins(draft.usernameOrigins),
+        passwordOrigins: normalizePasswordOrigins(draft.passwordOrigins),
       })
       await onVaultChange()
+      filledUsernameRef.current = null
       clearOffer(activeTabIdRef.current ?? undefined)
     },
     [clearOffer, onVaultChange],
@@ -203,10 +335,25 @@ export function usePasswordBridge({
     dismissedFillRef.current.clear()
     handledPendingRef.current.clear()
     saveDraftRef.current = null
+    filledUsernameRef.current = null
     offerRef.current = null
     pollDelayRef.current = IDLE_POLL_MS
     setOffer(null)
-  }, [activeTabId, activeUrl])
+  }, [activeTabId])
+
+  useEffect(() => {
+    dismissedFillRef.current.clear()
+    handledPendingRef.current.clear()
+    pollDelayRef.current = IDLE_POLL_MS
+
+    // A successful login may redirect immediately (including to another
+    // origin). Keep a staged save candidate tied to the original tab/site;
+    // only autofill offers are page-local and must be cleared on navigation.
+    if (offerRef.current?.mode === 'fill') {
+      offerRef.current = null
+      setOffer(null)
+    }
+  }, [activeUrl])
 
   useEffect(() => {
     if (!enabled || !isTauri || !activeTabId || !isHttpUrl(activeUrl)) {
@@ -230,6 +377,10 @@ export function usePasswordBridge({
             steppedSubmission.url,
             steppedSubmission.username,
             steppedSubmission.password,
+            {
+              usernameOrigins: steppedSubmission.usernameOrigins,
+              passwordOrigins: steppedSubmission.passwordOrigins,
+            },
           )
         }
 
@@ -241,51 +392,25 @@ export function usePasswordBridge({
             mode: 'save',
             shortcutId: tabId,
             pageUrl: draft.pageUrl,
+            vaultUrl: draft.vaultUrl,
             username: draft.username,
             password: draft.password,
             label: labelFromUrl(draft.pageUrl),
+            usernameOrigins: draft.usernameOrigins,
+            passwordOrigins: draft.passwordOrigins,
           }
         }
 
-        const poll = await tickPasswordBridge(tabId, locale, buildPrompt(nextOffer))
+        const poll = await tickPasswordBridge(tabId)
         if (cancelled || !poll) {
           pollDelayRef.current = IDLE_POLL_MS
           return
         }
-        pollDelayRef.current = poll.hasForm || nextOffer || poll.pending
+        pollDelayRef.current = poll.hasPasswordField || poll.hasUsernameField || poll.hasForm || nextOffer || poll.pending
           ? ACTIVE_POLL_MS
           : IDLE_POLL_MS
 
         const pageUrl = poll.href && isHttpUrl(poll.href) ? poll.href : tabUrl
-
-        if (poll.action?.type === 'dismiss') {
-          if (nextOffer?.mode === 'fill') {
-            dismissedFillRef.current.set(pageUrl, Date.now())
-          }
-          clearOffer(tabId)
-          return
-        }
-
-        if (poll.action?.type === 'fill') {
-          const matches = matchPasswordsForUrl(pageUrl, entriesRef.current)
-          const entry =
-            matches.find((item) => item.username === poll.action?.username) ?? matches[0]
-          if (entry) {
-            await acceptFill(entry, tabId, pageUrl)
-          }
-          return
-        }
-
-        if (poll.action?.type === 'save' && saveDraftRef.current) {
-          const draft = saveDraftRef.current
-          await acceptSave({
-            pageUrl: draft.pageUrl,
-            username: draft.username,
-            password: draft.password,
-            label: labelFromUrl(draft.pageUrl),
-          })
-          return
-        }
 
         if (poll.pending?.username && poll.pending.password) {
           const pendingKey = `${pageUrl}\0${poll.pending.username}\0${poll.pending.t}`
@@ -297,6 +422,10 @@ export function usePasswordBridge({
                 pageUrl,
                 poll.pending.username,
                 poll.pending.password,
+                {
+                  usernameOrigins: [pageUrl],
+                  passwordOrigins: [pageUrl],
+                },
               )
             ) {
               return
@@ -304,16 +433,70 @@ export function usePasswordBridge({
           }
         }
 
-        if (!poll.hasForm) {
-          if (nextOffer) clearOffer(tabId)
+        if (!poll.hasPasswordField && !poll.hasUsernameField) {
+          if (nextOffer?.mode === 'fill') clearOffer(tabId)
           return
         }
 
         const dismissedAt = dismissedFillRef.current.get(pageUrl)
         if (dismissedAt && Date.now() - dismissedAt < DISMISS_FILL_MS) return
 
-        const matches = matchPasswordsForUrl(pageUrl, entriesRef.current)
+        const recentUsernameFill = filledUsernameRef.current
+        if (
+          poll.hasUsernameField &&
+          !poll.hasPasswordField &&
+          recentUsernameFill?.tabId === tabId &&
+          recentUsernameFill.pageUrl === pageUrl &&
+          Date.now() - recentUsernameFill.at < DISMISS_FILL_MS
+        ) {
+          return
+        }
+
+        const matchRole = poll.hasPasswordField ? 'password' : 'username'
+        let matches = matchPasswordsForUrl(pageUrl, entriesRef.current, matchRole)
         if (matches.length === 0) return
+
+        // If the user chose an account on step 1, keep that credential selected
+        // across navigation and prefer it on the password step, but only if the
+        // current origin is already authorized for that credential's password.
+        const filledUsername = filledUsernameRef.current
+        if (
+          poll.hasPasswordField &&
+          filledUsername?.tabId === tabId &&
+          Date.now() - filledUsername.at < DISMISS_FILL_MS
+        ) {
+          const selectedEntry = matches.find(
+            (entry) => entry.id === filledUsername.entryId,
+          )
+          if (selectedEntry) {
+            // The user already chose this account on the username step. Once
+            // the password step appears, continue that same login flow without
+            // asking them to choose the account a second time.
+            const autoFilled = await acceptFill(
+              selectedEntry,
+              tabId,
+              pageUrl,
+              poll.hasUsernameField ? 'both' : 'password',
+            )
+            if (autoFilled) return
+
+            // If the provider rejected the scripted fill, release the sticky
+            // selection so the normal chooser can recover instead of looping.
+            filledUsernameRef.current = null
+          }
+        }
+
+        // On a two-step password page there may be no username input left in
+        // the DOM. If step 1 gave us an identity in this same tab, prefer that
+        // account among credentials already authorized for the current origin.
+        const steppedUsername = passwordStepFlowRef.current.peekIdentityForUrl(tabId, pageUrl)
+        if (steppedUsername) {
+          const normalizedSteppedUsername = steppedUsername.trim().toLowerCase()
+          const exactMatches = matches.filter(
+            (entry) => entry.username.trim().toLowerCase() === normalizedSteppedUsername,
+          )
+          if (exactMatches.length > 0) matches = exactMatches
+        }
 
         if (nextOffer?.mode === 'save') return
 
@@ -325,6 +508,9 @@ export function usePasswordBridge({
           password: matches[0].password,
           label: labelFromUrl(pageUrl),
           matches,
+          fillTarget: poll.hasPasswordField
+            ? (poll.hasUsernameField ? 'both' : 'password')
+            : 'username',
         }
         offerRef.current = fillOffer
         setOffer(fillOffer)
@@ -362,10 +548,7 @@ export function usePasswordBridge({
     enabled,
     activeTabId,
     activeUrl,
-    locale,
-    buildPrompt,
     acceptFill,
-    acceptSave,
     clearOffer,
     stageSaveCandidate,
   ])
@@ -376,7 +559,13 @@ export function usePasswordBridge({
     acceptFill: (entry: SavedPassword) => {
       const current = offerRef.current
       if (!current) return
-      void acceptFill(entry, current.shortcutId, current.pageUrl).catch((error) => {
+      void acceptFill(
+        entry,
+        current.shortcutId,
+        current.pageUrl,
+        current.fillTarget,
+        true,
+      ).catch((error) => {
         console.error('Password fill failed', error)
       })
     },
@@ -385,9 +574,12 @@ export function usePasswordBridge({
       if (!current || current.mode !== 'save') return
       void acceptSave({
         pageUrl: current.pageUrl,
+        vaultUrl: current.vaultUrl,
         username: current.username,
         password: current.password,
         label: current.label,
+        usernameOrigins: current.usernameOrigins,
+        passwordOrigins: current.passwordOrigins,
       }).catch((error) => {
         console.error('Password save failed', error)
       })

@@ -53,6 +53,9 @@ mod imp {
         }
 
         if let Ok(settings4) = settings.cast::<ICoreWebView2Settings4>() {
+            // Nebula owns credential storage and password UX. Keep WebView2's
+            // separate password/general-autofill stores disabled so users never
+            // see two competing password managers.
             let _ = settings4.SetIsPasswordAutosaveEnabled(false);
             let _ = settings4.SetIsGeneralAutofillEnabled(false);
         }

@@ -626,7 +626,7 @@ test('selected app locale drives clock formatting and native error-page copy', (
   assert.match(permissions, /"webview_set_ui_locale"/)
 })
 
-test('two-step password flow carries username only within the same tab and origin', () => {
+test('two-step password flow carries username within the same tab and records role origins', () => {
   const tracker = new PasswordStepFlowTracker(5 * 60_000)
   const now = 1_000_000
 
@@ -652,11 +652,13 @@ test('two-step password flow carries username only within the same tab and origi
       url: 'https://example.com/login/password',
       username: 'user@example.com',
       password: 'correct horse battery staple',
+      usernameOrigins: ['https://example.com'],
+      passwordOrigins: ['https://example.com'],
     },
   )
 })
 
-test('two-step password identity cannot cross tab, origin, or TTL boundaries', () => {
+test('two-step password identity stays tab/TTL-bound and split origins remain role-scoped', () => {
   const wrongTab = new PasswordStepFlowTracker(1000)
   wrongTab.captureIdentity({
     shortcutId: 'tab-a',
@@ -677,24 +679,41 @@ test('two-step password identity cannot cross tab, origin, or TTL boundaries', (
     null,
   )
 
-  const wrongOrigin = new PasswordStepFlowTracker(1000)
-  wrongOrigin.captureIdentity({
+  const mismatchedSource = new PasswordStepFlowTracker(1000)
+  assert.equal(mismatchedSource.captureSubmission({
     shortcutId: 'tab-a',
     origin: 'https://example.com',
+    url: 'https://evil.example/password',
+    username: 'user@example.com',
+    password: 'secret',
+    receivedAt: 200,
+  }), false)
+
+  const splitOrigin = new PasswordStepFlowTracker(1000)
+  splitOrigin.captureIdentity({
+    shortcutId: 'tab-a',
+    origin: 'https://accounts.example.com',
     username: 'user@example.com',
     receivedAt: 100,
   })
-  wrongOrigin.captureSubmission({
+  splitOrigin.captureSubmission({
     shortcutId: 'tab-a',
-    origin: 'https://evil.example',
-    url: 'https://evil.example/password',
+    origin: 'https://auth.example.net',
+    url: 'https://auth.example.net/password',
     username: '',
     password: 'secret',
     receivedAt: 200,
   })
-  assert.equal(
-    wrongOrigin.takeSubmission('tab-a', 'https://evil.example/password', 300),
-    null,
+  assert.deepEqual(
+    splitOrigin.takeSubmission('tab-a', 'https://auth.example.net/password', 300),
+    {
+      shortcutId: 'tab-a',
+      url: 'https://auth.example.net/password',
+      username: 'user@example.com',
+      password: 'secret',
+      usernameOrigins: ['https://accounts.example.com'],
+      passwordOrigins: ['https://auth.example.net'],
+    },
   )
 
   const expired = new PasswordStepFlowTracker(1000)
@@ -716,6 +735,48 @@ test('two-step password identity cannot cross tab, origin, or TTL boundaries', (
     expired.takeSubmission('tab-a', 'https://example.com/password', 1500),
     null,
   )
+})
+
+test('password save survives post-submit cross-origin navigation and stays out of site DOM', () => {
+  const tracker = new PasswordStepFlowTracker(5 * 60_000)
+  const now = 2_000_000
+
+  tracker.captureIdentity({
+    shortcutId: 'tab-a',
+    origin: 'https://login.example.com',
+    username: 'user@example.com',
+    receivedAt: now,
+  })
+  tracker.captureSubmission({
+    shortcutId: 'tab-a',
+    origin: 'https://login.example.com',
+    url: 'https://login.example.com/password',
+    username: '',
+    password: 'secret',
+    receivedAt: now + 100,
+  })
+
+  assert.deepEqual(tracker.takeSubmission('tab-a', 'https://app.example.net/after-login', now + 250), {
+    shortcutId: 'tab-a',
+    url: 'https://login.example.com/password',
+    username: 'user@example.com',
+    password: 'secret',
+    usernameOrigins: ['https://login.example.com'],
+    passwordOrigins: ['https://login.example.com'],
+  })
+
+  const bridge = readFileSync(
+    new URL('../src/hooks/usePasswordBridge.ts', import.meta.url),
+    'utf8',
+  )
+  const shell = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(bridge, /tickPasswordBridge\(tabId\)/)
+  assert.match(bridge, /offerRef\.current\?\.mode === 'fill'/)
+  assert.match(shell, /<PasswordSavePrompt/)
+  assert.match(shell, /passwordSaveOffer &&/)
 })
 
 test('native password-step bridge captures the identity and password-only submit phases', () => {
@@ -850,5 +911,37 @@ test('browsing downloads reuse transfer telemetry in a compact row', () => {
   assert.match(source, /variant === 'browsing' \? styles\.transferMetaCompact/)
   assert.match(source, /const showSize = variant === 'home' \|\| item\.state !== 'in_progress'/)
   assert.match(css, /\.transferMetaCompact\s*\{/)
+})
+
+test('Nebula owns password UX and WebView2 native password stores stay disabled', () => {
+  const brandingSource = readFileSync(
+    new URL('../src-tauri/src/webview_branding.rs', import.meta.url),
+    'utf8',
+  )
+  const privacySource = readFileSync(
+    new URL('../src-tauri/src/webview_privacy.rs', import.meta.url),
+    'utf8',
+  )
+  const shellSource = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+  const bridgeSource = readFileSync(
+    new URL('../src/core/passwordBridgeScript.ts', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(brandingSource, /SetIsPasswordAutosaveEnabled\(false\)/)
+  assert.match(brandingSource, /SetIsGeneralAutofillEnabled\(false\)/)
+  assert.match(privacySource, /SetIsPasswordAutosaveEnabled\(false\)/)
+  assert.match(privacySource, /SetIsGeneralAutofillEnabled\(false\)/)
+  assert.doesNotMatch(brandingSource, /SetIsPasswordAutosaveEnabled\(true\)/)
+  assert.doesNotMatch(privacySource, /SetIsPasswordAutosaveEnabled\(true\)/)
+  assert.match(
+    shellSource,
+    /usePasswordBridge\(\{[\s\S]*?enabled:\s*[\s\S]*?isBrowsing[\s\S]*?isTauri,/,
+  )
+  assert.doesNotMatch(bridgeSource, /nebula-pwd-banner/)
+  assert.doesNotMatch(bridgeSource, /renderPrompt/)
 })
 

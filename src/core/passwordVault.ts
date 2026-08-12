@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '../platform/runtime'
 import {
+  hostsMatchForPassword,
+  normalizePasswordOrigins,
+} from './passwordMatch'
+import {
   parsePasswordVault,
   serializePasswordVault,
   type SavedPassword,
@@ -97,21 +101,47 @@ export async function upsertPasswordEntry(
 ): Promise<SavedPassword[]> {
   return updatePasswordVault((vault) => {
     const normalizedUser = draft.username.trim().toLowerCase()
-    const draftUrl = draft.url?.trim().toLowerCase() ?? ''
+    const draftUrl = draft.url?.trim() ?? ''
 
     const existingIndex = vault.findIndex((entry) => {
       const sameUser = entry.username.trim().toLowerCase() === normalizedUser
-      const sameUrl = (entry.url?.trim().toLowerCase() ?? '') === draftUrl
-      return sameUser && sameUrl
+      const sameSite = Boolean(
+        draftUrl &&
+        entry.url &&
+        hostsMatchForPassword(draftUrl, entry.url),
+      )
+      return sameUser && sameSite
     })
 
     if (existingIndex >= 0) {
       const existing = vault[existingIndex]
       const next = [...vault]
-      next[existingIndex] = { ...existing, ...draft, updatedAt: Date.now() }
+      const usernameOrigins = normalizePasswordOrigins([
+        ...(existing.usernameOrigins ?? []),
+        ...(draft.usernameOrigins ?? []),
+      ])
+      const passwordOrigins = normalizePasswordOrigins([
+        ...(existing.passwordOrigins ?? []),
+        ...(draft.passwordOrigins ?? []),
+      ])
+      next[existingIndex] = {
+        ...existing,
+        ...draft,
+        usernameOrigins: usernameOrigins.length > 0 ? usernameOrigins : undefined,
+        passwordOrigins: passwordOrigins.length > 0 ? passwordOrigins : undefined,
+        updatedAt: Date.now(),
+      }
       return next
     }
 
-    return [{ ...draft, id: crypto.randomUUID(), updatedAt: Date.now() }, ...vault]
+    const usernameOrigins = normalizePasswordOrigins(draft.usernameOrigins)
+    const passwordOrigins = normalizePasswordOrigins(draft.passwordOrigins)
+    return [{
+      ...draft,
+      usernameOrigins: usernameOrigins.length > 0 ? usernameOrigins : undefined,
+      passwordOrigins: passwordOrigins.length > 0 ? passwordOrigins : undefined,
+      id: crypto.randomUUID(),
+      updatedAt: Date.now(),
+    }, ...vault]
   })
 }

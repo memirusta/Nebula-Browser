@@ -929,6 +929,9 @@ mod imp {
                     }
                 }
                 if let Ok(profile6) = profile.cast::<ICoreWebView2Profile6>() {
+                    // Keep profile-level settings aligned with webview_branding;
+                    // privacy re-application must not re-enable WebView2's
+                    // separate password/general-autofill stores.
                     let _ = profile6.SetIsPasswordAutosaveEnabled(false);
                     let _ = profile6.SetIsGeneralAutofillEnabled(false);
                 }

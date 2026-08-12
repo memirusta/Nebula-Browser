@@ -1,3 +1,5 @@
+import { passwordOriginFromUrl } from './passwordMatch.ts'
+
 const DEFAULT_PASSWORD_STEP_TTL_MS = 5 * 60_000
 
 export interface PasswordStepIdentityInput {
@@ -21,6 +23,8 @@ export interface ResolvedPasswordStepSubmission {
   url: string
   username: string
   password: string
+  usernameOrigins: string[]
+  passwordOrigins: string[]
 }
 
 interface StoredIdentity {
@@ -37,16 +41,6 @@ interface StoredSubmission {
   receivedAt: number
 }
 
-function httpOrigin(value: string): string | null {
-  try {
-    const parsed = new URL(value)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
-    return parsed.origin
-  } catch {
-    return null
-  }
-}
-
 export class PasswordStepFlowTracker {
   private readonly identities = new Map<string, StoredIdentity>()
   private readonly submissions = new Map<string, StoredSubmission>()
@@ -57,7 +51,7 @@ export class PasswordStepFlowTracker {
   }
 
   captureIdentity(input: PasswordStepIdentityInput): boolean {
-    const origin = httpOrigin(input.origin)
+    const origin = passwordOriginFromUrl(input.origin)
     const username = input.username.trim()
     if (!origin || !username) return false
 
@@ -70,8 +64,8 @@ export class PasswordStepFlowTracker {
   }
 
   captureSubmission(input: PasswordStepSubmissionInput): boolean {
-    const origin = httpOrigin(input.origin)
-    const urlOrigin = httpOrigin(input.url)
+    const origin = passwordOriginFromUrl(input.origin)
+    const urlOrigin = passwordOriginFromUrl(input.url)
     if (!origin || urlOrigin !== origin || !input.password) return false
 
     this.submissions.set(input.shortcutId, {
@@ -84,38 +78,68 @@ export class PasswordStepFlowTracker {
     return true
   }
 
+  /**
+   * The identifier itself is safe to carry across a same-tab split-login
+   * navigation for a short period. It is only used to narrow credentials that
+   * are already authorized for the current origin/role; it never authorizes a
+   * password on a new origin by itself.
+   */
+  peekIdentityForUrl(
+    shortcutId: string,
+    _currentUrl: string,
+    now = Date.now(),
+  ): string | null {
+    const identity = this.identities.get(shortcutId)
+    if (!identity) return null
+
+    if (now - identity.receivedAt > this.ttlMs) {
+      this.identities.delete(shortcutId)
+      return null
+    }
+
+    return identity.username
+  }
+
   takeSubmission(
     shortcutId: string,
-    currentUrl: string,
+    _currentUrl: string,
     now = Date.now(),
   ): ResolvedPasswordStepSubmission | null {
     const submission = this.submissions.get(shortcutId)
     if (!submission) return null
 
     this.submissions.delete(shortcutId)
-    const currentOrigin = httpOrigin(currentUrl)
-    if (
-      !currentOrigin ||
-      currentOrigin !== submission.origin ||
-      now - submission.receivedAt > this.ttlMs
-    ) {
+    if (now - submission.receivedAt > this.ttlMs) {
       this.identities.delete(shortcutId)
       return null
     }
 
+    const identity = this.identities.get(shortcutId)
+    const identityFresh = Boolean(
+      identity &&
+      now - identity.receivedAt <= this.ttlMs,
+    )
+
     let username = submission.username
     if (!username) {
-      const identity = this.identities.get(shortcutId)
-      if (
-        !identity ||
-        identity.origin !== submission.origin ||
-        now - identity.receivedAt > this.ttlMs
-      ) {
+      if (!identity || !identityFresh) {
         this.identities.delete(shortcutId)
         return null
       }
       username = identity.username
     }
+
+    const normalizedUser = username.trim().toLowerCase()
+    const identityMatchesUser = Boolean(
+      identityFresh &&
+      identity &&
+      identity.username.trim().toLowerCase() === normalizedUser,
+    )
+
+    const usernameOrigins = new Set<string>()
+    if (identityMatchesUser && identity) usernameOrigins.add(identity.origin)
+    if (submission.username.trim()) usernameOrigins.add(submission.origin)
+    const passwordOrigins = [submission.origin]
 
     this.identities.delete(shortcutId)
     return {
@@ -123,6 +147,8 @@ export class PasswordStepFlowTracker {
       url: submission.url,
       username,
       password: submission.password,
+      usernameOrigins: [...usernameOrigins],
+      passwordOrigins,
     }
   }
 

@@ -5,6 +5,37 @@ export interface SavedPassword {
   username: string
   password: string
   updatedAt: number
+  /** Origins where this credential's account identifier was observed/filled. */
+  usernameOrigins?: string[]
+  /** Origins where this credential's password was observed/submitted. */
+  passwordOrigins?: string[]
+}
+
+function parseOriginList(raw: unknown, index: number, field: string): string[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw)) {
+    throw new Error(`Password vault entry ${index} has an invalid ${field} list.`)
+  }
+
+  const seen = new Set<string>()
+  const origins: string[] = []
+  for (const value of raw) {
+    if (typeof value !== 'string') {
+      throw new Error(`Password vault entry ${index} has an invalid ${field} origin.`)
+    }
+    try {
+      const parsed = new URL(value)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue
+      const origin = parsed.origin
+      if (seen.has(origin)) continue
+      seen.add(origin)
+      origins.push(origin)
+      if (origins.length >= 16) break
+    } catch {
+      continue
+    }
+  }
+  return origins.length > 0 ? origins : undefined
 }
 
 function parseEntry(raw: unknown, index: number): SavedPassword {
@@ -36,6 +67,8 @@ function parseEntry(raw: unknown, index: number): SavedPassword {
     // Passwords are opaque secrets. Never normalize or truncate them on load.
     password: entry.password,
     updatedAt: entry.updatedAt,
+    usernameOrigins: parseOriginList(entry.usernameOrigins, index, 'usernameOrigins'),
+    passwordOrigins: parseOriginList(entry.passwordOrigins, index, 'passwordOrigins'),
   }
 }
 
