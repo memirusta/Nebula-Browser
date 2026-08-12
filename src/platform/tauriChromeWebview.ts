@@ -34,8 +34,13 @@ let lastChromeBoundsKey: string | null = null
 let chromeBoundsListenerBound = false
 let chromeOverlayLogicalWidth: number | null = null
 let chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
-let chromeOverlayFullClient = false
+// Hover preview needs the full client height for its centered card, but its
+// width stays compact and centered. Resizing the chrome WebView from compact
+// width to full width made WebView2 briefly reflow its surface and visibly
+// nudged the Semi-Lunar sideways.
+let chromeOverlayFullHeight = false
 let chromeVisibilitySuppressed = false
+let chromeBoundsSyncQueue: Promise<void> = Promise.resolve()
 
 // Semi-Lunar uses max-width: 98vw. Give its dedicated WebView a tiny logical
 // gutter so a requested 1100px lunar still has 1100px available inside the
@@ -52,26 +57,6 @@ async function chromePhysicalBounds(): Promise<{
 }> {
   const windowSize = await windowClientPhysicalSize()
 
-  if (chromeOverlayFullClient) {
-    return {
-      position:
-        new PhysicalPosition(
-          0,
-          0,
-        ),
-      size:
-        new PhysicalSize(
-          Math.max(
-            1,
-            windowSize.width,
-          ),
-          Math.max(
-            1,
-            windowSize.height,
-          ),
-        ),
-    }
-  }
   const scaleFactor = await getCurrentWindow().scaleFactor()
   const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1)
   const requestedPhysicalWidth = Math.ceil(
@@ -82,7 +67,9 @@ async function chromePhysicalBounds(): Promise<{
   )
 
   const width = Math.max(1, Math.min(windowSize.width, requestedPhysicalWidth))
-  const height = Math.max(1, Math.min(windowSize.height, requestedPhysicalHeight))
+  const height = chromeOverlayFullHeight
+    ? Math.max(1, windowSize.height)
+    : Math.max(1, Math.min(windowSize.height, requestedPhysicalHeight))
   const x = Math.max(0, Math.round((windowSize.width - width) / 2))
 
   return {
@@ -92,15 +79,46 @@ async function chromePhysicalBounds(): Promise<{
 }
 
 async function syncChromeBounds(webview: Webview): Promise<boolean> {
-  const { position, size } = await chromePhysicalBounds()
-  const key = `${position.x},${position.y},${size.width},${size.height}`
-  if (lastChromeBoundsKey === key) return false
+  let changed = false
 
-  lastChromeBoundsKey = key
-  await webview.setPosition(position)
-  await webview.setSize(size)
-  await webview.setAutoResize(false)
-  return true
+  const applyLatestBounds = async () => {
+    // Read the shared target state only when this queued operation starts. A
+    // rapid hover enter/leave can otherwise let an older async resize finish
+    // after the newer compact-bounds request.
+    const { position, size } = await chromePhysicalBounds()
+    const key = `${position.x},${position.y},${size.width},${size.height}`
+    if (lastChromeBoundsKey === key) return
+
+    let appliedAtomically = false
+    try {
+      appliedAtomically = await invoke<boolean>('webview_set_chrome_bounds', {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+      })
+    } catch (error) {
+      console.warn('[nebula] atomic chrome bounds failed; using Webview fallback', error)
+    }
+
+    // Keep the existing cross-platform fallback. Windows uses one SetWindowPos
+    // call above so the compositor never sees mismatched position/size frames.
+    if (!appliedAtomically) {
+      await webview.setPosition(position)
+      await webview.setSize(size)
+    }
+    await webview.setAutoResize(false)
+    lastChromeBoundsKey = key
+    changed = true
+  }
+
+  const queued = chromeBoundsSyncQueue.then(applyLatestBounds, applyLatestBounds)
+  chromeBoundsSyncQueue = queued.then(
+    () => undefined,
+    () => undefined,
+  )
+  await queued
+  return changed
 }
 
 function unbindResizeListeners(): void {
@@ -163,12 +181,12 @@ export function setChromeWebviewHeight(logicalHeight: number): void {
 export async function setChromeOverlayLogicalBounds(
   logicalHeight: number,
   logicalWidth?: number,
-  fullClient = false,
+  fullHeight = false,
 ): Promise<void> {
   if (!isTauri) return
 
   chromeOverlayLogicalHeight = Math.max(1, logicalHeight)
-  chromeOverlayFullClient = fullClient
+  chromeOverlayFullHeight = fullHeight
   if (logicalWidth !== undefined && Number.isFinite(logicalWidth)) {
     chromeOverlayLogicalWidth = Math.max(1, logicalWidth)
   }
@@ -403,7 +421,7 @@ export async function hideChromeWebview(): Promise<void> {
   unbindResizeListeners()
   activeChromeWebview = null
   lastChromeBoundsKey = null
-  chromeOverlayFullClient = false
+  chromeOverlayFullHeight = false
   chromeOverlayLogicalWidth = null
   chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
 

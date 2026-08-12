@@ -810,6 +810,54 @@ fn layout_webview_hwnd(
     Ok(())
 }
 
+/// Apply chrome overlay geometry in one native operation.
+///
+/// The JavaScript Webview API exposes position and size as separate async
+/// calls. Moving a centered, compact chrome WebView to full-client (and back)
+/// with those calls lets Windows compose one intermediate frame with the new
+/// position and old size. That frame is visible as a horizontal Semi-Lunar
+/// jump when hover preview opens or closes.
+#[tauri::command]
+fn webview_set_chrome_bounds(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<bool, String> {
+    if width < 1 || height < 1 {
+        return Err("chrome bounds must be positive".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
+        };
+
+        let hwnd = resolve_webview_hwnd(&app, "nebula-chrome")?;
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                x,
+                y,
+                width,
+                height,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        Ok(true)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, x, y, width, height);
+        Ok(false)
+    }
+}
+
 /// Raise a tab webview above shell/chrome for HTML5 fullscreen video.
 #[cfg(target_os = "windows")]
 fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), String> {
@@ -984,6 +1032,7 @@ pub fn run() {
     webview_controls::webview_set_suspended,
     webview_raise_overlay,
     webview_raise_chrome,
+    webview_set_chrome_bounds,
     webview_raise_tab_fullscreen,
     window_enter_site_fullscreen,
     window_exit_site_fullscreen,

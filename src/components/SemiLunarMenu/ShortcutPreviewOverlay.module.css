@@ -21,6 +21,14 @@
   opacity: 0.18;
 }
 
+/* The native chrome surface stays at the Semi-Lunar's compact width during a
+   preview to avoid a horizontal WebView2 reflow. Do not draw a misleading
+   page-wide dimmer inside that centered strip; the preview card/badge remains
+   fully visible while the underlying site stays unobscured. */
+:global(html[data-nebula-chrome]) .dim {
+  opacity: 0;
+}
+
 .liveBadge {
   position: absolute;
   top: calc(50% - 18px);

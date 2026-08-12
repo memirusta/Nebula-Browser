@@ -286,18 +286,20 @@ async function poll(
 }
 
 async function run() {
-  const { server, port } = await startStaticServer()
-
-  const browserPath = findBrowser()
-  const debugPort = await freePort()
-  const profileDir = await mkdtemp(join(tmpdir(), 'nebula-e2e-'))
-
-  const appUrl = `http://127.0.0.1:${port}/`
-
+  let server
   let browser
   let cdp
+  let profileDir
 
   try {
+    const started = await startStaticServer()
+    server = started.server
+
+    const browserPath = findBrowser()
+    const debugPort = await freePort()
+    profileDir = await mkdtemp(join(tmpdir(), 'nebula-e2e-'))
+    const appUrl = `http://127.0.0.1:${started.port}/`
+
     const browserArgs = [
       '--headless=new',
       `--remote-debugging-port=${debugPort}`,
@@ -889,14 +891,18 @@ console.log('✓ Keyboard shortcuts reference')
       browser.kill()
     }
 
-    await new Promise((resolvePromise) =>
-      server.close(resolvePromise),
-    )
+    if (server) {
+      await new Promise((resolvePromise) =>
+        server.close(resolvePromise),
+      )
+    }
 
-    await rm(profileDir, {
-      recursive: true,
-      force: true,
-    }).catch(() => undefined)
+    if (profileDir) {
+      await rm(profileDir, {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined)
+    }
   }
 }
 

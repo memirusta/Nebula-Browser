@@ -38,18 +38,27 @@ export function WeatherWidget({
   const [weather, setWeather] = useState<CurrentWeather | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
+  const location = value?.location ?? ''
+  const latitude = value?.latitude
+  const longitude = value?.longitude
 
   useEffect(() => {
-    if (!value) {
+    setQuery(location)
+  }, [location])
+
+  useEffect(() => {
+    if (latitude === undefined || longitude === undefined) {
       setWeather(null)
+      setLoading(false)
+      setError(false)
       return
     }
     let cancelled = false
     setLoading(true)
     setError(false)
     const params = new URLSearchParams({
-      latitude: String(value.latitude),
-      longitude: String(value.longitude),
+      latitude: String(latitude),
+      longitude: String(longitude),
       current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code',
       timezone: 'auto',
     })
@@ -70,7 +79,7 @@ export function WeatherWidget({
       .catch(() => { if (!cancelled) setError(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [value?.latitude, value?.longitude])
+  }, [latitude, longitude])
 
   const search = async () => {
     const text = query.trim()

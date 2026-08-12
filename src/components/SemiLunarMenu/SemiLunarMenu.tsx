@@ -171,6 +171,7 @@ export function SemiLunarMenu({
   const [isAnyDragging, setIsAnyDragging] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const openIntentRef = useRef(false)
   const mergeHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mergeHoldTargetRef = useRef<string | null>(null)
   const mergeStartedRef = useRef(false)
@@ -373,17 +374,26 @@ export function SemiLunarMenu({
   useEffect(() => () => clearMergeHoldTimer(), [clearMergeHoldTimer])
 
   const clearTimers = useCallback(() => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    if (openTimer.current) clearTimeout(openTimer.current)
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+    if (openTimer.current) {
+      clearTimeout(openTimer.current)
+      openTimer.current = null
+    }
   }, [])
 
   const requestOpen = useCallback(
     (immediate = false) => {
       if (isBrowsing && !browsingHoverOpen) return
+      openIntentRef.current = true
       clearTimers()
 
       if (isBrowsing && !immediate && browsingOpenDelayMs > 0) {
         openTimer.current = setTimeout(() => {
+          openTimer.current = null
+          if (!openIntentRef.current) return
           setStage('expanded')
         }, browsingOpenDelayMs)
         return
@@ -403,6 +413,7 @@ export function SemiLunarMenu({
   }, [requestOpen])
 
   const handleMenuClick = useCallback(() => {
+    openIntentRef.current = false
     clearTimers()
     folderOpenRef.current = false
     setOpenFolderId(null)
@@ -413,6 +424,7 @@ export function SemiLunarMenu({
   }, [clearTimers, onHomeClick])
 
   const closeMenuImmediately = useCallback(() => {
+    openIntentRef.current = false
     clearTimers()
     clearMergeHoldTimer()
     folderOpenRef.current = false
@@ -450,8 +462,10 @@ const shouldDeferClose = useCallback(() => {
     if (isBrowsing && shellViewMode === 'overlay') return
     if (isHome && homeAlwaysOpen) return
     if (shouldDeferClose()) return
+    openIntentRef.current = false
     clearTimers()
     closeTimer.current = setTimeout(() => {
+      closeTimer.current = null
       if (folderPanelHoverRef.current || contextMenuHoverRef.current) return
       if (folderOpenRef.current) {
         folderOpenRef.current = false
@@ -824,7 +838,7 @@ const handleFolderMemberClose = useCallback(
       disposed = true
       unlistenFocus?.()
     }
-  }, [isBrowsing, shellViewMode])
+  }, [shellViewMode, shouldManageNativeChrome])
 
   useEffect(() => {
     if (!shouldManageNativeChrome || !isTauri) return
@@ -854,7 +868,7 @@ const handleFolderMemberClose = useCallback(
       cancelled = true
       unlisten?.()
     }
-  }, [isBrowsing])
+  }, [shouldManageNativeChrome])
 
   const handleContextMenuLayout = useCallback(
     (rect: DOMRect) => {
@@ -870,11 +884,11 @@ const handleFolderMemberClose = useCallback(
     [
       contextMenu,
       downloadPanelOpen,
-      isBrowsing,
       isExpanded,
       lunarHeightPx,
       lunarWidthPx,
       openFolderId,
+      shouldManageNativeChrome,
     ],
   )
 
@@ -903,13 +917,13 @@ const handleFolderMemberClose = useCallback(
   }, [
     contextMenu,
     downloadPanelOpen,
-    isBrowsing,
     shellViewMode,
     isExpanded,
     lunarHeightPx,
     lunarWidthPx,
     openFolderId,
     previewShortcut,
+    shouldManageNativeChrome,
   ])
 
   useEffect(() => {
@@ -933,7 +947,6 @@ const handleFolderMemberClose = useCallback(
     )
   }, [
     shellViewMode,
-    isBrowsing,
     isExpanded,
     lunarHeightPx,
     lunarWidthPx,
@@ -942,6 +955,7 @@ const handleFolderMemberClose = useCallback(
     contextMenu,
     downloadPanelOpen,
     clearTimers,
+    shouldManageNativeChrome,
   ])
 
   useEffect(() => {
@@ -961,7 +975,6 @@ const handleFolderMemberClose = useCallback(
     applyLayout()
   }, [
     mode,
-    isBrowsing,
     isExpanded,
     lunarHeightPx,
     lunarWidthPx,
@@ -969,6 +982,7 @@ const handleFolderMemberClose = useCallback(
     previewShortcut,
     contextMenu,
     downloadPanelOpen,
+    shouldManageNativeChrome,
   ])
 
   if (mode === 'overlay') return null
@@ -1467,6 +1481,7 @@ const members = memberIds
               className={styles.lunarHoverCapCollapsed}
               aria-hidden="true"
               onMouseEnter={handleEnter}
+              onMouseLeave={scheduleClose}
               onClick={handleEnterImmediate}
             />
           ) : !isTauri ? (

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SystemStats } from '../core/types'
+import { showAppAlert } from '../core/appDialog'
+import { loadLocale } from '../core/locale'
 import { isTauri } from '../platform/runtime'
 import { fetchSystemStats } from '../platform/systemStats'
 import {
@@ -175,7 +177,13 @@ export function useWallpaper() {
       if (!file) return
       const stored = await fileToStorableWallpaper(file)
       if (stored) setWallpaperState(stored)
-      else window.alert('Duvar kağıdı kaydedilemedi. Daha küçük bir görsel deneyin.')
+      else {
+        const message =
+          loadLocale() === 'tr'
+            ? 'Duvar kağıdı kaydedilemedi. Daha küçük bir görsel deneyin.'
+            : 'The wallpaper could not be saved. Try a smaller image.'
+        void showAppAlert(message)
+      }
     }
     input.click()
   }, [])

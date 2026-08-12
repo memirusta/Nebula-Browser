@@ -1,3 +1,4 @@
+import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
 
@@ -221,7 +222,9 @@ export function SettingDangerRow({
         type="button"
         className={`${styles.actionBtn} ${styles.dangerBtn}`}
         onClick={() => {
-          if (window.confirm(confirmMessage)) onConfirm()
+          void showAppConfirmation(confirmMessage, label).then((accepted) => {
+            if (accepted) onConfirm()
+          })
         }}
       >
         {resolvedButtonLabel}

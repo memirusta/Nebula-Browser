@@ -6,6 +6,7 @@ import {
   type HistoryEntry,
   type HistoryTimeFilter,
 } from '../../core/browsingHistory'
+import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './HistoryPanel.module.css'
@@ -153,9 +154,11 @@ export function HistoryPanel({
                 className={styles.clearButton}
                 onClick={() => {
                   const message = filtersActive ? t('historyConfirmClearFiltered') : t('historyConfirmClearAll')
-                  if (!window.confirm(message)) return
-                  if (filtersActive) onClearFiltered({ query, host, time })
-                  else onClearAll()
+                  void showAppConfirmation(message, t('historyTitle')).then((accepted) => {
+                    if (!accepted) return
+                    if (filtersActive) onClearFiltered({ query, host, time })
+                    else onClearAll()
+                  })
                 }}
               >
                 {filtersActive ? t('historyClearFiltered') : t('historyClearAll')}

@@ -1,13 +1,34 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './widgets.module.css'
 
 export function CalendarWidget() {
   const { locale } = useLocale()
-  const now = new Date()
+  const [now, setNow] = useState(() => new Date())
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const dayOfMonth = now.getDate()
+
+  useEffect(() => {
+    let timer: number | undefined
+
+    const scheduleNextDay = () => {
+      const current = new Date()
+      const nextDay = new Date(current)
+      nextDay.setHours(24, 0, 0, 50)
+      timer = window.setTimeout(() => {
+        setNow(new Date())
+        scheduleNextDay()
+      }, Math.max(1_000, nextDay.getTime() - current.getTime()))
+    }
+
+    scheduleNextDay()
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [])
+
   const { days, leading, monthLabel, weekdayLabels } = useMemo(() => {
-    const year = now.getFullYear()
-    const month = now.getMonth()
     const first = new Date(year, month, 1)
     const count = new Date(year, month + 1, 0).getDate()
     const mondayFirst = (first.getDay() + 6) % 7
@@ -21,10 +42,10 @@ export function CalendarWidget() {
       monthLabel: new Intl.DateTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', {
         month: 'long',
         year: 'numeric',
-      }).format(now),
+      }).format(first),
       weekdayLabels: labels,
     }
-  }, [locale, now.getFullYear(), now.getMonth()])
+  }, [locale, month, year])
 
   return (
     <div className={styles.calendar}>
@@ -33,7 +54,7 @@ export function CalendarWidget() {
         {weekdayLabels.map((label) => <span key={label} className={styles.calendarWeekday}>{label}</span>)}
         {Array.from({ length: leading }, (_, i) => <span key={`blank-${i}`} />)}
         {days.map((day) => (
-          <span key={day} className={`${styles.calendarDay} ${day === now.getDate() ? styles.calendarToday : ''}`}>
+          <span key={day} className={`${styles.calendarDay} ${day === dayOfMonth ? styles.calendarToday : ''}`}>
             {day}
           </span>
         ))}

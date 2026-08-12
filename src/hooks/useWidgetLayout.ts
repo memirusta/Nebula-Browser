@@ -13,6 +13,7 @@ import {
   type WidgetType,
 } from '../core/widgets'
 import { loadLocale } from '../core/locale'
+import { showAppAlert } from '../core/appDialog'
 
 interface HomeWidgetSettings {
   showRamWidget: boolean
@@ -170,7 +171,11 @@ export function useWidgetLayout(homeSettings: HomeWidgetSettings) {
             : (parsed as Parameters<typeof normalizeWidgetLayout>[0])
         setState(normalizeWidgetLayout(candidate))
       } catch {
-        window.alert('Widget yedeği okunamadı.')
+        const message =
+          loadLocale() === 'tr'
+            ? 'Widget yedeği okunamadı.'
+            : 'The widget backup could not be read.'
+        void showAppAlert(message)
       }
     }
     input.click()

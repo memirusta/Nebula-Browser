@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
+import { AppDialogHost } from '../AppDialog/AppDialogHost'
 import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
 import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
@@ -378,6 +379,8 @@ export function BrowserShell() {
 
   const downloads =
     useDownloads()
+  const removeDownload = downloads.remove
+  const clearFinishedDownloads = downloads.clearFinished
 
   const notificationCenter =
     useNotifications(
@@ -1439,6 +1442,11 @@ export function BrowserShell() {
     }
   }, [activeTab])
 
+  // Web fallback history is navigation-driven. Keep the latest title available
+  // without re-recording a visit every time a page mutates document.title.
+  const activeTabTitleRef = useRef(activeTab?.title)
+  activeTabTitleRef.current = activeTab?.title
+
   useEffect(() => {
     if (!activeUrl) {
       return
@@ -1462,7 +1470,7 @@ export function BrowserShell() {
 
     recordHistoryVisit(
       activeUrl,
-      activeTab?.title,
+      activeTabTitleRef.current,
     )
   }, [
     activeUrl,
@@ -4310,11 +4318,11 @@ export function BrowserShell() {
             break
 
           case 'remove-download':
-            downloads.remove(action.id)
+            removeDownload(action.id)
             break
 
           case 'clear-finished-downloads':
-            downloads.clearFinished()
+            clearFinishedDownloads()
             break
         }
       },
@@ -4350,8 +4358,9 @@ export function BrowserShell() {
     tabsRef,
     toggleDownloadPanel,
     closeDownloadPanel,
-    downloads.remove,
-    downloads.clearFinished,
+    activeTabIdRef,
+    removeDownload,
+    clearFinishedDownloads,
   ])
 
   useEffect(() => {
@@ -5663,6 +5672,8 @@ export function BrowserShell() {
           }
         />
       )}
+
+      <AppDialogHost />
 
       {developerToolsOpen && (
         <DeveloperTools

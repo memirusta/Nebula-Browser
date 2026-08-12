@@ -294,7 +294,7 @@ export function DeveloperTools({
 }: DeveloperToolsProps) {
   const [section, setSection] = useState<DeveloperToolsSection>('overview')
   const [status, setStatus] = useState<string | null>(null)
-  const [storageRevision, setStorageRevision] = useState(0)
+  const [, setStorageRevision] = useState(0)
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([])
   const [networkEntries, setNetworkEntries] = useState<NetworkEntry[]>([])
   const [rawEvents, setRawEvents] = useState<NebulaDevToolsEvent[]>([])
@@ -678,7 +678,7 @@ export function DeveloperTools({
     section,
   ])
 
-  const nebulaStorageEntries = useMemo(() => {
+  const nebulaStorageEntries = (() => {
     const entries: Array<{ key: string; value: string | null }> = []
     for (let index = 0; index < localStorage.length; index += 1) {
       const key = localStorage.key(index)
@@ -686,7 +686,7 @@ export function DeveloperTools({
       entries.push({ key, value: localStorage.getItem(key) })
     }
     return entries.sort((a, b) => a.key.localeCompare(b.key))
-  }, [storageRevision])
+  })()
 
   const refreshStorage = () => setStorageRevision((revision) => revision + 1)
   const clearStorageKey = (key: string) => {
