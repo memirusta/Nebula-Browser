@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { syncPasswordsFromBrowser } from '../../core/googleAccountSetup'
-import {
-  buildGoogleBrowserSignInUrl,
-  markGoogleBrowserSessionLinked,
-} from '../../core/googleBrowserSession'
+import { buildGoogleBrowserSignInUrl } from '../../core/googleBrowserSession'
+import { withWorkingState } from '../../core/workingState'
 import type { SavedPassword } from '../../core/passwordVault'
 import { tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
@@ -47,49 +45,48 @@ export function GoogleAccountSetupPanel({
   }, [email])
 
   const handleApply = useCallback(async () => {
-    setWorking(true)
     setStatusMessage(null)
     setStatusError(false)
     setNeedsCsv(false)
 
-    const messages: string[] = []
-    let csvNeeded = false
+    await withWorkingState(setWorking, async () => {
+      const messages: string[] = []
+      let csvNeeded = false
 
-    if (importPasswords) {
-      const result = await syncPasswordsFromBrowser('chrome')
-      if (result.ok) {
-        await onMergePasswords(
-          result.imported.map((item) => ({
-            label: item.label,
-            url: item.url,
-            username: item.username,
-            password: item.password,
-          })),
-        )
-        messages.push(result.message)
-      } else {
-        messages.push(result.message)
-        setStatusError(true)
-        csvNeeded = result.needsCsv
-        setNeedsCsv(result.needsCsv)
+      if (importPasswords) {
+        const result = await syncPasswordsFromBrowser(locale, 'chrome')
+        if (result.ok) {
+          await onMergePasswords(
+            result.imported.map((item) => ({
+              label: item.label,
+              url: item.url,
+              username: item.username,
+              password: item.password,
+            })),
+          )
+          messages.push(result.message)
+        } else {
+          messages.push(result.message)
+          setStatusError(true)
+          csvNeeded = result.needsCsv
+          setNeedsCsv(result.needsCsv)
+        }
       }
-    }
 
-    if (linkBrowserSession && isTauri) {
-      markGoogleBrowserSessionLinked(email)
-      onOpenBrowseUrl(buildGoogleBrowserSignInUrl(email))
-      messages.push(t('gsSessionBackground'))
-    } else if (linkBrowserSession) {
-      messages.push(t('gsWebUnsupported'))
-    }
+      if (linkBrowserSession && isTauri) {
+        onOpenBrowseUrl(buildGoogleBrowserSignInUrl(email))
+        messages.push(t('gsSessionBackground'))
+      } else if (linkBrowserSession) {
+        messages.push(t('gsWebUnsupported'))
+      }
 
-    setStatusMessage(messages.join(' '))
-    setWorking(false)
+      setStatusMessage(messages.join(' '))
 
-    if (!csvNeeded) {
-      window.setTimeout(() => onApplied?.(), 400)
-    }
-  }, [email, importPasswords, linkBrowserSession, onApplied, onMergePasswords, onOpenBrowseUrl, t])
+      if (!csvNeeded) {
+        window.setTimeout(() => onApplied?.(), 400)
+      }
+    })
+  }, [email, importPasswords, linkBrowserSession, locale, onApplied, onMergePasswords, onOpenBrowseUrl, t])
 
   return (
     <div className={styles.inlinePanel}>

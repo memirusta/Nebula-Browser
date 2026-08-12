@@ -41,7 +41,7 @@ function removeStoredAuth(key: string): void {
   sessionStorage.removeItem(key)
 }
 
-function randomString(byteLength: number): string {
+export function randomGoogleOauthString(byteLength: number): string {
   const bytes = new Uint8Array(byteLength)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -59,6 +59,19 @@ async function sha256Base64Url(input: string): Promise<string> {
   const data = new TextEncoder().encode(input)
   const hash = await crypto.subtle.digest('SHA-256', data)
   return base64UrlEncode(new Uint8Array(hash))
+}
+
+export async function createGooglePkceRequest(): Promise<{
+  verifier: string
+  challenge: string
+  state: string
+}> {
+  const verifier = randomGoogleOauthString(32)
+  return {
+    verifier,
+    challenge: await sha256Base64Url(verifier),
+    state: randomGoogleOauthString(16),
+  }
 }
 
 export function getGoogleClientId(): string | undefined {
@@ -114,9 +127,7 @@ export async function signInWithGoogleProfile(
   }
 
   if (isTauri) {
-    const verifier = randomString(32)
-    const challenge = await sha256Base64Url(verifier)
-    const state = randomString(16)
+    const { verifier, challenge, state } = await createGooglePkceRequest()
 
     const { claims, error } = await signInWithGoogleLoopback({
       clientId,
@@ -144,9 +155,7 @@ export async function startGoogleSignInRedirect(oauthReturn: string): Promise<bo
   const clientId = getGoogleClientId()
   if (!clientId) return false
 
-  const verifier = randomString(32)
-  const challenge = await sha256Base64Url(verifier)
-  const state = randomString(16)
+  const { verifier, challenge, state } = await createGooglePkceRequest()
   const redirectUri = googleRedirectUri()
 
   const pending: PendingGoogleAuth = { verifier, state, redirectUri }
@@ -294,9 +303,12 @@ async function consumeGoogleSignInRedirectOnce(): Promise<GoogleProfileClaims | 
   return claims
 }
 
-export function nebulaAccountFromGoogleClaims(claims: GoogleProfileClaims): NebulaAccount {
+export function nebulaAccountFromGoogleClaims(
+  claims: GoogleProfileClaims,
+  fallbackDisplayName = 'User',
+): NebulaAccount {
   const displayName =
-    claims.name?.trim() || claims.email?.split('@')[0]?.trim() || 'Kullanıcı'
+    claims.name?.trim() || claims.email?.split('@')[0]?.trim() || fallbackDisplayName
   return {
     provider: 'google',
     displayName,

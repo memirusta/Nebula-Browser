@@ -548,12 +548,8 @@ mod imp {
     }
 
     fn finished_download_path(id: &str) -> Option<String> {
-        FINISHED_DOWNLOADS.with(|finished| {
-            finished
-                .borrow()
-                .get(id)
-                .map(|item| item.file_path.clone())
-        })
+        FINISHED_DOWNLOADS
+            .with(|finished| finished.borrow().get(id).map(|item| item.file_path.clone()))
     }
 
     pub fn control_download(app: AppHandle, id: String, action: String) -> Result<(), String> {
@@ -580,8 +576,8 @@ mod imp {
 
                 match action.as_str() {
                     "pause" | "resume" | "cancel" => {
-                        let (operation, label, download_started_at) = active
-                            .ok_or_else(|| format!("active download '{id}' not found"))?;
+                        let (operation, label, download_started_at) =
+                            active.ok_or_else(|| format!("active download '{id}' not found"))?;
 
                         match action.as_str() {
                             "pause" => unsafe {
@@ -621,9 +617,7 @@ mod imp {
                     }
                     "open" | "reveal" => {
                         let path = if let Some((operation, _, _)) = active {
-                            unsafe {
-                                take_webview_string(|value| operation.ResultFilePath(value))
-                            }
+                            unsafe { take_webview_string(|value| operation.ResultFilePath(value)) }
                         } else {
                             finished_download_path(&id).unwrap_or_default()
                         };

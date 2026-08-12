@@ -1,6 +1,3 @@
-import { BROWSE_SESSIONS_KEY } from './browseSession'
-import { PINNED_SHORTCUTS_KEY } from '../hooks/usePinnedShortcuts'
-
 const HOME_MENU_RESET_KEY = 'nebula-home-menu-reset-v1'
 
 const LEGACY_PIN_KEYS = [
@@ -11,19 +8,29 @@ const LEGACY_PIN_KEYS = [
 
 const LEGACY_SESSION_KEYS = ['nebula-browse-sessions-v1'] as const
 
-/** One-time wipe of stored home pins and browse sessions (user-requested clean slate). */
-export function resetHomeMenuStorageOnce(): void {
-  if (localStorage.getItem(HOME_MENU_RESET_KEY)) return
+interface HomeMenuStorage {
+  getItem(key: string): string | null
+  removeItem(key: string): void
+  setItem(key: string, value: string): void
+}
+
+/**
+ * Historical one-time cleanup. Never overwrite the current pin/session keys:
+ * a missing migration marker can happen after profile repair or partial
+ * storage restore and must not erase otherwise valid user data.
+ */
+export function resetHomeMenuStorageOnce(
+  storage: HomeMenuStorage = localStorage,
+): void {
+  if (storage.getItem(HOME_MENU_RESET_KEY)) return
 
   for (const key of LEGACY_PIN_KEYS) {
-    localStorage.removeItem(key)
+    storage.removeItem(key)
   }
-  localStorage.setItem(PINNED_SHORTCUTS_KEY, '[]')
 
   for (const key of LEGACY_SESSION_KEYS) {
-    localStorage.removeItem(key)
+    storage.removeItem(key)
   }
-  localStorage.setItem(BROWSE_SESSIONS_KEY, '{}')
 
-  localStorage.setItem(HOME_MENU_RESET_KEY, '1')
+  storage.setItem(HOME_MENU_RESET_KEY, '1')
 }

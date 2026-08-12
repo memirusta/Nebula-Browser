@@ -105,7 +105,7 @@ export function HomeCenter({
   onEditLayoutChange,
   focusSearchRequest = 0,
 }: HomeCenterProps) {
-  const { t } = useLocale()
+  const { t, tf } = useLocale()
 
   const [query, setQuery] = useState('')
   const [isEditing, setIsEditing] =
@@ -828,12 +828,7 @@ useEffect(() => {
                       {suggestion}
                     </strong>
 
-                    <span>
-                      {
-                        searchEngineLabel
-                      }{' '}
-                      önerisi
-                    </span>
+                    <span>{tf('searchSuggestionSource', { engine: searchEngineLabel })}</span>
                   </span>
                 </button>
               )
@@ -890,12 +885,7 @@ useEffect(() => {
                 {query.trim()}
               </strong>
 
-              <span>
-                {
-                  searchEngineLabel
-                }{' '}
-                ile ara
-              </span>
+              <span>{tf('searchWithEngine', { engine: searchEngineLabel })}</span>
             </span>
           </button>
         </div>

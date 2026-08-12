@@ -1,4 +1,5 @@
 import type { Shortcut } from './types'
+import { searchShortcutIdentity } from './searchShortcutIdentity'
 
 const MAX_CUSTOM_SHORTCUTS = 32
 
@@ -31,16 +32,6 @@ function labelFromHost(host: string): string {
   return base.charAt(0).toUpperCase() + base.slice(1)
 }
 
-function slugQuery(query: string): string {
-  return query
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48)
-}
-
 function shortcutFromSearchUrl(url: URL): Shortcut | null {
   const query = (url.searchParams.get('q') ?? '').trim()
   if (!query) return null
@@ -56,8 +47,7 @@ function shortcutFromSearchUrl(url: URL): Shortcut | null {
     faviconDomain = 'duckduckgo.com'
   }
 
-  const slug = slugQuery(query) || 'query'
-  const id = `search-${engine}-${slug}`
+  const id = searchShortcutIdentity(engine, query)
   const label = query.length > 36 ? `${query.slice(0, 36)}…` : query
 
   return {

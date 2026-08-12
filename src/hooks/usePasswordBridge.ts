@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BridgePromptConfig } from '../core/passwordBridgeScript'
 import { findExistingPassword, labelFromUrl, matchPasswordsForUrl } from '../core/passwordMatch'
+import { PasswordStepFlowTracker } from '../core/passwordStepFlow'
 import type { SavedPassword } from '../core/passwordVault'
 import { upsertPasswordEntry } from '../core/passwordVault'
 import { useLocale } from './useLocale'
 import {
   dismissInPagePasswordPrompt,
   fillPasswordOnTab,
+  listenForPasswordStepEvents,
   tickPasswordBridge,
 } from '../platform/tauriPasswordBridge'
 import { isTauri } from '../platform/runtime'
@@ -53,6 +55,7 @@ export function usePasswordBridge({
   const offerRef = useRef<PasswordBridgeOffer | null>(null)
   const dismissedFillRef = useRef<Map<string, number>>(new Map())
   const handledPendingRef = useRef<Set<string>>(new Set())
+  const passwordStepFlowRef = useRef(new PasswordStepFlowTracker())
   const tickInFlightRef = useRef(false)
   const pollDelayRef = useRef(IDLE_POLL_MS)
   const saveDraftRef = useRef<{ pageUrl: string; username: string; password: string } | null>(null)
@@ -73,6 +76,51 @@ export function usePasswordBridge({
     activeUrlRef.current = activeUrl
   }, [activeTabId, activeUrl])
 
+  useEffect(() => {
+    if (!enabled || !isTauri) {
+      passwordStepFlowRef.current.clearAll()
+      return
+    }
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void listenForPasswordStepEvents((event) => {
+      if (event.kind === 'identity') {
+        passwordStepFlowRef.current.captureIdentity({
+          shortcutId: event.shortcutId,
+          origin: event.origin,
+          username: event.username,
+        })
+        return
+      }
+
+      // Keep the existing single-page save path unchanged. The native handoff
+      // is only needed when step 2 contains a password but no username field.
+      if (event.username.trim()) return
+      passwordStepFlowRef.current.captureSubmission({
+        shortcutId: event.shortcutId,
+        origin: event.origin,
+        url: event.url,
+        username: '',
+        password: event.password,
+      })
+    })
+      .then((dispose) => {
+        if (disposed) dispose()
+        else unlisten = dispose
+      })
+      .catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('[nebula] password step listener failed', error)
+        }
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [enabled])
+
   const buildPrompt = useCallback((nextOffer: PasswordBridgeOffer | null): BridgePromptConfig | null => {
     if (!nextOffer) return null
     if (nextOffer.mode === 'fill') {
@@ -87,6 +135,29 @@ export function usePasswordBridge({
       site: nextOffer.label,
       user: nextOffer.username,
     }
+  }, [])
+
+  const stageSaveCandidate = useCallback((
+    shortcutId: string,
+    pageUrl: string,
+    username: string,
+    password: string,
+  ): boolean => {
+    const existing = findExistingPassword(entriesRef.current, pageUrl, username)
+    if (existing?.password === password) return false
+
+    saveDraftRef.current = { pageUrl, username, password }
+    const saveOffer: PasswordBridgeOffer = {
+      mode: 'save',
+      shortcutId,
+      pageUrl,
+      username,
+      password,
+      label: labelFromUrl(pageUrl),
+    }
+    offerRef.current = saveOffer
+    setOffer(saveOffer)
+    return true
   }, [])
 
   const clearOffer = useCallback((shortcutId?: string) => {
@@ -152,6 +223,16 @@ export function usePasswordBridge({
 
       tickInFlightRef.current = true
       try {
+        const steppedSubmission = passwordStepFlowRef.current.takeSubmission(tabId, tabUrl)
+        if (steppedSubmission) {
+          stageSaveCandidate(
+            tabId,
+            steppedSubmission.url,
+            steppedSubmission.username,
+            steppedSubmission.password,
+          )
+        }
+
         let nextOffer = offerRef.current
 
         if (!nextOffer && saveDraftRef.current) {
@@ -210,28 +291,14 @@ export function usePasswordBridge({
           const pendingKey = `${pageUrl}\0${poll.pending.username}\0${poll.pending.t}`
           if (!handledPendingRef.current.has(pendingKey)) {
             handledPendingRef.current.add(pendingKey)
-            const existing = findExistingPassword(
-              entriesRef.current,
-              pageUrl,
-              poll.pending.username,
-            )
-            const samePassword = existing?.password === poll.pending.password
-            if (!existing || !samePassword) {
-              saveDraftRef.current = {
+            if (
+              stageSaveCandidate(
+                tabId,
                 pageUrl,
-                username: poll.pending.username,
-                password: poll.pending.password,
-              }
-              const saveOffer: PasswordBridgeOffer = {
-                mode: 'save',
-                shortcutId: tabId,
-                pageUrl,
-                username: poll.pending.username,
-                password: poll.pending.password,
-                label: labelFromUrl(pageUrl),
-              }
-              offerRef.current = saveOffer
-              setOffer(saveOffer)
+                poll.pending.username,
+                poll.pending.password,
+              )
+            ) {
               return
             }
           }
@@ -291,7 +358,17 @@ export function usePasswordBridge({
       window.clearTimeout(startupTimer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [enabled, activeTabId, activeUrl, locale, buildPrompt, acceptFill, acceptSave, clearOffer])
+  }, [
+    enabled,
+    activeTabId,
+    activeUrl,
+    locale,
+    buildPrompt,
+    acceptFill,
+    acceptSave,
+    clearOffer,
+    stageSaveCandidate,
+  ])
 
   return {
     offer,

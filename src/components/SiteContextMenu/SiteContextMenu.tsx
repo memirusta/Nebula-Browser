@@ -4,6 +4,7 @@ import type {
   SiteContextMenuItem,
   SiteContextMenuRequest,
 } from '../../platform/tauriContextMenu'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './SiteContextMenu.module.css'
 
 interface SiteContextMenuProps {
@@ -54,6 +55,7 @@ function MenuItems({
 }
 
 export function SiteContextMenu({ request, onSelect }: SiteContextMenuProps) {
+  const { t } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ x: request.x, y: request.y })
 
@@ -106,7 +108,7 @@ export function SiteContextMenu({ request, onSelect }: SiteContextMenuProps) {
             onSelect={(commandId) => onSelect(commandId)}
           />
         ) : (
-          <div className={styles.empty}>No actions available</div>
+          <div className={styles.empty}>{t('contextNoActions')}</div>
         )}
       </div>
     </div>,

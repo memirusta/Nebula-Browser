@@ -1,4 +1,4 @@
-import type { WidgetPane, WidgetPaneData } from '../../core/widgets'
+import { getWidgetLabel, type WidgetPane, type WidgetPaneData } from '../../core/widgets'
 import type { SystemStats } from '../../core/types'
 import { useLocale } from '../../hooks/useLocale'
 import { WidgetRenderer } from '../widgets/WidgetRenderer'
@@ -15,14 +15,14 @@ interface GridCellProps {
 }
 
 export function GridCell({ pane, isActive, stats, onFocus, onClose, onUpdate, onNavigate }: GridCellProps) {
-  const { t } = useLocale()
+  const { locale, t } = useLocale()
 
   return (
     <div className={`${styles.cell} ${isActive ? styles.cellActive : ''}`}>
       <div className={`${styles.chrome} chrome`} data-widget-drag-handle>
         <div className={styles.tabInfo}>
           <span className={styles.tabDot} data-active={isActive} />
-          <span className={styles.tabTitle}>{pane.title}</span>
+          <span className={styles.tabTitle}>{getWidgetLabel(locale, pane.widgetType)}</span>
         </div>
         <div className={styles.chromeActions}>
           <button

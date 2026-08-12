@@ -8,11 +8,22 @@ export function hostnameFromUrl(url: string): string | null {
   }
 }
 
+export function passwordOriginFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    const hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase()
+    return `${parsed.protocol}//${hostname}${parsed.port ? `:${parsed.port}` : ''}`
+  } catch {
+    return null
+  }
+}
+
 export function hostsMatchForPassword(siteUrl: string, entryUrl: string): boolean {
-  const siteHost = hostnameFromUrl(siteUrl)
-  const entryHost = hostnameFromUrl(entryUrl)
-  if (!siteHost || !entryHost) return false
-  return siteHost === entryHost
+  const siteOrigin = passwordOriginFromUrl(siteUrl)
+  const entryOrigin = passwordOriginFromUrl(entryUrl)
+  if (!siteOrigin || !entryOrigin) return false
+  return siteOrigin === entryOrigin
 }
 
 export interface PasswordMatchEntry {

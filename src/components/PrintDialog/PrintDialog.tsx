@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   listBrowsePrinters,
   type BrowsePrinterInfo,
   type BrowsePrintOptions,
 } from '../../platform/tauriBrowser'
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './PrintDialog.module.css'
 
 interface PrintDialogProps {
@@ -16,6 +18,85 @@ interface PrintDialogProps {
 
 const PAGE_RANGE_PATTERN =
   /^\s*\d+(?:\s*-\s*\d+)?(?:\s*,\s*\d+(?:\s*-\s*\d+)?)*\s*$/
+
+const COPY = {
+  tr: {
+    brand: 'NEBULA YAZDIR',
+    print: 'Yazdır',
+    close: 'Yazdırma penceresini kapat',
+    untitled: 'Adsız sayfa',
+    destination: 'Hedef',
+    windowsDefault: 'Windows varsayılan yazıcısı',
+    selectedPrinter: 'Seçili yazıcı',
+    usesSystemDefault: 'Geçerli sistem varsayılanını kullanır',
+    findingPrinters: 'Yüklü yazıcılar aranıyor…',
+    printerDestination: 'Yazıcı hedefi',
+    useSystemDefault: 'Geçerli sistem varsayılanını kullan',
+    systemDefault: 'Sistem varsayılanı',
+    installedPrinter: 'Yüklü yazıcı',
+    noPrinters: 'Windows yüklü yazıcı döndürmedi.',
+    copies: 'Kopya',
+    layout: 'Yönlendirme',
+    portrait: 'Dikey',
+    landscape: 'Yatay',
+    pages: 'Sayfalar',
+    all: 'Tümü',
+    custom: 'Özel',
+    rangePlaceholder: 'örn. 1-3, 5, 8-10',
+    rangeInvalid: '1-3, 5 gibi sayfa numaraları veya aralıklar kullan.',
+    scale: 'Ölçek',
+    more: 'Diğer ayarlar',
+    backgrounds: 'Arka plan grafikleri',
+    backgroundsHint: 'Sayfa renklerini ve arka plan görsellerini yazdır',
+    headers: 'Üstbilgi ve altbilgi',
+    headersHint: 'Sayfa başlığı, URL ve sayfa numarasını ekle',
+    selectionOnly: 'Yalnızca seçim',
+    selectionOnlyHint: 'Yalnızca seçili sayfa içeriğini yazdır',
+    printingFailed: 'Yazdırma başarısız.',
+    cancel: 'İptal',
+    sending: 'Gönderiliyor…',
+    preview: 'Yerleşim önizlemesi',
+    previewNote: 'Bu yalnızca yerleşim önizlemesidir. Sayfanın kendisini WebView2 yazdırma için oluşturur.',
+  },
+  en: {
+    brand: 'NEBULA PRINT',
+    print: 'Print',
+    close: 'Close print dialog',
+    untitled: 'Untitled page',
+    destination: 'Destination',
+    windowsDefault: 'Windows default printer',
+    selectedPrinter: 'Selected printer',
+    usesSystemDefault: 'Uses your current system default',
+    findingPrinters: 'Finding installed printers…',
+    printerDestination: 'Printer destination',
+    useSystemDefault: 'Use the current system default',
+    systemDefault: 'System default',
+    installedPrinter: 'Installed printer',
+    noPrinters: 'No installed printers were returned by Windows.',
+    copies: 'Copies',
+    layout: 'Layout',
+    portrait: 'Portrait',
+    landscape: 'Landscape',
+    pages: 'Pages',
+    all: 'All',
+    custom: 'Custom',
+    rangePlaceholder: 'e.g. 1-3, 5, 8-10',
+    rangeInvalid: 'Use page numbers or ranges such as 1-3, 5.',
+    scale: 'Scale',
+    more: 'More settings',
+    backgrounds: 'Background graphics',
+    backgroundsHint: 'Print page colors and background images',
+    headers: 'Headers and footers',
+    headersHint: 'Include page title, URL and page number',
+    selectionOnly: 'Selection only',
+    selectionOnlyHint: 'Print only selected page content',
+    printingFailed: 'Printing failed.',
+    cancel: 'Cancel',
+    sending: 'Sending…',
+    preview: 'Layout preview',
+    previewNote: 'Layout preview only. The page itself is rendered for print by WebView2.',
+  },
+} as const
 
 function displayHost(url: string): string {
   try {
@@ -31,6 +112,8 @@ export function PrintDialog({
   onCancel,
   onPrint,
 }: PrintDialogProps) {
+  const { locale } = useLocale()
+  const copy = COPY[locale]
   const [printers, setPrinters] =
     useState<BrowsePrinterInfo[]>([])
   const [printerName, setPrinterName] =
@@ -60,6 +143,8 @@ export function PrintDialog({
     useState(false)
   const [error, setError] =
     useState<string | null>(null)
+  const dialogRef = useRef<HTMLElement>(null)
+  useModalFocusTrap(dialogRef)
 
   useEffect(() => {
     let disposed = false
@@ -97,14 +182,14 @@ export function PrintDialog({
   const destinationTitle =
     selectedPrinter?.name ??
     defaultPrinter?.name ??
-    'Windows default printer'
+    copy.windowsDefault
 
   const destinationSubtitle =
     printerName
-      ? 'Selected printer'
+      ? copy.selectedPrinter
       : defaultPrinter
-        ? 'Windows default printer'
-        : 'Uses your current system default'
+        ? copy.windowsDefault
+        : copy.usesSystemDefault
 
   const customRangeInvalid =
     pageMode === 'custom' &&
@@ -164,12 +249,9 @@ export function PrintDialog({
         selectionOnly,
       })
     } catch (printError) {
+      console.error('[nebula print] print failed', printError)
       setBusy(false)
-      setError(
-        printError instanceof Error
-          ? printError.message
-          : 'Printing failed.',
-      )
+      setError(copy.printingFailed)
     }
   }
   return createPortal(
@@ -187,7 +269,9 @@ export function PrintDialog({
       }}
     >
       <section
+        ref={dialogRef}
         className={styles.dialog}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="nebula-print-title"
@@ -213,9 +297,9 @@ export function PrintDialog({
             </div>
 
             <div className={styles.heading}>
-              <span>NEBULA PRINT</span>
+              <span>{copy.brand}</span>
               <h2 id="nebula-print-title">
-                Print
+                {copy.print}
               </h2>
             </div>
 
@@ -224,19 +308,19 @@ export function PrintDialog({
               className={styles.closeButton}
               onClick={onCancel}
               disabled={busy}
-              aria-label="Close print dialog"
+              aria-label={copy.close}
             >
               ×
             </button>
           </header>
 
           <div className={styles.document}>
-            <strong>{title || 'Untitled page'}</strong>
+            <strong>{title || copy.untitled}</strong>
             <span>{displayHost(url)}</span>
           </div>
 
           <div className={styles.field}>
-            <label>Destination</label>
+            <label>{copy.destination}</label>
 
             <div className={styles.destinationWrap}>
               <button
@@ -260,7 +344,7 @@ export function PrintDialog({
                   </strong>
                   <span>
                     {printersLoading
-                      ? 'Finding installed printers…'
+                      ? copy.findingPrinters
                       : destinationSubtitle}
                   </span>
                 </div>
@@ -279,7 +363,7 @@ export function PrintDialog({
                 <div
                   className={styles.destinationMenu}
                   role="listbox"
-                  aria-label="Printer destination"
+                  aria-label={copy.printerDestination}
                 >
                   <button
                     type="button"
@@ -307,11 +391,11 @@ export function PrintDialog({
                     </span>
                     <span>
                       <strong>
-                        Windows default printer
+                        {copy.windowsDefault}
                       </strong>
                       <small>
                         {defaultPrinter?.name ??
-                          'Use the current system default'}
+                          copy.useSystemDefault}
                       </small>
                     </span>
                   </button>
@@ -356,8 +440,8 @@ export function PrintDialog({
                           </strong>
                           <small>
                             {printer.isDefault
-                              ? 'System default'
-                              : 'Installed printer'}
+                              ? copy.systemDefault
+                              : copy.installedPrinter}
                           </small>
                         </span>
                       </button>
@@ -367,7 +451,7 @@ export function PrintDialog({
                   {!printersLoading &&
                     printers.length === 0 && (
                       <div className={styles.destinationEmpty}>
-                        No installed printers were returned by Windows.
+                        {copy.noPrinters}
                       </div>
                     )}
                 </div>
@@ -378,7 +462,7 @@ export function PrintDialog({
           <div className={styles.twoColumn}>
             <div className={styles.field}>
               <label htmlFor="nebula-print-copies">
-                Copies
+                {copy.copies}
               </label>
               <input
                 id="nebula-print-copies"
@@ -399,7 +483,7 @@ export function PrintDialog({
 
             <div className={styles.field}>
               <label htmlFor="nebula-print-orientation">
-                Layout
+                {copy.layout}
               </label>
               <select
                 id="nebula-print-orientation"
@@ -414,17 +498,17 @@ export function PrintDialog({
                 }
               >
                 <option value="portrait">
-                  Portrait
+                  {copy.portrait}
                 </option>
                 <option value="landscape">
-                  Landscape
+                  {copy.landscape}
                 </option>
               </select>
             </div>
           </div>
 
           <div className={styles.field}>
-            <label>Pages</label>
+            <label>{copy.pages}</label>
             <div className={styles.segmented}>
               <button
                 type="button"
@@ -437,7 +521,7 @@ export function PrintDialog({
                   setPageMode('all')
                 }
               >
-                All
+                {copy.all}
               </button>
               <button
                 type="button"
@@ -450,7 +534,7 @@ export function PrintDialog({
                   setPageMode('custom')
                 }
               >
-                Custom
+                {copy.custom}
               </button>
             </div>
 
@@ -464,7 +548,7 @@ export function PrintDialog({
                       event.target.value,
                     )
                   }
-                  placeholder="e.g. 1-3, 5, 8-10"
+                  placeholder={copy.rangePlaceholder}
                   aria-invalid={
                     customRangeInvalid
                   }
@@ -472,7 +556,7 @@ export function PrintDialog({
                 />
                 {customRangeInvalid && (
                   <span className={styles.validation}>
-                    Use page numbers or ranges such as 1-3, 5.
+                    {copy.rangeInvalid}
                   </span>
                 )}
               </>
@@ -482,7 +566,7 @@ export function PrintDialog({
           <div className={styles.field}>
             <div className={styles.labelRow}>
               <label htmlFor="nebula-print-scale">
-                Scale
+                {copy.scale}
               </label>
               <span>{scale}%</span>
             </div>
@@ -506,13 +590,13 @@ export function PrintDialog({
           </div>
 
           <details className={styles.more}>
-            <summary>More settings</summary>
+            <summary>{copy.more}</summary>
 
             <label className={styles.toggleRow}>
               <span>
-                <strong>Background graphics</strong>
+                <strong>{copy.backgrounds}</strong>
                 <small>
-                  Print page colors and background images
+                  {copy.backgroundsHint}
                 </small>
               </span>
               <input
@@ -528,9 +612,9 @@ export function PrintDialog({
 
             <label className={styles.toggleRow}>
               <span>
-                <strong>Headers and footers</strong>
+                <strong>{copy.headers}</strong>
                 <small>
-                  Include page title, URL and page number
+                  {copy.headersHint}
                 </small>
               </span>
               <input
@@ -546,9 +630,9 @@ export function PrintDialog({
 
             <label className={styles.toggleRow}>
               <span>
-                <strong>Selection only</strong>
+                <strong>{copy.selectionOnly}</strong>
                 <small>
-                  Print only selected page content
+                  {copy.selectionOnlyHint}
                 </small>
               </span>
               <input
@@ -579,7 +663,7 @@ export function PrintDialog({
               onClick={onCancel}
               disabled={busy}
             >
-              Cancel
+              {copy.cancel}
             </button>
             <button
               type="button"
@@ -593,19 +677,19 @@ export function PrintDialog({
               }
             >
               {busy
-                ? 'Sending…'
-                : 'Print'}
+                ? copy.sending
+                : copy.print}
             </button>
           </footer>
         </div>
 
         <div className={styles.previewPane}>
           <div className={styles.previewTop}>
-            <span>Layout preview</span>
+            <span>{copy.preview}</span>
             <small>
               {orientation === 'landscape'
-                ? 'Landscape'
-                : 'Portrait'} · {scale}%
+                ? copy.landscape
+                : copy.portrait} · {scale}%
             </small>
           </div>
 
@@ -630,7 +714,7 @@ export function PrintDialog({
             >
               <div className={styles.paperHeader}>
                 <strong>
-                  {title || 'Untitled page'}
+                  {title || copy.untitled}
                 </strong>
                 <span>
                   {displayHost(url)}
@@ -658,7 +742,7 @@ export function PrintDialog({
           </div>
 
           <p className={styles.previewNote}>
-            Layout preview only. The page itself is rendered for print by WebView2.
+            {copy.previewNote}
           </p>
         </div>
       </section>

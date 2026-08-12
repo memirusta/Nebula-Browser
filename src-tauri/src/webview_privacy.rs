@@ -3,7 +3,7 @@ mod imp {
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::{LazyLock, Mutex};
+    use std::sync::{Arc, LazyLock, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde::{Deserialize, Serialize};
@@ -73,6 +73,38 @@ mod imp {
         notification: Option<i64>,
     }
 
+    #[derive(Default)]
+    struct PendingHandlerTokens {
+        filter_added: bool,
+        navigation: Option<i64>,
+        navigation_completed: Option<i64>,
+        resource: Option<i64>,
+        permission: Option<i64>,
+    }
+
+    impl PendingHandlerTokens {
+        fn finish(&self) -> Result<HandlerTokens, String> {
+            if !self.filter_added {
+                return Err("web-resource filter was not registered".to_string());
+            }
+            Ok(HandlerTokens {
+                navigation: self
+                    .navigation
+                    .ok_or_else(|| "navigation handler was not registered".to_string())?,
+                navigation_completed: self
+                    .navigation_completed
+                    .ok_or_else(|| "navigation-completed handler was not registered".to_string())?,
+                resource: self
+                    .resource
+                    .ok_or_else(|| "web-resource handler was not registered".to_string())?,
+                permission: self
+                    .permission
+                    .ok_or_else(|| "permission handler was not registered".to_string())?,
+                notification: None,
+            })
+        }
+    }
+
     struct Handlers {
         _navigation: ICoreWebView2NavigationStartingEventHandler,
         _navigation_completed: ICoreWebView2NavigationCompletedEventHandler,
@@ -98,6 +130,8 @@ mod imp {
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
     static TOKENS: LazyLock<Mutex<HashMap<String, HandlerTokens>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static TOP_LEVEL_URIS: LazyLock<Mutex<HashMap<String, String>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static NEXT_NOTIFICATION_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -222,18 +256,37 @@ mod imp {
             .as_millis() as u64
     }
 
+    fn schemeful_site(uri: &str) -> Option<(String, String)> {
+        let parsed = url::Url::parse(uri).ok()?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return None;
+        }
+        let host = parsed.host_str()?.to_ascii_lowercase();
+        let registrable_domain = psl::domain_str(&host).unwrap_or(&host).to_string();
+        Some((parsed.scheme().to_string(), registrable_domain))
+    }
+
     fn same_site(top_uri: &str, request_uri: &str) -> bool {
-        let host = |uri: &str| {
-            url::Url::parse(uri)
-                .ok()
-                .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        };
-        let (Some(top), Some(request)) = (host(top_uri), host(request_uri)) else {
-            return true;
-        };
-        top == request
-            || top.ends_with(&format!(".{request}"))
-            || request.ends_with(&format!(".{top}"))
+        matches!(
+            (schemeful_site(top_uri), schemeful_site(request_uri)),
+            (Some(top), Some(request)) if top == request
+        )
+    }
+
+    fn remember_top_level_uri(label: &str, uri: &str) {
+        if uri.is_empty() {
+            return;
+        }
+        if let Ok(mut uris) = TOP_LEVEL_URIS.lock() {
+            uris.insert(label.to_string(), uri.to_string());
+        }
+    }
+
+    fn remembered_top_level_uri(label: &str) -> Option<String> {
+        TOP_LEVEL_URIS
+            .lock()
+            .ok()
+            .and_then(|uris| uris.get(label).cloned())
     }
 
     fn cookie_shield_script(enabled: bool) -> String {
@@ -339,9 +392,9 @@ mod imp {
   ];
 
   const rejectLabels = new Set([
-    'tÃ¼mÃ¼nÃ¼ reddet', 'tumunu reddet', 'hepsini reddet', 'reddet',
-    'sadece gerekli Ã§erezler', 'sadece gerekli cerezler',
-    'yalnÄ±zca gerekli', 'yalnizca gerekli',
+    'tümünü reddet', 'tumunu reddet', 'hepsini reddet', 'reddet',
+    'sadece gerekli çerezler', 'sadece gerekli cerezler',
+    'yalnızca gerekli', 'yalnizca gerekli',
     'gerekli olanlara izin ver',
     'reject all', 'decline all', 'deny all', 'refuse all',
     'only necessary', 'necessary only', 'essential only',
@@ -356,12 +409,12 @@ mod imp {
   ]);
 
   const consentWords =
-    /(Ã§erez|cerez|cookie|consent|gizlilik|kiÅŸisel veri|kisisel veri|privacy|tracking|izleme)/i;
+    /(çerez|cerez|cookie|consent|gizlilik|kişisel veri|kisisel veri|privacy|tracking|izleme)/i;
 
   const normalize = (value) => (value || '')
     .normalize('NFKC')
     .toLocaleLowerCase('tr-TR')
-    .replace(/[.!â€¦,:;]+$/g, '')
+    .replace(/[.!…,:;]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -771,6 +824,41 @@ mod imp {
         let _ = core.ExecuteScript(PCWSTR(script.as_ptr()), &handler);
     }
 
+    unsafe fn rollback_pending_registration(core: &ICoreWebView2, pending: &PendingHandlerTokens) {
+        if let Some(token) = pending.permission {
+            let _ = core.remove_PermissionRequested(token);
+        }
+        if let Some(token) = pending.resource {
+            let _ = core.remove_WebResourceRequested(token);
+        }
+        if let Some(token) = pending.navigation_completed {
+            let _ = core.remove_NavigationCompleted(token);
+        }
+        if let Some(token) = pending.navigation {
+            let _ = core.remove_NavigationStarting(token);
+        }
+        if pending.filter_added {
+            let _ = core.RemoveWebResourceRequestedFilter(
+                &HSTRING::from("*"),
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+            );
+        }
+    }
+
+    unsafe fn rollback_registration(core: &ICoreWebView2, tokens: &HandlerTokens) {
+        let _ = core.remove_PermissionRequested(tokens.permission);
+        let _ = core.remove_WebResourceRequested(tokens.resource);
+        let _ = core.remove_NavigationCompleted(tokens.navigation_completed);
+        let _ = core.remove_NavigationStarting(tokens.navigation);
+        if let (Some(token), Ok(core24)) = (tokens.notification, core.cast::<ICoreWebView2_24>()) {
+            let _ = core24.remove_NotificationReceived(token);
+        }
+        let _ = core.RemoveWebResourceRequestedFilter(
+            &HSTRING::from("*"),
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+        );
+    }
+
     pub fn apply(app: &AppHandle, label: &str, next: PrivacyOptions) -> Result<(), String> {
         if !label.starts_with("nebula-tab-") {
             return Err("privacy settings are limited to browser tabs".to_string());
@@ -794,11 +882,15 @@ mod imp {
             .unwrap_or_default();
 
         if let Some(webview) = app.get_webview(label) {
-            let profile_options = next.clone();
+            let profile_label = label.to_string();
             let _ = webview.with_webview(move |inner| unsafe {
                 let Ok(core) = inner.controller().CoreWebView2() else {
                     return;
                 };
+                // with_webview is dispatched to the UI thread. Read the latest
+                // options when that dispatch actually runs so an older queued
+                // closure cannot overwrite a newer privacy revision.
+                let profile_options = options(&profile_label);
                 apply_cookie_shield(&core, &profile_options);
                 let Ok(core13) = core.cast::<ICoreWebView2_13>() else {
                     return;
@@ -860,26 +952,53 @@ mod imp {
         let store_label = label.to_string();
         let notification_app = app.clone();
         let permission_app = app.clone();
+        let setup_error = Arc::new(Mutex::new(None::<String>));
+        let inner_setup_error = Arc::clone(&setup_error);
 
         webview
             .with_webview(move |inner| unsafe {
-                let Ok(core) = inner.controller().CoreWebView2() else {
-                    return;
+                let record_setup_error = |message: String| {
+                    if let Ok(mut error) = inner_setup_error.lock() {
+                        *error = Some(message);
+                    }
                 };
-                let Ok(core2) = core.cast::<ICoreWebView2_2>() else {
-                    return;
+                let core = match inner.controller().CoreWebView2() {
+                    Ok(core) => core,
+                    Err(error) => {
+                        record_setup_error(format!(
+                            "failed to access WebView2 for '{store_label}': {error}"
+                        ));
+                        return;
+                    }
                 };
-                let Ok(environment) = core2.Environment() else {
-                    return;
+                let core2 = match core.cast::<ICoreWebView2_2>() {
+                    Ok(core2) => core2,
+                    Err(error) => {
+                        record_setup_error(format!(
+                            "failed to access WebView2 resource APIs for '{store_label}': {error}"
+                        ));
+                        return;
+                    }
                 };
+                let environment = match core2.Environment() {
+                    Ok(environment) => environment,
+                    Err(error) => {
+                        record_setup_error(format!(
+                            "failed to access WebView2 environment for '{store_label}': {error}"
+                        ));
+                        return;
+                    }
+                };
+                remember_top_level_uri(&store_label, &take_string(|value| core.Source(value)));
 
                 let navigation =
                     NavigationStartingEventHandler::create(Box::new(move |sender, args| {
                         let Some(args) = args else { return Ok(()) };
+                        let uri = take_string(|value| args.Uri(value));
+                        remember_top_level_uri(&navigation_label, &uri);
                         if !options(&navigation_label).https_only {
                             return Ok(());
                         }
-                        let uri = take_string(|value| args.Uri(value));
                         let Some(upgraded) = https_upgrade(&uri) else {
                             return Ok(());
                         };
@@ -953,8 +1072,14 @@ mod imp {
                         }
 
                         if current.strict_cookies && !excepted {
-                            let top_uri = sender
-                                .map(|core| take_string(|value| core.Source(value)))
+                            // CoreWebView2::Source still points at the old page
+                            // during a cross-site top-level navigation. The
+                            // NavigationStarting target is the authoritative
+                            // site for that document and its subresources.
+                            let top_uri = remembered_top_level_uri(&resource_label)
+                                .or_else(|| {
+                                    sender.map(|core| take_string(|value| core.Source(value)))
+                                })
                                 .unwrap_or_default();
                             if !same_site(&top_uri, &uri) {
                                 let _ = request.Headers()?.RemoveHeader(&HSTRING::from("Cookie"));
@@ -1011,11 +1136,76 @@ mod imp {
                         )
                     }));
 
+                let mut pending = PendingHandlerTokens::default();
+                if let Err(error) = core.AddWebResourceRequestedFilter(
+                    &HSTRING::from("*"),
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                ) {
+                    record_setup_error(format!(
+                        "failed to register WebView2 resource filter for '{store_label}': {error}"
+                    ));
+                    return;
+                }
+                pending.filter_added = true;
+
+                let mut token = 0i64;
+                if let Err(error) = core.add_NavigationStarting(&navigation, &mut token) {
+                    rollback_pending_registration(&core, &pending);
+                    record_setup_error(format!(
+                        "failed to register navigation handler for '{store_label}': {error}"
+                    ));
+                    return;
+                }
+                pending.navigation = Some(token);
+
+                token = 0;
+                if let Err(error) =
+                    core.add_NavigationCompleted(&navigation_completed, &mut token)
+                {
+                    rollback_pending_registration(&core, &pending);
+                    record_setup_error(format!(
+                        "failed to register navigation-completed handler for '{store_label}': {error}"
+                    ));
+                    return;
+                }
+                pending.navigation_completed = Some(token);
+
+                token = 0;
+                if let Err(error) = core.add_WebResourceRequested(&resource, &mut token) {
+                    rollback_pending_registration(&core, &pending);
+                    record_setup_error(format!(
+                        "failed to register resource handler for '{store_label}': {error}"
+                    ));
+                    return;
+                }
+                pending.resource = Some(token);
+
+                token = 0;
+                if let Err(error) = core.add_PermissionRequested(&permission, &mut token) {
+                    rollback_pending_registration(&core, &pending);
+                    record_setup_error(format!(
+                        "failed to register permission handler for '{store_label}': {error}"
+                    ));
+                    return;
+                }
+                pending.permission = Some(token);
+
+                let mut registered = match pending.finish() {
+                    Ok(tokens) => tokens,
+                    Err(error) => {
+                        rollback_pending_registration(&core, &pending);
+                        record_setup_error(format!(
+                            "incomplete privacy registration for '{store_label}': {error}"
+                        ));
+                        return;
+                    }
+                };
+
                 let notification_label = store_label.clone();
                 let notification = core
                     .cast::<ICoreWebView2_24>()
                     .ok()
-                    .map(|core24| {
+                    .and_then(|core24| {
                         let handler_label = notification_label.clone();
                         let handler =
                             NotificationReceivedEventHandler::create(Box::new(move |_, args| {
@@ -1052,68 +1242,25 @@ mod imp {
                                 let _ = notification_app.emit(SITE_NOTIFICATION_EVENT, payload);
                                 Ok(())
                             }));
-                        let mut token = 0i64;
-                        if core24
-                            .add_NotificationReceived(&handler, &mut token)
-                            .is_ok()
-                        {
-                            Some((handler, token))
-                        } else {
-                            None
-                        }
-                    })
-                    .flatten();
+                        let mut notification_token = 0i64;
+                        core24
+                            .add_NotificationReceived(&handler, &mut notification_token)
+                            .ok()
+                            .map(|_| (handler, notification_token))
+                    });
+                registered.notification = notification.as_ref().map(|(_, token)| *token);
 
-                core.AddWebResourceRequestedFilter(
-                    &HSTRING::from("*"),
-                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-                )
-                .ok();
-                let mut navigation_token = 0i64;
-                let mut navigation_completed_token = 0i64;
-                let mut resource_token = 0i64;
-                let mut permission_token = 0i64;
-                if core
-                    .add_NavigationStarting(&navigation, &mut navigation_token)
-                    .is_err()
-                {
-                    return;
-                }
-                if core
-                    .add_NavigationCompleted(&navigation_completed, &mut navigation_completed_token)
-                    .is_err()
-                {
-                    let _ = core.remove_NavigationStarting(navigation_token);
-                    return;
-                }
-                if core
-                    .add_WebResourceRequested(&resource, &mut resource_token)
-                    .is_err()
-                {
-                    let _ = core.remove_NavigationStarting(navigation_token);
-                    let _ = core.remove_NavigationCompleted(navigation_completed_token);
-                    return;
-                }
-                if core
-                    .add_PermissionRequested(&permission, &mut permission_token)
-                    .is_err()
-                {
-                    let _ = core.remove_NavigationStarting(navigation_token);
-                    let _ = core.remove_NavigationCompleted(navigation_completed_token);
-                    let _ = core.remove_WebResourceRequested(resource_token);
-                    return;
-                }
-                if let Ok(mut tokens) = TOKENS.lock() {
-                    tokens.insert(
-                        store_label.clone(),
-                        HandlerTokens {
-                            navigation: navigation_token,
-                            navigation_completed: navigation_completed_token,
-                            resource: resource_token,
-                            permission: permission_token,
-                            notification: notification.as_ref().map(|(_, token)| *token),
-                        },
-                    );
+                match TOKENS.lock() {
+                    Ok(mut tokens) => {
+                        tokens.insert(store_label.clone(), registered);
+                    }
+                    Err(error) => {
+                        rollback_registration(&core, &registered);
+                        record_setup_error(format!(
+                            "failed to store privacy handlers for '{store_label}': {error}"
+                        ));
+                        return;
+                    }
                 }
                 HANDLERS.with(|handlers| {
                     handlers.borrow_mut().insert(
@@ -1130,6 +1277,13 @@ mod imp {
             })
             .map_err(|error| error.to_string())?;
 
+        if let Some(error) = setup_error
+            .lock()
+            .map_err(|error| error.to_string())?
+            .take()
+        {
+            return Err(error);
+        }
         if !TOKENS
             .lock()
             .map_err(|error| error.to_string())?
@@ -1173,6 +1327,10 @@ mod imp {
             });
         }
         OPTIONS.lock().ok().map(|mut options| options.remove(label));
+        TOP_LEVEL_URIS
+            .lock()
+            .ok()
+            .map(|mut uris| uris.remove(label));
         CONFIGURED
             .lock()
             .ok()
@@ -1229,9 +1387,53 @@ mod imp {
         }
 
         #[test]
+        fn privacy_setup_cannot_commit_without_the_resource_filter() {
+            let registration = PendingHandlerTokens {
+                filter_added: false,
+                navigation: Some(1),
+                navigation_completed: Some(2),
+                resource: Some(3),
+                permission: Some(4),
+            };
+
+            let error = match registration.finish() {
+                Ok(_) => panic!("registration without a resource filter must fail"),
+                Err(error) => error,
+            };
+            assert_eq!(error, "web-resource filter was not registered");
+        }
+
+        #[test]
+        fn strict_cookie_site_matching_uses_scheme_and_registrable_domain() {
+            assert!(same_site(
+                "https://www.example.co.uk/account",
+                "https://api.example.co.uk/session"
+            ));
+            assert!(same_site("https://127.0.0.1/a", "https://127.0.0.1/b"));
+            assert!(!same_site(
+                "https://alice.github.io",
+                "https://bob.github.io"
+            ));
+            assert!(!same_site("https://example.com", "http://example.com"));
+            assert!(!same_site("not a url", "https://example.com"));
+        }
+
+        #[test]
+        fn navigation_target_is_first_party_for_its_document_and_subdomains() {
+            let target = "https://login.example.com/start";
+            assert!(same_site(target, target));
+            assert!(same_site(target, "https://api.example.com/bootstrap"));
+            assert!(!same_site(target, "https://tracker.example.net/pixel"));
+        }
+
+        #[test]
         fn cookie_shield_prefers_rejection_before_hiding() {
             let script = cookie_shield_script(true);
             assert!(script.contains("tümünü reddet"));
+            assert!(script.contains("sadece gerekli çerezler"));
+            assert!(script.contains("kişisel veri"));
+            assert!(!script.contains("Ã"));
+            assert!(!script.contains("Å"));
             assert!(script.contains("#onetrust-reject-all-handler"));
             assert!(
                 script.find("tryReject()").unwrap() < script.find("knownRoots").unwrap_or(0)
@@ -1244,75 +1446,131 @@ mod imp {
 #[cfg(target_os = "windows")]
 pub use imp::{apply, teardown, PrivacyOptions};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BrowsingDataKind {
+    Cookies,
+    Cache,
+    History,
+    Permissions,
+    All,
+}
+
+impl TryFrom<&str> for BrowsingDataKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "cookies" => Ok(Self::Cookies),
+            "cache" => Ok(Self::Cache),
+            "history" => Ok(Self::History),
+            "permissions" => Ok(Self::Permissions),
+            "all" => Ok(Self::All),
+            _ => Err(format!("unsupported browsing data kind '{value}'")),
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
-pub fn clear_browsing_data(app: &tauri::AppHandle, label: &str, kind: &str) -> Result<(), String> {
-    use serde::Serialize;
-    use tauri::{Emitter, Manager};
-    use webview2_com::ClearBrowsingDataCompletedHandler;
+pub async fn clear_browsing_data(
+    app: &tauri::AppHandle,
+    label: &str,
+    kind: &str,
+) -> Result<(), String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2Profile2, ICoreWebView2_13, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
+        COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
         COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
         COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES, COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
         COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS,
     };
+    let data_kind = match BrowsingDataKind::try_from(kind)? {
+        BrowsingDataKind::Cookies => COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES,
+        BrowsingDataKind::Cache => COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
+        BrowsingDataKind::History => COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
+        BrowsingDataKind::Permissions => COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS,
+        BrowsingDataKind::All => COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
+    };
+
+    clear_profile_data_and_wait(app, label, data_kind).await
+}
+
+#[cfg(target_os = "windows")]
+async fn clear_profile_data_and_wait(
+    app: &tauri::AppHandle,
+    label: &str,
+    data_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS,
+) -> Result<(), String> {
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use tauri::Manager;
+    use webview2_com::ClearBrowsingDataCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13};
     use windows_core::Interface;
-
-    #[derive(Clone, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct BrowsingDataClearPayload {
-        label: String,
-        kind: String,
-        error: Option<String>,
-    }
-
-    const CLEAR_EVENT: &str = "nebula-browsing-data-cleared";
 
     let webview = app
         .get_webview(label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
-    let data_kind = match kind {
-        "cookies" => COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES,
-        "cache" => COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
-        "history" => COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
-        "permissions" => COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS,
-        _ => COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
-    };
-    let app_handle = app.clone();
-    let label_for_event = label.to_string();
-    let kind_for_event = kind.to_string();
+    let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let sender = Arc::new(Mutex::new(Some(sender)));
+    let callback_sender = Arc::clone(&sender);
 
     webview
         .with_webview(move |inner| unsafe {
-            let completion_app = app_handle.clone();
-            let completion_label = label_for_event.clone();
-            let completion_kind = kind_for_event.clone();
             let result = (|| -> windows_core::Result<()> {
                 let core = inner.controller().CoreWebView2()?;
                 let core13 = core.cast::<ICoreWebView2_13>()?;
                 let profile = core13.Profile()?;
                 let profile2 = profile.cast::<ICoreWebView2Profile2>()?;
                 let handler = ClearBrowsingDataCompletedHandler::create(Box::new(move |result| {
-                    let payload = BrowsingDataClearPayload {
-                        label: completion_label.clone(),
-                        kind: completion_kind.clone(),
-                        error: result.err().map(|error| error.to_string()),
-                    };
-                    let _ = completion_app.emit(CLEAR_EVENT, payload);
+                    if let Ok(mut sender) = callback_sender.lock() {
+                        if let Some(sender) = sender.take() {
+                            let _ = sender.send(result.map_err(|error| error.to_string()));
+                        }
+                    }
                     Ok(())
                 }));
                 profile2.ClearBrowsingData(data_kind, &handler)
             })();
 
             if let Err(error) = result {
-                let payload = BrowsingDataClearPayload {
-                    label: label_for_event,
-                    kind: kind_for_event,
-                    error: Some(error.to_string()),
-                };
-                let _ = app_handle.emit(CLEAR_EVENT, payload);
+                if let Ok(mut sender) = sender.lock() {
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(Err(error.to_string()));
+                    }
+                }
             }
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    tokio::time::timeout(Duration::from_secs(30), receiver)
+        .await
+        .map_err(|_| format!("timed out clearing WebView profile for '{label}'"))?
+        .map_err(|_| format!("profile clear callback was dropped for '{label}'"))?
+}
+
+#[cfg(target_os = "windows")]
+pub async fn factory_reset_profiles(app: &tauri::AppHandle) -> Result<(), String> {
+    use std::collections::HashSet;
+
+    use tauri::Manager;
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE;
+
+    let mut labels = app
+        .webviews()
+        .into_keys()
+        .collect::<HashSet<String>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    labels.sort();
+    if labels.is_empty() {
+        return Err("no WebView profiles are available to clear".to_string());
+    }
+
+    for label in labels {
+        clear_profile_data_and_wait(app, &label, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE)
+            .await?;
+    }
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1347,10 +1605,28 @@ pub fn apply(
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
 
 #[cfg(not(target_os = "windows"))]
-pub fn clear_browsing_data(
+pub async fn clear_browsing_data(
     _app: &tauri::AppHandle,
     _label: &str,
-    _kind: &str,
+    kind: &str,
 ) -> Result<(), String> {
+    BrowsingDataKind::try_from(kind)?;
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub async fn factory_reset_profiles(_app: &tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod browsing_data_tests {
+    use super::BrowsingDataKind;
+
+    #[test]
+    fn all_profile_clear_requires_the_explicit_all_kind() {
+        assert_eq!(BrowsingDataKind::try_from("all"), Ok(BrowsingDataKind::All));
+        assert!(BrowsingDataKind::try_from("everything").is_err());
+        assert!(BrowsingDataKind::try_from("").is_err());
+    }
 }

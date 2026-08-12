@@ -64,6 +64,10 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
   const accountRef = useRef<NebulaAccount | null>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const browserDisplayName =
+    browserInfo && browserInfo.browser !== 'unknown' && browserInfo.displayName.trim()
+      ? browserInfo.displayName
+      : t('genericBrowser')
 
   useDialogFocusTrap({ active: open, containerRef: panelRef, restoreFocus: false })
 
@@ -144,7 +148,8 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
           handleGoogleClaims(claims)
           return
         }
-        setGoogleError(error ?? t('googleSignInFailed'))
+        if (import.meta.env.DEV && error) console.warn('[nebula] Google sign-in failed', error)
+        setGoogleError(error || t('googleSignInFailed'))
       })
       return
     }
@@ -187,8 +192,8 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
       if (shortcuts.length === 0) {
         setImportError(t('bookmarksNone'))
       }
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : t('bookmarksFailed'))
+    } catch {
+      setImportError(t('bookmarksFailed'))
     } finally {
       setImporting(false)
     }
@@ -359,8 +364,8 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
                 {isTauri
                   ? browserInfo
                     ? browserInfo.bookmarksAvailable
-                      ? `${browserInfo.displayName} ${t('bookmarksCanImport')}`
-                      : `${browserInfo.displayName} ${t('bookmarksUnavailable')}`
+                      ? `${browserDisplayName} ${t('bookmarksCanImport')}`
+                      : `${browserDisplayName} ${t('bookmarksUnavailable')}`
                     : t('bookmarksSearching')
                   : t('bookmarksWebOnly')}
               </p>
@@ -381,7 +386,7 @@ export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, 
                 >
                   {importing
                     ? t('bookmarksImporting')
-                    : `${browserInfo.displayName} ${t('bookmarksImportBtn')}`}
+                    : `${browserDisplayName} ${t('bookmarksImportBtn')}`}
                 </button>
               )}
             </>

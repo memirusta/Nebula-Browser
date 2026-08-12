@@ -1,14 +1,15 @@
 #[cfg(target_os = "windows")]
 mod imp {
     use std::cell::RefCell;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, Instant};
 
     use tauri::AppHandle;
     use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2, ICoreWebView2NavigationCompletedEventHandler, COREWEBVIEW2_WEB_ERROR_STATUS,
+        ICoreWebView2, ICoreWebView2NavigationCompletedEventArgs2,
+        ICoreWebView2NavigationCompletedEventHandler, COREWEBVIEW2_WEB_ERROR_STATUS,
         COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
         COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED, COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN,
     };
@@ -16,14 +17,13 @@ mod imp {
     use windows::core::PCWSTR;
     use windows::core::PWSTR;
     use windows::Win32::System::Com::CoTaskMemFree;
-    use windows_core::BOOL;
+    use windows_core::{Interface, BOOL};
 
-    static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
-        LazyLock::new(|| Mutex::new(HashSet::new()));
     static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, i64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static VERIFICATION_STATES: LazyLock<Mutex<HashMap<String, VerificationState>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static UI_LOCALE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("en".to_string()));
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, ICoreWebView2NavigationCompletedEventHandler>> =
             RefCell::new(HashMap::new());
@@ -36,6 +36,24 @@ mod imp {
 
     const VERIFICATION_WINDOW: Duration = Duration::from_secs(45);
     const MAX_VERIFICATION_RETRIES: u8 = 2;
+
+    pub fn set_ui_locale(locale: &str) {
+        let normalized = if locale.eq_ignore_ascii_case("tr") {
+            "tr"
+        } else {
+            "en"
+        };
+        if let Ok(mut current) = UI_LOCALE.lock() {
+            *current = normalized.to_string();
+        }
+    }
+
+    fn current_ui_locale() -> String {
+        UI_LOCALE
+            .lock()
+            .map(|locale| locale.clone())
+            .unwrap_or_else(|_| "en".to_string())
+    }
 
     pub(crate) fn note_browser_verification_request(label: &str) {
         let now = Instant::now();
@@ -94,15 +112,37 @@ mod imp {
         }
     }
 
-    fn build_error_page_url(retry_url: &str, error_status: &str) -> String {
+    fn build_error_page_url(retry_url: &str, error_status: &str, locale: &str) -> String {
         let retry_js = retry_url
             .replace('\\', "\\\\")
             .replace('\'', "\\'")
             .replace(['\n', '\r'], "");
+        let display_url = retry_url
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;");
+
+        let (lang, title, description, retry_label) = if locale == "tr" {
+            (
+                "tr",
+                "Bu siteye ulaşılamıyor",
+                "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
+                "Tekrar dene",
+            )
+        } else {
+            (
+                "en",
+                "This site can't be reached",
+                "Check your internet connection and try again.",
+                "Try again",
+            )
+        };
 
         let html = format!(
             r#"<!DOCTYPE html>
-<html lang="tr">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -135,6 +175,13 @@ mod imp {
   }}
   h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 8px; }}
   p {{ color: #a89bc4; max-width: 420px; margin-bottom: 24px; }}
+  .url {{
+    max-width: min(620px, 88vw);
+    margin: -12px 0 22px;
+    color: #c9bddf;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }}
   .status {{ color: #675a80; font-size: 12px; margin: -14px 0 20px; }}
   button {{
     background: #863bff;
@@ -151,10 +198,11 @@ mod imp {
 </head>
 <body>
   <div class="glyph">N</div>
-  <h1>Bağlantı kurulamadı</h1>
-  <p>İnternet bağlantınızı kontrol edin ve tekrar deneyin.</p>
+  <h1>{title}</h1>
+  <p>{description}</p>
+  <div class="url">{display_url}</div>
   <div class="status">{error_status}</div>
-  <button type="button" id="retry">Tekrar dene</button>
+  <button type="button" id="retry">{retry_label}</button>
   <div class="brand">NEBULA</div>
   <script>
     const retryUrl = '{retry_js}';
@@ -180,13 +228,21 @@ mod imp {
         }
     }
 
-    fn suppress_error_page(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
-        matches!(
-            status,
-            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
-                | COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED
-                | COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN
-        )
+    fn suppress_error_page(status: COREWEBVIEW2_WEB_ERROR_STATUS, http_status: i32) -> bool {
+        match status {
+            COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN => true,
+            // A page calling window.stop() after a response arrived is reported
+            // as ConnectionAborted. Before any HTTP response (status 0), however,
+            // the same WebView2 status represents a real connection failure such
+            // as Chromium's ERR_QUIC_PROTOCOL_ERROR and needs our error page.
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED => http_status > 0,
+            _ => false,
+        }
+    }
+
+    fn retry_target_is_current(failed_url: &str, current_url: &str) -> bool {
+        !failed_url.is_empty() && failed_url == current_url
     }
 
     fn retry_webview_after(app: AppHandle, label: String, url: String, delay: Duration) {
@@ -197,7 +253,10 @@ mod imp {
             };
             let _ = webview.with_webview(move |inner| unsafe {
                 if let Ok(core) = inner.controller().CoreWebView2() {
-                    navigate_webview(&core, &url);
+                    let current_url = read_webview_source(&core);
+                    if retry_target_is_current(&url, &current_url) {
+                        navigate_webview(&core, &url);
+                    }
                 }
             });
         });
@@ -209,10 +268,8 @@ mod imp {
         }
 
         {
-            let configured = CONFIGURED_LABELS
-                .lock()
-                .map_err(|error| error.to_string())?;
-            if configured.contains(label) {
+            let tokens = HANDLER_TOKENS.lock().map_err(|error| error.to_string())?;
+            if tokens.contains_key(label) {
                 return Ok(());
             }
         }
@@ -254,8 +311,13 @@ mod imp {
                         // failed navigations. Neither status means the network is offline,
                         // so preserve the current page instead of replacing it with an error.
                         let mut error_status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+                        let mut http_status = 0i32;
+                        if let Ok(args2) = args.cast::<ICoreWebView2NavigationCompletedEventArgs2>()
+                        {
+                            let _ = args2.HttpStatusCode(&mut http_status);
+                        }
                         if args.WebErrorStatus(&mut error_status).is_ok()
-                            && suppress_error_page(error_status)
+                            && suppress_error_page(error_status, http_status)
                         {
                             return Ok(());
                         }
@@ -289,8 +351,12 @@ mod imp {
                             }
                         }
 
-                        let error_url =
-                            build_error_page_url(&failed_url, &format!("{error_status:?}"));
+                        let locale = current_ui_locale();
+                        let error_url = build_error_page_url(
+                            &failed_url,
+                            &format!("{error_status:?}"),
+                            &locale,
+                        );
                         navigate_webview(&webview, &error_url);
                         Ok(())
                     }));
@@ -300,9 +366,11 @@ mod imp {
                     return;
                 }
 
-                if let Ok(mut tokens) = HANDLER_TOKENS.lock() {
-                    tokens.insert(label_for_store.clone(), token);
-                }
+                let Ok(mut tokens) = HANDLER_TOKENS.lock() else {
+                    let _ = core.remove_NavigationCompleted(token);
+                    return;
+                };
+                tokens.insert(label_for_store.clone(), token);
                 HANDLERS.with(|handlers| {
                     handlers
                         .borrow_mut()
@@ -310,11 +378,6 @@ mod imp {
                 });
             })
             .map_err(|error| error.to_string())?;
-
-        CONFIGURED_LABELS
-            .lock()
-            .map_err(|error| error.to_string())?
-            .insert(label.to_string());
 
         Ok(())
     }
@@ -338,9 +401,6 @@ mod imp {
                 });
             });
         }
-        if let Ok(mut configured) = CONFIGURED_LABELS.lock() {
-            configured.remove(label);
-        }
         if let Ok(mut states) = VERIFICATION_STATES.lock() {
             states.remove(label);
         }
@@ -348,7 +408,7 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::{build_error_page_url, suppress_error_page};
+        use super::{build_error_page_url, retry_target_is_current, suppress_error_page};
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
             COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
@@ -357,16 +417,30 @@ mod imp {
         };
 
         #[test]
-        fn download_navigation_does_not_replace_the_page_with_an_error() {
+        fn cancelled_navigation_does_not_replace_the_page_with_an_error() {
             assert!(suppress_error_page(
-                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+                COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
+                0,
             ));
             assert!(suppress_error_page(
-                COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED
+                COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN,
+                0,
             ));
-            assert!(suppress_error_page(COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN));
+        }
+
+        #[test]
+        fn connection_aborted_without_http_response_shows_the_error_page() {
             assert!(!suppress_error_page(
-                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
+                0,
+            ));
+            assert!(suppress_error_page(
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
+                200,
+            ));
+            assert!(!suppress_error_page(
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                0,
             ));
         }
 
@@ -375,17 +449,43 @@ mod imp {
             let page = build_error_page_url(
                 "https://example.com",
                 "COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET",
+                "en",
             );
             assert!(page.contains("COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET"));
+            assert!(page.contains("https%3A%2F%2Fexample.com"));
+            assert!(page.contains("This%20site%20can%27t%20be%20reached"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_turkish_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "tr");
+            assert!(page.contains("Bu%20siteye%20ula%C5%9F%C4%B1lam%C4%B1yor"));
+            assert!(page.contains("Tekrar%20dene"));
+            assert!(page.contains("lang%3D%22tr%22"));
+        }
+
+        #[test]
+        fn delayed_verification_retry_cannot_replace_a_newer_navigation() {
+            assert!(retry_target_is_current(
+                "https://challenge.example/",
+                "https://challenge.example/",
+            ));
+            assert!(!retry_target_is_current(
+                "https://challenge.example/",
+                "https://destination.example/",
+            ));
         }
     }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{setup_tab_error_page, teardown_tab_error_page};
+pub use imp::{set_ui_locale, setup_tab_error_page, teardown_tab_error_page};
 
 #[cfg(target_os = "windows")]
 pub(crate) use imp::note_browser_verification_request;
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_ui_locale(_locale: &str) {}
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_error_page(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {

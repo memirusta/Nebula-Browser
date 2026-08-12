@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Shortcut, ShortcutFolder } from '../core/types'
 import { folderDockId } from '../core/types'
 import { persistLocalStorage, useStorageSync } from '../core/storageSync'
+import { useLocale } from './useLocale'
 
 export const SHORTCUT_FOLDERS_KEY = 'nebula-shortcut-folders-v1'
 
@@ -31,6 +32,7 @@ export function useShortcutFolders(
   visibleShortcuts: Shortcut[],
   restorePersisted = true,
 ) {
+  const { t } = useLocale()
   const [folders, setFolders] = useState<ShortcutFolder[]>(() =>
     restorePersisted ? loadFolders().folders : [],
   )
@@ -92,7 +94,7 @@ export function useShortcutFolders(
       if (memberIds.has(sourceId) || memberIds.has(targetId)) return null
 
       const folderId = newFolderId()
-      const labelA = shortcutById.get(targetId)?.label ?? 'Klasör'
+      const labelA = shortcutById.get(targetId)?.label ?? t('folderDefaultName')
       const folder: ShortcutFolder = {
         id: folderId,
         name: name ?? labelA,
@@ -101,7 +103,7 @@ export function useShortcutFolders(
       setFolders((prev) => [...prev, folder])
       return folderDockId(folderId)
     },
-    [visibleIds, memberIds, shortcutById],
+    [visibleIds, memberIds, shortcutById, t],
   )
 
   const addShortcutToFolder = useCallback(

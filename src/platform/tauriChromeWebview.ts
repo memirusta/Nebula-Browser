@@ -58,7 +58,7 @@ async function chromePhysicalBounds(): Promise<{
   const windowSize = await windowClientPhysicalSize()
 
   const scaleFactor = await getCurrentWindow().scaleFactor()
-  const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1)
+  const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1100)
   const requestedPhysicalWidth = Math.ceil(
     (requestedLogicalWidth + CHROME_OVERLAY_WIDTH_GUTTER) * scaleFactor,
   )

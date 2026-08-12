@@ -5,6 +5,7 @@ import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
 import { matchBrowserShortcut, shouldIgnoreShellShortcut } from './core/browserShortcuts'
 import { DEFAULT_SHORTCUTS } from './core/constants'
 import { controlDownload } from './core/download'
+import { registerListenerGroup } from './core/listenerGroup'
 import {
   emitChromeAction,
   listenActiveUrl,
@@ -94,25 +95,31 @@ export function ChromeApp() {
 
   useEffect(() => {
     let disposed = false
-    const unlisteners: Array<() => void> = []
+    let disposeListeners: (() => void) | undefined
 
-    void Promise.all([
-      listenTabCatalog((next) => setCatalog(next)),
-      listenActiveUrl(setActiveUrl),
-      listenViewMode(setViewMode),
-      listenDownloadUiState(setDownloadUi),
-    ]).then((items) => {
-      if (disposed) {
-        items.forEach((dispose) => dispose())
-        return
-      }
-      unlisteners.push(...items)
-      void emitChromeAction({ type: 'request-state' })
-    })
+    void registerListenerGroup([
+      () => listenTabCatalog((next) => setCatalog(next)),
+      () => listenActiveUrl(setActiveUrl),
+      () => listenViewMode(setViewMode),
+      () => listenDownloadUiState(setDownloadUi),
+    ])
+      .then((dispose) => {
+        if (disposed) {
+          dispose()
+          return
+        }
+        disposeListeners = dispose
+        void emitChromeAction({ type: 'request-state' })
+      })
+      .catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('[nebula] chrome listeners failed to register', error)
+        }
+      })
 
     return () => {
       disposed = true
-      unlisteners.forEach((dispose) => dispose())
+      disposeListeners?.()
     }
   }, [])
 

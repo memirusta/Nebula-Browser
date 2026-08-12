@@ -10,6 +10,7 @@ import {
 import { createPortal } from 'react-dom'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
+import { getAppDialogsSnapshot } from '../../core/appDialog'
 import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
 import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
@@ -66,10 +67,11 @@ import { loadBrowseSessions } from '../../core/browseSession'
 import { resolveShortcutForOpen } from '../../core/navigateShortcut'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
 import { removeLocalStorage } from '../../core/storageSync'
+import { registerListenerGroup } from '../../core/listenerGroup'
 import {
   clearGoogleBrowserSession,
-  isGoogleBrowserSignInUrl,
-  isGoogleSessionHelperTerminalUrl,
+  GoogleBrowserSessionTracker,
+  markGoogleBrowserSessionLinked,
 } from '../../core/googleBrowserSession'
 import {
   closeBrowseTab,
@@ -809,7 +811,9 @@ export function BrowserShell() {
 
   const handleFactoryReset =
     useCallback(() => {
-      void factoryResetNebulaApp()
+      void factoryResetNebulaApp().catch((error: unknown) => {
+        console.error('[nebula reset] Factory reset failed before reload.', error)
+      })
     }, [])
 
   const handleAccountSignOut =
@@ -1004,9 +1008,9 @@ export function BrowserShell() {
   const googleResumeStartedRef =
     useRef(false)
 
-  const googleSessionHelperTabIdsRef =
-    useRef<Set<string>>(
-      new Set(),
+  const googleBrowserSessionTrackerRef =
+    useRef(
+      new GoogleBrowserSessionTracker(),
     )
 
   const closingTabIdsRef =
@@ -1092,6 +1096,7 @@ export function BrowserShell() {
       const googleAccount =
         nebulaAccountFromGoogleClaims(
           claims,
+          t('userFallback'),
         )
 
       setAccount(
@@ -1156,6 +1161,7 @@ export function BrowserShell() {
     setAccount,
     updateCategory,
     handleApplyImportedShortcuts,
+    t,
   ])
 
   useEffect(() => {
@@ -1485,18 +1491,11 @@ export function BrowserShell() {
         url:
           string,
       ) => {
-        if (
-          !isGoogleBrowserSignInUrl(
-            url,
-          )
-        ) {
-          return
-        }
-
-        googleSessionHelperTabIdsRef
+        googleBrowserSessionTrackerRef
           .current
-          .add(
+          .register(
             shortcutId,
+            url,
           )
       },
       [],
@@ -1508,9 +1507,9 @@ export function BrowserShell() {
         shortcutId:
           string,
       ) => {
-        googleSessionHelperTabIdsRef
+        googleBrowserSessionTrackerRef
           .current
-          .delete(
+          .discard(
             shortcutId,
           )
 
@@ -1594,16 +1593,19 @@ export function BrowserShell() {
           return
         }
 
-        if (
-          googleSessionHelperTabIdsRef
+        const googleSessionEmail =
+          googleBrowserSessionTrackerRef
             .current
-            .has(
+            .complete(
               snapshot.shortcutId,
-            ) &&
-          isGoogleSessionHelperTerminalUrl(
-            snapshot.url,
+              snapshot.url,
+            )
+
+        if (googleSessionEmail) {
+          markGoogleBrowserSessionLinked(
+            googleSessionEmail,
           )
-        ) {
+
           void dismissGoogleSessionHelperTab(
             snapshot.shortcutId,
           )
@@ -1612,7 +1614,7 @@ export function BrowserShell() {
         }
 
         if (
-          !googleSessionHelperTabIdsRef
+          !googleBrowserSessionTrackerRef
             .current
             .has(
               snapshot.shortcutId,
@@ -2541,6 +2543,12 @@ export function BrowserShell() {
           shortcutId,
         )
 
+        googleBrowserSessionTrackerRef
+          .current
+          .discard(
+            shortcutId,
+          )
+
         const remaining =
           tabsRef.current.filter(
             (tab) =>
@@ -3000,14 +3008,14 @@ export function BrowserShell() {
     if (!isTauri) return
 
     let disposed = false
-    const unlisteners:
-      Array<() => void> = []
+    let disposeListeners:
+      (() => void) | undefined
 
     const register =
       async () => {
-        const listeners =
-          await Promise.all([
-            listenSiteUiRequests(
+        const dispose =
+          await registerListenerGroup([
+            () => listenSiteUiRequests(
               (request) => {
                 if (
                   request.requestType ===
@@ -3074,7 +3082,7 @@ export function BrowserShell() {
                 )
               },
             ),
-            listenSiteUiCancelled(
+            () => listenSiteUiCancelled(
               ({ id }) => {
                 setSiteUiQueue(
                   (queue) =>
@@ -3085,14 +3093,14 @@ export function BrowserShell() {
                 )
               },
             ),
-            listenSiteContextMenus(
+            () => listenSiteContextMenus(
               (request) => {
                 setSiteContextMenu(
                   request,
                 )
               },
             ),
-            listenSiteContextMenuCancelled(
+            () => listenSiteContextMenuCancelled(
               ({ id }) => {
                 setSiteContextMenu(
                   (current) =>
@@ -3102,14 +3110,14 @@ export function BrowserShell() {
                 )
               },
             ),
-            listenSiteNewWindows(
+            () => listenSiteNewWindows(
               ({ uri }) => {
                 openUrlInNewTab(
                   uri,
                 )
               },
             ),
-            listenSiteCloseWindows(
+            () => listenSiteCloseWindows(
               ({ tabLabel }) => {
                 const shortcutId =
                   shortcutIdForTabWebviewLabel(
@@ -3126,26 +3134,23 @@ export function BrowserShell() {
           ])
 
         if (disposed) {
-          listeners.forEach(
-            (unlisten) =>
-              unlisten(),
-          )
+          dispose()
           return
         }
 
-        unlisteners.push(
-          ...listeners,
-        )
+        disposeListeners =
+          dispose
       }
 
-    void register()
+    void register().catch((error) => {
+      if (import.meta.env.DEV) {
+        console.warn('[nebula] site UI listeners failed to register', error)
+      }
+    })
 
     return () => {
       disposed = true
-      unlisteners.forEach(
-        (unlisten) =>
-          unlisten(),
-      )
+      disposeListeners?.()
     }
   }, [
     handleCloseTab,
@@ -3156,7 +3161,6 @@ export function BrowserShell() {
     const open =
       siteUiQueue.length > 0 ||
       siteContextMenu !== null ||
-      printDialogTabId !== null ||
       printDialogTabId !== null
 
     if (
@@ -3931,6 +3935,8 @@ export function BrowserShell() {
         }
 
         if (
+          siteSurfaceActive ||
+          getAppDialogsSnapshot().length > 0 ||
           settingsOpen ||
           onboardingOpen
         ) {
@@ -4098,6 +4104,7 @@ export function BrowserShell() {
         reloadActiveTab,
         reopenLastClosedTab,
         settingsOpen,
+        siteSurfaceActive,
         switchToTabByIndex,
         tabsRef,
         toggleDeveloperTools,
@@ -4518,7 +4525,9 @@ export function BrowserShell() {
           notificationCenter.blockedSites,
       },
       openTabIds,
-    )
+    ).catch((error: unknown) => {
+      console.error('[nebula privacy] Failed to apply browser privacy settings.', error)
+    })
 
     if (
       clearPreviousSessionOnStartupRef
@@ -5621,7 +5630,7 @@ export function BrowserShell() {
             getTab(
               printDialogTabId,
             )?.title ??
-            'Untitled page'
+            t('untitledPage')
           }
           url={
             getTab(

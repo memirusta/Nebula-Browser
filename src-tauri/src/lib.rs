@@ -4,10 +4,11 @@ mod context_menu;
 mod devtools_bridge;
 mod download_manager;
 mod google_oauth;
+mod google_sync;
 mod password_webview;
 mod secure_password_vault;
-mod site_ui;
 mod site_fullscreen_window;
+mod site_ui;
 mod system_stats;
 mod tab_error_page;
 mod tab_fullscreen;
@@ -18,14 +19,10 @@ mod webview_branding;
 mod webview_controls;
 mod webview_privacy;
 
-static TRANSITION_LOG_LOCK: std::sync::Mutex<()> =
-    std::sync::Mutex::new(());
+static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[tauri::command]
-async fn search_suggestions(
-    query: String,
-    engine: String,
-) -> Result<Vec<String>, String> {
+async fn search_suggestions(query: String, engine: String) -> Result<Vec<String>, String> {
     use std::collections::HashSet;
     use std::time::Duration;
 
@@ -43,15 +40,11 @@ async fn search_suggestions(
         }
 
         "bing" => {
-            format!(
-                "https://api.bing.com/osjson.aspx?query={encoded}"
-            )
+            format!("https://api.bing.com/osjson.aspx?query={encoded}")
         }
 
         _ => {
-            format!(
-                "https://suggestqueries.google.com/complete/search?client=firefox&q={encoded}"
-            )
+            format!("https://suggestqueries.google.com/complete/search?client=firefox&q={encoded}")
         }
     };
 
@@ -104,8 +97,7 @@ async fn search_suggestions(
 
                     // 4xx hatalarında 429 dışında tekrar denemenin
                     // pek anlamı yok.
-                    if status.is_client_error()
-                        && status != reqwest::StatusCode::TOO_MANY_REQUESTS
+                    if status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS
                     {
                         return Ok(Vec::new());
                     }
@@ -132,18 +124,12 @@ async fn search_suggestions(
     if engine == "duckduckgo" {
         if let Some(entries) = data.as_array() {
             for entry in entries {
-                if let Some(phrase) = entry
-                    .get("phrase")
-                    .and_then(|value| value.as_str())
-                {
+                if let Some(phrase) = entry.get("phrase").and_then(|value| value.as_str()) {
                     suggestions.push(phrase.to_string());
                 }
             }
         }
-    } else if let Some(entries) = data
-        .get(1)
-        .and_then(|value| value.as_array())
-    {
+    } else if let Some(entries) = data.get(1).and_then(|value| value.as_array()) {
         for entry in entries {
             if let Some(text) = entry.as_str() {
                 suggestions.push(text.to_string());
@@ -183,30 +169,32 @@ async fn search_suggestions(
 }
 
 #[tauri::command]
-fn write_transition_log(
-    app: tauri::AppHandle,
-    entry: serde_json::Value,
-) -> Result<String, String> {
+fn write_transition_log(app: tauri::AppHandle, entry: serde_json::Value) -> Result<String, String> {
     use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tauri::Manager;
 
     let _guard = TRANSITION_LOG_LOCK
         .lock()
-        .map_err(|_| {
-            "native-tab transition log lock was poisoned".to_string()
-        })?;
+        .map_err(|_| "native-tab transition log lock was poisoned".to_string())?;
 
     let log_dir = app
         .path()
         .app_log_dir()
         .map_err(|error| error.to_string())?;
 
-    std::fs::create_dir_all(&log_dir)
-        .map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&log_dir).map_err(|error| error.to_string())?;
 
-    let path =
-        log_dir.join("native-tab-transitions.jsonl");
+    let path = log_dir.join("native-tab-transitions.jsonl");
+    const MAX_TRANSITION_LOG_BYTES: u64 = 4 * 1024 * 1024;
+    if std::fs::metadata(&path)
+        .map(|metadata| metadata.len() >= MAX_TRANSITION_LOG_BYTES)
+        .unwrap_or(false)
+    {
+        let rotated = log_dir.join("native-tab-transitions.jsonl.1");
+        let _ = std::fs::remove_file(&rotated);
+        std::fs::rename(&path, &rotated).map_err(|error| error.to_string())?;
+    }
 
     let mut record = match entry {
         serde_json::Value::Object(map) => map,
@@ -214,10 +202,7 @@ fn write_transition_log(
         value => {
             let mut map = serde_json::Map::new();
 
-            map.insert(
-                "entry".to_string(),
-                value,
-            );
+            map.insert("entry".to_string(), value);
 
             map
         }
@@ -230,29 +215,20 @@ fn write_transition_log(
 
     record.insert(
         "hostTimestampMs".to_string(),
-        serde_json::Value::String(
-            timestamp_ms.to_string(),
-        ),
+        serde_json::Value::String(timestamp_ms.to_string()),
     );
 
-    let mut file =
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .map_err(|error| error.to_string())?;
-
-    serde_json::to_writer(
-        &mut file,
-        &record,
-    )
-    .map_err(|error| error.to_string())?;
-
-    file.write_all(b"\n")
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
         .map_err(|error| error.to_string())?;
 
-    file.flush()
-        .map_err(|error| error.to_string())?;
+    serde_json::to_writer(&mut file, &record).map_err(|error| error.to_string())?;
+
+    file.write_all(b"\n").map_err(|error| error.to_string())?;
+
+    file.flush().map_err(|error| error.to_string())?;
 
     Ok(path.to_string_lossy().into_owned())
 }
@@ -273,6 +249,12 @@ async fn webview_execute_script(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn webview_set_ui_locale(locale: String) -> Result<(), String> {
+    tab_error_page::set_ui_locale(&locale);
+    Ok(())
 }
 
 #[tauri::command]
@@ -315,11 +297,9 @@ async fn site_context_menu_respond(
     request_id: String,
     command_id: Option<i32>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        context_menu::respond(app, request_id, command_id)
-    })
-    .await
-    .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || context_menu::respond(app, request_id, command_id))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -337,20 +317,14 @@ async fn webview_devtools_call(
 }
 
 #[tauri::command]
-async fn webview_devtools_subscribe(
-    app: tauri::AppHandle,
-    label: String,
-) -> Result<(), String> {
+async fn webview_devtools_subscribe(app: tauri::AppHandle, label: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || devtools_bridge::subscribe(&app, &label))
         .await
         .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-async fn webview_devtools_unsubscribe(
-    app: tauri::AppHandle,
-    label: String,
-) -> Result<(), String> {
+async fn webview_devtools_unsubscribe(app: tauri::AppHandle, label: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || devtools_bridge::unsubscribe(&app, &label))
         .await
         .map_err(|error| error.to_string())?
@@ -366,12 +340,17 @@ fn webview_apply_privacy(
 }
 
 #[tauri::command]
-fn webview_clear_browsing_data(
+async fn webview_clear_browsing_data(
     app: tauri::AppHandle,
     label: String,
     kind: String,
 ) -> Result<(), String> {
-    webview_privacy::clear_browsing_data(&app, &label, &kind)
+    webview_privacy::clear_browsing_data(&app, &label, &kind).await
+}
+
+#[tauri::command]
+async fn webview_factory_reset_profiles(app: tauri::AppHandle) -> Result<(), String> {
+    webview_privacy::factory_reset_profiles(&app).await
 }
 
 #[tauri::command]
@@ -625,7 +604,6 @@ fn stack_chrome_above_browser(
         SetWindowPos, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     };
 
-
     if let Some(main) = app.get_webview("main") {
         let _ = main.show();
     }
@@ -831,24 +809,17 @@ fn webview_set_chrome_bounds(
 
     #[cfg(target_os = "windows")]
     {
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
-        };
-
-        let hwnd = resolve_webview_hwnd(&app, "nebula-chrome")?;
-        unsafe {
-            SetWindowPos(
-                hwnd,
-                None,
-                x,
-                y,
-                width,
-                height,
-                SWP_NOACTIVATE | SWP_NOZORDER,
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        Ok(true)
+        // Do not resize the HWND returned by ICoreWebView2Controller::ParentWindow here.
+        // That HWND is the controller's parent/host, not the WebView2 Bounds itself. This
+        // command used to be blocked by ACL so the JS Webview.setPosition/setSize fallback
+        // always ran; once the ACL was fixed, returning true here skipped that known-good
+        // path and could leave the dedicated Semi-Lunar surface at its tiny bootstrap size.
+        //
+        // Keep the command callable (ACL parity is still correct) but explicitly request the
+        // Tauri Webview fallback until this optimization is implemented with WebView2
+        // controller Bounds/put_Bounds rather than ParentWindow + SetWindowPos.
+        let _ = (&app, x, y, width, height);
+        Ok(false)
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1013,57 +984,64 @@ pub fn run() {
             }
             Ok(())
         })
-      .invoke_handler(tauri::generate_handler![
-    write_transition_log,
-    search_suggestions,
-    webview_set_shortcut_bindings,
-    webview_navigate,
-    webview_close_tab,
-    webview_current_url,
-    webview_go_back,
-    webview_controls::webview_go_forward,
-    webview_controls::webview_reload,
-    webview_controls::webview_zoom,
-    webview_controls::webview_list_printers,
-    webview_controls::webview_print,
-    webview_controls::webview_open_devtools,
-    webview_controls::webview_set_memory_usage,
-    webview_controls::webview_is_playing_audio,
-    webview_controls::webview_set_suspended,
-    webview_raise_overlay,
-    webview_raise_chrome,
-    webview_set_chrome_bounds,
-    webview_raise_tab_fullscreen,
-    window_enter_site_fullscreen,
-    window_exit_site_fullscreen,
-    webview_restore_browsing_layout,
-    webview_setup_tab_error_pages,
-    site_ui_respond,
-    site_context_menu_respond,
-    webview_devtools_call,
-    webview_devtools_subscribe,
-    webview_devtools_unsubscribe,
-    webview_apply_privacy,
-    webview_clear_browsing_data,
-    ublock_extension::ublock_extension_info,
-    ublock_extension::ublock_extension_install,
-    ublock_extension::ublock_extension_status,
-    webview_setup_branding,
-    webview_execute_script,
-    download_control,
-    secure_password_vault::password_vault_load,
-    secure_password_vault::password_vault_save,
-    secure_password_vault::password_vault_clear,
-    system_stats::get_system_stats,
-    system_stats::get_system_memory_pressure,
-    browser_bookmarks::detect_default_browser,
-    browser_bookmarks::import_default_browser_bookmarks,
-    browser_passwords::list_chromium_password_sources,
-    browser_passwords::import_default_browser_passwords,
-    google_oauth::exchange_google_oauth_token,
-    google_oauth::google_oauth_sign_in_loopback,
-    google_oauth::google_oauth_status,
-])
+        .invoke_handler(tauri::generate_handler![
+            write_transition_log,
+            search_suggestions,
+            webview_set_shortcut_bindings,
+            webview_navigate,
+            webview_close_tab,
+            webview_current_url,
+            webview_go_back,
+            webview_controls::webview_go_forward,
+            webview_controls::webview_reload,
+            webview_controls::webview_zoom,
+            webview_controls::webview_list_printers,
+            webview_controls::webview_print,
+            webview_controls::webview_open_devtools,
+            webview_controls::webview_set_memory_usage,
+            webview_controls::webview_is_playing_audio,
+            webview_controls::webview_set_suspended,
+            webview_raise_overlay,
+            webview_raise_chrome,
+            webview_set_chrome_bounds,
+            webview_raise_tab_fullscreen,
+            window_enter_site_fullscreen,
+            window_exit_site_fullscreen,
+            webview_restore_browsing_layout,
+            webview_setup_tab_error_pages,
+            webview_set_ui_locale,
+            site_ui_respond,
+            site_context_menu_respond,
+            webview_devtools_call,
+            webview_devtools_subscribe,
+            webview_devtools_unsubscribe,
+            webview_apply_privacy,
+            webview_clear_browsing_data,
+            webview_factory_reset_profiles,
+            ublock_extension::ublock_extension_info,
+            ublock_extension::ublock_extension_install,
+            ublock_extension::ublock_extension_status,
+            webview_setup_branding,
+            webview_execute_script,
+            download_control,
+            secure_password_vault::password_vault_load,
+            secure_password_vault::password_vault_save,
+            secure_password_vault::password_vault_clear,
+            system_stats::get_system_stats,
+            system_stats::get_system_memory_pressure,
+            browser_bookmarks::detect_default_browser,
+            browser_bookmarks::import_default_browser_bookmarks,
+            browser_passwords::list_chromium_password_sources,
+            browser_passwords::import_default_browser_passwords,
+            google_oauth::exchange_google_oauth_token,
+            google_oauth::google_oauth_sign_in_loopback,
+            google_oauth::google_oauth_status,
+            google_oauth::google_sync_enable_loopback,
+            google_sync::google_sync_status,
+            google_sync::google_sync_pull,
+            google_sync::google_sync_push,
+            google_sync::google_sync_forget,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -204,6 +204,25 @@
   opacity: 0.4;
 }
 
+.transferMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(202, 171, 255, 0.7);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transferMetaCompact {
+  gap: 5px;
+  margin-top: 1px;
+  color: rgba(202, 171, 255, 0.64);
+  font-size: 10px;
+}
+
 .progressTrack {
   position: relative;
   height: 3px;

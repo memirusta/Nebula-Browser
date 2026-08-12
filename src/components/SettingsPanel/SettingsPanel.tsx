@@ -12,6 +12,7 @@ import {
 } from '../../core/settingsCategories'
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
+import { showAppConfirmation } from '../../core/appDialog'
 import type { NebulaSettings } from '../../core/nebulaSettings'
 import {
   SettingColorRow,
@@ -160,7 +161,7 @@ function ShortcutReference({
       if (!binding) return
 
       const validation = validateBrowserShortcutBinding(binding)
-      if (!validation.ok) {
+      if (validation.ok === false) {
         setMessage(
           validation.reason === 'reserved'
             ? isTr
@@ -405,6 +406,11 @@ function CategoryContent({
   onOpenBrowseUrl?: (url: string) => void
 }) {
   const { t, locale, setLocale } = useLocale()
+  const clearingBrowsingDataRef = useRef(false)
+  const [clearingBrowsingDataKind, setClearingBrowsingDataKind] =
+    useState<BrowsingDataKind | null>(null)
+  const [clearBrowsingDataStatus, setClearBrowsingDataStatus] =
+    useState<'idle' | 'cleared' | 'failed'>('idle')
   const { appearance, home, semiLunar, browsing, privacy, notifications } = settings
   let activeHost = ''
   try {
@@ -433,6 +439,28 @@ function CategoryContent({
       ? permissionHosts.filter((host) => host !== activeHost)
       : [...permissionHosts, activeHost]
     onUpdate('privacy', 'permissionExceptions', next.join(', '))
+  }
+  const requestClearBrowsingData = async (kind: BrowsingDataKind) => {
+    if (clearingBrowsingDataRef.current) return
+    const accepted = await showAppConfirmation(
+      t('clearBrowsingDataConfirm'),
+      t('clearBrowsingData'),
+    )
+    if (!accepted) return
+
+    clearingBrowsingDataRef.current = true
+    setClearingBrowsingDataKind(kind)
+    setClearBrowsingDataStatus('idle')
+    try {
+      await onClearBrowsingData(kind)
+      setClearBrowsingDataStatus('cleared')
+    } catch (error) {
+      console.error('[nebula privacy] Failed to clear browsing data.', error)
+      setClearBrowsingDataStatus('failed')
+    } finally {
+      clearingBrowsingDataRef.current = false
+      setClearingBrowsingDataKind(null)
+    }
   }
 
   switch (categoryId) {
@@ -1091,10 +1119,15 @@ function CategoryContent({
             <div className={styles.rowText}><div className={styles.rowLabel}>{t('clearBrowsingData')}</div><div className={styles.rowHint}>{t('clearBrowsingDataHint')}</div></div>
             <div className={styles.privacyActionGrid}>
               {(['cookies', 'cache', 'history', 'permissions'] as const).map((kind) => (
-                <button key={kind} type="button" className={styles.actionBtn} onClick={() => void onClearBrowsingData(kind)}>{t(`clear_${kind}`)}</button>
+                <button key={kind} type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData(kind)}>{clearingBrowsingDataKind === kind ? t('clearBrowsingDataWorking') : t(`clear_${kind}`)}</button>
               ))}
-              <button type="button" className={styles.dangerBtn} onClick={() => void onClearBrowsingData('all')}>{t('clearAll')}</button>
+              <button type="button" className={styles.dangerBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('all')}>{clearingBrowsingDataKind === 'all' ? t('clearBrowsingDataWorking') : t('clearAll')}</button>
             </div>
+            {clearBrowsingDataStatus !== 'idle' && (
+              <div className={styles.rowHint} role="status" aria-live="polite">
+                {t(clearBrowsingDataStatus === 'cleared' ? 'clearBrowsingDataSuccess' : 'clearBrowsingDataFailed')}
+              </div>
+            )}
           </div>
           <SettingResetRow
             label={t('privacyReset')}

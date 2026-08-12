@@ -251,8 +251,7 @@ fn resolve_password_source_for(browser_id: Option<&str>) -> Option<PasswordSourc
             return None;
         }
 
-        if let Some((_, _, user_data)) =
-            installations.iter().find(|(id, _, _)| *id == preferred_id)
+        if let Some((_, _, user_data)) = installations.iter().find(|(id, _, _)| *id == preferred_id)
         {
             if let Some(source) = source_from_installation(user_data) {
                 return Some(source);

@@ -1,5 +1,6 @@
 param(
   [string]$ExePath = "",
+  [string]$ExpectedSha256 = "",
   [int]$StartupTimeoutSeconds = 15,
   [int]$StabilitySeconds = 5
 )
@@ -7,37 +8,41 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Resolve-NebulaExe {
-  param([string]$ExplicitPath)
+  param(
+    [string]$ExplicitPath,
+    [string]$RepositoryRoot
+  )
 
   if ($ExplicitPath) {
-    if (-not (Test-Path $ExplicitPath)) { throw "Executable not found: $ExplicitPath" }
-    return (Resolve-Path $ExplicitPath).Path
+    $candidate = if ([System.IO.Path]::IsPathRooted($ExplicitPath)) {
+      $ExplicitPath
+    } else {
+      Join-Path $RepositoryRoot $ExplicitPath
+    }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      throw "Executable not found: $candidate"
+    }
+    return (Resolve-Path -LiteralPath $candidate).Path
   }
 
-  $release = Join-Path (Get-Location) "src-tauri\target\release"
-  $known = @(
-    (Join-Path $release "app.exe"),
-    (Join-Path $release "Nebula.exe"),
-    (Join-Path $release "nebula.exe")
-  )
-  foreach ($candidate in $known) {
-    if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
+  $candidate = Join-Path $RepositoryRoot "src-tauri\target\x86_64-pc-windows-msvc\release\app.exe"
+  if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+    return (Resolve-Path -LiteralPath $candidate).Path
   }
 
-  if (Test-Path $release) {
-    $candidate = Get-ChildItem $release -File -Filter *.exe |
-      Where-Object { $_.DirectoryName -notmatch "\\deps$" } |
-      Sort-Object LastWriteTime -Descending |
-      Select-Object -First 1
-    if ($candidate) { return $candidate.FullName }
-  }
-
-  throw "Nebula release executable not found. Run npm run tauri:build:binary first, or pass -ExePath."
+  throw "Target-specific Nebula release executable not found: $candidate. Run npm run tauri:build:binary first, or pass -ExePath."
 }
 
-$exe = Resolve-NebulaExe $ExePath
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+$exe = Resolve-NebulaExe -ExplicitPath $ExePath -RepositoryRoot $repoRoot
+$actualSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+if ($ExpectedSha256 -and $actualSha256 -ine $ExpectedSha256) {
+  throw "Release artifact SHA256 mismatch. Expected $ExpectedSha256 but found $actualSha256 at $exe."
+}
+
 Write-Host "Nebula native smoke started."
 Write-Host "Executable: $exe"
+Write-Host "SHA256: $actualSha256"
 
 $process = Start-Process -FilePath $exe -PassThru
 try {

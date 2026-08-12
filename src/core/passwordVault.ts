@@ -1,43 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '../platform/runtime'
+import {
+  parsePasswordVault,
+  serializePasswordVault,
+  type SavedPassword,
+} from './passwordVaultSchema'
+
+export type { SavedPassword } from './passwordVaultSchema'
 
 export const PASSWORD_VAULT_KEY = 'nebula-password-vault-v1'
 export const PASSWORD_VAULT_CHANGED_EVENT = 'nebula-password-vault-changed'
-
-export interface SavedPassword {
-  id: string
-  label: string
-  url?: string
-  username: string
-  password: string
-  updatedAt: number
-}
-
-function parseEntry(raw: unknown): SavedPassword | null {
-  if (!raw || typeof raw !== 'object') return null
-  const entry = raw as Partial<SavedPassword>
-  if (typeof entry.id !== 'string' || typeof entry.label !== 'string') return null
-  if (typeof entry.username !== 'string' || typeof entry.password !== 'string') return null
-  return {
-    id: entry.id,
-    label: entry.label.trim().slice(0, 80),
-    url: typeof entry.url === 'string' && entry.url.trim() ? entry.url.trim().slice(0, 300) : undefined,
-    username: entry.username.trim().slice(0, 120),
-    password: entry.password.slice(0, 256),
-    updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : Date.now(),
-  }
-}
-
-function parseVault(raw: string | null): SavedPassword[] {
-  try {
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.map(parseEntry).filter((entry): entry is SavedPassword => entry !== null)
-  } catch {
-    return []
-  }
-}
 
 let volatileVault: SavedPassword[] = []
 let initialization: Promise<SavedPassword[]> | null = null
@@ -49,14 +21,15 @@ async function initializePasswordVault(): Promise<SavedPassword[]> {
 
   initialization = (async () => {
     const stored = await invoke<string | null>('password_vault_load')
-    if (stored) {
+    if (stored !== null) {
+      const vault = parsePasswordVault(stored)
       localStorage.removeItem(PASSWORD_VAULT_KEY)
-      return parseVault(stored)
+      return vault
     }
 
-    const legacy = parseVault(localStorage.getItem(PASSWORD_VAULT_KEY))
+    const legacy = parsePasswordVault(localStorage.getItem(PASSWORD_VAULT_KEY))
     if (legacy.length > 0) {
-      await invoke('password_vault_save', { json: JSON.stringify(legacy) })
+      await invoke('password_vault_save', { json: serializePasswordVault(legacy) })
     }
     localStorage.removeItem(PASSWORD_VAULT_KEY)
     return legacy
@@ -72,7 +45,7 @@ export async function loadPasswordVault(): Promise<SavedPassword[]> {
   await mutationChain.catch(() => undefined)
   if (!isTauri) return [...volatileVault]
   await initializePasswordVault()
-  return parseVault(await invoke<string | null>('password_vault_load'))
+  return parsePasswordVault(await invoke<string | null>('password_vault_load'))
 }
 
 export async function savePasswordVault(entries: SavedPassword[]): Promise<void> {
@@ -82,7 +55,7 @@ export async function savePasswordVault(entries: SavedPassword[]): Promise<void>
     return
   }
   await initializePasswordVault()
-  await invoke('password_vault_save', { json: JSON.stringify(entries) })
+  await invoke('password_vault_save', { json: serializePasswordVault(entries) })
   localStorage.removeItem(PASSWORD_VAULT_KEY)
   window.dispatchEvent(new Event(PASSWORD_VAULT_CHANGED_EVENT))
 }
@@ -94,7 +67,7 @@ export async function updatePasswordVault(
   const mutation = mutationChain.catch(() => undefined).then(async () => {
     await initializePasswordVault()
     const current = isTauri
-      ? parseVault(await invoke<string | null>('password_vault_load'))
+      ? parsePasswordVault(await invoke<string | null>('password_vault_load'))
       : [...volatileVault]
     result = transform(current)
     await savePasswordVault(result)

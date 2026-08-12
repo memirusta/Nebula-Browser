@@ -41,8 +41,8 @@ function Import-ReleaseGoogleOAuth {
     throw "GOOGLE_CLIENT_SECRET not found in $EnvPath"
   }
 
-  # Keep the client id available to Vite/native code, but expose the client
-  # secret only to the native Rust build. Never use a VITE_* name for it.
+  # Keep the secret out of Vite/frontend code. It is supplied only to the
+  # native Rust build/runtime; PKCE remains enabled for the OAuth flow.
   $env:VITE_GOOGLE_CLIENT_ID = $clientId
   $env:GOOGLE_CLIENT_ID = $clientId
   $env:GOOGLE_CLIENT_SECRET = $clientSecret

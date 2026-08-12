@@ -33,8 +33,7 @@ export function isAppUpdateDismissed(version: string): boolean {
 }
 
 function updaterErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === 'string') return error
+  if (import.meta.env.DEV) console.warn('[nebula] Update check failed', error)
   return t(loadLocale(), 'updateErrorCheck')
 }
 
@@ -108,12 +107,10 @@ export async function installAppUpdate(
     await relaunch()
     return { phase: 'idle' }
   } catch (error) {
+    if (import.meta.env.DEV) console.warn('[nebula] Update install failed', error)
     return {
       phase: 'error',
-      message:
-        error instanceof Error && error.message
-          ? error.message
-          : t(loadLocale(), 'updateErrorInstall'),
+      message: t(loadLocale(), 'updateErrorInstall'),
     }
   }
 }

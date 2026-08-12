@@ -8,6 +8,12 @@ import {
   shortcutIdForTabWebviewLabel,
   tabWebviewLabel,
 } from '../core/browserTab'
+import { KeyedLifecycleQueue } from '../core/keyedLifecycleQueue'
+import { allSettledOrThrow, LatestPerKeyRunner } from '../core/latestPerKey'
+import {
+  prewarmCreationIsCurrent,
+  prewarmProfileMatches,
+} from '../core/prewarmProfile'
 import { debounce } from './debounce'
 import { isTauri } from './runtime'
 import {
@@ -208,36 +214,43 @@ let privacyOptions: BrowserPrivacyOptions = {
 
 let privacyRevision = 0
 
-const appliedPrivacyRevisions = new Map<string, number>()
-
-async function applyPrivacyToLabel(label: string): Promise<void> {
-  if (appliedPrivacyRevisions.get(label) === privacyRevision) return
-
-  const options = {
-    ...privacyOptions,
-    siteExceptions: privacyOptions.siteExceptions
+function nativePrivacyOptions(options: BrowserPrivacyOptions) {
+  return {
+    ...options,
+    siteExceptions: options.siteExceptions
       .split(/[\s,;]+/)
       .filter(Boolean),
-    customBlockList: privacyOptions.customBlockList
+    customBlockList: options.customBlockList
       .split(/[\s,;]+/)
       .filter(Boolean),
-    permissionExceptions: privacyOptions.permissionExceptions
+    permissionExceptions: options.permissionExceptions
       .split(/[\s,;]+/)
       .filter(Boolean),
   }
+}
 
-  await invoke('webview_apply_privacy', {
-    label,
-    options,
-  })
+const privacyApplyRunner = new LatestPerKeyRunner(
+  () => ({
+    revision: privacyRevision,
+    value: nativePrivacyOptions({ ...privacyOptions }),
+  }),
+  async (label: string, options) => {
+    await invoke('webview_apply_privacy', {
+      label,
+      options,
+    })
+  },
+)
 
-  appliedPrivacyRevisions.set(label, privacyRevision)
+async function applyPrivacyToLabel(label: string): Promise<void> {
+  await privacyApplyRunner.run(label)
 }
 
 export async function setBrowsePrivacyOptions(
   options: BrowserPrivacyOptions,
   shortcutIds: string[],
 ): Promise<void> {
+  const privateModeChanged = privacyOptions.privateMode !== options.privateMode
   if (JSON.stringify(privacyOptions) !== JSON.stringify(options)) {
     privacyRevision += 1
   }
@@ -246,12 +259,17 @@ export async function setBrowsePrivacyOptions(
 
   if (!isTauri) return
 
-  await Promise.allSettled(
+  if (privateModeChanged) {
+    await resetPrewarmedWebviewForPrivateModeChange()
+  }
+
+  await allSettledOrThrow(
     shortcutIds.map((shortcutId) =>
       applyPrivacyToLabel(
         tabWebviewLabel(shortcutId),
       ),
     ),
+    'Failed to apply privacy settings to browser tabs',
   )
 }
 
@@ -394,6 +412,7 @@ const tabUnloadTimers = new Map<string, number>()
 const tabUnloadInFlight = new Map<string, Promise<void>>()
 const tabActivationRequests = new Set<string>()
 const tabLastActiveAt = new Map<string, number>()
+const tabLifecycleQueue = new KeyedLifecycleQueue<string>()
 
 let systemMemoryPressurePercent =
   MEMORY_PRESSURE_MIN_PERCENT
@@ -421,10 +440,37 @@ const unloadedTabStates = new Map<string, UnloadedTabState>()
 const configuredWebviews = new Set<string>()
 
 let prewarmedWebview: Webview | null = null
+let prewarmedPrivateMode: boolean | null = null
 let prewarmPromise: Promise<void> | null = null
 let nextPrewarmTimer: number | null = null
 let prewarmSequence = 0
+let prewarmGeneration = 0
 let activationSequence = 0
+
+async function resetPrewarmedWebviewForPrivateModeChange(): Promise<void> {
+  prewarmGeneration += 1
+
+  if (nextPrewarmTimer !== null) {
+    window.clearTimeout(nextPrewarmTimer)
+    nextPrewarmTimer = null
+  }
+
+  const ready = prewarmedWebview
+  prewarmedWebview = null
+  prewarmedPrivateMode = null
+
+  if (ready) {
+    configuredWebviews.delete(ready.label)
+    privacyApplyRunner.invalidate(ready.label)
+    await destroyTabWebview(ready.label)
+  }
+
+  if (prewarmPromise) {
+    await prewarmPromise.catch(() => undefined)
+  }
+
+  scheduleNextBrowseWebviewPrewarm()
+}
 
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
@@ -710,6 +756,8 @@ export async function prewarmBrowseWebview(): Promise<void> {
 
   const traceId =
     `prewarm-${Date.now()}-${prewarmSequence + 1}`
+  const generation = prewarmGeneration
+  const privateMode = privacyOptions.privateMode
 
   prewarmPromise = (async () => {
     await traceTransitionCall(
@@ -741,7 +789,7 @@ export async function prewarmBrowseWebview(): Promise<void> {
       backgroundColor:
         BROWSER_WEBVIEW_BG,
       incognito:
-        privacyOptions.privateMode,
+        privateMode,
       browserExtensionsEnabled:
         true,
     }
@@ -783,8 +831,29 @@ export async function prewarmBrowseWebview(): Promise<void> {
           webview.hide(),
       )
 
+      if (
+        !prewarmCreationIsCurrent(
+          generation,
+          prewarmGeneration,
+          privateMode,
+          privacyOptions.privateMode,
+        )
+      ) {
+        configuredWebviews.delete(label)
+        privacyApplyRunner.invalidate(label)
+        await traceTransitionCall(
+          traceId,
+          'browser.prewarm.discard-stale-profile',
+          { label, privateMode },
+          () => destroyTabWebview(label),
+        )
+        return
+      }
+
       prewarmedWebview =
         webview
+      prewarmedPrivateMode =
+        privateMode
 
       await writeTransitionLog(
         'browser.prewarm.ready',
@@ -795,13 +864,18 @@ export async function prewarmBrowseWebview(): Promise<void> {
         },
       )
     } catch (error) {
+      if (
+        prewarmedWebview?.label ===
+        label
+      ) {
+        prewarmedWebview = null
+        prewarmedPrivateMode = null
+      }
       configuredWebviews.delete(
         label,
       )
 
-      appliedPrivacyRevisions.delete(
-        label,
-      )
+      privacyApplyRunner.invalidate(label)
 
       try {
         await traceTransitionCall(
@@ -1866,9 +1940,7 @@ async function unloadTabIfInactive(
     webview.label,
   )
 
-  appliedPrivacyRevisions.delete(
-    webview.label,
-  )
+  privacyApplyRunner.invalidate(webview.label)
 
   releaseTabWebviewLabel(
     shortcutId,
@@ -1948,10 +2020,17 @@ function scheduleTabUnload(
         }
 
         const task =
-          unloadTabIfInactive(
-            shortcutId,
-            webview,
-          )
+          tabLifecycleQueue
+            .run(
+              shortcutId,
+              async (lease) => {
+                if (!lease.isCurrent()) return
+                await unloadTabIfInactive(
+                  shortcutId,
+                  webview,
+                )
+              },
+            )
             .catch(
               (error) => {
                 void writeTransitionLog(
@@ -2175,8 +2254,12 @@ async function getOrCreateTabWebview(
     if (prewarmedWebview) {
       webview =
         prewarmedWebview
+      const adoptedPrivateMode =
+        prewarmedPrivateMode
 
       prewarmedWebview =
+        null
+      prewarmedPrivateMode =
         null
 
       assignTabWebviewLabel(
@@ -2196,6 +2279,17 @@ async function getOrCreateTabWebview(
       )
 
       try {
+        if (
+          !prewarmProfileMatches(
+            adoptedPrivateMode,
+            privacyOptions.privateMode,
+          )
+        ) {
+          throw new Error(
+            'prewarmed WebView profile no longer matches private mode',
+          )
+        }
+
         await traceTransitionCall(
           traceId,
           'browser.webview.adopt.apply-privacy',
@@ -2208,6 +2302,17 @@ async function getOrCreateTabWebview(
               label,
             ),
         )
+
+        if (
+          !prewarmProfileMatches(
+            adoptedPrivateMode,
+            privacyOptions.privateMode,
+          )
+        ) {
+          throw new Error(
+            'private mode changed while adopting the prewarmed WebView',
+          )
+        }
 
         if (
           initialUrl &&
@@ -2231,7 +2336,18 @@ async function getOrCreateTabWebview(
                   url:
                     initialUrl,
                 },
-              ),
+            ),
+          )
+        }
+
+        if (
+          !prewarmProfileMatches(
+            adoptedPrivateMode,
+            privacyOptions.privateMode,
+          )
+        ) {
+          throw new Error(
+            'private mode changed while navigating the prewarmed WebView',
           )
         }
 
@@ -2290,9 +2406,7 @@ async function getOrCreateTabWebview(
           label,
         )
 
-        appliedPrivacyRevisions.delete(
-          label,
-        )
+        privacyApplyRunner.invalidate(label)
 
         releaseTabWebviewLabel(
           shortcutId,
@@ -2665,16 +2779,35 @@ async function hideOtherTabs(
   )
 }
 
+interface ActivateBrowseTabOptions {
+  forceNavigate?: boolean
+  traceId?: string
+  shouldContinue?: () => boolean
+  /** Home -> browsing: place the hidden tab below the shell before first show. */
+  stageBelowShellBeforeShow?: boolean
+}
+
 export async function activateBrowseTab(
   shortcutId: string,
   initialUrl: string,
-  options?: {
-    forceNavigate?: boolean
-    traceId?: string
-    shouldContinue?: () => boolean
-    /** Home -> browsing: place the hidden tab below the shell before first show. */
-    stageBelowShellBeforeShow?: boolean
-  },
+  options?: ActivateBrowseTabOptions,
+): Promise<void> {
+  if (!isTauri) return
+
+  cancelTabUnload(shortcutId)
+  const callerShouldContinue = options?.shouldContinue ?? (() => true)
+  await tabLifecycleQueue.run(shortcutId, async (lease) => {
+    await activateBrowseTabQueued(shortcutId, initialUrl, {
+      ...options,
+      shouldContinue: () => lease.isCurrent() && callerShouldContinue(),
+    })
+  })
+}
+
+async function activateBrowseTabQueued(
+  shortcutId: string,
+  initialUrl: string,
+  options?: ActivateBrowseTabOptions,
 ): Promise<void> {
   if (!isTauri) return
 
@@ -3188,6 +3321,25 @@ export async function prepareBrowseTabInBackground(
 ): Promise<void> {
   if (!isTauri) return
 
+  cancelTabUnload(shortcutId)
+  await tabLifecycleQueue.run(shortcutId, async (lease) => {
+    await prepareBrowseTabInBackgroundQueued(
+      shortcutId,
+      url,
+      options,
+      lease.isCurrent,
+    )
+  })
+}
+
+async function prepareBrowseTabInBackgroundQueued(
+  shortcutId: string,
+  url: string,
+  options: { forceNavigate?: boolean } | undefined,
+  isCurrent: () => boolean,
+): Promise<void> {
+  if (!isTauri) return
+
   cancelTabUnload(
     shortcutId,
   )
@@ -3207,6 +3359,8 @@ export async function prepareBrowseTabInBackground(
         () => undefined,
       )
     }
+
+    if (!isCurrent()) return
 
     const forceNavigate =
       options?.forceNavigate ??
@@ -3241,6 +3395,8 @@ export async function prepareBrowseTabInBackground(
         forceNavigate,
         traceId,
       )
+
+    if (!isCurrent()) return
 
     if (
       !tabLastActiveAt.has(
@@ -3700,6 +3856,18 @@ export async function closeBrowseTab(
 ): Promise<void> {
   if (!isTauri) return
 
+  tabLifecycleQueue.invalidate(shortcutId)
+  cancelTabUnload(shortcutId)
+  await tabLifecycleQueue.run(shortcutId, async () => {
+    await closeBrowseTabQueued(shortcutId)
+  })
+}
+
+async function closeBrowseTabQueued(
+  shortcutId: string,
+): Promise<void> {
+  if (!isTauri) return
+
   cancelTabUnload(
     shortcutId,
   )
@@ -3757,9 +3925,7 @@ export async function closeBrowseTab(
     label,
   )
 
-  appliedPrivacyRevisions.delete(
-    label,
-  )
+  privacyApplyRunner.invalidate(label)
 
   releaseTabWebviewLabel(
     shortcutId,

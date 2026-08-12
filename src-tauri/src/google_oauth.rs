@@ -16,6 +16,14 @@ pub struct GoogleProfileClaims {
 struct TokenResponse {
     id_token: Option<String>,
     access_token: Option<String>,
+    refresh_token: Option<String>,
+    scope: Option<String>,
+}
+
+struct OAuthExchange {
+    claims: GoogleProfileClaims,
+    refresh_token: Option<String>,
+    scope: Option<String>,
 }
 
 fn runtime_env(name: &str) -> Option<String> {
@@ -50,27 +58,22 @@ fn resolve_google_client_id(provided: &str) -> String {
         .unwrap_or_else(|| provided.to_string())
 }
 
-fn resolve_google_client_secret() -> Result<String, String> {
-    env_or_embedded("GOOGLE_CLIENT_SECRET").ok_or_else(|| {
-        "Google OAuth client secret is not configured. Set GOOGLE_CLIENT_SECRET in .env or the installed AppData .env, then restart Nebula.".to_string()
-    })
-}
-
 fn google_client_id_configured() -> bool {
     env_or_embedded("GOOGLE_CLIENT_ID")
         .or_else(|| env_or_embedded("VITE_GOOGLE_CLIENT_ID"))
         .is_some()
 }
 
-fn google_client_secret_configured() -> bool {
-    env_or_embedded("GOOGLE_CLIENT_SECRET").is_some()
+pub(crate) fn resolve_google_client_secret() -> Result<String, String> {
+    env_or_embedded("GOOGLE_CLIENT_SECRET").ok_or_else(|| {
+        "Google OAuth client secret is not configured. Set GOOGLE_CLIENT_SECRET in the native environment.".to_string()
+    })
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleOAuthStatus {
     pub client_id_configured: bool,
-    pub client_secret_configured: bool,
     pub appdata_env_path: String,
 }
 
@@ -87,13 +90,35 @@ pub fn google_oauth_status() -> GoogleOAuthStatus {
         .unwrap_or_else(|| "%LOCALAPPDATA%\\com.nebula.browser\\.env".to_string());
 
     let client_id_configured = google_client_id_configured();
-    let client_secret_configured = google_client_secret_configured();
-
     GoogleOAuthStatus {
         client_id_configured,
-        client_secret_configured,
         appdata_env_path,
     }
+}
+
+fn oauth_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|error| error.to_string())
+}
+
+fn token_exchange_form(
+    client_id: String,
+    client_secret: String,
+    code: &str,
+    code_verifier: &str,
+    redirect_uri: &str,
+) -> HashMap<&'static str, String> {
+    HashMap::from([
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+        ("code", code.to_string()),
+        ("code_verifier", code_verifier.to_string()),
+        ("grant_type", "authorization_code".to_string()),
+        ("redirect_uri", redirect_uri.to_string()),
+    ])
 }
 
 fn decode_jwt_claims(id_token: &str) -> Option<GoogleProfileClaims> {
@@ -147,7 +172,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 }
 
 async fn fetch_userinfo(access_token: &str) -> Result<GoogleProfileClaims, String> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let response = client
         .get("https://www.googleapis.com/oauth2/v3/userinfo")
         .bearer_auth(access_token)
@@ -166,27 +191,20 @@ async fn fetch_userinfo(access_token: &str) -> Result<GoogleProfileClaims, Strin
         .map_err(|error| error.to_string())
 }
 
-async fn exchange_code_for_claims(
+async fn exchange_code(
     client_id: &str,
     code: &str,
     code_verifier: &str,
     redirect_uri: &str,
-) -> Result<GoogleProfileClaims, String> {
+) -> Result<OAuthExchange, String> {
     let client_id = resolve_google_client_id(client_id);
     let client_secret = resolve_google_client_secret()?;
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
 
-    // Keep PKCE for the desktop flow, while also sending the Desktop OAuth
-    // client's secret because Google's token endpoint requires it for this
-    // configured client. The secret stays on the native side and is never
-    // exposed through a VITE_* frontend variable.
-    let mut form = HashMap::<&str, String>::new();
-    form.insert("client_id", client_id);
-    form.insert("client_secret", client_secret);
-    form.insert("code", code.to_string());
-    form.insert("code_verifier", code_verifier.to_string());
-    form.insert("grant_type", "authorization_code".to_string());
-    form.insert("redirect_uri", redirect_uri.to_string());
+    // Keep PKCE for authorization-code protection. Google Desktop OAuth
+    // clients can also require the client_secret issued with the client, so
+    // supply it only from native runtime/build configuration (never Vite).
+    let form = token_exchange_form(client_id, client_secret, code, code_verifier, redirect_uri);
 
     let response = client
         .post("https://oauth2.googleapis.com/token")
@@ -200,22 +218,36 @@ async fn exchange_code_for_claims(
         return Err(format!("Google token exchange failed: {body}"));
     }
 
-    let token: TokenResponse = response
-        .json()
-        .await
-        .map_err(|error| error.to_string())?;
+    let token: TokenResponse = response.json().await.map_err(|error| error.to_string())?;
+    let claims = if let Some(id_token) = token.id_token.as_deref() {
+        decode_jwt_claims(id_token)
+    } else {
+        None
+    };
+    let claims = match claims {
+        Some(claims) => claims,
+        None => match token.access_token.as_deref() {
+            Some(access_token) => fetch_userinfo(access_token).await?,
+            None => return Err("Google token response did not include profile data.".to_string()),
+        },
+    };
 
-    if let Some(id_token) = token.id_token.as_deref() {
-        if let Some(claims) = decode_jwt_claims(id_token) {
-            return Ok(claims);
-        }
-    }
+    Ok(OAuthExchange {
+        claims,
+        refresh_token: token.refresh_token,
+        scope: token.scope,
+    })
+}
 
-    if let Some(access_token) = token.access_token.as_deref() {
-        return fetch_userinfo(access_token).await;
-    }
-
-    Err("Google token response did not include profile data.".to_string())
+async fn exchange_code_for_claims(
+    client_id: &str,
+    code: &str,
+    code_verifier: &str,
+    redirect_uri: &str,
+) -> Result<GoogleProfileClaims, String> {
+    Ok(exchange_code(client_id, code, code_verifier, redirect_uri)
+        .await?
+        .claims)
 }
 
 fn parse_query_params(query: &str) -> HashMap<String, String> {
@@ -280,8 +312,12 @@ async fn write_loopback_response(socket: &mut tokio::net::TcpStream, success: bo
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{}",
         html.len(), html
     );
-    let _ = socket.write_all(response.as_bytes()).await;
-    let _ = socket.shutdown().await;
+    let _ = timeout(
+        Duration::from_secs(1),
+        socket.write_all(response.as_bytes()),
+    )
+    .await;
+    let _ = timeout(Duration::from_secs(1), socket.shutdown()).await;
 }
 
 async fn wait_for_loopback_code(
@@ -291,10 +327,13 @@ async fn wait_for_loopback_code(
     loop {
         let (mut socket, _) = listener.accept().await.map_err(|error| error.to_string())?;
         let mut buffer = vec![0u8; 16_384];
-        let read = socket
-            .read(&mut buffer)
-            .await
-            .map_err(|error| error.to_string())?;
+        let read = match timeout(Duration::from_secs(2), socket.read(&mut buffer)).await {
+            Ok(Ok(0)) | Ok(Err(_)) | Err(_) => {
+                write_loopback_response(&mut socket, false).await;
+                continue;
+            }
+            Ok(Ok(read)) => read,
+        };
         let request = String::from_utf8_lossy(&buffer[..read]);
         let request_line = request.lines().next().unwrap_or_default();
         let path = request_line.split_whitespace().nth(1).unwrap_or_default();
@@ -304,14 +343,6 @@ async fn wait_for_loopback_code(
             .unwrap_or_default();
         let params = parse_query_params(query);
 
-        if let Some(error) = params.get("error") {
-            write_loopback_response(&mut socket, false).await;
-            return Err(params
-                .get("error_description")
-                .cloned()
-                .unwrap_or_else(|| format!("Google sign-in failed: {error}")));
-        }
-
         let Some(state) = params.get("state") else {
             write_loopback_response(&mut socket, false).await;
             continue;
@@ -319,6 +350,14 @@ async fn wait_for_loopback_code(
         if state != expected_state {
             write_loopback_response(&mut socket, false).await;
             continue;
+        }
+
+        if let Some(error) = params.get("error") {
+            write_loopback_response(&mut socket, false).await;
+            return Err(params
+                .get("error_description")
+                .cloned()
+                .unwrap_or_else(|| format!("Google sign-in failed: {error}")));
         }
 
         let Some(code) = params.get("code").cloned() else {
@@ -349,7 +388,6 @@ pub async fn google_oauth_sign_in_loopback(
     state: String,
 ) -> Result<GoogleProfileClaims, String> {
     let client_id = resolve_google_client_id(&client_id);
-    resolve_google_client_secret()?;
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|error| error.to_string())?;
@@ -379,11 +417,86 @@ pub async fn google_oauth_sign_in_loopback(
     exchange_code_for_claims(&client_id, &code, &code_verifier, &redirect_uri).await
 }
 
+#[tauri::command]
+pub async fn google_sync_enable_loopback(
+    app: tauri::AppHandle,
+    client_id: String,
+    code_verifier: String,
+    code_challenge: String,
+    state: String,
+    expected_email: String,
+) -> Result<GoogleProfileClaims, String> {
+    const DRIVE_APPDATA_SCOPE: &str = "https://www.googleapis.com/auth/drive.appdata";
+
+    let client_id = resolve_google_client_id(&client_id);
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| error.to_string())?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| error.to_string())?
+        .port();
+    let redirect_uri = format!("http://127.0.0.1:{port}");
+    let scopes = format!("openid email profile {DRIVE_APPDATA_SCOPE}");
+    let auth_url = format!(
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&code_challenge={}&code_challenge_method=S256&prompt={}&access_type=offline&include_granted_scopes=true&login_hint={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&redirect_uri),
+        urlencoding::encode(&scopes),
+        urlencoding::encode(&state),
+        urlencoding::encode(&code_challenge),
+        urlencoding::encode("consent select_account"),
+        urlencoding::encode(expected_email.trim()),
+    );
+
+    open_in_system_browser(&auth_url)?;
+    let code = timeout(
+        Duration::from_secs(180),
+        wait_for_loopback_code(listener, &state),
+    )
+    .await
+    .map_err(|_| "Google sync authorization timed out. Try again.".to_string())??;
+
+    let exchange = exchange_code(&client_id, &code, &code_verifier, &redirect_uri).await?;
+    let email = exchange
+        .claims
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Google account did not provide an email address.".to_string())?;
+    let expected = expected_email.trim();
+    if !expected.is_empty() && !email.eq_ignore_ascii_case(expected) {
+        return Err(
+            "Google sync must use the same Google account as the Nebula profile.".to_string(),
+        );
+    }
+    if let Some(scope) = exchange.scope.as_deref() {
+        if !scope
+            .split_whitespace()
+            .any(|value| value == DRIVE_APPDATA_SCOPE)
+        {
+            return Err("Google Drive app-data permission was not granted.".to_string());
+        }
+    }
+    let refresh_token = exchange
+        .refresh_token
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            "Google did not return an offline refresh token. Try enabling sync again.".to_string()
+        })?;
+
+    crate::google_sync::store_refresh_token(&app, email, refresh_token)?;
+    Ok(exchange.claims)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::wait_for_loopback_code;
+    use super::{token_exchange_form, wait_for_loopback_code};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+    use tokio::time::{timeout, Duration};
 
     async fn request(port: u16, query: &str) -> String {
         let mut stream = TcpStream::connect(("127.0.0.1", port))
@@ -411,6 +524,9 @@ mod tests {
         let receiver =
             tokio::spawn(async move { wait_for_loopback_code(listener, "expected").await });
 
+        assert!(request(port, "error=access_denied&state=wrong")
+            .await
+            .contains("Giris tamamlanamadi"));
         assert!(request(port, "code=bad&state=wrong")
             .await
             .contains("Giris tamamlanamadi"));
@@ -423,6 +539,55 @@ mod tests {
                 .expect("receiver should finish")
                 .expect("valid callback should succeed"),
             "good code"
+        );
+    }
+
+    #[test]
+    fn desktop_token_exchange_uses_pkce_and_native_client_secret() {
+        let form = token_exchange_form(
+            "desktop-client".to_string(),
+            "desktop-secret".to_string(),
+            "authorization-code",
+            "pkce-verifier",
+            "http://127.0.0.1:49152",
+        );
+
+        assert_eq!(
+            form.get("code_verifier").map(String::as_str),
+            Some("pkce-verifier")
+        );
+        assert_eq!(
+            form.get("client_secret").map(String::as_str),
+            Some("desktop-secret")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn stalled_loopback_client_cannot_hold_sign_in_until_global_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let port = listener.local_addr().expect("address should exist").port();
+        let receiver =
+            tokio::spawn(async move { wait_for_loopback_code(listener, "expected").await });
+        let stalled = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("stalled client should connect");
+
+        let valid_response = timeout(
+            Duration::from_secs(5),
+            request(port, "code=good&state=expected"),
+        )
+        .await
+        .expect("valid callback should not wait for the global sign-in timeout");
+        assert!(valid_response.contains("Giris basarili"));
+        drop(stalled);
+        assert_eq!(
+            receiver
+                .await
+                .expect("receiver should finish")
+                .expect("valid callback should succeed"),
+            "good"
         );
     }
 }

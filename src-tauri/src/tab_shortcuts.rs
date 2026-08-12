@@ -11,9 +11,7 @@ mod imp {
         COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN, COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
         COREWEBVIEW2_PHYSICAL_KEY_STATUS,
     };
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
-    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
 
     static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, i64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -49,18 +47,12 @@ mod imp {
             ("go-forward".into(), vec!["Alt+ArrowRight".into()]),
             ("go-home".into(), vec!["Ctrl+T".into()]),
             ("open-history".into(), vec!["Ctrl+H".into()]),
-            (
-                "zoom-in".into(),
-                vec!["Ctrl++".into(), "Ctrl+=".into()],
-            ),
+            ("zoom-in".into(), vec!["Ctrl++".into(), "Ctrl+=".into()]),
             ("zoom-out".into(), vec!["Ctrl+-".into()]),
             ("zoom-reset".into(), vec!["Ctrl+0".into()]),
             ("print".into(), vec!["Ctrl+P".into()]),
             ("toggle-fullscreen".into(), vec!["F11".into()]),
-            (
-                "devtools".into(),
-                vec!["Ctrl+Shift+I".into(), "F12".into()],
-            ),
+            ("devtools".into(), vec!["Ctrl+Shift+I".into(), "F12".into()]),
         ])
     }
 
@@ -136,8 +128,8 @@ mod imp {
             0x79 => "F10",
             0x7A => "F11",
             0x7B => "F12",
-            0x6B => "+", // VK_ADD
-            0xBD => "-", // VK_OEM_MINUS
+            0x6B => "+",          // VK_ADD
+            0xBD => "-",          // VK_OEM_MINUS
             0xBB if shift => "+", // VK_OEM_PLUS with Shift
             0xBB => "=",
             _ => return None,
@@ -147,12 +139,7 @@ mod imp {
         Some((key, key == "+" && shift))
     }
 
-    fn canonical_binding(
-        virtual_key: u32,
-        ctrl: bool,
-        shift: bool,
-        alt: bool,
-    ) -> Option<String> {
+    fn canonical_binding(virtual_key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<String> {
         let (key, implicit_shift) = key_name(virtual_key, shift)?;
         let mut parts: Vec<&str> = Vec::new();
 
@@ -180,9 +167,7 @@ mod imp {
         })
     }
 
-    pub fn set_shortcut_bindings(
-        bindings: HashMap<String, Vec<String>>,
-    ) -> Result<(), String> {
+    pub fn set_shortcut_bindings(bindings: HashMap<String, Vec<String>>) -> Result<(), String> {
         let defaults = default_bindings();
         let mut next = HashMap::new();
 
@@ -252,10 +237,7 @@ mod imp {
                             pressed(VK_MENU),
                         );
 
-                        if let Some(action) = binding
-                            .as_deref()
-                            .and_then(action_for_binding)
-                        {
+                        if let Some(action) = binding.as_deref().and_then(action_for_binding) {
                             let _ = args.SetHandled(true);
                             let _ = app_handle.emit("nebula-browser-shortcut", action);
                         }
@@ -316,7 +298,10 @@ mod imp {
 
         #[test]
         fn canonicalizes_browser_shortcuts() {
-            assert_eq!(canonical_binding(0x54, true, false, false).as_deref(), Some("Ctrl+T"));
+            assert_eq!(
+                canonical_binding(0x54, true, false, false).as_deref(),
+                Some("Ctrl+T")
+            );
             assert_eq!(
                 canonical_binding(0x54, true, true, false).as_deref(),
                 Some("Ctrl+Shift+T")
@@ -325,8 +310,14 @@ mod imp {
                 canonical_binding(0x25, false, false, true).as_deref(),
                 Some("Alt+ArrowLeft")
             );
-            assert_eq!(canonical_binding(0x7A, false, false, false).as_deref(), Some("F11"));
-            assert_eq!(canonical_binding(0xBB, true, true, false).as_deref(), Some("Ctrl++"));
+            assert_eq!(
+                canonical_binding(0x7A, false, false, false).as_deref(),
+                Some("F11")
+            );
+            assert_eq!(
+                canonical_binding(0xBB, true, true, false).as_deref(),
+                Some("Ctrl++")
+            );
         }
 
         #[test]
@@ -336,7 +327,10 @@ mod imp {
             set_shortcut_bindings(custom).unwrap();
 
             let defaults = default_bindings();
-            assert_eq!(defaults.get("go-home").unwrap(), &vec!["Ctrl+T".to_string()]);
+            assert_eq!(
+                defaults.get("go-home").unwrap(),
+                &vec!["Ctrl+T".to_string()]
+            );
         }
     }
 }

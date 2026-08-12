@@ -1,7 +1,7 @@
 {
   "name": "nebula",
   "private": true,
-  "version": "1.3.4",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,8 +16,9 @@
     "perf:stress": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/perf-stress.ps1",
     "perf:summary": "node scripts/perf-log-summary.mjs",
     "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "test:regression": "node --test --experimental-strip-types tests/*.test.ts",
     "test:native-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native-smoke.ps1",
-    "test:release-smoke": "npm run test:e2e && npm run tauri:build:binary && npm run test:native-smoke",
+    "test:release-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-smoke.ps1",
     "release:preflight": "node scripts/release-preflight.mjs",
     "test:clean-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-install-smoke.ps1",
     "test:upgrade-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/upgrade-install-smoke.ps1",

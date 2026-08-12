@@ -8,18 +8,20 @@ mod imp {
 
     use serde::Serialize;
     use tauri::{AppHandle, Emitter, Manager};
+    use webview2_com::ContextMenuRequestedEventHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2ContextMenuItem, ICoreWebView2ContextMenuItemCollection,
         ICoreWebView2ContextMenuRequestedEventArgs, ICoreWebView2ContextMenuRequestedEventHandler,
         ICoreWebView2Deferral, ICoreWebView2_11, COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND,
     };
-    use webview2_com::ContextMenuRequestedEventHandler;
     use windows::Win32::Foundation::POINT;
     use windows_core::{Interface, PWSTR};
 
     const CONTEXT_MENU_EVENT: &str = "nebula-site-context-menu";
     const CONTEXT_MENU_CANCELLED_EVENT: &str = "nebula-site-context-menu-cancelled";
     const NEBULA_PRINT_COMMAND_ID: i32 = -10_001;
+    const CONTEXT_MENU_TIMEOUT: Duration = Duration::from_secs(15);
+    const MAX_PENDING_CONTEXT_MENUS_PER_TAB: usize = 1;
 
     static NEXT_ID: AtomicU64 = AtomicU64::new(1);
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -74,6 +76,84 @@ mod imp {
     struct CancelledPayload {
         id: String,
         tab_label: String,
+    }
+
+    fn has_pending_capacity<'a>(
+        labels: impl Iterator<Item = &'a str>,
+        tab_label: &str,
+        limit: usize,
+    ) -> bool {
+        labels
+            .filter(|label| *label == tab_label)
+            .take(limit)
+            .count()
+            < limit
+    }
+
+    fn complete_context_request(request: PendingContextMenu) {
+        unsafe {
+            let _ = request.args.SetHandled(true);
+            let _ = request.deferral.Complete();
+        }
+    }
+
+    fn expire_context_request(app: &AppHandle, request_id: &str) {
+        let expired = PENDING.with(|pending| pending.borrow_mut().remove(request_id));
+        if let Some(request) = expired {
+            let tab_label = request.tab_label.clone();
+            complete_context_request(request);
+            let _ = app.emit(
+                CONTEXT_MENU_CANCELLED_EVENT,
+                CancelledPayload {
+                    id: request_id.to_string(),
+                    tab_label,
+                },
+            );
+        }
+    }
+
+    fn schedule_context_timeout(app: &AppHandle, request_id: String) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(CONTEXT_MENU_TIMEOUT).await;
+            let dispatcher = app.clone();
+            let event_app = app.clone();
+            let _ = dispatcher.run_on_main_thread(move || {
+                expire_context_request(&event_app, &request_id);
+            });
+        });
+    }
+
+    fn enqueue_context_request(
+        app: &AppHandle,
+        payload: ContextMenuPayload,
+        request: PendingContextMenu,
+    ) {
+        let request_id = payload.id.clone();
+        let tab_label = request.tab_label.clone();
+        let inserted = PENDING.with(|pending| {
+            let mut pending = pending.borrow_mut();
+            if !has_pending_capacity(
+                pending.values().map(|request| request.tab_label.as_str()),
+                &tab_label,
+                MAX_PENDING_CONTEXT_MENUS_PER_TAB,
+            ) {
+                return Err(request);
+            }
+            pending.insert(request_id.clone(), request);
+            Ok(())
+        });
+
+        if let Err(request) = inserted {
+            complete_context_request(request);
+            return;
+        }
+
+        if app.emit(CONTEXT_MENU_EVENT, payload).is_err() {
+            expire_context_request(app, &request_id);
+            return;
+        }
+        schedule_context_timeout(app, request_id);
     }
 
     fn take_string<F>(read: F) -> String
@@ -189,8 +269,8 @@ mod imp {
                     let core11 = core.cast::<ICoreWebView2_11>()?;
                     let handler_app = event_app.clone();
                     let handler_label = event_label.clone();
-                    let handler = ContextMenuRequestedEventHandler::create(Box::new(
-                        move |_, args| {
+                    let handler =
+                        ContextMenuRequestedEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
 
                             // Suppress WebView2's visible menu first. If any later
@@ -229,7 +309,9 @@ mod imp {
                                     frame_uri: take_string(|value| target.FrameUri(value)),
                                     link_uri: take_string(|value| target.LinkUri(value)),
                                     source_uri: take_string(|value| target.SourceUri(value)),
-                                    selection_text: take_string(|value| target.SelectionText(value)),
+                                    selection_text: take_string(|value| {
+                                        target.SelectionText(value)
+                                    }),
                                     editable: editable.as_bool(),
                                     items,
                                 })
@@ -243,22 +325,17 @@ mod imp {
                                 }
                             };
 
-                            let id = payload.id.clone();
-                            PENDING.with(|pending| {
-                                pending.borrow_mut().insert(
-                                    id,
-                                    PendingContextMenu {
-                                        tab_label: handler_label.clone(),
-                                        args,
-                                        deferral,
-                                    },
-                                );
-                            });
-
-                            let _ = handler_app.emit(CONTEXT_MENU_EVENT, payload);
+                            enqueue_context_request(
+                                &handler_app,
+                                payload,
+                                PendingContextMenu {
+                                    tab_label: handler_label.clone(),
+                                    args,
+                                    deferral,
+                                },
+                            );
                             Ok(())
-                        },
-                    ));
+                        }));
                     let mut token = 0i64;
                     core11.add_ContextMenuRequested(&handler, &mut token)?;
                     // ContextMenuRequested does not fire when this setting is false.
@@ -282,10 +359,7 @@ mod imp {
                     }
                     Err(error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!(
-                            "[nebula context menu] {}: {}",
-                            event_label, error
-                        );
+                        eprintln!("[nebula context menu] {}: {}", event_label, error);
                     }
                 }
             })
@@ -310,10 +384,9 @@ mod imp {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         app.run_on_main_thread(move || {
             let result = PENDING.with(|pending| {
-                let request = pending
-                    .borrow_mut()
-                    .remove(&request_id)
-                    .ok_or_else(|| format!("context menu request '{request_id}' is no longer pending"))?;
+                let request = pending.borrow_mut().remove(&request_id).ok_or_else(|| {
+                    format!("context menu request '{request_id}' is no longer pending")
+                })?;
                 let native_result = unsafe {
                     (|| -> windows_core::Result<()> {
                         if let Some(command_id) = command_id.filter(|value| *value >= 0) {
@@ -342,15 +415,13 @@ mod imp {
                 let mut pending = pending.borrow_mut();
                 let ids: Vec<String> = pending
                     .iter()
-                    .filter_map(|(id, request)| (request.tab_label == label).then(|| id.clone()))
+                    .filter(|(_, request)| request.tab_label == label)
+                    .map(|(id, _)| id.clone())
                     .collect();
                 let mut cancelled = Vec::new();
                 for id in ids {
                     if let Some(request) = pending.remove(&id) {
-                        unsafe {
-                            let _ = request.args.SetHandled(true);
-                            let _ = request.deferral.Complete();
-                        }
+                        complete_context_request(request);
                         cancelled.push(id);
                     }
                 }
@@ -369,7 +440,10 @@ mod imp {
     }
 
     pub fn teardown(app: &AppHandle, label: &str) {
-        let token = TOKENS.lock().ok().and_then(|mut tokens| tokens.remove(label));
+        let token = TOKENS
+            .lock()
+            .ok()
+            .and_then(|mut tokens| tokens.remove(label));
         let handler_label = label.to_string();
         if let Some(webview) = app.get_webview(label) {
             let _ = webview.with_webview(move |inner| unsafe {
@@ -387,6 +461,18 @@ mod imp {
             configured.remove(label);
         }
         cancel_for_tab(app, label);
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::has_pending_capacity;
+
+        #[test]
+        fn context_menu_queue_allows_only_one_pending_request_per_tab() {
+            let labels = ["tab-a", "tab-b"];
+            assert!(!has_pending_capacity(labels.into_iter(), "tab-a", 1));
+            assert!(has_pending_capacity(labels.into_iter(), "tab-c", 1));
+        }
     }
 }
 

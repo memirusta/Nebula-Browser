@@ -1,7 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { downloadProgress, isDownloadActive, type DownloadAction, type DownloadItem } from '../../core/download'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './DownloadManager.module.css'
+
+
+interface DownloadTelemetry {
+  speedBps: number
+  etaSeconds: number | null
+}
+
+interface DownloadSample {
+  bytes: number
+  sampledAtMs: number
+  smoothedSpeedBps: number
+}
+
+const TELEMETRY_SAMPLE_MS = 180
+const TELEMETRY_NEW_SAMPLE_WEIGHT = 0.35
 
 interface DownloadManagerProps {
   items: DownloadItem[]
@@ -24,6 +39,33 @@ function formatBytes(bytes: number): string {
     unit = units[index]
   }
   return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${unit}`
+}
+
+function formatTransferRate(bytesPerSecond: number): string {
+  return `${formatBytes(bytesPerSecond)}/s`
+}
+
+function formatEta(
+  seconds: number,
+  tf: (
+    key: 'downloadEtaSeconds' | 'downloadEtaMinutes' | 'downloadEtaHours',
+    vars: Record<string, string | number>,
+  ) => string,
+): string {
+  const rounded = Math.max(1, Math.round(seconds))
+  if (rounded < 60) {
+    return tf('downloadEtaSeconds', { seconds: rounded })
+  }
+  if (rounded < 3600) {
+    return tf('downloadEtaMinutes', {
+      minutes: Math.floor(rounded / 60),
+      seconds: rounded % 60,
+    })
+  }
+  return tf('downloadEtaHours', {
+    hours: Math.floor(rounded / 3600),
+    minutes: Math.floor((rounded % 3600) / 60),
+  })
 }
 
 function DownloadGlyph({ state }: { state: DownloadItem['state'] }) {
@@ -73,9 +115,77 @@ export function DownloadManager({
   onClearFinished,
   onClose,
 }: DownloadManagerProps) {
-  const { t } = useLocale()
+  const { t, tf } = useLocale()
   const [actionError, setActionError] = useState<string | null>(null)
+  const [telemetryById, setTelemetryById] = useState<Record<string, DownloadTelemetry>>({})
+  const telemetrySamplesRef = useRef<Map<string, DownloadSample>>(new Map())
   const hasFinished = items.some((item) => !isDownloadActive(item))
+
+  useEffect(() => {
+    const now = Date.now()
+    const activeIds = new Set<string>()
+    const nextTelemetry: Record<string, DownloadTelemetry> = {}
+
+    for (const item of items) {
+      if (item.state !== 'in_progress') {
+        telemetrySamplesRef.current.delete(item.id)
+        continue
+      }
+
+      activeIds.add(item.id)
+      const previous = telemetrySamplesRef.current.get(item.id)
+      if (!previous || item.receivedBytes < previous.bytes) {
+        telemetrySamplesRef.current.set(item.id, {
+          bytes: item.receivedBytes,
+          sampledAtMs: now,
+          smoothedSpeedBps: 0,
+        })
+        continue
+      }
+
+      const elapsedMs = now - previous.sampledAtMs
+      if (elapsedMs < TELEMETRY_SAMPLE_MS) {
+        const existing = telemetryById[item.id]
+        if (existing) nextTelemetry[item.id] = existing
+        continue
+      }
+
+      const transferred = Math.max(0, item.receivedBytes - previous.bytes)
+      const instantaneousSpeed = transferred * 1000 / elapsedMs
+      const smoothedSpeed = previous.smoothedSpeedBps > 0
+        ? previous.smoothedSpeedBps * (1 - TELEMETRY_NEW_SAMPLE_WEIGHT)
+          + instantaneousSpeed * TELEMETRY_NEW_SAMPLE_WEIGHT
+        : instantaneousSpeed
+
+      telemetrySamplesRef.current.set(item.id, {
+        bytes: item.receivedBytes,
+        sampledAtMs: now,
+        smoothedSpeedBps: smoothedSpeed,
+      })
+
+      if (smoothedSpeed > 1) {
+        const remainingBytes = item.totalBytes > 0
+          ? Math.max(0, item.totalBytes - item.receivedBytes)
+          : 0
+        const etaSeconds = remainingBytes > 0
+          ? remainingBytes / smoothedSpeed
+          : null
+        nextTelemetry[item.id] = {
+          speedBps: smoothedSpeed,
+          etaSeconds: etaSeconds !== null && Number.isFinite(etaSeconds) ? etaSeconds : null,
+        }
+      }
+    }
+
+    for (const id of telemetrySamplesRef.current.keys()) {
+      if (!activeIds.has(id)) telemetrySamplesRef.current.delete(id)
+    }
+
+    setTelemetryById(nextTelemetry)
+  // telemetryById is intentionally sampled from the previous render when an update
+  // arrives too quickly to form a stable speed sample.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, variant])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -153,6 +263,10 @@ export function DownloadManager({
             const size = item.totalBytes > 0
               ? `${formatBytes(item.receivedBytes)} / ${formatBytes(item.totalBytes)}`
               : formatBytes(item.receivedBytes)
+            const telemetry = item.state === 'in_progress'
+              ? telemetryById[item.id]
+              : undefined
+            const showSize = variant === 'home' || item.state !== 'in_progress'
 
             return (
               <article key={item.id} className={styles.item}>
@@ -171,9 +285,30 @@ export function DownloadManager({
                   </button>
                   <div className={styles.meta}>
                     <span>{status}</span>
-                    <span className={styles.metaDot}>•</span>
-                    <span>{size}</span>
+                    {showSize && (
+                      <>
+                        <span className={styles.metaDot}>•</span>
+                        <span>{size}</span>
+                      </>
+                    )}
                   </div>
+                  {telemetry && (
+                    <div
+                      className={[
+                        styles.transferMeta,
+                        variant === 'browsing' ? styles.transferMetaCompact : '',
+                      ].filter(Boolean).join(' ')}
+                      aria-live="polite"
+                    >
+                      <span>{formatTransferRate(telemetry.speedBps)}</span>
+                      {telemetry.etaSeconds !== null && (
+                        <>
+                          <span className={styles.metaDot}>•</span>
+                          <span>{formatEta(telemetry.etaSeconds, tf)}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {active && (
                     <div className={styles.progressTrack} aria-label={status}>
                       <span

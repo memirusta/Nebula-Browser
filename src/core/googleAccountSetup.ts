@@ -1,5 +1,6 @@
 import { importDefaultBrowserPasswords, listChromiumPasswordSources } from '../platform/browserPasswordImport'
 import type { ImportedPassword } from './passwordImport'
+import { t, tf, type NebulaLocale } from './locale'
 import { isTauri } from '../platform/runtime'
 
 export interface PasswordSyncResult {
@@ -11,13 +12,14 @@ export interface PasswordSyncResult {
 }
 
 export async function syncPasswordsFromBrowser(
+  locale: NebulaLocale,
   preferredBrowser = 'chrome',
 ): Promise<PasswordSyncResult> {
   if (!isTauri) {
     return {
       ok: false,
       count: 0,
-      message: 'Şifre aktarımı masaüstü uygulamasında kullanılabilir.',
+      message: t(locale, 'gsImportDesktopOnly'),
       needsCsv: false,
       imported: [],
     }
@@ -32,7 +34,7 @@ export async function syncPasswordsFromBrowser(
     return {
       ok: false,
       count: 0,
-      message: 'Chrome veya Edge şifre veritabanı bulunamadı.',
+      message: t(locale, 'gsImportSourceMissing'),
       needsCsv: true,
       imported: [],
     }
@@ -43,22 +45,22 @@ export async function syncPasswordsFromBrowser(
     return {
       ok: true,
       count: imported.length,
-      message: `${imported.length} şifre aktarıldı.`,
+      message: tf(locale, 'gsImportDone', { count: imported.length }),
       needsCsv: false,
       imported,
     }
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Şifre aktarımı başarısız.'
+    const nativeMessage =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : ''
     const needsCsv =
-      message.includes('app-bound') ||
-      message.includes('CSV') ||
-      message.includes('Dışa aktar') ||
-      message.includes('dışa aktar')
+      nativeMessage.includes('app-bound') ||
+      nativeMessage.includes('CSV') ||
+      nativeMessage.includes('Dışa aktar') ||
+      nativeMessage.includes('dışa aktar')
     return {
       ok: false,
       count: 0,
-      message,
+      message: t(locale, needsCsv ? 'gsImportNeedsCsv' : 'gsImportFailed'),
       needsCsv,
       imported: [],
     }

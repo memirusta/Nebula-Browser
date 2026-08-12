@@ -27,13 +27,16 @@ mod imp {
         WebMessageReceivedEventHandler, WindowCloseRequestedEventHandler,
     };
     use windows::core::PCWSTR;
-    use windows_core::{HSTRING, Interface, PWSTR};
+    use windows_core::{Interface, HSTRING, PWSTR};
 
     const SITE_UI_EVENT: &str = "nebula-site-ui-request";
     const SITE_UI_CANCELLED_EVENT: &str = "nebula-site-ui-cancelled";
     const SITE_NEW_WINDOW_EVENT: &str = "nebula-site-new-window";
     const SITE_CLOSE_WINDOW_EVENT: &str = "nebula-site-close-window";
     const SITE_POINTER_DOWN_EVENT: &str = "nebula-site-pointer-down";
+    const PASSWORD_STEP_EVENT: &str = "nebula-password-step";
+    const SITE_UI_TIMEOUT: Duration = Duration::from_secs(60);
+    const MAX_PENDING_SITE_UI_PER_TAB: usize = 8;
 
     static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -140,6 +143,17 @@ mod imp {
         tab_label: String,
     }
 
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PasswordStepPayload {
+        kind: String,
+        tab_label: String,
+        origin: String,
+        url: String,
+        username: String,
+        password: String,
+    }
+
     #[derive(Debug, Deserialize)]
     struct ProtocolHandlerMessage {
         #[serde(rename = "type")]
@@ -166,10 +180,140 @@ mod imp {
   // Wry's Windows IPC layer turns WebMessageReceived.Source into an
   // http::Request URI. WebView2 can report an empty Source for opaque/internal
   // documents such as Nebula's data: error page, which makes Wry panic while
-  // parsing that URI. Only remote HTTP(S) site documents need this click bridge.
+  // parsing that URI. Only remote HTTP(S) site documents need this bridge.
   const canReportSitePointerDown =
     window.location.protocol === 'http:' ||
     window.location.protocol === 'https:';
+
+  function isVisibleInput(input) {
+    try {
+      if (!input || input.tagName !== 'INPUT' || input.disabled || input.readOnly) return false;
+      const type = String(input.type || '').toLowerCase();
+      if (type === 'hidden') return false;
+      const rect = input.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isPasswordInput(input) {
+    if (!isVisibleInput(input)) return false;
+    const type = String(input.type || '').toLowerCase();
+    const autocomplete = String(input.getAttribute('autocomplete') || '').toLowerCase();
+    return type === 'password' || autocomplete === 'current-password' || autocomplete === 'new-password';
+  }
+
+  function usernameScore(input) {
+    if (!isVisibleInput(input) || isPasswordInput(input)) return -1;
+    const type = String(input.type || '').toLowerCase();
+    if (type === 'checkbox' || type === 'radio' || type === 'submit' || type === 'button') return -1;
+
+    const autocomplete = String(input.getAttribute('autocomplete') || '').toLowerCase();
+    const name = String(input.getAttribute('name') || '').toLowerCase();
+    const id = String(input.getAttribute('id') || '').toLowerCase();
+    const aria = String(input.getAttribute('aria-label') || '').toLowerCase();
+    const haystack = name + ' ' + id + ' ' + aria;
+
+    if (autocomplete === 'username') return 100;
+    if (autocomplete === 'email') return 95;
+    if (type === 'email') return 90;
+    if (haystack.includes('email')) return 85;
+    if (haystack.includes('user') || haystack.includes('login')) return 80;
+    if (type === 'tel' && (haystack.includes('phone') || haystack.includes('mobile'))) return 70;
+    return -1;
+  }
+
+  function findUsernameInput(inputs) {
+    let best = null;
+    let bestScore = -1;
+    for (let i = 0; i < inputs.length; i += 1) {
+      const score = usernameScore(inputs[i]);
+      if (score > bestScore) {
+        best = inputs[i];
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  function isCredentialActionTarget(target) {
+    if (!target || !target.closest) return false;
+    const control = target.closest('button, input[type="submit"], [role="button"]');
+    if (!control) return false;
+
+    const tag = String(control.tagName || '').toLowerCase();
+    const type = String(control.type || control.getAttribute('type') || '').toLowerCase();
+    if (tag === 'input' && type === 'submit') return true;
+    if (tag === 'button' && type !== 'button' && type !== 'reset') return true;
+
+    const actionText = [
+      control.textContent,
+      control.value,
+      control.getAttribute('aria-label'),
+      control.getAttribute('title'),
+      control.getAttribute('name'),
+      control.getAttribute('id')
+    ].filter(Boolean).join(' ').toLowerCase();
+    return /(next|continue|sign[ -]?in|log[ -]?in|submit|create|register|sign[ -]?up|verify|ileri|devam|giriş|giris|oturum|kaydol|kayıt|kayit|oluştur|olustur)/.test(actionText);
+  }
+
+  let lastPasswordMessageKey = '';
+  let lastPasswordMessageAt = 0;
+
+  function postPasswordStep(kind, username, password) {
+    try {
+      const origin = window.location.origin;
+      const url = window.location.href;
+      if (!origin || (window.location.protocol !== 'http:' && window.location.protocol !== 'https:')) return;
+
+      const cleanUser = String(username || '').trim();
+      const cleanPassword = String(password || '');
+      if (kind === 'identity' && !cleanUser) return;
+      if (kind === 'submit' && !cleanPassword) return;
+
+      const now = Date.now();
+      const dedupeKey = kind + '\u0000' + origin + '\u0000' + cleanUser + '\u0000' + cleanPassword;
+      if (dedupeKey === lastPasswordMessageKey && now - lastPasswordMessageAt < 1500) return;
+      lastPasswordMessageKey = dedupeKey;
+      lastPasswordMessageAt = now;
+
+      bridge.postMessage(JSON.stringify({
+        type: kind === 'identity' ? 'nebula-password-step-identity' : 'nebula-password-step-submit',
+        origin: origin,
+        url: url,
+        username: cleanUser,
+        password: kind === 'submit' ? cleanPassword : ''
+      }));
+    } catch (_) {}
+  }
+
+  function capturePasswordStep(event) {
+    if (event && event.isTrusted === false) return;
+
+    const inputs = document.querySelectorAll('input');
+    let passwordInput = null;
+    for (let i = 0; i < inputs.length; i += 1) {
+      if (isPasswordInput(inputs[i])) {
+        passwordInput = inputs[i];
+        break;
+      }
+    }
+
+    if (passwordInput) {
+      const password = String(passwordInput.value || '');
+      if (!password) return;
+      const form = passwordInput.closest && passwordInput.closest('form');
+      const scope = form ? form.querySelectorAll('input') : inputs;
+      const usernameInput = findUsernameInput(scope);
+      postPasswordStep('submit', usernameInput ? usernameInput.value : '', password);
+      return;
+    }
+
+    const usernameInput = findUsernameInput(inputs);
+    if (!usernameInput) return;
+    postPasswordStep('identity', usernameInput.value, '');
+  }
 
   if (canReportSitePointerDown) {
     window.addEventListener('pointerdown', function (event) {
@@ -180,6 +324,26 @@ mod imp {
           type: 'nebula-site-pointer-down'
         }));
       } catch (_) {}
+
+      if (isCredentialActionTarget(event.target)) {
+        capturePasswordStep(event);
+      }
+    }, true);
+
+    window.addEventListener('click', function (event) {
+      if (!event.isTrusted) return;
+      if (!isCredentialActionTarget(event.target)) return;
+      capturePasswordStep(event);
+    }, true);
+
+    window.addEventListener('submit', function (event) {
+      if (!event.isTrusted) return;
+      capturePasswordStep(event);
+    }, true);
+
+    window.addEventListener('keydown', function (event) {
+      if (!event.isTrusted || event.key !== 'Enter') return;
+      capturePasswordStep(event);
     }, true);
   }
 
@@ -213,7 +377,6 @@ mod imp {
   } catch (_) {}
 })();
 "#;
-
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct SiteUiResponse {
@@ -286,20 +449,35 @@ mod imp {
 
     fn valid_protocol_scheme(scheme: &str) -> bool {
         const SAFE: &[&str] = &[
-            "bitcoin", "geo", "im", "irc", "ircs", "magnet", "mailto", "matrix", "mms",
-            "news", "nntp", "openpgp4fpr", "sip", "sms", "smsto", "ssh", "tel", "urn",
-            "webcal", "wtai",
+            "bitcoin",
+            "geo",
+            "im",
+            "irc",
+            "ircs",
+            "magnet",
+            "mailto",
+            "matrix",
+            "mms",
+            "news",
+            "nntp",
+            "openpgp4fpr",
+            "sip",
+            "sms",
+            "smsto",
+            "ssh",
+            "tel",
+            "urn",
+            "webcal",
+            "wtai",
         ];
 
         SAFE.contains(&scheme)
-            || scheme
-                .strip_prefix("web+")
-                .is_some_and(|rest| {
-                    !rest.is_empty()
-                        && rest
-                            .chars()
-                            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
-                })
+            || scheme.strip_prefix("web+").is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest
+                        .chars()
+                        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+            })
     }
 
     fn valid_protocol_registration(
@@ -337,8 +515,78 @@ mod imp {
         ))
     }
 
-    fn emit_request(app: &AppHandle, payload: SiteUiRequest) {
-        let _ = app.emit(SITE_UI_EVENT, payload);
+    fn has_pending_capacity<'a>(
+        labels: impl Iterator<Item = &'a str>,
+        tab_label: &str,
+        limit: usize,
+    ) -> bool {
+        labels
+            .filter(|label| *label == tab_label)
+            .take(limit)
+            .count()
+            < limit
+    }
+
+    fn remove_and_cancel_pending(request_id: &str) -> Option<String> {
+        PENDING.with(|pending| {
+            pending.borrow_mut().remove(request_id).map(|request| {
+                let tab_label = request.tab_label().to_string();
+                cancel_request(request);
+                tab_label
+            })
+        })
+    }
+
+    fn expire_site_ui_request(app: &AppHandle, request_id: &str) {
+        if let Some(tab_label) = remove_and_cancel_pending(request_id) {
+            let _ = app.emit(
+                SITE_UI_CANCELLED_EVENT,
+                SiteUiCancelledPayload {
+                    id: request_id.to_string(),
+                    tab_label,
+                },
+            );
+        }
+    }
+
+    fn schedule_site_ui_timeout(app: &AppHandle, request_id: String) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(SITE_UI_TIMEOUT).await;
+            let dispatcher = app.clone();
+            let event_app = app.clone();
+            let _ = dispatcher.run_on_main_thread(move || {
+                expire_site_ui_request(&event_app, &request_id);
+            });
+        });
+    }
+
+    fn enqueue_request(app: &AppHandle, payload: SiteUiRequest, request: PendingRequest) {
+        let request_id = payload.id.clone();
+        let tab_label = request.tab_label().to_string();
+        let inserted = PENDING.with(|pending| {
+            let mut pending = pending.borrow_mut();
+            if !has_pending_capacity(
+                pending.values().map(PendingRequest::tab_label),
+                &tab_label,
+                MAX_PENDING_SITE_UI_PER_TAB,
+            ) {
+                return Err(request);
+            }
+            pending.insert(request_id.clone(), request);
+            Ok(())
+        });
+
+        if let Err(request) = inserted {
+            cancel_request(request);
+            return;
+        }
+
+        if app.emit(SITE_UI_EVENT, payload).is_err() {
+            let _ = remove_and_cancel_pending(&request_id);
+            return;
+        }
+        schedule_site_ui_timeout(app, request_id);
     }
 
     pub fn request_permission(
@@ -351,22 +599,11 @@ mod imp {
     ) -> windows_core::Result<()> {
         let deferral = unsafe { args.GetDeferral()? };
         let id = next_request_id("permission");
-        PENDING.with(|pending| {
-            pending.borrow_mut().insert(
-                id.clone(),
-                PendingRequest::Permission {
-                    tab_label: tab_label.to_string(),
-                    args,
-                    deferral,
-                },
-            );
-        });
-
         let permission_name = permission_kind_name(kind).to_string();
-        emit_request(
+        enqueue_request(
             app,
             SiteUiRequest {
-                id,
+                id: id.clone(),
                 tab_label: tab_label.to_string(),
                 request_type: "permission".to_string(),
                 uri: uri.clone(),
@@ -377,6 +614,11 @@ mod imp {
                 permission_kind: Some(permission_name),
                 challenge: None,
                 is_user_initiated,
+            },
+            PendingRequest::Permission {
+                tab_label: tab_label.to_string(),
+                args,
+                deferral,
             },
         );
         Ok(())
@@ -422,17 +664,15 @@ mod imp {
 
                     let protocol_app = app_for_handlers.clone();
                     let protocol_label = label_for_handlers.clone();
-                    let web_message = WebMessageReceivedEventHandler::create(Box::new(
-                        move |_, args| {
+                    let web_message =
+                        WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
                             let raw = take_string(|value| args.TryGetWebMessageAsString(value));
                             let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
                                 return Ok(());
                             };
 
-                            if value
-                                .get("type")
-                                .and_then(serde_json::Value::as_str)
+                            if value.get("type").and_then(serde_json::Value::as_str)
                                 == Some("nebula-site-pointer-down")
                             {
                                 let _ = protocol_app.emit(
@@ -441,6 +681,65 @@ mod imp {
                                         "tabLabel": protocol_label.clone(),
                                     }),
                                 );
+                                return Ok(());
+                            }
+
+                            let message_kind =
+                                value.get("type").and_then(serde_json::Value::as_str);
+                            if matches!(
+                                message_kind,
+                                Some("nebula-password-step-identity")
+                                    | Some("nebula-password-step-submit")
+                            ) {
+                                let origin = value
+                                    .get("origin")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let url = value
+                                    .get("url")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let username = value
+                                    .get("username")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let password = value
+                                    .get("password")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let is_http_origin =
+                                    origin.starts_with("https://") || origin.starts_with("http://");
+                                let lengths_ok = origin.len() <= 2048
+                                    && url.len() <= 8192
+                                    && username.len() <= 1024
+                                    && password.len() <= 16_384;
+                                let payload_ok = match message_kind {
+                                    Some("nebula-password-step-identity") => {
+                                        !username.trim().is_empty()
+                                    }
+                                    Some("nebula-password-step-submit") => !password.is_empty(),
+                                    _ => false,
+                                };
+
+                                if is_http_origin && lengths_ok && payload_ok {
+                                    let _ = protocol_app.emit(
+                                        PASSWORD_STEP_EVENT,
+                                        PasswordStepPayload {
+                                            kind: if message_kind
+                                                == Some("nebula-password-step-identity")
+                                            {
+                                                "identity".to_string()
+                                            } else {
+                                                "submit".to_string()
+                                            },
+                                            tab_label: protocol_label.clone(),
+                                            origin: origin.to_string(),
+                                            url: url.to_string(),
+                                            username: username.to_string(),
+                                            password: password.to_string(),
+                                        },
+                                    );
+                                }
                                 return Ok(());
                             }
 
@@ -455,19 +754,10 @@ mod imp {
                                 return Ok(());
                             };
                             let id = next_request_id("protocol-handler");
-                            PENDING.with(|pending| {
-                                pending.borrow_mut().insert(
-                                    id.clone(),
-                                    PendingRequest::ProtocolHandler {
-                                        tab_label: protocol_label.clone(),
-                                    },
-                                );
-                            });
-
-                            emit_request(
+                            enqueue_request(
                                 &protocol_app,
                                 SiteUiRequest {
-                                    id,
+                                    id: id.clone(),
                                     tab_label: protocol_label.clone(),
                                     request_type: "protocol-handler".to_string(),
                                     uri: origin,
@@ -479,10 +769,12 @@ mod imp {
                                     challenge: None,
                                     is_user_initiated: false,
                                 },
+                                PendingRequest::ProtocolHandler {
+                                    tab_label: protocol_label.clone(),
+                                },
                             );
                             Ok(())
-                        },
-                    ));
+                        }));
                     let mut web_message_token = 0i64;
                     core.add_WebMessageReceived(&web_message, &mut web_message_token)?;
 
@@ -494,63 +786,55 @@ mod imp {
                     if let Ok(core18) = core.cast::<ICoreWebView2_18>() {
                         let external_app = app_for_handlers.clone();
                         let external_label = label_for_handlers.clone();
-                        let handler =
-                            LaunchingExternalUriSchemeEventHandler::create(Box::new(
-                                move |_, args| {
-                                    let Some(args) = args else { return Ok(()) };
+                        let handler = LaunchingExternalUriSchemeEventHandler::create(Box::new(
+                            move |_, args| {
+                                let Some(args) = args else { return Ok(()) };
 
-                                    // Default-deny immediately. The response path
-                                    // flips this to false only after explicit Allow.
-                                    args.SetCancel(true)?;
-                                    let deferral = args.GetDeferral()?;
-                                    let external_uri =
-                                        take_string(|value| args.Uri(value));
-                                    let initiating_origin =
-                                        take_string(|value| args.InitiatingOrigin(value));
-                                    let mut initiated = windows_core::BOOL::default();
-                                    let _ = args.IsUserInitiated(&mut initiated);
+                                // Default-deny immediately. The response path
+                                // flips this to false only after explicit Allow.
+                                args.SetCancel(true)?;
+                                let deferral = args.GetDeferral()?;
+                                let external_uri = take_string(|value| args.Uri(value));
+                                let initiating_origin =
+                                    take_string(|value| args.InitiatingOrigin(value));
+                                let mut initiated = windows_core::BOOL::default();
+                                let _ = args.IsUserInitiated(&mut initiated);
 
-                                    let scheme = url::Url::parse(&external_uri)
-                                        .ok()
-                                        .map(|parsed| parsed.scheme().to_string())
-                                        .unwrap_or_else(|| {
-                                            external_uri
-                                                .split_once(':')
-                                                .map(|(scheme, _)| scheme.to_string())
-                                                .unwrap_or_else(|| "external".to_string())
-                                        });
-
-                                    let id = next_request_id("external-uri");
-                                    PENDING.with(|pending| {
-                                        pending.borrow_mut().insert(
-                                            id.clone(),
-                                            PendingRequest::ExternalUri {
-                                                tab_label: external_label.clone(),
-                                                args,
-                                                deferral,
-                                            },
-                                        );
+                                let scheme = url::Url::parse(&external_uri)
+                                    .ok()
+                                    .map(|parsed| parsed.scheme().to_string())
+                                    .unwrap_or_else(|| {
+                                        external_uri
+                                            .split_once(':')
+                                            .map(|(scheme, _)| scheme.to_string())
+                                            .unwrap_or_else(|| "external".to_string())
                                     });
 
-                                    emit_request(
-                                        &external_app,
-                                        SiteUiRequest {
-                                            id,
-                                            tab_label: external_label.clone(),
-                                            request_type: "external-uri".to_string(),
-                                            uri: initiating_origin.clone(),
-                                            title: host_label(&initiating_origin),
-                                            message: external_uri,
-                                            default_text: String::new(),
-                                            dialog_kind: None,
-                                            permission_kind: Some(scheme),
-                                            challenge: None,
-                                            is_user_initiated: initiated.as_bool(),
-                                        },
-                                    );
-                                    Ok(())
-                                },
-                            ));
+                                let id = next_request_id("external-uri");
+                                enqueue_request(
+                                    &external_app,
+                                    SiteUiRequest {
+                                        id: id.clone(),
+                                        tab_label: external_label.clone(),
+                                        request_type: "external-uri".to_string(),
+                                        uri: initiating_origin.clone(),
+                                        title: host_label(&initiating_origin),
+                                        message: external_uri,
+                                        default_text: String::new(),
+                                        dialog_kind: None,
+                                        permission_kind: Some(scheme),
+                                        challenge: None,
+                                        is_user_initiated: initiated.as_bool(),
+                                    },
+                                    PendingRequest::ExternalUri {
+                                        tab_label: external_label.clone(),
+                                        args,
+                                        deferral,
+                                    },
+                                );
+                                Ok(())
+                            },
+                        ));
 
                         let mut token = 0i64;
                         core18.add_LaunchingExternalUriScheme(&handler, &mut token)?;
@@ -560,8 +844,8 @@ mod imp {
 
                     let script_app = app_for_handlers.clone();
                     let script_label = label_for_handlers.clone();
-                    let script_dialog = ScriptDialogOpeningEventHandler::create(Box::new(
-                        move |_, args| {
+                    let script_dialog =
+                        ScriptDialogOpeningEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
                             let deferral = args.GetDeferral()?;
                             let uri = take_string(|value| args.Uri(value));
@@ -570,24 +854,13 @@ mod imp {
                             let mut kind = COREWEBVIEW2_SCRIPT_DIALOG_KIND::default();
                             let _ = args.Kind(&mut kind);
                             let kind_name = script_dialog_kind(kind).to_string();
+                            let is_prompt = kind_name == "prompt";
                             let id = next_request_id("dialog");
 
-                            PENDING.with(|pending| {
-                                pending.borrow_mut().insert(
-                                    id.clone(),
-                                    PendingRequest::ScriptDialog {
-                                        tab_label: script_label.clone(),
-                                        args,
-                                        deferral,
-                                        is_prompt: kind_name == "prompt",
-                                    },
-                                );
-                            });
-
-                            emit_request(
+                            enqueue_request(
                                 &script_app,
                                 SiteUiRequest {
-                                    id,
+                                    id: id.clone(),
                                     tab_label: script_label.clone(),
                                     request_type: "script-dialog".to_string(),
                                     uri: uri.clone(),
@@ -599,17 +872,22 @@ mod imp {
                                     challenge: None,
                                     is_user_initiated: true,
                                 },
+                                PendingRequest::ScriptDialog {
+                                    tab_label: script_label.clone(),
+                                    args,
+                                    deferral,
+                                    is_prompt,
+                                },
                             );
                             Ok(())
-                        },
-                    ));
+                        }));
                     let mut script_token = 0i64;
                     core.add_ScriptDialogOpening(&script_dialog, &mut script_token)?;
 
                     let new_window_app = app_for_handlers.clone();
                     let new_window_label = label_for_handlers.clone();
-                    let new_window = NewWindowRequestedEventHandler::create(Box::new(
-                        move |_, args| {
+                    let new_window =
+                        NewWindowRequestedEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
                             let uri = take_string(|value| args.Uri(value));
                             let mut initiated = windows_core::BOOL::default();
@@ -624,15 +902,14 @@ mod imp {
                                 },
                             );
                             Ok(())
-                        },
-                    ));
+                        }));
                     let mut new_window_token = 0i64;
                     core.add_NewWindowRequested(&new_window, &mut new_window_token)?;
 
                     let close_app = app_for_handlers.clone();
                     let close_label = label_for_handlers.clone();
-                    let window_close = WindowCloseRequestedEventHandler::create(Box::new(
-                        move |_, _| {
+                    let window_close =
+                        WindowCloseRequestedEventHandler::create(Box::new(move |_, _| {
                             let _ = close_app.emit(
                                 SITE_CLOSE_WINDOW_EVENT,
                                 CloseWindowPayload {
@@ -640,8 +917,7 @@ mod imp {
                                 },
                             );
                             Ok(())
-                        },
-                    ));
+                        }));
                     let mut window_close_token = 0i64;
                     core.add_WindowCloseRequested(&window_close, &mut window_close_token)?;
 
@@ -658,21 +934,10 @@ mod imp {
                                 let challenge = take_string(|value| args.Challenge(value));
                                 let id = next_request_id("auth");
 
-                                PENDING.with(|pending| {
-                                    pending.borrow_mut().insert(
-                                        id.clone(),
-                                        PendingRequest::BasicAuth {
-                                            tab_label: auth_label.clone(),
-                                            args,
-                                            deferral,
-                                        },
-                                    );
-                                });
-
-                                emit_request(
+                                enqueue_request(
                                     &auth_app,
                                     SiteUiRequest {
-                                        id,
+                                        id: id.clone(),
                                         tab_label: auth_label.clone(),
                                         request_type: "basic-auth".to_string(),
                                         uri: uri.clone(),
@@ -684,6 +949,11 @@ mod imp {
                                         permission_kind: None,
                                         challenge: Some(challenge),
                                         is_user_initiated: true,
+                                    },
+                                    PendingRequest::BasicAuth {
+                                        tab_label: auth_label.clone(),
+                                        args,
+                                        deferral,
                                     },
                                 );
                                 Ok(())
@@ -731,10 +1001,7 @@ mod imp {
                     }
                     Err(error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!(
-                            "[nebula site ui] {}: {}",
-                            label_for_handlers, error
-                        );
+                        eprintln!("[nebula site ui] {}: {}", label_for_handlers, error);
                     }
                 }
             })
@@ -759,10 +1026,9 @@ mod imp {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         app.run_on_main_thread(move || {
             let result = PENDING.with(|pending| {
-                let request = pending
-                    .borrow_mut()
-                    .remove(&request_id)
-                    .ok_or_else(|| format!("site UI request '{request_id}' is no longer pending"))?;
+                let request = pending.borrow_mut().remove(&request_id).ok_or_else(|| {
+                    format!("site UI request '{request_id}' is no longer pending")
+                })?;
 
                 let native_result = unsafe {
                     (|| -> windows_core::Result<()> {
@@ -858,9 +1124,8 @@ mod imp {
                 let mut pending = pending.borrow_mut();
                 let ids: Vec<String> = pending
                     .iter()
-                    .filter_map(|(id, request)| {
-                        (request.tab_label() == label).then(|| id.clone())
-                    })
+                    .filter(|(_, request)| request.tab_label() == label)
+                    .map(|(id, _)| id.clone())
                     .collect();
                 let mut cancelled = Vec::with_capacity(ids.len());
                 for id in ids {
@@ -914,6 +1179,34 @@ mod imp {
             configured.remove(label);
         }
         cancel_for_tab(app, label);
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn site_ui_queue_is_bounded_per_tab() {
+            let labels = ["tab-a", "tab-a", "tab-b"];
+            assert!(!has_pending_capacity(labels.into_iter(), "tab-a", 2));
+            assert!(has_pending_capacity(labels.into_iter(), "tab-b", 2));
+        }
+
+        #[test]
+        fn expired_protocol_prompt_is_removed_from_pending_requests() {
+            let id = "protocol-handler-test";
+            PENDING.with(|pending| {
+                pending.borrow_mut().insert(
+                    id.to_string(),
+                    PendingRequest::ProtocolHandler {
+                        tab_label: "tab-a".to_string(),
+                    },
+                );
+            });
+
+            assert_eq!(remove_and_cancel_pending(id).as_deref(), Some("tab-a"));
+            PENDING.with(|pending| assert!(!pending.borrow().contains_key(id)));
+        }
     }
 }
 

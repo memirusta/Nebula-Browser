@@ -25,6 +25,16 @@ export function isGoogleBrowserSignInUrl(url: string): boolean {
   }
 }
 
+export function googleBrowserSessionEmailFromSignInUrl(url: string): string | null {
+  if (!isGoogleBrowserSignInUrl(url)) return null
+  try {
+    const email = new URL(url).searchParams.get('Email')?.trim()
+    return email || null
+  } catch {
+    return null
+  }
+}
+
 export function isGoogleAccountDashboardUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase()
@@ -43,6 +53,32 @@ export function isGoogleSessionHelperTerminalUrl(url: string): boolean {
     return host === 'google.com' && (parsed.pathname === '/' || parsed.pathname === '')
   } catch {
     return false
+  }
+}
+
+export class GoogleBrowserSessionTracker {
+  private readonly emailByTab = new Map<string, string>()
+
+  register(tabId: string, signInUrl: string): boolean {
+    const email = googleBrowserSessionEmailFromSignInUrl(signInUrl)
+    if (!email) return false
+    this.emailByTab.set(tabId, email)
+    return true
+  }
+
+  has(tabId: string): boolean {
+    return this.emailByTab.has(tabId)
+  }
+
+  discard(tabId: string): void {
+    this.emailByTab.delete(tabId)
+  }
+
+  complete(tabId: string, url: string): string | null {
+    if (!isGoogleSessionHelperTerminalUrl(url)) return null
+    const email = this.emailByTab.get(tabId) ?? null
+    if (email) this.emailByTab.delete(tabId)
+    return email
   }
 }
 

@@ -132,6 +132,9 @@ catShortcutsDesc: {
   cancel: { tr: 'İptal', en: 'Cancel' },
   save: { tr: 'Kaydet', en: 'Save' },
   close: { tr: 'Kapat', en: 'Close' },
+  untitledPage: { tr: 'Adsız sayfa', en: 'Untitled page' },
+  genericBrowser: { tr: 'Tarayıcı', en: 'Browser' },
+  contextNoActions: { tr: 'Kullanılabilir işlem yok', en: 'No actions available' },
   historyTitle: { tr: 'Geçmiş', en: 'History' },
   historyEyebrow: { tr: 'Tarama', en: 'Browsing' },
   historySearchPlaceholder: { tr: 'Geçmişte ara…', en: 'Search history…' },
@@ -262,6 +265,8 @@ catShortcutsDesc: {
   usernameHint: { tr: 'Karşılama mesajında görünen isim', en: 'Name shown in the greeting' },
   searchEngine: { tr: 'Arama motoru', en: 'Search engine' },
   searchEngineHint: { tr: 'URL olmayan aramalar için', en: 'For queries that are not URLs' },
+  searchSuggestionSource: { tr: '{engine} önerisi', en: '{engine} suggestion' },
+  searchWithEngine: { tr: '{engine} ile ara', en: 'Search with {engine}' },
   resetShortcuts: { tr: 'Kısayolları sıfırla', en: 'Reset shortcuts' },
   resetShortcutsHint: {
     tr: 'Semi-lunar ikonlarını varsayılana döndür',
@@ -389,6 +394,10 @@ catShortcutsDesc: {
   customBlockListHint: { tr: 'Listeyi güncellemek için alan adlarını virgül veya boşlukla ekleyin', en: 'Add domains separated by commas or spaces to update your list' },
   clearBrowsingData: { tr: 'Tarama verilerini temizle', en: 'Clear browsing data' },
   clearBrowsingDataHint: { tr: 'Çerez, önbellek, geçmiş ve site izinlerini sil', en: 'Delete cookies, cache, history, and site permissions' },
+  clearBrowsingDataConfirm: { tr: 'Seçili tarama verileri kalıcı olarak silinecek. Devam edilsin mi?', en: 'The selected browsing data will be permanently deleted. Continue?' },
+  clearBrowsingDataWorking: { tr: 'Temizleniyor…', en: 'Clearing…' },
+  clearBrowsingDataSuccess: { tr: 'Tarama verileri temizlendi.', en: 'Browsing data cleared.' },
+  clearBrowsingDataFailed: { tr: 'Tarama verileri temizlenemedi.', en: 'Browsing data could not be cleared.' },
   clearNow: { tr: 'Şimdi temizle', en: 'Clear now' },
   clear_cookies: { tr: 'Çerezler', en: 'Cookies' },
   clear_cache: { tr: 'Önbellek', en: 'Cache' },
@@ -538,6 +547,84 @@ catShortcutsDesc: {
   },
   accountLabelPlaceholder: { tr: 'Örn. GitHub', en: 'e.g. GitHub' },
 
+  // ── Google / Nebula Sync ─────────────────────────────────────────────────
+  syncTitle: { tr: 'Nebula Sync', en: 'Nebula Sync' },
+  syncHint: {
+    tr: 'Yer işaretlerini, ayarları ve isteğe bağlı olarak şifreleri Google Drive uygulama verisinde sakla.',
+    en: 'Store bookmarks, settings, and optionally passwords in Google Drive app data.',
+  },
+  syncOn: { tr: 'Açık', en: 'On' },
+  syncOff: { tr: 'Kapalı', en: 'Off' },
+  syncEnable: { tr: 'Senkronizasyonu aç', en: 'Enable sync' },
+  syncEnabling: { tr: 'Google açılıyor…', en: 'Opening Google…' },
+  syncEnabled: { tr: 'Nebula Sync bu cihazda açıldı.', en: 'Nebula Sync is enabled on this device.' },
+  syncEnableFailed: {
+    tr: 'Senkronizasyon izni tamamlanamadı.',
+    en: 'Could not complete sync authorization.',
+  },
+  syncGoogleClientMissing: {
+    tr: 'Google istemci kimliği yapılandırılmamış.',
+    en: 'Google client ID is not configured.',
+  },
+  syncOtherAccount: {
+    tr: 'Bu cihazdaki Sync başka bir Google hesabına bağlı. Bu hesap için tekrar etkinleştirebilirsin.',
+    en: 'Sync on this device is linked to another Google account. You can enable it again for this account.',
+  },
+  syncBookmarks: { tr: 'Yer işaretleri ve düzen', en: 'Bookmarks and layout' },
+  syncBookmarksHint: {
+    tr: 'Özel kısayollar, sabitlenenler, klasörler ve konumları.',
+    en: 'Custom shortcuts, pins, folders, and their positions.',
+  },
+  syncSettings: { tr: 'Ayarlar', en: 'Settings' },
+  syncSettingsHint: {
+    tr: 'Görünüm, gizlilik, dil, widget düzeni ve tarayıcı kısayolları.',
+    en: 'Appearance, privacy, language, widget layout, and browser shortcuts.',
+  },
+  syncPasswords: { tr: 'Şifreler', en: 'Passwords' },
+  syncPasswordsHint: {
+    tr: 'Şifreler Google’a gitmeden önce cihazda uçtan uca şifrelenir.',
+    en: 'Passwords are end-to-end encrypted on this device before being sent to Google.',
+  },
+  syncPasswordLabel: { tr: 'Nebula Sync şifresi', en: 'Nebula Sync password' },
+  syncPasswordPlaceholder: {
+    tr: 'En az 8 karakter',
+    en: 'At least 8 characters',
+  },
+  syncPasswordHint: {
+    tr: 'Bu şifre Google’a gönderilmez. Şifreleri başka cihazda açmak için aynı Sync şifresi gerekir.',
+    en: 'This password is never sent to Google. You need the same Sync password to unlock passwords on another device.',
+  },
+  syncPasswordTooShort: {
+    tr: 'Şifre senkronizasyonu için en az 8 karakterlik bir Sync şifresi gir.',
+    en: 'Enter a Sync password of at least 8 characters to sync passwords.',
+  },
+  syncPasswordRequired: {
+    tr: 'Buluttaki şifreleri açmak için Nebula Sync şifreni gir.',
+    en: 'Enter your Nebula Sync password to unlock cloud passwords.',
+  },
+  syncBackupNow: { tr: 'Şimdi yedekle', en: 'Back up now' },
+  syncBackingUp: { tr: 'Yedekleniyor…', en: 'Backing up…' },
+  syncBackupDone: { tr: 'Bulut yedeği güncellendi.', en: 'Cloud backup updated.' },
+  syncBackupFailed: { tr: 'Bulut yedeği oluşturulamadı.', en: 'Could not update cloud backup.' },
+  syncRestore: { tr: 'Buluttan geri yükle', en: 'Restore from cloud' },
+  syncRestoring: { tr: 'Geri yükleniyor…', en: 'Restoring…' },
+  syncRestoreConfirm: {
+    tr: 'Seçili ayarlar ve yer işaretleri bu cihazda buluttaki sürümle değiştirilecek. Devam edilsin mi?',
+    en: 'Selected settings and bookmarks on this device will be replaced with the cloud version. Continue?',
+  },
+  syncRestoreDone: { tr: 'Bulut verileri geri yüklendi. Nebula yenileniyor…', en: 'Cloud data restored. Reloading Nebula…' },
+  syncRestoreFailed: {
+    tr: 'Bulut verileri geri yüklenemedi. Sync şifresini de kontrol et.',
+    en: 'Could not restore cloud data. Check the Sync password too.',
+  },
+  syncNoCloudData: { tr: 'Bu hesap için henüz Nebula yedeği yok.', en: 'There is no Nebula backup for this account yet.' },
+  syncDisable: { tr: 'Bu cihazda kapat', en: 'Turn off on this device' },
+  syncDisabling: { tr: 'Kapatılıyor…', en: 'Turning off…' },
+  syncDisabled: { tr: 'Nebula Sync bu cihazda kapatıldı.', en: 'Nebula Sync is off on this device.' },
+  syncDisableFailed: { tr: 'Senkronizasyon kapatılamadı.', en: 'Could not turn off sync.' },
+  syncLast: { tr: 'Son başarılı işlem', en: 'Last successful operation' },
+  syncNever: { tr: 'Henüz yok', en: 'Never' },
+
   // ── Google setup panel ────────────────────────────────────────────────────
   gsLead: {
     tr: '{email} hesabını Nebula\'ya bağla: şifreleri kasaya aktar ve site sekmelerinde Google oturumunu açık tut.',
@@ -560,6 +647,20 @@ catShortcutsDesc: {
   gsSkip: { tr: 'Şimdilik atla', en: 'Skip for now' },
   gsApply: { tr: 'Bağla', en: 'Link' },
   gsApplying: { tr: 'Bağlanıyor…', en: 'Linking…' },
+  gsImportDesktopOnly: {
+    tr: 'Şifre aktarımı masaüstü uygulamasında kullanılabilir.',
+    en: 'Password import is available in the desktop app.',
+  },
+  gsImportSourceMissing: {
+    tr: 'Chrome veya Edge şifre veritabanı bulunamadı.',
+    en: 'No Chrome or Edge password database was found.',
+  },
+  gsImportDone: { tr: '{count} şifre aktarıldı.', en: '{count} passwords imported.' },
+  gsImportFailed: { tr: 'Şifre aktarımı başarısız.', en: 'Password import failed.' },
+  gsImportNeedsCsv: {
+    tr: 'Şifreler otomatik aktarılamadı. CSV dışa aktarmayı kullan.',
+    en: 'Passwords could not be imported automatically. Use CSV export instead.',
+  },
   gsSessionBackground: {
     tr: 'Google oturumu arka planda bağlanıyor; giriş bitince sekme kapanır.',
     en: 'Google session is linking in the background; the tab closes when sign-in finishes.',
@@ -653,6 +754,9 @@ catShortcutsDesc: {
     en: 'Files downloaded during this session will appear here.',
   },
   downloadStarting: { tr: 'Başlatılıyor', en: 'Starting' },
+  downloadEtaSeconds: { tr: '{seconds} sn kaldı', en: '{seconds}s left' },
+  downloadEtaMinutes: { tr: '{minutes} dk {seconds} sn kaldı', en: '{minutes}m {seconds}s left' },
+  downloadEtaHours: { tr: '{hours} sa {minutes} dk kaldı', en: '{hours}h {minutes}m left' },
   downloadPaused: { tr: 'Duraklatıldı', en: 'Paused' },
   downloadCompleted: { tr: 'Tamamlandı', en: 'Completed' },
   downloadCancelled: { tr: 'İptal edildi', en: 'Cancelled' },
@@ -682,6 +786,7 @@ catShortcutsDesc: {
   removeShortcutAria: { tr: '{label} kısayolunu kaldır', en: 'Remove {label} shortcut' },
   shortcutAria: { tr: '{label} — sürükle veya tıkla', en: '{label} — drag or click' },
   folderTitle: { tr: '{name} klasörü', en: '{name} folder' },
+  folderDefaultName: { tr: 'Klasör', en: 'Folder' },
   folderNameLabel: { tr: 'Klasör adı', en: 'Folder name' },
   folderRename: { tr: 'Yeniden adlandır', en: 'Rename' },
   pinnedShortcutAria: { tr: '{label} — sabitlenmiş{suffix}', en: '{label} — pinned{suffix}' },

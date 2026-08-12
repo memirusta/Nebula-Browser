@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
+import { useLocale } from '../../hooks/useLocale'
 import type { SiteUiRequest, SiteUiResponse } from '../../platform/tauriSiteUi'
 import styles from './SiteUiPrompt.module.css'
 
@@ -9,20 +11,107 @@ interface SiteUiPromptProps {
   onRespond: (response: SiteUiResponse) => void
 }
 
-const PERMISSION_LABELS: Record<string, string> = {
-  microphone: 'microphone',
-  camera: 'camera',
-  geolocation: 'location',
-  notifications: 'notifications',
-  sensors: 'motion sensors',
-  'clipboard-read': 'clipboard',
-  'multiple-downloads': 'multiple downloads',
-  'file-read-write': 'files',
-  autoplay: 'autoplay',
-  'local-fonts': 'local fonts',
-  'midi-sysex': 'MIDI devices',
-  'window-management': 'window management',
-}
+const PERMISSION_LABELS = {
+  tr: {
+    microphone: 'mikrofon',
+    camera: 'kamera',
+    geolocation: 'konum',
+    notifications: 'bildirimler',
+    sensors: 'hareket sensörleri',
+    'clipboard-read': 'pano',
+    'multiple-downloads': 'birden çok indirme',
+    'file-read-write': 'dosyalar',
+    autoplay: 'otomatik oynatma',
+    'local-fonts': 'yerel yazı tipleri',
+    'midi-sysex': 'MIDI cihazları',
+    'window-management': 'pencere yönetimi',
+  },
+  en: {
+    microphone: 'microphone',
+    camera: 'camera',
+    geolocation: 'location',
+    notifications: 'notifications',
+    sensors: 'motion sensors',
+    'clipboard-read': 'clipboard',
+    'multiple-downloads': 'multiple downloads',
+    'file-read-write': 'files',
+    autoplay: 'autoplay',
+    'local-fonts': 'local fonts',
+    'midi-sysex': 'MIDI devices',
+    'window-management': 'window management',
+  },
+} as const
+
+const COPY = {
+  tr: {
+    thisFeature: 'bu özellik',
+    sitePermission: 'Site izni',
+    wantsToUse: (title: string, permission: string) => `${title} ${permission} kullanmak istiyor`,
+    allowAccess: (origin: string, permission: string) => `${origin} adresinin ${permission} erişimine izin verilsin mi?`,
+    allow: 'İzin ver',
+    block: 'Engelle',
+    authRequired: 'Kimlik doğrulama gerekli',
+    signInTo: (title: string) => `${title} için giriş yap`,
+    serverChallenge: (challenge: string) => `Sunucu kimlik bilgisi istedi (${challenge}).`,
+    serverCredentials: 'Sunucu kullanıcı adı ve parola istedi.',
+    signIn: 'Giriş yap',
+    cancel: 'İptal',
+    emailLinks: 'e-posta bağlantılarını',
+    protocolLinks: (scheme: string) => `${scheme}: bağlantılarını`,
+    protocolHandler: 'Protokol işleyicisi',
+    wantsToOpen: (title: string, label: string) => `${title} ${label} açmak istiyor`,
+    allowHandle: (origin: string, label: string) => `${origin} adresinin ${label} Nebula içinde işlemesine izin verilsin mi?`,
+    openExternal: 'Harici uygulama açılsın mı?',
+    wantsAnotherApp: (title: string) => `${title} başka bir uygulama açmak istiyor`,
+    allowOutside: (scheme: string) => `Bu sitenin Nebula dışında ${scheme}: bağlantısı açmasına izin verilsin mi?`,
+    open: 'Aç',
+    leaveSite: 'Siteden ayrıl?',
+    unsaved: 'Yaptığınız değişiklikler kaydedilmeyebilir.',
+    leave: 'Ayrıl',
+    stay: 'Kal',
+    siteMessage: 'Site mesajı',
+    siteInput: 'Site girişi',
+    ok: 'Tamam',
+    promptResponse: 'Site istemi yanıtı',
+    username: 'Kullanıcı adı',
+    password: 'Parola',
+    remember: 'Bu site için bu seçimi hatırla',
+  },
+  en: {
+    thisFeature: 'this feature',
+    sitePermission: 'Site permission',
+    wantsToUse: (title: string, permission: string) => `${title} wants to use ${permission}`,
+    allowAccess: (origin: string, permission: string) => `Allow ${origin} to access ${permission}?`,
+    allow: 'Allow',
+    block: 'Block',
+    authRequired: 'Authentication required',
+    signInTo: (title: string) => `Sign in to ${title}`,
+    serverChallenge: (challenge: string) => `The server requested credentials (${challenge}).`,
+    serverCredentials: 'The server requested a username and password.',
+    signIn: 'Sign in',
+    cancel: 'Cancel',
+    emailLinks: 'email links',
+    protocolLinks: (scheme: string) => `${scheme}: links`,
+    protocolHandler: 'Protocol handler',
+    wantsToOpen: (title: string, label: string) => `${title} wants to open ${label}`,
+    allowHandle: (origin: string, label: string) => `Allow ${origin} to handle ${label} in Nebula?`,
+    openExternal: 'Open external app?',
+    wantsAnotherApp: (title: string) => `${title} wants to open another application`,
+    allowOutside: (scheme: string) => `Allow this site to open a ${scheme}: link outside Nebula?`,
+    open: 'Open',
+    leaveSite: 'Leave site?',
+    unsaved: 'Changes you made may not be saved.',
+    leave: 'Leave',
+    stay: 'Stay',
+    siteMessage: 'Site message',
+    siteInput: 'Site input',
+    ok: 'OK',
+    promptResponse: 'Site prompt response',
+    username: 'Username',
+    password: 'Password',
+    remember: 'Remember this choice for this site',
+  },
+} as const
 
 function originText(uri: string, fallback: string): string {
   try {
@@ -33,11 +122,15 @@ function originText(uri: string, fallback: string): string {
 }
 
 export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptProps) {
+  const { locale } = useLocale()
+  const copy = COPY[locale]
   const [text, setText] = useState(request.defaultText ?? '')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
+  useModalFocusTrap(dialogRef)
 
   useEffect(() => {
     setText(request.defaultText ?? '')
@@ -49,86 +142,86 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
 
   const presentation = useMemo(() => {
     if (request.requestType === 'permission') {
-      const permission = PERMISSION_LABELS[request.permissionKind ?? ''] ?? request.permissionKind ?? 'this feature'
+      const permission = PERMISSION_LABELS[locale][request.permissionKind as keyof typeof PERMISSION_LABELS.tr] ?? request.permissionKind ?? copy.thisFeature
       return {
-        eyebrow: 'Site permission',
-        title: `${request.title} wants to use ${permission}`,
-        message: `Allow ${originText(request.uri, request.title)} to access ${permission}?`,
-        accept: 'Allow',
-        cancel: 'Block',
+        eyebrow: copy.sitePermission,
+        title: copy.wantsToUse(request.title, permission),
+        message: copy.allowAccess(originText(request.uri, request.title), permission),
+        accept: copy.allow,
+        cancel: copy.block,
       }
     }
 
     if (request.requestType === 'basic-auth') {
       return {
-        eyebrow: 'Authentication required',
-        title: `Sign in to ${request.title}`,
+        eyebrow: copy.authRequired,
+        title: copy.signInTo(request.title),
         message: request.challenge
-          ? `The server requested credentials (${request.challenge}).`
-          : 'The server requested a username and password.',
-        accept: 'Sign in',
-        cancel: 'Cancel',
+          ? copy.serverChallenge(request.challenge)
+          : copy.serverCredentials,
+        accept: copy.signIn,
+        cancel: copy.cancel,
       }
     }
 
     if (request.requestType === 'protocol-handler') {
       const scheme = request.permissionKind ?? 'link'
-      const label = scheme === 'mailto' ? 'email links' : `${scheme}: links`
+      const label = scheme === 'mailto' ? copy.emailLinks : copy.protocolLinks(scheme)
       return {
-        eyebrow: 'Protocol handler',
-        title: `${request.title} wants to open ${label}`,
-        message: `Allow ${originText(request.uri, request.title)} to handle ${label} in Nebula?`,
-        accept: 'Allow',
-        cancel: 'Block',
+        eyebrow: copy.protocolHandler,
+        title: copy.wantsToOpen(request.title, label),
+        message: copy.allowHandle(originText(request.uri, request.title), label),
+        accept: copy.allow,
+        cancel: copy.block,
       }
     }
 
     if (request.requestType === 'external-uri') {
       const scheme = request.permissionKind ?? 'external'
       return {
-        eyebrow: 'Open external app?',
-        title: `${request.title} wants to open another application`,
-        message: `Allow this site to open a ${scheme}: link outside Nebula?`,
-        accept: 'Open',
-        cancel: 'Block',
+        eyebrow: copy.openExternal,
+        title: copy.wantsAnotherApp(request.title),
+        message: copy.allowOutside(scheme),
+        accept: copy.open,
+        cancel: copy.block,
       }
     }
 
     switch (request.dialogKind) {
       case 'beforeunload':
         return {
-          eyebrow: 'Leave site?',
+          eyebrow: copy.leaveSite,
           title: request.title,
-          message: request.message || 'Changes you made may not be saved.',
-          accept: 'Leave',
-          cancel: 'Stay',
+          message: request.message || copy.unsaved,
+          accept: copy.leave,
+          cancel: copy.stay,
         }
       case 'confirm':
         return {
-          eyebrow: 'Site message',
+          eyebrow: copy.siteMessage,
           title: request.title,
           message: request.message,
-          accept: 'OK',
-          cancel: 'Cancel',
+          accept: copy.ok,
+          cancel: copy.cancel,
         }
       case 'prompt':
         return {
-          eyebrow: 'Site input',
+          eyebrow: copy.siteInput,
           title: request.title,
           message: request.message,
-          accept: 'OK',
-          cancel: 'Cancel',
+          accept: copy.ok,
+          cancel: copy.cancel,
         }
       default:
         return {
-          eyebrow: 'Site message',
+          eyebrow: copy.siteMessage,
           title: request.title,
           message: request.message,
-          accept: 'OK',
+          accept: copy.ok,
           cancel: '',
         }
     }
-  }, [request])
+  }, [copy, locale, request])
 
   const submit = () => {
     onRespond({
@@ -143,7 +236,9 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
   return createPortal(
     <div className={styles.backdrop} role="presentation">
       <section
+        ref={dialogRef}
         className={styles.card}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="nebula-site-ui-title"
@@ -176,7 +271,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
             className={styles.input}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            aria-label="Site prompt response"
+            aria-label={copy.promptResponse}
           />
         )}
 
@@ -187,7 +282,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
               className={styles.input}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              placeholder="Username"
+              placeholder={copy.username}
               autoComplete="username"
             />
             <input
@@ -195,7 +290,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Password"
+              placeholder={copy.password}
               autoComplete="current-password"
             />
           </div>
@@ -204,7 +299,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
         {request.requestType === 'permission' && (
           <label className={styles.rememberRow}>
             <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-            <span>Remember this choice for this site</span>
+            <span>{copy.remember}</span>
           </label>
         )}
 

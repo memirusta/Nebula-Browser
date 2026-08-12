@@ -88,10 +88,7 @@ mod imp {
                     }
                     Err(error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!(
-                            "[nebula branding] {}: {}",
-                            label_for_setup, error
-                        );
+                        eprintln!("[nebula branding] {}: {}", label_for_setup, error);
                     }
                 }
             })

@@ -119,8 +119,7 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
     {
         use std::{
             mem::{size_of, size_of_val},
-            ptr,
-            slice,
+            ptr, slice,
         };
 
         const PRINTER_ENUM_LOCAL: u32 = 0x0000_0002;
@@ -145,15 +144,10 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
                 printers_returned: *mut u32,
             ) -> i32;
 
-            fn GetDefaultPrinterW(
-                buffer: *mut u16,
-                chars: *mut u32,
-            ) -> i32;
+            fn GetDefaultPrinterW(buffer: *mut u16, chars: *mut u32) -> i32;
         }
 
-        unsafe fn wide_ptr_to_string(
-            value: *const u16,
-        ) -> String {
+        unsafe fn wide_ptr_to_string(value: *const u16) -> String {
             if value.is_null() {
                 return String::new();
             }
@@ -164,47 +158,30 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
                 len += 1;
             }
 
-            String::from_utf16_lossy(
-                slice::from_raw_parts(
-                    value,
-                    len,
-                ),
-            )
+            String::from_utf16_lossy(slice::from_raw_parts(value, len))
         }
 
         unsafe fn default_printer_name() -> Option<String> {
             let mut chars = 0u32;
 
-            let _ = GetDefaultPrinterW(
-                ptr::null_mut(),
-                &mut chars,
-            );
+            let _ = GetDefaultPrinterW(ptr::null_mut(), &mut chars);
 
             if chars == 0 {
                 return None;
             }
 
-            let mut buffer =
-                vec![0u16; chars as usize];
+            let mut buffer = vec![0u16; chars as usize];
 
-            if GetDefaultPrinterW(
-                buffer.as_mut_ptr(),
-                &mut chars,
-            ) == 0
-            {
+            if GetDefaultPrinterW(buffer.as_mut_ptr(), &mut chars) == 0 {
                 return None;
             }
 
-            let len =
-                buffer
-                    .iter()
-                    .position(|value| *value == 0)
-                    .unwrap_or(buffer.len());
+            let len = buffer
+                .iter()
+                .position(|value| *value == 0)
+                .unwrap_or(buffer.len());
 
-            let name =
-                String::from_utf16_lossy(
-                    &buffer[..len],
-                );
+            let name = String::from_utf16_lossy(&buffer[..len]);
 
             let name = name.trim();
 
@@ -216,9 +193,7 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
         }
 
         unsafe {
-            let flags =
-                PRINTER_ENUM_LOCAL |
-                PRINTER_ENUM_CONNECTIONS;
+            let flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
 
             let mut bytes_needed = 0u32;
             let mut printers_returned = 0u32;
@@ -238,22 +213,14 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
             }
 
             let word_size = size_of::<usize>();
-            let word_count =
-                (bytes_needed as usize + word_size - 1) /
-                word_size;
+            let word_count = (bytes_needed as usize).div_ceil(word_size);
 
-            let mut buffer =
-                vec![0usize; word_count];
+            let mut buffer = vec![0usize; word_count];
 
-            let buffer_bytes =
-                size_of_val(buffer.as_slice());
+            let buffer_bytes = size_of_val(buffer.as_slice());
 
-            let buffer_bytes_u32 =
-                u32::try_from(buffer_bytes)
-                    .map_err(|_| {
-                        "Printer enumeration buffer is too large."
-                            .to_string()
-                    })?;
+            let buffer_bytes_u32 = u32::try_from(buffer_bytes)
+                .map_err(|_| "Printer enumeration buffer is too large.".to_string())?;
 
             if EnumPrintersW(
                 flags,
@@ -265,30 +232,20 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
                 &mut printers_returned,
             ) == 0
             {
-                return Err(
-                    std::io::Error::last_os_error()
-                        .to_string(),
-                );
+                return Err(std::io::Error::last_os_error().to_string());
             }
 
-            let entries =
-                slice::from_raw_parts(
-                    buffer.as_ptr()
-                        as *const PrinterInfo4W,
-                    printers_returned as usize,
-                );
+            let entries = slice::from_raw_parts(
+                buffer.as_ptr() as *const PrinterInfo4W,
+                printers_returned as usize,
+            );
 
-            let default_name =
-                default_printer_name();
+            let default_name = default_printer_name();
 
-            let mut printers =
-                Vec::<WebviewPrinterInfo>::new();
+            let mut printers = Vec::<WebviewPrinterInfo>::new();
 
             for entry in entries {
-                let name =
-                    wide_ptr_to_string(
-                        entry.printer_name,
-                    );
+                let name = wide_ptr_to_string(entry.printer_name);
 
                 let name = name.trim();
 
@@ -296,48 +253,25 @@ pub fn webview_list_printers() -> Result<Vec<WebviewPrinterInfo>, String> {
                     continue;
                 }
 
-                let is_default =
-                    default_name
-                        .as_ref()
-                        .map(|default| {
-                            default
-                                .eq_ignore_ascii_case(name)
-                        })
-                        .unwrap_or(false);
+                let is_default = default_name
+                    .as_ref()
+                    .map(|default| default.eq_ignore_ascii_case(name))
+                    .unwrap_or(false);
 
-                printers.push(
-                    WebviewPrinterInfo {
-                        name:
-                            name.to_string(),
-                        is_default,
-                    },
-                );
+                printers.push(WebviewPrinterInfo {
+                    name: name.to_string(),
+                    is_default,
+                });
             }
 
-            printers.sort_by(
-                |left, right| {
-                    right
-                        .is_default
-                        .cmp(&left.is_default)
-                        .then_with(|| {
-                            left.name
-                                .to_lowercase()
-                                .cmp(
-                                    &right.name
-                                        .to_lowercase(),
-                                )
-                        })
-                },
-            );
+            printers.sort_by(|left, right| {
+                right
+                    .is_default
+                    .cmp(&left.is_default)
+                    .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            });
 
-            printers.dedup_by(
-                |left, right| {
-                    left.name
-                        .eq_ignore_ascii_case(
-                            &right.name,
-                        )
-                },
-            );
+            printers.dedup_by(|left, right| left.name.eq_ignore_ascii_case(&right.name));
 
             Ok(printers)
         }
@@ -391,25 +325,23 @@ pub fn webview_print(
             COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT,
         };
         use webview2_com::PrintCompletedHandler;
-        use windows_core::{HSTRING, Interface};
+        use windows_core::{Interface, HSTRING};
 
         let callback_label = label.clone();
 
-        return with_webview_result(&app, &label, move |inner| unsafe {
+        with_webview_result(&app, &label, move |inner| unsafe {
             let core = inner
                 .controller()
                 .CoreWebView2()
                 .map_err(|error| error.to_string())?;
 
-            let core2: ICoreWebView2_2 =
-                core.cast().map_err(|error| error.to_string())?;
-            let environment =
-                core2.Environment().map_err(|error| error.to_string())?;
+            let core2: ICoreWebView2_2 = core.cast().map_err(|error| error.to_string())?;
+            let environment = core2.Environment().map_err(|error| error.to_string())?;
             let print_environment: ICoreWebView2Environment6 =
                 environment.cast().map_err(|error| error.to_string())?;
-            let settings =
-                print_environment.CreatePrintSettings()
-                    .map_err(|error| error.to_string())?;
+            let settings = print_environment
+                .CreatePrintSettings()
+                .map_err(|error| error.to_string())?;
 
             settings
                 .SetOrientation(if options.landscape {
@@ -439,13 +371,7 @@ pub fn webview_print(
                 settings.cast().map_err(|error| error.to_string())?;
 
             settings2
-                .SetPrinterName(
-                    &HSTRING::from(
-                        options
-                            .printer_name
-                            .trim(),
-                    ),
-                )
+                .SetPrinterName(&HSTRING::from(options.printer_name.trim()))
                 .map_err(|error| error.to_string())?;
 
             let ranges = options.page_ranges.trim();
@@ -459,25 +385,20 @@ pub fn webview_print(
                 .SetCopies(options.copies.clamp(1, 99))
                 .map_err(|error| error.to_string())?;
 
-            let print: ICoreWebView2_16 =
-                core.cast().map_err(|error| error.to_string())?;
+            let print: ICoreWebView2_16 = core.cast().map_err(|error| error.to_string())?;
 
-            let handler = PrintCompletedHandler::create(Box::new(
-                move |result, _status| {
-                    if let Err(error) = result {
-                        #[cfg(debug_assertions)]
-                        eprintln!(
-                            "[nebula print] {callback_label}: {error}"
-                        );
-                    }
-                    Ok(())
-                },
-            ));
+            let handler = PrintCompletedHandler::create(Box::new(move |result, _status| {
+                if let Err(error) = result {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[nebula print] {callback_label}: {error}");
+                }
+                Ok(())
+            }));
 
             print
                 .Print(&settings, &handler)
                 .map_err(|error| error.to_string())
-        });
+        })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -615,15 +536,14 @@ pub fn webview_set_suspended(
         webview
             .with_webview(move |inner| unsafe {
                 let failure_tx = tx.clone();
-                let handler = TrySuspendCompletedHandler::create(Box::new(
-                    move |result, is_successful| {
+                let handler =
+                    TrySuspendCompletedHandler::create(Box::new(move |result, is_successful| {
                         let outcome = result
                             .map(|_| is_successful)
                             .map_err(|error| error.to_string());
                         let _ = tx.send(outcome);
                         Ok(())
-                    },
-                ));
+                    }));
 
                 let result = (|| -> windows_core::Result<()> {
                     let core = inner.controller().CoreWebView2()?;

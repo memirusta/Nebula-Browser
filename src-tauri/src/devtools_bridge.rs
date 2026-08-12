@@ -124,9 +124,7 @@ mod imp {
                 let failure_tx = tx.clone();
                 let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
                     move |result, value| {
-                        let output = result
-                            .map(|_| value)
-                            .map_err(|error| error.to_string());
+                        let output = result.map(|_| value).map_err(|error| error.to_string());
                         let _ = tx.send(output);
                         Ok(())
                     },

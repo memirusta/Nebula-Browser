@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react'
@@ -15,6 +16,7 @@ import {
   type LocaleMessageKey,
   type NebulaLocale,
 } from '../core/locale'
+import { syncNativeUiLocale } from '../platform/tauriLocale'
 
 interface LocaleContextValue {
   locale: NebulaLocale
@@ -27,6 +29,11 @@ const LocaleContext = createContext<LocaleContextValue | null>(null)
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<NebulaLocale>(() => loadLocale())
+
+  useEffect(() => {
+    document.documentElement.lang = locale
+    void syncNativeUiLocale(locale)
+  }, [locale])
 
   const setLocale = useCallback((next: NebulaLocale) => {
     saveLocale(next)

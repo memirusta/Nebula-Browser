@@ -1,15 +1,18 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useReducer, useRef } from 'react'
 import {
-  createBrowserTab,
-  faviconForUrl,
-  titleFromUrl,
   type BrowserTab,
 } from '../core/browserTab'
+import {
+  browserTabsReducer,
+  initialBrowserTabsState,
+} from '../core/browserTabsReducer'
 import type { Shortcut } from '../core/types'
 
 export function useBrowserTabs() {
-  const [tabs, setTabs] = useState<BrowserTab[]>([])
-  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [{ tabs, activeTabId }, dispatch] = useReducer(
+    browserTabsReducer,
+    initialBrowserTabsState,
+  )
   const tabsRef = useRef<BrowserTab[]>([])
   const activeTabIdRef = useRef<string | null>(null)
 
@@ -18,83 +21,30 @@ export function useBrowserTabs() {
 
   const openOrSwitchTab = useCallback(
     (shortcut: Shortcut, options?: { reload?: boolean; activate?: boolean }) => {
-      setTabs((prev) => {
-        const existing = prev.find((tab) => tab.shortcutId === shortcut.id)
-        if (existing) {
-          if (options?.reload) {
-            return prev.map((tab) =>
-              tab.shortcutId === shortcut.id
-                ? {
-                    ...tab,
-                    url: shortcut.url,
-                    initialUrl: shortcut.url,
-                    title: shortcut.label,
-                    favicon: shortcut.favicon ?? tab.favicon,
-                    isLoading: true,
-                  }
-                : tab,
-            )
-          }
-          return prev
-        }
-        return [...prev, createBrowserTab(shortcut)]
+      dispatch({
+        type: 'open-or-switch',
+        shortcut,
+        reload: options?.reload ?? false,
+        activate: options?.activate !== false,
       })
-
-      if (options?.activate !== false) {
-        setActiveTabId(shortcut.id)
-      }
     },
     [],
   )
 
   const closeTab = useCallback((shortcutId: string) => {
-    const remaining = tabsRef.current.filter((tab) => tab.shortcutId !== shortcutId)
-    setTabs(remaining)
-    setActiveTabId((current) => {
-      if (current !== shortcutId) return current
-      if (remaining.length === 0) return null
-      return remaining[remaining.length - 1]!.shortcutId
-    })
+    dispatch({ type: 'close', shortcutId })
   }, [])
 
   const updateTabMeta = useCallback(
     (shortcutId: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading'>>) => {
-      setTabs((prev) =>
-        prev.map((tab) => (tab.shortcutId === shortcutId ? { ...tab, ...patch } : tab)),
-      )
+      dispatch({ type: 'update-meta', shortcutId, patch })
     },
     [],
   )
 
   const applyTabSnapshot = useCallback(
     (shortcutId: string, url: string | null, title: string | null) => {
-      if (!url) return
-
-      const nextTitle = title?.trim() || titleFromUrl(url)
-      const nextFavicon = faviconForUrl(url)
-
-      setTabs((prev) => {
-        const current = prev.find((tab) => tab.shortcutId === shortcutId)
-        if (
-          current &&
-          current.url === url &&
-          current.title === nextTitle &&
-          current.favicon === nextFavicon
-        ) {
-          return prev
-        }
-
-        return prev.map((tab) =>
-          tab.shortcutId === shortcutId
-            ? {
-                ...tab,
-                url,
-                title: nextTitle,
-                favicon: nextFavicon,
-              }
-            : tab,
-        )
-      })
+      if (url) dispatch({ type: 'apply-snapshot', shortcutId, url, title })
     },
     [],
   )
@@ -110,6 +60,9 @@ export function useBrowserTabs() {
     [tabs, activeTabId],
   )
   const openTabIds = useMemo(() => tabs.map((tab) => tab.shortcutId), [tabs])
+  const setActiveTabId = useCallback((shortcutId: string | null) => {
+    dispatch({ type: 'set-active', shortcutId })
+  }, [])
 
   return {
     tabs,

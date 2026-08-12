@@ -4,6 +4,8 @@ import { isTauri } from './runtime'
 export type TransitionLogStatus = 'start' | 'ok' | 'error' | 'info'
 
 const frontendSessionId = `${Date.now()}-${crypto.randomUUID()}`
+const transitionLoggingEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_NEBULA_TRANSITION_LOG === '1'
 
 function sanitizedLogDetails(details: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -42,7 +44,7 @@ export async function writeTransitionLog(
   status: TransitionLogStatus,
   details: Record<string, unknown> = {},
 ): Promise<void> {
-  if (!isTauri) return
+  if (!isTauri || !transitionLoggingEnabled) return
   try {
     await invoke('write_transition_log', {
       entry: {

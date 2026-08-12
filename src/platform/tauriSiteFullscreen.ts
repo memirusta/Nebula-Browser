@@ -6,6 +6,7 @@ import {
   shortcutIdForTabWebviewLabel,
   tabWebviewLabel,
 } from '../core/browserTab'
+import { registerListenerGroup } from '../core/listenerGroup'
 import { isTauri } from './runtime'
 import {
   setSiteFullscreenBoundsMode,
@@ -278,58 +279,36 @@ export function initSiteFullscreenBridge(): () => void {
   }
 
   listenerStarted = true
-  let unlisten: (() => void) | undefined
+  let disposeListeners: (() => void) | undefined
   let cancelled = false
-  let focusUnlisten: (() => void) | undefined
 
-  void listen<TabFullscreenPayload>('nebula-tab-fullscreen', (event) => {
-    void enqueueFullscreenTransition(() => handleTabFullscreenPayload(event.payload))
-  }).then((dispose) => {
-    if (cancelled) {
-      dispose()
-      return
-    }
-    unlisten = dispose
-  })
-
-  /*
-   * Leaving Nebula while a page owns HTML5 fullscreen should restore normal
-   * browsing. This covers Windows Alt+Tab without installing a global key hook.
-   */
-  void getCurrentWindow()
-    .onFocusChanged(
-      ({
-        payload:
-          focused,
-      }) => {
-        if (
-          focused ||
-          !siteFullscreenActive
-        ) {
-          return
-        }
-
-        void forceExitSiteFullscreen()
-          .catch(
-            () => undefined,
-          )
-      },
-    )
-    .then(
-      (dispose) => {
-        if (cancelled) {
-          dispose()
-          return
-        }
-
-        focusUnlisten =
-          dispose
-      },
-    )
+  void registerListenerGroup([
+    () => listen<TabFullscreenPayload>('nebula-tab-fullscreen', (event) => {
+      void enqueueFullscreenTransition(() => handleTabFullscreenPayload(event.payload))
+    }),
+    // Leaving Nebula while a page owns HTML5 fullscreen should restore normal
+    // browsing. This covers Windows Alt+Tab without a global key hook.
+    () => getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused || !siteFullscreenActive) return
+      void forceExitSiteFullscreen().catch(() => undefined)
+    }),
+  ])
+    .then((dispose) => {
+      if (cancelled) {
+        dispose()
+        return
+      }
+      disposeListeners = dispose
+    })
+    .catch((error) => {
+      listenerStarted = false
+      if (import.meta.env.DEV) {
+        console.warn('[nebula] fullscreen listeners failed to register', error)
+      }
+    })
   return () => {
     cancelled = true
-    unlisten?.()
-    focusUnlisten?.()
+    disposeListeners?.()
     listenerStarted = false
     clearFullscreenResizeListener()
   }

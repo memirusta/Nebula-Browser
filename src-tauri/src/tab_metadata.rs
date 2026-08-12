@@ -20,9 +20,11 @@ mod imp {
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows_core::BOOL;
 
+    type HandlerTokens = (i64, i64, i64, i64);
+
     static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
-    static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, (i64, i64, i64, i64)>>> =
+    static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, HandlerTokens>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static NAVIGATION_STARTED_AT: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -196,7 +198,9 @@ mod imp {
                         };
                         let mut success = BOOL::default();
                         let success = args
-                            .and_then(|args| args.IsSuccess(&mut success).ok().map(|_| success.as_bool()))
+                            .and_then(|args| {
+                                args.IsSuccess(&mut success).ok().map(|_| success.as_bool())
+                            })
                             .unwrap_or(false);
                         let _ = navigation_complete_app.emit(
                             "nebula-tab-loading-state",
@@ -303,8 +307,15 @@ mod imp {
 
         if let Some(webview) = app.get_webview(label) {
             let _ = webview.with_webview(move |inner| unsafe {
-                if let (Ok(core), Some((source_token, title_token, navigation_start_token, navigation_complete_token))) =
-                    (inner.controller().CoreWebView2(), tokens)
+                if let (
+                    Ok(core),
+                    Some((
+                        source_token,
+                        title_token,
+                        navigation_start_token,
+                        navigation_complete_token,
+                    )),
+                ) = (inner.controller().CoreWebView2(), tokens)
                 {
                     let _ = core.remove_SourceChanged(source_token);
                     let _ = core.remove_DocumentTitleChanged(title_token);

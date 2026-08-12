@@ -6,6 +6,7 @@ import {
   subscribeAppDialogs,
 } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import styles from '../SiteUiPrompt/SiteUiPrompt.module.css'
 
 export function AppDialogHost() {
@@ -16,7 +17,9 @@ export function AppDialogHost() {
   )
   const request = queue[0]
   const primaryRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
   const { locale, t } = useLocale()
+  useModalFocusTrap(dialogRef, Boolean(request))
 
   useEffect(() => {
     if (!request) return
@@ -34,7 +37,9 @@ export function AppDialogHost() {
   return createPortal(
     <div className={styles.backdrop} role="presentation">
       <section
+        ref={dialogRef}
         className={styles.card}
+        tabIndex={-1}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="nebula-app-dialog-title"

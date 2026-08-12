@@ -1,0 +1,854 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+import {
+  allSettledOrThrow,
+  LatestPerKeyRunner,
+} from '../src/core/latestPerKey.ts'
+import { KeyedLifecycleQueue } from '../src/core/keyedLifecycleQueue.ts'
+import {
+  browserTabsReducer,
+  initialBrowserTabsState,
+} from '../src/core/browserTabsReducer.ts'
+import {
+  prewarmCreationIsCurrent,
+  prewarmProfileMatches,
+} from '../src/core/prewarmProfile.ts'
+import {
+  parsePasswordVault,
+  serializePasswordVault,
+} from '../src/core/passwordVaultSchema.ts'
+import { runFactoryReset } from '../src/core/factoryResetFlow.ts'
+import { RequestEpoch } from '../src/core/requestEpoch.ts'
+import { registerListenerGroup } from '../src/core/listenerGroup.ts'
+import { GoogleBrowserSessionTracker } from '../src/core/googleBrowserSession.ts'
+import { withWorkingState } from '../src/core/workingState.ts'
+import { parsePasswordCsv } from '../src/core/passwordCsv.ts'
+import { PasswordStepFlowTracker } from '../src/core/passwordStepFlow.ts'
+import {
+  decryptSyncText,
+  encryptSyncText,
+  mergeSyncedPasswords,
+} from '../src/core/googleSyncCrypto.ts'
+import { resetHomeMenuStorageOnce } from '../src/core/homeMenuStorage.ts'
+import { SingleFlightPoll } from '../src/core/singleFlightPoll.ts'
+import { searchShortcutIdentity } from '../src/core/searchShortcutIdentity.ts'
+import { Cdp, pollUntil } from '../scripts/e2e-cdp.mjs'
+import {
+  hostsMatchForPassword,
+  matchPasswordsForUrl,
+} from '../src/core/passwordMatch.ts'
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = []
+  readyState = 0
+  listeners = new Map<string, Set<(event: { data?: string; error?: Error }) => void>>()
+
+  constructor(_url: string) {
+    FakeWebSocket.instances.push(this)
+    queueMicrotask(() => {
+      this.readyState = 1
+      this.emit('open', {})
+    })
+  }
+
+  addEventListener(type: string, listener: (event: { data?: string; error?: Error }) => void) {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: (event: { data?: string; error?: Error }) => void) {
+    this.listeners.get(type)?.delete(listener)
+  }
+
+  send(_payload: string) {}
+
+  close() {
+    this.readyState = 3
+    this.emit('close', {})
+  }
+
+  emit(type: string, event: { data?: string; error?: Error }) {
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
+  }
+}
+
+test('CDP pending calls reject on connection close and per-call timeout', async () => {
+  const closingCdp = new Cdp('ws://closing', {
+    callTimeoutMs: 1_000,
+    WebSocketImpl: FakeWebSocket,
+  })
+  await closingCdp.open()
+  const pendingOnClose = closingCdp.call('Runtime.evaluate')
+  FakeWebSocket.instances.at(-1)?.close()
+  await assert.rejects(pendingOnClose, /CDP connection closed/)
+
+  const timeoutCdp = new Cdp('ws://timeout', {
+    callTimeoutMs: 10,
+    WebSocketImpl: FakeWebSocket,
+  })
+  await timeoutCdp.open()
+  await assert.rejects(timeoutCdp.call('Page.enable'), /timed out: Page\.enable/)
+  timeoutCdp.close()
+})
+
+test('poll bounds an awaited callback and surfaces browser failure', async () => {
+  await assert.rejects(
+    pollUntil('hung callback', () => new Promise(() => {}), Date.now() + 20),
+    /Timeout: hung callback/,
+  )
+  await assert.rejects(
+    pollUntil(
+      'browser exit',
+      async () => false,
+      Date.now() + 1_000,
+      () => new Error('browser crashed'),
+    ),
+    /browser crashed/,
+  )
+})
+
+test('request epoch rejects a response captured for the previous tab', () => {
+  const epoch = new RequestEpoch<string | null>('tab-a')
+  const tabARequest = epoch.capture()
+  epoch.sync('tab-b')
+  const tabBRequest = epoch.capture()
+
+  assert.equal(epoch.isCurrent(tabARequest), false)
+  assert.equal(epoch.isCurrent(tabBRequest), true)
+  epoch.sync('tab-b')
+  assert.equal(epoch.isCurrent(tabBRequest), true)
+})
+
+test('listener group rolls back partial registration and cleanup is idempotent', async () => {
+  const events: string[] = []
+  await assert.rejects(
+    registerListenerGroup([
+      async () => () => events.push('dispose-first'),
+      async () => { throw new Error('second listener failed') },
+      async () => {
+        events.push('third-registered')
+        return () => events.push('dispose-third')
+      },
+    ]),
+    /second listener failed/,
+  )
+  assert.deepEqual(events, ['dispose-first'])
+
+  const dispose = await registerListenerGroup([
+    async () => () => events.push('dispose-a'),
+    async () => () => events.push('dispose-b'),
+  ])
+  dispose()
+  dispose()
+  assert.deepEqual(events.slice(-2), ['dispose-b', 'dispose-a'])
+})
+
+test('Google browser session becomes linked only after a terminal sign-in URL', () => {
+  const tracker = new GoogleBrowserSessionTracker()
+  const signInUrl =
+    'https://accounts.google.com/v3/signin/identifier?Email=user%40example.com'
+
+  assert.equal(tracker.register('helper-tab', signInUrl), true)
+  assert.equal(
+    tracker.complete('helper-tab', 'https://accounts.google.com/v3/signin/challenge'),
+    null,
+  )
+  assert.equal(tracker.has('helper-tab'), true)
+  assert.equal(
+    tracker.complete('helper-tab', 'https://myaccount.google.com/'),
+    'user@example.com',
+  )
+  assert.equal(tracker.has('helper-tab'), false)
+})
+
+test('working state always clears when an async task rejects', async () => {
+  const states: boolean[] = []
+  await assert.rejects(
+    withWorkingState(
+      (working) => states.push(working),
+      async () => { throw new Error('merge failed') },
+    ),
+    /merge failed/,
+  )
+  assert.deepEqual(states, [true, false])
+})
+
+test('native shortcut and chrome-bounds commands remain in the Tauri ACL', () => {
+  const permissionSource = readFileSync(
+    new URL('../src-tauri/permissions/webview-commands.toml', import.meta.url),
+    'utf8',
+  )
+
+  for (const command of [
+    'webview_set_shortcut_bindings',
+    'webview_set_chrome_bounds',
+  ]) {
+    assert.match(
+      permissionSource,
+      new RegExp(`"${command}"`),
+      `${command} must be callable by the trusted shell`,
+    )
+  }
+})
+
+test('release smoke pins and hashes the target-specific release artifact', () => {
+  const nativeSmokeSource = readFileSync(
+    new URL('../scripts/native-smoke.ps1', import.meta.url),
+    'utf8',
+  )
+  const releaseSmokeSource = readFileSync(
+    new URL('../scripts/release-smoke.ps1', import.meta.url),
+    'utf8',
+  )
+
+  for (const source of [nativeSmokeSource, releaseSmokeSource]) {
+    assert.match(
+      source,
+      /target\\x86_64-pc-windows-msvc\\release\\app\.exe/,
+    )
+    assert.match(source, /Get-FileHash[^\r\n]+SHA256/)
+  }
+  assert.match(nativeSmokeSource, /ExpectedSha256/)
+  assert.match(releaseSmokeSource, /-ExpectedSha256 \$artifactSha256/)
+})
+
+test('desktop OAuth keeps PKCE and supplies the native client secret to token requests', () => {
+  const oauthSource = readFileSync(
+    new URL('../src-tauri/src/google_oauth.rs', import.meta.url),
+    'utf8',
+  )
+  const syncSource = readFileSync(
+    new URL('../src-tauri/src/google_sync.rs', import.meta.url),
+    'utf8',
+  )
+  const publishSource = readFileSync(
+    new URL('../scripts/publish-release.ps1', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(oauthSource, /code_challenge_method=S256/)
+  assert.match(oauthSource, /GOOGLE_CLIENT_SECRET/)
+  assert.match(oauthSource, /\("client_secret", client_secret\)/)
+  assert.match(syncSource, /\("client_secret", client_secret\)/)
+  assert.match(publishSource, /GOOGLE_CLIENT_SECRET/)
+})
+
+test('privacy writes are serialized and catch up to the latest revision', async () => {
+  let snapshot = { revision: 0, value: 'balanced' }
+  let activeWrites = 0
+  let maxActiveWrites = 0
+  const firstWrite = deferred()
+  const firstWriteStarted = deferred()
+  const applied: string[] = []
+
+  const runner = new LatestPerKeyRunner(
+    () => ({ ...snapshot }),
+    async (_label: string, value: string) => {
+      activeWrites += 1
+      maxActiveWrites = Math.max(maxActiveWrites, activeWrites)
+      applied.push(value)
+      if (value === 'balanced') {
+        firstWriteStarted.resolve()
+        await firstWrite.promise
+      }
+      activeWrites -= 1
+    },
+  )
+
+  const olderRun = runner.run('nebula-tab-a')
+  await firstWriteStarted.promise
+  snapshot = { revision: 1, value: 'strict' }
+  const newerRun = runner.run('nebula-tab-a')
+  firstWrite.resolve()
+
+  await Promise.all([olderRun, newerRun])
+  assert.deepEqual(applied, ['balanced', 'strict'])
+  assert.equal(maxActiveWrites, 1)
+})
+
+test('privacy writes for different tabs do not block each other', async () => {
+  const gate = deferred()
+  const bothStarted = deferred()
+  const started = new Set<string>()
+  const runner = new LatestPerKeyRunner(
+    () => ({ revision: 0, value: 'strict' }),
+    async (label: string) => {
+      started.add(label)
+      if (started.size === 2) bothStarted.resolve()
+      await gate.promise
+    },
+  )
+
+  const first = runner.run('nebula-tab-a')
+  const second = runner.run('nebula-tab-b')
+  await bothStarted.promise
+  assert.deepEqual(started, new Set(['nebula-tab-a', 'nebula-tab-b']))
+  gate.resolve()
+  await Promise.all([first, second])
+})
+
+test('privacy invalidation waits for an older write before reapplying to a reused label', async () => {
+  const firstWrite = deferred()
+  const firstWriteStarted = deferred()
+  const applied: string[] = []
+  const runner = new LatestPerKeyRunner(
+    () => ({ revision: 0, value: 'strict' }),
+    async (label: string) => {
+      applied.push(label)
+      if (applied.length === 1) {
+        firstWriteStarted.resolve()
+        await firstWrite.promise
+      }
+    },
+  )
+
+  const oldWebview = runner.run('nebula-tab-reused')
+  await firstWriteStarted.promise
+  runner.invalidate('nebula-tab-reused')
+  const newWebview = runner.run('nebula-tab-reused')
+  firstWrite.resolve()
+
+  await Promise.all([oldWebview, newWebview])
+  assert.deepEqual(applied, ['nebula-tab-reused', 'nebula-tab-reused'])
+})
+
+test('privacy batch attempts every tab and rejects when any native apply fails', async () => {
+  const attempted: string[] = []
+  const apply = async (label: string, shouldFail: boolean) => {
+    attempted.push(label)
+    if (shouldFail) throw new Error(`filter setup failed for ${label}`)
+  }
+
+  await assert.rejects(
+    allSettledOrThrow(
+      [apply('nebula-tab-a', true), apply('nebula-tab-b', false)],
+      'privacy apply failed',
+    ),
+    (error: unknown) =>
+      error instanceof AggregateError &&
+      error.errors.length === 1 &&
+      error.message.includes('1 failure(s)'),
+  )
+  assert.deepEqual(attempted, ['nebula-tab-a', 'nebula-tab-b'])
+})
+
+test('tab lifecycle close invalidates older work and runs after it', async () => {
+  const queue = new KeyedLifecycleQueue<string>()
+  const firstStarted = deferred()
+  const releaseFirst = deferred()
+  const events: string[] = []
+
+  const preparing = queue.run('tab-a', async (lease) => {
+    events.push('prepare:start')
+    firstStarted.resolve()
+    await releaseFirst.promise
+    events.push(lease.isCurrent() ? 'prepare:current' : 'prepare:stale')
+  })
+  await firstStarted.promise
+
+  queue.invalidate('tab-a')
+  const closing = queue.run('tab-a', async (lease) => {
+    events.push(lease.isCurrent() ? 'close:current' : 'close:stale')
+  })
+  releaseFirst.resolve()
+
+  await Promise.all([preparing, closing])
+  assert.deepEqual(events, ['prepare:start', 'prepare:stale', 'close:current'])
+})
+
+test('two rapid tab closes reduce from current state without resurrecting a tab', () => {
+  const open = (id: string) => ({
+    type: 'open-or-switch' as const,
+    shortcut: { id, label: id, url: `https://${id}.example` },
+    reload: false,
+    activate: true,
+  })
+
+  let state = browserTabsReducer(initialBrowserTabsState, open('first'))
+  state = browserTabsReducer(state, open('second'))
+  state = browserTabsReducer(state, { type: 'close', shortcutId: 'first' })
+  state = browserTabsReducer(state, { type: 'close', shortcutId: 'second' })
+
+  assert.deepEqual(state.tabs, [])
+  assert.equal(state.activeTabId, null)
+})
+
+test('prewarmed webviews are adopted only for the mode they were created with', () => {
+  assert.equal(prewarmProfileMatches(false, true), false)
+  assert.equal(prewarmProfileMatches(true, true), true)
+  assert.equal(prewarmProfileMatches(null, false), false)
+  assert.equal(prewarmCreationIsCurrent(4, 5, true, true), false)
+  assert.equal(prewarmCreationIsCurrent(5, 5, false, true), false)
+  assert.equal(prewarmCreationIsCurrent(5, 5, true, true), true)
+})
+
+test('password matching never downgrades an HTTPS credential to HTTP', () => {
+  assert.equal(
+    hostsMatchForPassword('http://example.com/login', 'https://example.com/login'),
+    false,
+  )
+  assert.equal(
+    hostsMatchForPassword('https://www.example.com/login', 'https://example.com/account'),
+    true,
+  )
+  assert.equal(
+    hostsMatchForPassword('https://example.com:8443', 'https://example.com'),
+    false,
+  )
+  assert.equal(
+    hostsMatchForPassword('https://example.com:443/login', 'https://example.com/account'),
+    true,
+  )
+  assert.deepEqual(
+    matchPasswordsForUrl('http://example.com/login', [
+      {
+        id: 'https-only',
+        label: 'Example',
+        url: 'https://example.com/login',
+        username: 'alice',
+        password: 'secret',
+      },
+    ]),
+    [],
+  )
+})
+
+test('password vault preserves long secrets and rejects corrupt payloads', () => {
+  const password = 'long-secret-'.repeat(80)
+  const entry = {
+    id: 'long-password',
+    label: 'Example',
+    url: 'https://example.com',
+    username: 'alice',
+    password,
+    updatedAt: 1_700_000_000_000,
+  }
+
+  const loaded = parsePasswordVault(serializePasswordVault([entry]))
+  assert.equal(loaded[0]?.password, password)
+  assert.equal(loaded[0]?.password.length, password.length)
+  assert.throws(() => parsePasswordVault('{not-json'))
+  assert.throws(() =>
+    parsePasswordVault(JSON.stringify([{ ...entry, password: 42 }])),
+  )
+})
+
+test('factory reset waits for browser profiles and vault before storage reload', async () => {
+  const events: string[] = []
+  await runFactoryReset({
+    clearBrowserProfiles: async () => {
+      events.push('profiles:start')
+      await Promise.resolve()
+      events.push('profiles:done')
+    },
+    clearPasswordVault: async () => {
+      events.push('vault:start')
+      await Promise.resolve()
+      events.push('vault:done')
+    },
+    clearShellStorage: () => events.push('storage:clear'),
+    reloadShell: () => events.push('shell:reload'),
+  })
+
+  assert.deepEqual(events, [
+    'profiles:start',
+    'profiles:done',
+    'vault:start',
+    'vault:done',
+    'storage:clear',
+    'shell:reload',
+  ])
+})
+
+
+test('password CSV parser preserves quoted multiline fields and escaped quotes', () => {
+  const csv = [
+    'name,url,username,password,note',
+    '"Example, Inc.",https://example.com,alice,"line one',
+    'line two with ""quotes""",ignored',
+    'Simple,https://simple.example,bob,secret,ignored',
+  ].join('\r\n')
+
+  const imported = parsePasswordCsv(csv)
+  assert.equal(imported.length, 2)
+  assert.deepEqual(imported[0], {
+    label: 'Example, Inc.',
+    url: 'https://example.com',
+    username: 'alice',
+    password: 'line one\r\nline two with "quotes"',
+  })
+  assert.equal(imported[1]?.password, 'secret')
+  assert.deepEqual(
+    parsePasswordCsv('name,url,username,password\nBroken,https://example.com,a,"unterminated'),
+    [],
+  )
+})
+
+test('home-menu migration never wipes current pins or browse sessions', () => {
+  const values = new Map<string, string>([
+    ['nebula-pinned-shortcuts-v4', '["keep-pin"]'],
+    ['nebula-browse-sessions-v2', '{"keep":"session"}'],
+    ['nebula-pinned-shortcuts-v3', '["legacy"]'],
+    ['nebula-browse-sessions-v1', '{"legacy":true}'],
+  ])
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value) },
+    removeItem: (key: string) => { values.delete(key) },
+  }
+
+  resetHomeMenuStorageOnce(storage)
+
+  assert.equal(values.get('nebula-pinned-shortcuts-v4'), '["keep-pin"]')
+  assert.equal(values.get('nebula-browse-sessions-v2'), '{"keep":"session"}')
+  assert.equal(values.has('nebula-pinned-shortcuts-v3'), false)
+  assert.equal(values.has('nebula-browse-sessions-v1'), false)
+  assert.equal(values.get('nebula-home-menu-reset-v1'), '1')
+})
+
+test('single-flight polling coalesces visibility retriggers without overlap', async () => {
+  const gate = deferred()
+  const started: number[] = []
+  let active = 0
+  let maxActive = 0
+  let scheduled: (() => void) | null = null
+
+  const poll = new SingleFlightPoll(
+    async () => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      started.push(started.length + 1)
+      if (started.length === 1) await gate.promise
+      active -= 1
+    },
+    (run) => { scheduled = run },
+  )
+
+  poll.trigger()
+  poll.trigger()
+  poll.trigger()
+  gate.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.deepEqual(started, [1, 2])
+  assert.equal(maxActive, 1)
+  assert.equal(typeof scheduled, 'function')
+  poll.stop()
+})
+
+test('search shortcut IDs distinguish punctuation-sensitive queries', () => {
+  const cpp = searchShortcutIdentity('google', 'c++')
+  const csharp = searchShortcutIdentity('google', 'c#')
+  const plain = searchShortcutIdentity('google', 'hello world')
+  const cafe = searchShortcutIdentity('google', 'cafe')
+  const accentedCafe = searchShortcutIdentity('google', 'café')
+
+  assert.notEqual(cpp, csharp)
+  assert.notEqual(cafe, accentedCafe)
+  assert.match(cpp, /^search-google-c-/)
+  assert.match(csharp, /^search-google-c-/)
+  assert.equal(plain, 'search-google-hello-world')
+})
+
+test('native transition logging is production opt-in and size bounded', () => {
+  const frontend = readFileSync(
+    new URL('../src/platform/tauriTransitionLog.ts', import.meta.url),
+    'utf8',
+  )
+  const native = readFileSync(
+    new URL('../src-tauri/src/lib.rs', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(frontend, /import\.meta\.env\.DEV\s*\|\|\s*import\.meta\.env\.VITE_NEBULA_TRANSITION_LOG === '1'/)
+  assert.match(frontend, /!isTauri \|\| !transitionLoggingEnabled/)
+  assert.match(native, /MAX_TRANSITION_LOG_BYTES/)
+  assert.match(native, /native-tab-transitions\.jsonl\.1/)
+})
+
+
+test('blocking modal surfaces trap focus and browser shortcuts cannot close their tab', () => {
+  const browserShell = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(browserShell, /siteSurfaceActive\s*\|\|\s*getAppDialogsSnapshot\(\)\.length > 0/)
+
+  for (const relativePath of [
+    '../src/components/AppDialog/AppDialogHost.tsx',
+    '../src/components/SiteUiPrompt/SiteUiPrompt.tsx',
+    '../src/components/PrintDialog/PrintDialog.tsx',
+    '../src/components/DeveloperTools/DeveloperTools.tsx',
+  ]) {
+    const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+    assert.match(source, /useModalFocusTrap\(/)
+    assert.match(source, /tabIndex=\{-1\}/)
+  }
+})
+
+test('selected app locale drives clock formatting and native error-page copy', () => {
+  const clock = readFileSync(
+    new URL('../src/hooks/useSystemStats.ts', import.meta.url),
+    'utf8',
+  )
+  const localeHook = readFileSync(
+    new URL('../src/hooks/useLocale.tsx', import.meta.url),
+    'utf8',
+  )
+  const nativeErrorPage = readFileSync(
+    new URL('../src-tauri/src/tab_error_page.rs', import.meta.url),
+    'utf8',
+  )
+  const permissions = readFileSync(
+    new URL('../src-tauri/permissions/webview-commands.toml', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(clock, /const \{ locale \} = useLocale\(\)/)
+  assert.match(clock, /locale === 'tr' \? 'tr-TR' : 'en-US'/)
+  assert.match(clock, /toLocaleTimeString\(dateLocale/)
+  assert.match(clock, /toLocaleDateString\(dateLocale/)
+  assert.match(localeHook, /syncNativeUiLocale\(locale\)/)
+  assert.match(nativeErrorPage, /This site can't be reached/)
+  assert.match(nativeErrorPage, /Bu siteye ulaşılamıyor/)
+  assert.doesNotMatch(nativeErrorPage, /navigator\.language/)
+  assert.match(permissions, /"webview_set_ui_locale"/)
+})
+
+test('two-step password flow carries username only within the same tab and origin', () => {
+  const tracker = new PasswordStepFlowTracker(5 * 60_000)
+  const now = 1_000_000
+
+  assert.equal(tracker.captureIdentity({
+    shortcutId: 'tab-a',
+    origin: 'https://example.com',
+    username: 'user@example.com',
+    receivedAt: now,
+  }), true)
+  assert.equal(tracker.captureSubmission({
+    shortcutId: 'tab-a',
+    origin: 'https://example.com',
+    url: 'https://example.com/login/password',
+    username: '',
+    password: 'correct horse battery staple',
+    receivedAt: now + 1000,
+  }), true)
+
+  assert.deepEqual(
+    tracker.takeSubmission('tab-a', 'https://example.com/dashboard', now + 1500),
+    {
+      shortcutId: 'tab-a',
+      url: 'https://example.com/login/password',
+      username: 'user@example.com',
+      password: 'correct horse battery staple',
+    },
+  )
+})
+
+test('two-step password identity cannot cross tab, origin, or TTL boundaries', () => {
+  const wrongTab = new PasswordStepFlowTracker(1000)
+  wrongTab.captureIdentity({
+    shortcutId: 'tab-a',
+    origin: 'https://example.com',
+    username: 'user@example.com',
+    receivedAt: 100,
+  })
+  wrongTab.captureSubmission({
+    shortcutId: 'tab-b',
+    origin: 'https://example.com',
+    url: 'https://example.com/password',
+    username: '',
+    password: 'secret',
+    receivedAt: 200,
+  })
+  assert.equal(
+    wrongTab.takeSubmission('tab-b', 'https://example.com/password', 300),
+    null,
+  )
+
+  const wrongOrigin = new PasswordStepFlowTracker(1000)
+  wrongOrigin.captureIdentity({
+    shortcutId: 'tab-a',
+    origin: 'https://example.com',
+    username: 'user@example.com',
+    receivedAt: 100,
+  })
+  wrongOrigin.captureSubmission({
+    shortcutId: 'tab-a',
+    origin: 'https://evil.example',
+    url: 'https://evil.example/password',
+    username: '',
+    password: 'secret',
+    receivedAt: 200,
+  })
+  assert.equal(
+    wrongOrigin.takeSubmission('tab-a', 'https://evil.example/password', 300),
+    null,
+  )
+
+  const expired = new PasswordStepFlowTracker(1000)
+  expired.captureIdentity({
+    shortcutId: 'tab-a',
+    origin: 'https://example.com',
+    username: 'user@example.com',
+    receivedAt: 100,
+  })
+  expired.captureSubmission({
+    shortcutId: 'tab-a',
+    origin: 'https://example.com',
+    url: 'https://example.com/password',
+    username: '',
+    password: 'secret',
+    receivedAt: 200,
+  })
+  assert.equal(
+    expired.takeSubmission('tab-a', 'https://example.com/password', 1500),
+    null,
+  )
+})
+
+test('native password-step bridge captures the identity and password-only submit phases', () => {
+  const source = readFileSync(
+    new URL('../src-tauri/src/site_ui.rs', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /nebula-password-step-identity/)
+  assert.match(source, /nebula-password-step-submit/)
+  assert.match(source, /event\.isTrusted/)
+})
+
+
+
+test('Google sync password payload round-trips with local encryption and rejects the wrong secret', async () => {
+  const entries = [
+    {
+      id: 'pw-1',
+      label: 'Example',
+      url: 'https://example.com',
+      username: 'user@example.com',
+      password: 'secret-value',
+      updatedAt: 1234,
+    },
+  ]
+  const plaintext = JSON.stringify(entries)
+  const encrypted = await encryptSyncText(plaintext, 'correct sync secret')
+  assert.equal(encrypted.algorithm, 'AES-256-GCM')
+  assert.equal(encrypted.kdf, 'PBKDF2-SHA256')
+  assert.doesNotMatch(encrypted.ciphertext, /secret-value/)
+  assert.deepEqual(
+    JSON.parse(await decryptSyncText(encrypted, 'correct sync secret')),
+    entries,
+  )
+  await assert.rejects(
+    decryptSyncText(encrypted, 'wrong sync secret'),
+    /incorrect|damaged/i,
+  )
+})
+
+test('Google sync password merge keeps the newest credential for each origin and username', () => {
+  const local = [
+    {
+      id: 'local-old',
+      label: 'Example old',
+      url: 'https://example.com',
+      username: 'user@example.com',
+      password: 'old',
+      updatedAt: 10,
+    },
+    {
+      id: 'local-only',
+      label: 'Local',
+      url: 'https://local.example',
+      username: 'local',
+      password: 'keep',
+      updatedAt: 20,
+    },
+  ]
+  const remote = [
+    {
+      id: 'remote-new',
+      label: 'Example new',
+      url: 'https://example.com',
+      username: 'USER@example.com',
+      password: 'new',
+      updatedAt: 30,
+    },
+  ]
+  const merged = mergeSyncedPasswords(local, remote)
+  assert.equal(merged.length, 2)
+  assert.equal(merged.find((entry) => entry.url === 'https://example.com')?.password, 'new')
+  assert.equal(merged.find((entry) => entry.url === 'https://local.example')?.password, 'keep')
+})
+
+test('Google sync bundle and native bridge stay pinned to versioned appDataFolder storage', () => {
+  const bundleSource = readFileSync(
+    new URL('../src/core/googleSync.ts', import.meta.url),
+    'utf8',
+  )
+  const nativeSync = readFileSync(
+    new URL('../src-tauri/src/google_sync.rs', import.meta.url),
+    'utf8',
+  )
+  const nativeOAuth = readFileSync(
+    new URL('../src-tauri/src/google_oauth.rs', import.meta.url),
+    'utf8',
+  )
+  const permissions = readFileSync(
+    new URL('../src-tauri/permissions/webview-commands.toml', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(bundleSource, /schemaVersion: 1/)
+  assert.match(bundleSource, /nebula-google-sync-preferences-v1/)
+  assert.match(nativeSync, /appDataFolder/)
+  assert.match(nativeSync, /nebula-sync-v1\.json/)
+  assert.match(nativeOAuth, /https:\/\/www\.googleapis\.com\/auth\/drive\.appdata/)
+  assert.match(nativeOAuth, /access_type=offline/)
+  assert.match(permissions, /"google_sync_pull"/)
+  assert.match(permissions, /"google_sync_push"/)
+})
+
+
+test('settings destructive confirmations use Nebula app dialogs instead of browser-native confirm', () => {
+  const syncSettings = readFileSync(
+    new URL('../src/components/SettingsPanel/GoogleSyncSettings.tsx', import.meta.url),
+    'utf8',
+  )
+  const settingsPanel = readFileSync(
+    new URL('../src/components/SettingsPanel/SettingsPanel.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(syncSettings, /showAppConfirmation\(t\('syncRestoreConfirm'\), t\('syncTitle'\)\)/)
+  assert.doesNotMatch(syncSettings, /window\.confirm\(/)
+  assert.match(settingsPanel, /showAppConfirmation\([\s\S]*clearBrowsingDataConfirm[\s\S]*clearBrowsingData/)
+  assert.doesNotMatch(settingsPanel, /window\.confirm\(/)
+})
+
+test('browsing downloads reuse transfer telemetry in a compact row', () => {
+  const source = readFileSync(
+    new URL('../src/components/DownloadManager/DownloadManager.tsx', import.meta.url),
+    'utf8',
+  )
+  const css = readFileSync(
+    new URL('../src/components/DownloadManager/DownloadManager.module.css', import.meta.url),
+    'utf8',
+  )
+
+  assert.doesNotMatch(source, /variant !== 'home'/)
+  assert.match(source, /variant === 'browsing' \? styles\.transferMetaCompact/)
+  assert.match(source, /const showSize = variant === 'home' \|\| item\.state !== 'in_progress'/)
+  assert.match(css, /\.transferMetaCompact\s*\{/)
+})
+

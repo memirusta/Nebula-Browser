@@ -6,13 +6,14 @@ import {
   signInWithGoogleProfile,
 } from '../../core/googleSignIn'
 import { GoogleAccountSetupModal } from '../GoogleAccountSetupModal/GoogleAccountSetupModal'
+import { GoogleSyncSettings } from './GoogleSyncSettings'
 import {
   buildGoogleBrowserSignInUrl,
   loadGoogleBrowserSession,
-  markGoogleBrowserSessionLinked,
 } from '../../core/googleBrowserSession'
 import { parsePasswordCsv } from '../../core/passwordImport'
 import { getGoogleOAuthStatus } from '../../platform/googleOAuth'
+import { forgetGoogleSync } from '../../platform/googleSync'
 import {
   importDefaultBrowserPasswords,
   listChromiumPasswordSources,
@@ -88,10 +89,11 @@ export function AccountSettingsSection({
     void signInWithGoogleProfile().then(({ claims, error }) => {
       setGoogleStarting(false)
       if (!claims) {
-        setGoogleError(error ?? t('accountGoogleFailed'))
+        if (import.meta.env.DEV && error) console.warn('[nebula] Google sign-in failed', error)
+        setGoogleError(error || t('accountGoogleFailed'))
         return
       }
-      const next = nebulaAccountFromGoogleClaims(claims)
+      const next = nebulaAccountFromGoogleClaims(claims, t('userFallback'))
       onAccountChange(next)
       onDisplayNameChange(next.displayName)
       setLocalName(next.displayName)
@@ -114,12 +116,14 @@ export function AccountSettingsSection({
   const handleSignOut = useCallback(() => {
     setGoogleSetupEmail(null)
     setSessionLinkMessage(null)
+    if (isTauri) {
+      void forgetGoogleSync().catch(() => undefined)
+    }
     onSignOut()
   }, [onSignOut])
 
   const handleLinkGoogleSession = useCallback(() => {
     if (!account?.email || !onOpenBrowseUrl) return
-    markGoogleBrowserSessionLinked(account.email)
     openGoogleBrowseUrl(buildGoogleBrowserSignInUrl(account.email))
   }, [account?.email, onOpenBrowseUrl, openGoogleBrowseUrl])
 
@@ -191,12 +195,9 @@ export function AccountSettingsSection({
           )
         })
         .catch((error: unknown) => {
-          const message =
-            error instanceof Error
-              ? error.message
-              : typeof error === 'string'
-                ? error
-                : t('accountImportFailed')
+          const nativeMessage =
+            error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+          const message = locale === 'tr' && nativeMessage ? nativeMessage : t('accountImportFailed')
           setImportError(message)
         })
         .finally(() => {
@@ -311,6 +312,10 @@ export function AccountSettingsSection({
         </div>
       )}
       {sessionLinkMessage && <p className={styles.accountNote}>{sessionLinkMessage}</p>}
+
+      {account?.provider === 'google' && account.email && (
+        <GoogleSyncSettings email={account.email} />
+      )}
 
       {account?.provider === 'google' && (
         <div className={styles.row}>

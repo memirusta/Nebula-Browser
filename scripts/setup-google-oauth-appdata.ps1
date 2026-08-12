@@ -1,4 +1,4 @@
-# Copy Google OAuth desktop credentials into AppData for installed Nebula builds.
+# Copy the Google OAuth desktop client ID into AppData for installed Nebula builds.
 param(
   [string]$SourceEnv = (Join-Path (Split-Path $PSScriptRoot -Parent) ".env")
 )

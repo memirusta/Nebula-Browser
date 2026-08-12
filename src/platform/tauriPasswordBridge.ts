@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
-import { tabWebviewLabel } from '../core/browserTab'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { shortcutIdForTabWebviewLabel, tabWebviewLabel } from '../core/browserTab'
 import {
   buildPasswordBridgeTickScript,
   buildPasswordBridgePollScript,
@@ -83,4 +84,46 @@ export async function fillPasswordOnTab(
   } catch {
     return raw.includes('true')
   }
+}
+
+export interface PasswordStepEvent {
+  kind: 'identity' | 'submit'
+  shortcutId: string
+  origin: string
+  url: string
+  username: string
+  password: string
+}
+
+interface NativePasswordStepPayload {
+  kind?: string
+  tabLabel?: string
+  origin?: string
+  url?: string
+  username?: string
+  password?: string
+}
+
+export async function listenForPasswordStepEvents(
+  handler: (event: PasswordStepEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return () => {}
+
+  return listen<NativePasswordStepPayload>('nebula-password-step', (event) => {
+    const payload = event.payload
+    if (payload.kind !== 'identity' && payload.kind !== 'submit') return
+    if (!payload.tabLabel || !payload.origin || !payload.url) return
+
+    const shortcutId = shortcutIdForTabWebviewLabel(payload.tabLabel)
+    if (!shortcutId) return
+
+    handler({
+      kind: payload.kind,
+      shortcutId,
+      origin: payload.origin,
+      url: payload.url,
+      username: payload.username ?? '',
+      password: payload.password ?? '',
+    })
+  })
 }

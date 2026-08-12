@@ -6,9 +6,11 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import { tabWebviewLabel } from '../../core/browserTab'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
 import { removeLocalStorage } from '../../core/storageSync'
+import { RequestEpoch, type RequestEpochSnapshot } from '../../core/requestEpoch'
 import { SHORTCUT_FOLDERS_KEY } from '../../hooks/useShortcutFolders'
 import {
   clearBrowseData,
@@ -24,6 +26,7 @@ import {
   type NebulaDevToolsEvent,
 } from '../../platform/tauriDevTools'
 import { isTauri } from '../../platform/runtime'
+import { useLocale } from '../../hooks/useLocale'
 import styles from './DeveloperTools.module.css'
 
 type DeveloperToolsSection =
@@ -140,6 +143,192 @@ interface SelectedNodeInfo {
 const MAX_CONSOLE = 300
 const MAX_NETWORK = 400
 const MAX_EVENTS = 300
+
+const COPY = {
+  tr: {
+    empty: '— boş —',
+    uncaughtException: 'Yakalanmamış özel durum',
+    logEntry: 'Günlük kaydı',
+    requestFailed: 'İstek başarısız',
+    performanceRefreshFailed: 'Performans yenileme başarısız',
+    domRefreshed: 'DOM anlık görüntüsü yenilendi.',
+    domRefreshFailed: 'DOM yenileme başarısız',
+    nodeInspectFailed: 'Düğüm inceleme başarısız',
+    storageRefreshFailed: 'Site depolaması yenilenemedi',
+    siteInfoRefreshFailed: 'Site bilgisi yenilenemedi',
+    inspectorAttached: 'Inspector bağlandı (canlı olaylar geçici olarak devre dışı).',
+    inspectorAttachFailed: 'Inspector bağlantısı başarısız',
+    evaluationFailed: 'Değerlendirme başarısız',
+    actionProgress: (label: string) => `${label}…`,
+    actionComplete: (label: string) => `${label} tamamlandı.`,
+    actionFailed: (label: string) => `${label} başarısız`,
+    clearedSiteStorage: (origin: string) => `${origin} için site verileri temizlendi.`,
+    clearSiteStorageFailed: 'Site verileri temizlenemedi',
+    titleAria: 'Nebula Geliştirici Araçları',
+    inspector: 'Nebula Inspector',
+    noActiveWebview: 'Aktif WebView yok',
+    noActiveUrl: 'Aktif URL yok',
+    closeAria: 'Geliştirici araçlarını kapat',
+    closeTitle: 'Kapat (F12 / Esc)',
+    overview: 'Genel Bakış',
+    elements: 'Öğeler',
+    console: 'Konsol',
+    network: 'Ağ',
+    performance: 'Performans',
+    storage: 'Depolama',
+    site: 'Site',
+    events: 'Olaylar',
+    openTabHint: 'Nebula inspector bağlamak için bir tarayıcı sekmesi aç.',
+    overviewLead: 'Aktif native WebView için canlı durum.',
+    refresh: 'Yenile',
+    activeTab: 'Aktif sekme',
+    openTabs: 'Açık sekmeler',
+    memoryPressure: 'Bellek baskısı',
+    audio: 'Ses',
+    playing: 'Çalıyor',
+    silent: 'Sessiz',
+    security: 'Güvenlik',
+    consoleErrors: 'Konsol hataları',
+    requests: 'İstekler',
+    failedRequests: 'Başarısız istekler',
+    currentUrl: 'Geçerli URL',
+    reload: 'Yenile',
+    reloadHint: 'Aktif WebView’ı yenile',
+    clearCache: 'Önbelleği temizle',
+    clearCacheHint: 'Aktif sekmenin önbelleğini temizle',
+    clearBuffers: 'Inspector tamponlarını temizle',
+    clearBuffersHint: 'Konsol, ağ ve olay geçmişi',
+    buffersCleared: 'Inspector tamponları temizlendi.',
+    dom: 'DOM',
+    loading: 'Yükleniyor…',
+    noDom: 'Henüz DOM anlık görüntüsü yok.',
+    nodeDetails: 'Düğüm ayrıntıları',
+    clearHighlight: 'Vurguyu temizle',
+    outerHtml: 'Dış HTML',
+    filterStyles: 'Hesaplanan stilleri filtrele…',
+    selectNode: 'HTML ve hesaplanan stilleri incelemek için bir DOM düğümü seç.',
+    filterConsole: 'Konsolu filtrele…',
+    clear: 'Temizle',
+    consoleQuiet: 'Konsol sessiz.',
+    evalPlaceholder: 'Aktif sayfada JavaScript değerlendir…',
+    run: 'Çalıştır',
+    filterNetwork: 'URL, yöntem, durum, tür filtrele…',
+    failed: 'başarısız',
+    status: 'Durum',
+    method: 'Yöntem',
+    type: 'Tür',
+    time: 'Süre',
+    size: 'Boyut',
+    other: 'Diğer',
+    noRequests: 'Inspector açıldığından beri istek yakalanmadı.',
+    performanceLead: 'CDP performans sayaçları ve V8 heap kullanımı.',
+    heapUsed: 'Kullanılan JS heap',
+    heapTotal: 'Toplam JS heap',
+    capturedMetrics: 'Yakalanan metrikler',
+    nebulaStorage: 'Nebula depolaması',
+    nebulaStorageLead: 'Tarayıcı kabuğunun localStorage durumu.',
+    clearFolderCache: 'Klasör önbelleğini temizle',
+    clearLayout: 'Yerleşimi temizle',
+    delete: 'Sil',
+    noNebulaStorage: 'Nebula localStorage kaydı yok.',
+    pageStorage: 'Sayfa depolaması',
+    pageStorageLead: 'Aktif sitenin local/session storage ve çerez meta verileri.',
+    noPageStorage: 'Sayfa depolama anlık görüntüsü yok.',
+    unspecified: 'Belirtilmemiş',
+    clearCurrentSite: 'Geçerli site verilerini temizle',
+    clearCurrentSiteHint: 'Geçerli origin için çerez, depolama ve önbellek verileri',
+    siteLead: 'Sayfa kimliği, güvenlik ve izin durumu.',
+    readyState: 'Hazır olma durumu',
+    visibility: 'Görünürlük',
+    online: 'Çevrimiçi',
+    cookies: 'Çerezler',
+    historyLength: 'Geçmiş uzunluğu',
+    yes: 'Evet',
+    no: 'Hayır',
+    enabled: 'Etkin',
+    disabled: 'Devre dışı',
+    title: 'Başlık',
+    origin: 'Origin',
+    language: 'Dil',
+    charset: 'Karakter seti',
+    referrer: 'Yönlendiren',
+    viewport: 'Görünüm alanı',
+    permissions: 'İzinler',
+    filterEvents: 'CDP olaylarını filtrele…',
+    buffered: 'tamponda',
+    noEvents: 'Eşleşen CDP olayı yok.',
+    closeFooter: 'Kapatmak için F12 / Esc',
+    cdpInspector: 'CDP tabanlı Nebula inspector',
+    waitingTab: 'Sekme bekleniyor',
+  },
+  en: {
+    empty: '— empty —', uncaughtException: 'Uncaught exception', logEntry: 'Log entry', requestFailed: 'Request failed',
+    performanceRefreshFailed: 'Performance refresh failed', domRefreshed: 'DOM snapshot refreshed.', domRefreshFailed: 'DOM refresh failed', nodeInspectFailed: 'Node inspect failed', storageRefreshFailed: 'Site storage refresh failed', siteInfoRefreshFailed: 'Site info refresh failed',
+    inspectorAttached: 'Inspector attached (live events temporarily disabled).', inspectorAttachFailed: 'Inspector attach failed', evaluationFailed: 'Evaluation failed', actionProgress: (label: string) => `${label}…`, actionComplete: (label: string) => `${label} complete.`, actionFailed: (label: string) => `${label} failed`, clearedSiteStorage: (origin: string) => `Cleared site storage for ${origin}.`, clearSiteStorageFailed: 'Clear site storage failed',
+    titleAria: 'Nebula Developer Tools', inspector: 'Nebula Inspector', noActiveWebview: 'No active WebView', noActiveUrl: 'No active URL', closeAria: 'Close developer tools', closeTitle: 'Close (F12 / Esc)',
+    overview: 'Overview', elements: 'Elements', console: 'Console', network: 'Network', performance: 'Performance', storage: 'Storage', site: 'Site', events: 'Events', openTabHint: 'Open a browser tab to attach the Nebula inspector.', overviewLead: 'Live state for the active native WebView.', refresh: 'Refresh',
+    activeTab: 'Active tab', openTabs: 'Open tabs', memoryPressure: 'Memory pressure', audio: 'Audio', playing: 'Playing', silent: 'Silent', security: 'Security', consoleErrors: 'Console errors', requests: 'Requests', failedRequests: 'Failed requests', currentUrl: 'Current URL', reload: 'Reload', reloadHint: 'Reload active WebView', clearCache: 'Clear cache', clearCacheHint: 'Clear active tab cache', clearBuffers: 'Clear inspector buffers', clearBuffersHint: 'Console, network and event history', buffersCleared: 'Inspector buffers cleared.',
+    dom: 'DOM', loading: 'Loading…', noDom: 'No DOM snapshot yet.', nodeDetails: 'Node details', clearHighlight: 'Clear highlight', outerHtml: 'Outer HTML', filterStyles: 'Filter computed styles…', selectNode: 'Select a DOM node to inspect HTML and computed styles.', filterConsole: 'Filter console…', clear: 'Clear', consoleQuiet: 'Console is quiet.', evalPlaceholder: 'Evaluate JavaScript in the active page…', run: 'Run', filterNetwork: 'Filter URL, method, status, type…', failed: 'failed', status: 'Status', method: 'Method', type: 'Type', time: 'Time', size: 'Size', other: 'Other', noRequests: 'No requests captured since the inspector opened.',
+    performanceLead: 'CDP performance counters and V8 heap usage.', heapUsed: 'JS heap used', heapTotal: 'JS heap total', capturedMetrics: 'Captured metrics', nebulaStorage: 'Nebula storage', nebulaStorageLead: 'Browser shell localStorage state.', clearFolderCache: 'Clear folder cache', clearLayout: 'Clear layout', delete: 'Delete', noNebulaStorage: 'No Nebula localStorage entries.', pageStorage: 'Page storage', pageStorageLead: "Active site's local/session storage and cookie metadata.", noPageStorage: 'No page storage snapshot.', unspecified: 'Unspecified', clearCurrentSite: 'Clear current site data', clearCurrentSiteHint: 'Cookies, storage, cache data for the current origin',
+    siteLead: 'Page identity, security and permission state.', readyState: 'Ready state', visibility: 'Visibility', online: 'Online', cookies: 'Cookies', historyLength: 'History length', yes: 'Yes', no: 'No', enabled: 'Enabled', disabled: 'Disabled', title: 'Title', origin: 'Origin', language: 'Language', charset: 'Charset', referrer: 'Referrer', viewport: 'Viewport', permissions: 'Permissions', filterEvents: 'Filter CDP events…', buffered: 'buffered', noEvents: 'No matching CDP events.', closeFooter: 'F12 / Esc to close', cdpInspector: 'CDP-backed Nebula inspector', waitingTab: 'Waiting for a tab',
+  },
+} as const
+
+const TECHNICAL_STATE_LABELS = {
+  tr: {
+    unknown: 'Bilinmiyor',
+    neutral: 'Nötr',
+    insecure: 'Güvenli değil',
+    'insecure-broken': 'Güvenlik hatası',
+    secure: 'Güvenli',
+    info: 'Bilgi',
+    loading: 'Yükleniyor',
+    interactive: 'Etkileşimli',
+    complete: 'Tamamlandı',
+    visible: 'Görünür',
+    hidden: 'Gizli',
+    prerender: 'Önceden oluşturuluyor',
+    granted: 'İzin verildi',
+    denied: 'Reddedildi',
+    prompt: 'Sor',
+    error: 'Hata',
+    warning: 'Uyarı',
+    warn: 'Uyarı',
+    log: 'Günlük',
+    debug: 'Hata ayıklama',
+    verbose: 'Ayrıntılı',
+  },
+  en: {
+    unknown: 'Unknown',
+    neutral: 'Neutral',
+    insecure: 'Not secure',
+    'insecure-broken': 'Security error',
+    secure: 'Secure',
+    info: 'Info',
+    loading: 'Loading',
+    interactive: 'Interactive',
+    complete: 'Complete',
+    visible: 'Visible',
+    hidden: 'Hidden',
+    prerender: 'Prerendering',
+    granted: 'Granted',
+    denied: 'Denied',
+    prompt: 'Ask',
+    error: 'Error',
+    warning: 'Warning',
+    warn: 'Warning',
+    log: 'Log',
+    debug: 'Debug',
+    verbose: 'Verbose',
+  },
+} as const
+
+function localizeTechnicalState(locale: 'tr' | 'en', value: string | null | undefined): string {
+  if (!value) return '—'
+  const key = value.toLowerCase()
+  const labels = TECHNICAL_STATE_LABELS[locale] as Record<string, string>
+  return labels[key] ?? value
+}
 
 const HIGHLIGHT_CONFIG = {
   showInfo: true,
@@ -262,8 +451,8 @@ function DomTreeNode({
   )
 }
 
-function prettyStorageValue(value: string | null): string {
-  if (value === null) return '— empty —'
+function prettyStorageValue(value: string | null, emptyLabel: string): string {
+  if (value === null) return emptyLabel
   try {
     return JSON.stringify(JSON.parse(value), null, 2)
   } catch {
@@ -292,6 +481,10 @@ export function DeveloperTools({
   sourceViewMode,
   onClose,
 }: DeveloperToolsProps) {
+  const { locale } = useLocale()
+  const copy = COPY[locale]
+  const dialogRef = useRef<HTMLElement>(null)
+  useModalFocusTrap(dialogRef)
   const [section, setSection] = useState<DeveloperToolsSection>('overview')
   const [status, setStatus] = useState<string | null>(null)
   const [, setStorageRevision] = useState(0)
@@ -317,6 +510,24 @@ export function DeveloperTools({
   const [loadingDom, setLoadingDom] = useState(false)
   const [inspectorReady, setInspectorReady] = useState(false)
   const consoleInputRef = useRef<HTMLInputElement>(null)
+  const requestEpochRef = useRef(new RequestEpoch<string | null>(activeTabId))
+  requestEpochRef.current.sync(activeTabId)
+
+  const captureTabRequest = useCallback((): {
+    tabId: string
+    epoch: RequestEpochSnapshot<string | null>
+  } | null => {
+    const epoch = requestEpochRef.current.capture()
+    return activeTabId && epoch.key === activeTabId
+      ? { tabId: activeTabId, epoch }
+      : null
+  }, [activeTabId])
+
+  const requestIsCurrent = useCallback(
+    (epoch: RequestEpochSnapshot<string | null>) =>
+      requestEpochRef.current.isCurrent(epoch),
+    [],
+  )
 
   const activeLabel = useMemo(
     () => (activeTabId ? tabWebviewLabel(activeTabId) : null),
@@ -354,7 +565,7 @@ export function DeveloperTools({
         text:
           (typeof exception.description === 'string' && exception.description) ||
           (typeof details.text === 'string' && details.text) ||
-          'Uncaught exception',
+          copy.uncaughtException,
         source: 'runtime',
         url: typeof details.url === 'string' ? details.url : undefined,
       })
@@ -366,7 +577,7 @@ export function DeveloperTools({
       addConsoleEntry({
         time: event.timestampMs,
         level: typeof entry.level === 'string' ? entry.level : 'info',
-        text: typeof entry.text === 'string' ? entry.text : 'Log entry',
+        text: typeof entry.text === 'string' ? entry.text : copy.logEntry,
         source: typeof entry.source === 'string' ? entry.source : 'log',
         url: typeof entry.url === 'string' ? entry.url : undefined,
       })
@@ -425,7 +636,7 @@ export function DeveloperTools({
       setNetworkEntries((items) =>
         upsertNetwork(items, requestId, {
           failed: true,
-          errorText: typeof params.errorText === 'string' ? params.errorText : 'Request failed',
+          errorText: typeof params.errorText === 'string' ? params.errorText : copy.requestFailed,
           finishedAt: typeof params.timestamp === 'number' ? params.timestamp : undefined,
         }),
       )
@@ -435,92 +646,108 @@ export function DeveloperTools({
     if (event.event === 'Security.securityStateChanged') {
       if (typeof params.securityState === 'string') setSecurityState(params.securityState)
     }
-  }, [addConsoleEntry])
+  }, [addConsoleEntry, copy])
 
   const refreshOverview = useCallback(async () => {
-    if (!activeTabId) return
+    const request = captureTabRequest()
+    if (!request) return
     const [pressure, audio] = await Promise.all([
       getInspectorMemoryPressure(),
-      getInspectorAudioState(activeTabId),
+      getInspectorAudioState(request.tabId),
     ])
+    if (!requestIsCurrent(request.epoch)) return
     setMemoryPressure(pressure)
     setPlayingAudio(audio)
-  }, [activeTabId])
+  }, [captureTabRequest, requestIsCurrent])
 
   const refreshPerformance = useCallback(async () => {
-    if (!activeTabId) return
+    const request = captureTabRequest()
+    if (!request) return
     try {
       const [performance, heap] = await Promise.all([
-        callTabDevTools<{ metrics?: PerformanceMetric[] }>(activeTabId, 'Performance.getMetrics'),
-        callTabDevTools<{ usedSize?: number; totalSize?: number }>(activeTabId, 'Runtime.getHeapUsage'),
+        callTabDevTools<{ metrics?: PerformanceMetric[] }>(request.tabId, 'Performance.getMetrics'),
+        callTabDevTools<{ usedSize?: number; totalSize?: number }>(request.tabId, 'Runtime.getHeapUsage'),
       ])
+      if (!requestIsCurrent(request.epoch)) return
       setPerformanceMetrics(Array.isArray(performance.metrics) ? performance.metrics : [])
       setHeapUsed(typeof heap.usedSize === 'number' ? heap.usedSize : null)
       setHeapTotal(typeof heap.totalSize === 'number' ? heap.totalSize : null)
     } catch (error) {
-      setStatus(`Performance refresh failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setStatus(`${copy.performanceRefreshFailed}: ${String(error)}`)
+      }
     }
-  }, [activeTabId])
+  }, [captureTabRequest, copy.performanceRefreshFailed, requestIsCurrent])
 
   const refreshDom = useCallback(async () => {
-    if (!activeTabId) return
+    const request = captureTabRequest()
+    if (!request) return
     setLoadingDom(true)
     try {
-      const result = await callTabDevTools<{ root?: CdpDomNode }>(activeTabId, 'DOM.getDocument', {
+      const result = await callTabDevTools<{ root?: CdpDomNode }>(request.tabId, 'DOM.getDocument', {
         depth: 5,
         pierce: true,
       })
+      if (!requestIsCurrent(request.epoch)) return
       setDomRoot(result.root ?? null)
-      setStatus('DOM snapshot refreshed.')
+      setStatus(copy.domRefreshed)
     } catch (error) {
-      setStatus(`DOM refresh failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setStatus(`${copy.domRefreshFailed}: ${String(error)}`)
+      }
     } finally {
-      setLoadingDom(false)
+      if (requestIsCurrent(request.epoch)) setLoadingDom(false)
     }
-  }, [activeTabId])
+  }, [captureTabRequest, copy.domRefreshFailed, copy.domRefreshed, requestIsCurrent])
 
   const selectDomNode = useCallback(async (node: CdpDomNode) => {
-    if (!activeTabId) return
+    const request = captureTabRequest()
+    if (!request) return
     try {
       const [html, computed] = await Promise.all([
-        callTabDevTools<{ outerHTML?: string }>(activeTabId, 'DOM.getOuterHTML', {
+        callTabDevTools<{ outerHTML?: string }>(request.tabId, 'DOM.getOuterHTML', {
           nodeId: node.nodeId,
         }),
         callTabDevTools<{ computedStyle?: Array<{ name: string; value: string }> }>(
-          activeTabId,
+          request.tabId,
           'CSS.getComputedStyleForNode',
           { nodeId: node.nodeId },
         ),
-        callTabDevTools(activeTabId, 'Overlay.highlightNode', {
+        callTabDevTools(request.tabId, 'Overlay.highlightNode', {
           highlightConfig: HIGHLIGHT_CONFIG,
           nodeId: node.nodeId,
         }),
       ])
+      if (!requestIsCurrent(request.epoch)) return
       setSelectedNode({
         node,
         outerHtml: html.outerHTML ?? '',
         computedStyles: Array.isArray(computed.computedStyle) ? computed.computedStyle : [],
       })
     } catch (error) {
-      setStatus(`Node inspect failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setStatus(`${copy.nodeInspectFailed}: ${String(error)}`)
+      }
     }
-  }, [activeTabId])
+  }, [captureTabRequest, copy.nodeInspectFailed, requestIsCurrent])
 
   const refreshPageStorage = useCallback(async () => {
-    if (!activeTabId) return
+    const request = captureTabRequest()
+    if (!request) return
     const expression = `(() => JSON.stringify({
       localStorage: Object.fromEntries(Array.from({length: localStorage.length}, (_, i) => { const k = localStorage.key(i); return k === null ? ['', ''] : [k, localStorage.getItem(k) ?? '']; }).filter(([k]) => k)),
       sessionStorage: Object.fromEntries(Array.from({length: sessionStorage.length}, (_, i) => { const k = sessionStorage.key(i); return k === null ? ['', ''] : [k, sessionStorage.getItem(k) ?? '']; }).filter(([k]) => k))
     }))()`
     try {
       const runtime = await callTabDevTools<{ result?: { value?: string } }>(
-        activeTabId,
+        request.tabId,
         'Runtime.evaluate',
         {
           expression,
           returnByValue: true,
         },
       )
+      if (!requestIsCurrent(request.epoch)) return
       const raw = runtime.result?.value
       if (typeof raw === 'string') {
         try {
@@ -532,26 +759,32 @@ export function DeveloperTools({
         setPageStorage(null)
       }
     } catch (error) {
-      setPageStorage(null)
-      setStatus(`Site storage refresh failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setPageStorage(null)
+        setStatus(`${copy.storageRefreshFailed}: ${String(error)}`)
+      }
     }
+
+    if (!requestIsCurrent(request.epoch)) return
 
     // Cookie inspection is useful metadata, but it must never prevent the
     // page's local/session storage snapshot from being shown. Some WebView2
     // builds can reject or delay Network.getAllCookies independently.
     try {
       const cookieResult = await callTabDevTools<{ cookies?: CookieMetadata[] }>(
-        activeTabId,
+        request.tabId,
         'Network.getAllCookies',
       )
+      if (!requestIsCurrent(request.epoch)) return
       setCookies(Array.isArray(cookieResult.cookies) ? cookieResult.cookies : [])
     } catch {
-      setCookies([])
+      if (requestIsCurrent(request.epoch)) setCookies([])
     }
-  }, [activeTabId])
+  }, [captureTabRequest, copy.storageRefreshFailed, requestIsCurrent])
 
   const refreshPageInfo = useCallback(async () => {
-    if (!activeTabId) return
+    const request = captureTabRequest()
+    if (!request) return
     const expression = `(async () => {
       const permissionNames = ['geolocation', 'notifications', 'camera', 'microphone', 'clipboard-read'];
       const permissions = {};
@@ -577,16 +810,39 @@ export function DeveloperTools({
     })()`
     try {
       const result = await callTabDevTools<{ result?: { value?: string } }>(
-        activeTabId,
+        request.tabId,
         'Runtime.evaluate',
         { expression, awaitPromise: true, returnByValue: true },
       )
+      if (!requestIsCurrent(request.epoch)) return
       if (typeof result.result?.value === 'string') {
         setPageInfo(JSON.parse(result.result.value) as PageInfo)
       }
     } catch (error) {
-      setStatus(`Site info refresh failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setStatus(`${copy.siteInfoRefreshFailed}: ${String(error)}`)
+      }
     }
+  }, [captureTabRequest, copy.siteInfoRefreshFailed, requestIsCurrent])
+
+  useEffect(() => {
+    setStatus(null)
+    setConsoleEntries([])
+    setNetworkEntries([])
+    setRawEvents([])
+    setSecurityState('unknown')
+    setMemoryPressure(null)
+    setPlayingAudio(null)
+    setPerformanceMetrics([])
+    setHeapUsed(null)
+    setHeapTotal(null)
+    setDomRoot(null)
+    setSelectedNode(null)
+    setPageStorage(null)
+    setCookies([])
+    setPageInfo(null)
+    setLoadingDom(false)
+    setInspectorReady(false)
   }, [activeTabId])
 
   useEffect(() => {
@@ -594,6 +850,8 @@ export function DeveloperTools({
 
     let disposed = false
     let unlisten: (() => void) | undefined
+    const epoch = requestEpochRef.current.capture()
+    if (epoch.key !== activeTabId) return
     setInspectorReady(false)
 
     void (async () => {
@@ -604,14 +862,21 @@ export function DeveloperTools({
         // Storage and Site. Once F12 is proven stable we can re-enable live
         // Console/Network events behind a safer dedicated bridge.
         unlisten = await listenNebulaDevToolsEvents((event) => {
-          if (event.tabLabel === activeLabel) handleDevToolsEvent(event)
+          if (
+            requestIsCurrent(epoch) &&
+            event.tabLabel === activeLabel
+          ) {
+            handleDevToolsEvent(event)
+          }
         })
         await enableInspectorDomains(activeTabId)
-        if (disposed) return
+        if (disposed || !requestIsCurrent(epoch)) return
         setInspectorReady(true)
-        setStatus('Inspector attached (live events temporarily disabled).')
+        setStatus(copy.inspectorAttached)
       } catch (error) {
-        if (!disposed) setStatus(`Inspector attach failed: ${String(error)}`)
+        if (!disposed && requestIsCurrent(epoch)) {
+          setStatus(`${copy.inspectorAttachFailed}: ${String(error)}`)
+        }
       }
     })()
 
@@ -621,7 +886,7 @@ export function DeveloperTools({
       unlisten?.()
       void callTabDevTools(activeTabId, 'Overlay.hideHighlight').catch(() => {})
     }
-  }, [activeLabel, activeTabId, handleDevToolsEvent])
+  }, [activeLabel, activeTabId, copy.inspectorAttachFailed, copy.inspectorAttached, handleDevToolsEvent, requestIsCurrent])
 
   useEffect(() => {
     if (!activeTabId || !inspectorReady) return
@@ -696,30 +961,37 @@ export function DeveloperTools({
   }
 
   const runBrowserAction = async (label: string, action: () => Promise<void>) => {
+    const request = captureTabRequest()
+    if (!request) return
     try {
-      setStatus(`${label}...`)
+      setStatus(copy.actionProgress(label))
       await action()
-      setStatus(`${label} complete.`)
+      if (!requestIsCurrent(request.epoch)) return
+      setStatus(copy.actionComplete(label))
     } catch (error) {
-      setStatus(`${label} failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setStatus(`${copy.actionFailed(label)}: ${String(error)}`)
+      }
     }
   }
 
   const runConsoleCommand = async () => {
     const expression = consoleCommand.trim()
-    if (!activeTabId || !expression) return
+    const request = captureTabRequest()
+    if (!request || !expression) return
     addConsoleEntry({ time: Date.now(), level: 'command', text: `› ${expression}`, source: 'input' })
     setConsoleCommand('')
     try {
       const result = await callTabDevTools<{
         result?: JsonRecord
         exceptionDetails?: JsonRecord
-      }>(activeTabId, 'Runtime.evaluate', {
+      }>(request.tabId, 'Runtime.evaluate', {
         expression,
         awaitPromise: true,
         returnByValue: true,
         generatePreview: true,
       })
+      if (!requestIsCurrent(request.epoch)) return
       if (result.exceptionDetails) {
         const details = nestedRecord(result.exceptionDetails)
         const exception = nestedRecord(details.exception)
@@ -729,7 +1001,7 @@ export function DeveloperTools({
           text:
             (typeof exception.description === 'string' && exception.description) ||
             (typeof details.text === 'string' && details.text) ||
-            'Evaluation failed',
+            copy.evaluationFailed,
           source: 'evaluation',
         })
       } else {
@@ -741,24 +1013,33 @@ export function DeveloperTools({
         })
       }
     } catch (error) {
-      addConsoleEntry({ time: Date.now(), level: 'error', text: String(error), source: 'evaluation' })
+      if (requestIsCurrent(request.epoch)) {
+        addConsoleEntry({ time: Date.now(), level: 'error', text: String(error), source: 'evaluation' })
+      }
     }
   }
 
   const clearCurrentOriginStorage = async () => {
-    if (!activeTabId || !activeUrl) return
+    const request = captureTabRequest()
+    if (!request || !activeUrl) return
     try {
       const origin = new URL(activeUrl).origin
-      await callTabDevTools(activeTabId, 'Storage.clearDataForOrigin', {
+      await callTabDevTools(request.tabId, 'Storage.clearDataForOrigin', {
         origin,
         storageTypes: 'all',
       })
+      if (!requestIsCurrent(request.epoch)) return
       await refreshPageStorage()
-      setStatus(`Cleared site storage for ${origin}.`)
+      if (!requestIsCurrent(request.epoch)) return
+      setStatus(copy.clearedSiteStorage(origin))
     } catch (error) {
-      setStatus(`Clear site storage failed: ${String(error)}`)
+      if (requestIsCurrent(request.epoch)) {
+        setStatus(`${copy.clearSiteStorageFailed}: ${String(error)}`)
+      }
     }
   }
+
+  const dateLocale = locale === 'tr' ? 'tr-TR' : 'en-US'
 
   const filteredConsole = useMemo(() => {
     const needle = consoleFilter.trim().toLowerCase()
@@ -793,28 +1074,28 @@ export function DeveloperTools({
   const failedRequestCount = networkEntries.filter((entry) => entry.failed || (entry.status ?? 0) >= 400).length
 
   const sections: Array<{ id: DeveloperToolsSection; label: string; badge?: number }> = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'elements', label: 'Elements' },
-    { id: 'console', label: 'Console', badge: consoleErrorCount || undefined },
-    { id: 'network', label: 'Network', badge: failedRequestCount || undefined },
-    { id: 'performance', label: 'Performance' },
-    { id: 'storage', label: 'Storage' },
-    { id: 'site', label: 'Site' },
-    { id: 'events', label: 'Events' },
+    { id: 'overview', label: copy.overview },
+    { id: 'elements', label: copy.elements },
+    { id: 'console', label: copy.console, badge: consoleErrorCount || undefined },
+    { id: 'network', label: copy.network, badge: failedRequestCount || undefined },
+    { id: 'performance', label: copy.performance },
+    { id: 'storage', label: copy.storage },
+    { id: 'site', label: copy.site },
+    { id: 'events', label: copy.events },
   ]
 
   return createPortal(
     <div className={styles.backdrop} role="presentation">
-      <section className={styles.panel} role="dialog" aria-modal="true" aria-label="Nebula Developer Tools">
+      <section ref={dialogRef} className={styles.panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={copy.titleAria}>
         <header className={styles.header}>
           <div>
-            <div className={styles.title}>Nebula Inspector</div>
+            <div className={styles.title}>{copy.inspector}</div>
             <div className={styles.subtitle}>
-              {activeLabel ?? 'No active WebView'} · {activeUrl ?? 'No active URL'}
+              {activeLabel ?? copy.noActiveWebview} · {activeUrl ?? copy.noActiveUrl}
             </div>
           </div>
           <div className={styles.headerActions}>
-            <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close developer tools" title="Close (F12 / Esc)">
+            <button type="button" className={styles.closeButton} onClick={onClose} aria-label={copy.closeAria} title={copy.closeTitle}>
               ✕
             </button>
           </div>
@@ -837,30 +1118,30 @@ export function DeveloperTools({
 
           <main className={styles.content}>
             {!activeTabId && section !== 'storage' ? (
-              <div className={styles.emptyState}>Open a browser tab to attach the Nebula inspector.</div>
+              <div className={styles.emptyState}>{copy.openTabHint}</div>
             ) : null}
 
             {section === 'overview' && activeTabId && (
               <div className={styles.section}>
                 <div className={styles.sectionHeader}>
-                  <div><h2>Overview</h2><p>Live state for the active native WebView.</p></div>
-                  <button type="button" className={styles.secondaryButton} onClick={() => void refreshOverview()}>Refresh</button>
+                  <div><h2>{copy.overview}</h2><p>{copy.overviewLead}</p></div>
+                  <button type="button" className={styles.secondaryButton} onClick={() => void refreshOverview()}>{copy.refresh}</button>
                 </div>
                 <div className={styles.metricGrid}>
-                  <div className={styles.metricCard}><span>Active tab</span><strong>{activeTabId}</strong></div>
-                  <div className={styles.metricCard}><span>Open tabs</span><strong>{openTabIds.length}</strong></div>
-                  <div className={styles.metricCard}><span>Memory pressure</span><strong>{memoryPressure === null ? '—' : `${memoryPressure}%`}</strong></div>
-                  <div className={styles.metricCard}><span>Audio</span><strong>{playingAudio === null ? '—' : playingAudio ? 'Playing' : 'Silent'}</strong></div>
-                  <div className={styles.metricCard}><span>Security</span><strong>{securityState}</strong></div>
-                  <div className={styles.metricCard}><span>Console errors</span><strong>{consoleErrorCount}</strong></div>
-                  <div className={styles.metricCard}><span>Requests</span><strong>{networkEntries.length}</strong></div>
-                  <div className={styles.metricCard}><span>Failed requests</span><strong>{failedRequestCount}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.activeTab}</span><strong>{activeTabId}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.openTabs}</span><strong>{openTabIds.length}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.memoryPressure}</span><strong>{memoryPressure === null ? '—' : `${memoryPressure}%`}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.audio}</span><strong>{playingAudio === null ? '—' : playingAudio ? copy.playing : copy.silent}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.security}</span><strong>{localizeTechnicalState(locale, securityState)}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.consoleErrors}</span><strong>{consoleErrorCount}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.requests}</span><strong>{networkEntries.length}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.failedRequests}</span><strong>{failedRequestCount}</strong></div>
                 </div>
-                <div className={styles.urlCard}><span>Current URL</span><code>{activeUrl ?? '—'}</code></div>
+                <div className={styles.urlCard}><span>{copy.currentUrl}</span><code>{activeUrl ?? '—'}</code></div>
                 <div className={styles.actionGrid}>
-                  <button type="button" className={styles.actionButton} onClick={() => void runBrowserAction('Reload', () => reloadBrowseTab(activeTabId))}><strong>Reload</strong><span>Reload active WebView</span></button>
-                  <button type="button" className={styles.actionButton} onClick={() => void runBrowserAction('Clear cache', () => clearBrowseData(activeTabId, 'cache'))}><strong>Clear cache</strong><span>Clear active tab cache</span></button>
-                  <button type="button" className={styles.actionButton} onClick={() => { setConsoleEntries([]); setNetworkEntries([]); setRawEvents([]); setStatus('Inspector buffers cleared.') }}><strong>Clear inspector buffers</strong><span>Console, network and event history</span></button>
+                  <button type="button" className={styles.actionButton} onClick={() => void runBrowserAction(copy.reload, () => reloadBrowseTab(activeTabId))}><strong>{copy.reload}</strong><span>{copy.reloadHint}</span></button>
+                  <button type="button" className={styles.actionButton} onClick={() => void runBrowserAction(copy.clearCache, () => clearBrowseData(activeTabId, 'cache'))}><strong>{copy.clearCache}</strong><span>{copy.clearCacheHint}</span></button>
+                  <button type="button" className={styles.actionButton} onClick={() => { setConsoleEntries([]); setNetworkEntries([]); setRawEvents([]); setStatus(copy.buffersCleared) }}><strong>{copy.clearBuffers}</strong><span>{copy.clearBuffersHint}</span></button>
                 </div>
                 <pre className={styles.debugOutput}>{JSON.stringify({ environment: import.meta.env.MODE, tauri: isTauri, openedFrom: sourceViewMode, userAgent: navigator.userAgent }, null, 2)}</pre>
               </div>
@@ -870,25 +1151,25 @@ export function DeveloperTools({
               <div className={styles.splitSection}>
                 <div className={styles.splitPane}>
                   <div className={styles.paneToolbar}>
-                    <strong>DOM</strong>
-                    <button type="button" className={styles.smallButton} onClick={() => void refreshDom()}>{loadingDom ? 'Loading…' : 'Refresh'}</button>
+                    <strong>{copy.dom}</strong>
+                    <button type="button" className={styles.smallButton} onClick={() => void refreshDom()}>{loadingDom ? copy.loading : copy.refresh}</button>
                   </div>
                   <div className={styles.domTree}>
-                    {domRoot ? <DomTreeNode node={domRoot} depth={0} selectedNodeId={selectedNode?.node.nodeId ?? null} onSelect={(node) => void selectDomNode(node)} /> : <div className={styles.emptyState}>No DOM snapshot yet.</div>}
+                    {domRoot ? <DomTreeNode node={domRoot} depth={0} selectedNodeId={selectedNode?.node.nodeId ?? null} onSelect={(node) => void selectDomNode(node)} /> : <div className={styles.emptyState}>{copy.noDom}</div>}
                   </div>
                 </div>
                 <div className={styles.splitPane}>
-                  <div className={styles.paneToolbar}><strong>Node details</strong>{selectedNode && <button type="button" className={styles.smallButton} onClick={() => { void callTabDevTools(activeTabId, 'Overlay.hideHighlight'); setSelectedNode(null) }}>Clear highlight</button>}</div>
+                  <div className={styles.paneToolbar}><strong>{copy.nodeDetails}</strong>{selectedNode && <button type="button" className={styles.smallButton} onClick={() => { void callTabDevTools(activeTabId, 'Overlay.hideHighlight'); setSelectedNode(null) }}>{copy.clearHighlight}</button>}</div>
                   {selectedNode ? (
                     <div className={styles.nodeInspector}>
-                      <label>Outer HTML</label>
+                      <label>{copy.outerHtml}</label>
                       <pre className={styles.codeBlock}>{selectedNode.outerHtml}</pre>
-                      <div className={styles.filterRow}><input value={styleFilter} onChange={(event) => setStyleFilter(event.target.value)} placeholder="Filter computed styles…" /></div>
+                      <div className={styles.filterRow}><input value={styleFilter} onChange={(event) => setStyleFilter(event.target.value)} placeholder={copy.filterStyles} /></div>
                       <div className={styles.styleList}>
                         {filteredStyles.map((item) => <div key={`${item.name}-${item.value}`} className={styles.styleRow}><span>{item.name}</span><code>{item.value}</code></div>)}
                       </div>
                     </div>
-                  ) : <div className={styles.emptyState}>Select a DOM node to inspect HTML and computed styles.</div>}
+                  ) : <div className={styles.emptyState}>{copy.selectNode}</div>}
                 </div>
               </div>
             )}
@@ -896,23 +1177,23 @@ export function DeveloperTools({
             {section === 'console' && activeTabId && (
               <div className={styles.sectionFill}>
                 <div className={styles.paneToolbar}>
-                  <div className={styles.filterRow}><input value={consoleFilter} onChange={(event) => setConsoleFilter(event.target.value)} placeholder="Filter console…" /></div>
-                  <button type="button" className={styles.smallButton} onClick={() => setConsoleEntries([])}>Clear</button>
+                  <div className={styles.filterRow}><input value={consoleFilter} onChange={(event) => setConsoleFilter(event.target.value)} placeholder={copy.filterConsole} /></div>
+                  <button type="button" className={styles.smallButton} onClick={() => setConsoleEntries([])}>{copy.clear}</button>
                 </div>
                 <div className={styles.consoleList}>
                   {filteredConsole.map((entry) => (
                     <div key={entry.id} className={`${styles.consoleRow} ${entry.level === 'error' ? styles.consoleError : entry.level === 'warning' || entry.level === 'warn' ? styles.consoleWarn : ''}`}>
-                      <span className={styles.consoleLevel}>{entry.level}</span>
+                      <span className={styles.consoleLevel}>{localizeTechnicalState(locale, entry.level)}</span>
                       <span className={styles.consoleText}>{entry.text}</span>
-                      <span className={styles.consoleTime}>{new Date(entry.time).toLocaleTimeString()}</span>
+                      <span className={styles.consoleTime}>{new Date(entry.time).toLocaleTimeString(dateLocale)}</span>
                     </div>
                   ))}
-                  {filteredConsole.length === 0 && <div className={styles.emptyState}>Console is quiet.</div>}
+                  {filteredConsole.length === 0 && <div className={styles.emptyState}>{copy.consoleQuiet}</div>}
                 </div>
                 <div className={styles.consolePrompt}>
                   <span>›</span>
-                  <input ref={consoleInputRef} value={consoleCommand} onChange={(event) => setConsoleCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void runConsoleCommand() }} placeholder="Evaluate JavaScript in the active page…" />
-                  <button type="button" className={styles.smallButton} onClick={() => void runConsoleCommand()}>Run</button>
+                  <input ref={consoleInputRef} value={consoleCommand} onChange={(event) => setConsoleCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void runConsoleCommand() }} placeholder={copy.evalPlaceholder} />
+                  <button type="button" className={styles.smallButton} onClick={() => void runConsoleCommand()}>{copy.run}</button>
                 </div>
               </div>
             )}
@@ -920,30 +1201,30 @@ export function DeveloperTools({
             {section === 'network' && activeTabId && (
               <div className={styles.sectionFill}>
                 <div className={styles.paneToolbar}>
-                  <div className={styles.filterRow}><input value={networkFilter} onChange={(event) => setNetworkFilter(event.target.value)} placeholder="Filter URL, method, status, type…" /></div>
-                  <span className={styles.toolbarStat}>{networkEntries.length} requests · {failedRequestCount} failed</span>
-                  <button type="button" className={styles.smallButton} onClick={() => setNetworkEntries([])}>Clear</button>
+                  <div className={styles.filterRow}><input value={networkFilter} onChange={(event) => setNetworkFilter(event.target.value)} placeholder={copy.filterNetwork} /></div>
+                  <span className={styles.toolbarStat}>{networkEntries.length} {copy.requests.toLocaleLowerCase(locale)} · {failedRequestCount} {copy.failed}</span>
+                  <button type="button" className={styles.smallButton} onClick={() => setNetworkEntries([])}>{copy.clear}</button>
                 </div>
                 <div className={styles.networkTable}>
-                  <div className={styles.networkHead}><span>Status</span><span>Method</span><span>Type</span><span>URL</span><span>Time</span><span>Size</span></div>
+                  <div className={styles.networkHead}><span>{copy.status}</span><span>{copy.method}</span><span>{copy.type}</span><span>URL</span><span>{copy.time}</span><span>{copy.size}</span></div>
                   {filteredNetwork.map((entry) => (
                     <div key={entry.requestId} className={`${styles.networkRow} ${entry.failed || (entry.status ?? 0) >= 400 ? styles.networkFailed : ''}`} title={entry.errorText ?? entry.url}>
-                      <span>{entry.failed ? 'ERR' : entry.status ?? '…'}</span><span>{entry.method}</span><span>{entry.type ?? 'Other'}</span><code>{entry.url}</code><span>{entry.durationMs === undefined ? '—' : `${entry.durationMs.toFixed(0)} ms`}</span><span>{formatBytes(entry.encodedDataLength)}</span>
+                      <span>{entry.failed ? 'ERR' : entry.status ?? '…'}</span><span>{entry.method}</span><span>{entry.type ?? copy.other}</span><code>{entry.url}</code><span>{entry.durationMs === undefined ? '—' : `${entry.durationMs.toFixed(0)} ms`}</span><span>{formatBytes(entry.encodedDataLength)}</span>
                     </div>
                   ))}
-                  {filteredNetwork.length === 0 && <div className={styles.emptyState}>No requests captured since the inspector opened.</div>}
+                  {filteredNetwork.length === 0 && <div className={styles.emptyState}>{copy.noRequests}</div>}
                 </div>
               </div>
             )}
 
             {section === 'performance' && activeTabId && (
               <div className={styles.section}>
-                <div className={styles.sectionHeader}><div><h2>Performance</h2><p>CDP performance counters and V8 heap usage.</p></div><button type="button" className={styles.secondaryButton} onClick={() => void refreshPerformance()}>Refresh</button></div>
+                <div className={styles.sectionHeader}><div><h2>{copy.performance}</h2><p>{copy.performanceLead}</p></div><button type="button" className={styles.secondaryButton} onClick={() => void refreshPerformance()}>{copy.refresh}</button></div>
                 <div className={styles.metricGrid}>
-                  <div className={styles.metricCard}><span>JS heap used</span><strong>{heapUsed === null ? '—' : formatBytes(heapUsed)}</strong></div>
-                  <div className={styles.metricCard}><span>JS heap total</span><strong>{heapTotal === null ? '—' : formatBytes(heapTotal)}</strong></div>
-                  <div className={styles.metricCard}><span>Memory pressure</span><strong>{memoryPressure === null ? '—' : `${memoryPressure}%`}</strong></div>
-                  <div className={styles.metricCard}><span>Captured metrics</span><strong>{performanceMetrics.length}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.heapUsed}</span><strong>{heapUsed === null ? '—' : formatBytes(heapUsed)}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.heapTotal}</span><strong>{heapTotal === null ? '—' : formatBytes(heapTotal)}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.memoryPressure}</span><strong>{memoryPressure === null ? '—' : `${memoryPressure}%`}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.capturedMetrics}</span><strong>{performanceMetrics.length}</strong></div>
                 </div>
                 <div className={styles.metricList}>{performanceMetrics.map((metric) => <div key={metric.name} className={styles.metricRow}><span>{metric.name}</span><code>{formatMetric(metric)}</code></div>)}</div>
               </div>
@@ -952,54 +1233,54 @@ export function DeveloperTools({
             {section === 'storage' && (
               <div className={styles.storageColumns}>
                 <div className={styles.section}>
-                  <div className={styles.sectionHeader}><div><h2>Nebula storage</h2><p>Browser shell localStorage state.</p></div><button type="button" className={styles.secondaryButton} onClick={refreshStorage}>Refresh</button></div>
+                  <div className={styles.sectionHeader}><div><h2>{copy.nebulaStorage}</h2><p>{copy.nebulaStorageLead}</p></div><button type="button" className={styles.secondaryButton} onClick={refreshStorage}>{copy.refresh}</button></div>
                   <div className={styles.actionGrid}>
-                    <button type="button" className={styles.actionButton} onClick={() => clearStorageKey(SHORTCUT_FOLDERS_KEY)}><strong>Clear folder cache</strong><span>{SHORTCUT_FOLDERS_KEY}</span></button>
-                    <button type="button" className={styles.actionButton} onClick={() => clearStorageKey(SHORTCUT_POSITIONS_KEY)}><strong>Clear layout</strong><span>{SHORTCUT_POSITIONS_KEY}</span></button>
+                    <button type="button" className={styles.actionButton} onClick={() => clearStorageKey(SHORTCUT_FOLDERS_KEY)}><strong>{copy.clearFolderCache}</strong><span>{SHORTCUT_FOLDERS_KEY}</span></button>
+                    <button type="button" className={styles.actionButton} onClick={() => clearStorageKey(SHORTCUT_POSITIONS_KEY)}><strong>{copy.clearLayout}</strong><span>{SHORTCUT_POSITIONS_KEY}</span></button>
                   </div>
-                  <div className={styles.storageList}>{nebulaStorageEntries.map((entry) => <details key={entry.key} className={styles.storageEntry}><summary><span>{entry.key}</span><button type="button" onClick={(event) => { event.preventDefault(); clearStorageKey(entry.key) }}>Delete</button></summary><pre>{prettyStorageValue(entry.value)}</pre></details>)}{nebulaStorageEntries.length === 0 && <div className={styles.emptyState}>No Nebula localStorage entries.</div>}</div>
+                  <div className={styles.storageList}>{nebulaStorageEntries.map((entry) => <details key={entry.key} className={styles.storageEntry}><summary><span>{entry.key}</span><button type="button" onClick={(event) => { event.preventDefault(); clearStorageKey(entry.key) }}>{copy.delete}</button></summary><pre>{prettyStorageValue(entry.value, copy.empty)}</pre></details>)}{nebulaStorageEntries.length === 0 && <div className={styles.emptyState}>{copy.noNebulaStorage}</div>}</div>
                 </div>
                 <div className={styles.section}>
-                  <div className={styles.sectionHeader}><div><h2>Page storage</h2><p>Active site's local/session storage and cookie metadata.</p></div><button type="button" className={styles.secondaryButton} disabled={!activeTabId} onClick={() => void refreshPageStorage()}>Refresh</button></div>
-                  {pageStorage ? <><h3 className={styles.subheading}>localStorage</h3><pre className={styles.debugOutput}>{JSON.stringify(pageStorage.localStorage, null, 2)}</pre><h3 className={styles.subheading}>sessionStorage</h3><pre className={styles.debugOutput}>{JSON.stringify(pageStorage.sessionStorage, null, 2)}</pre></> : <div className={styles.emptyState}>No page storage snapshot.</div>}
-                  <h3 className={styles.subheading}>Cookies ({cookies.length})</h3>
-                  <div className={styles.cookieList}>{cookies.map((cookie) => <div key={`${cookie.domain}-${cookie.path}-${cookie.name}`} className={styles.cookieRow}><strong>{cookie.name}</strong><span>{cookie.domain}{cookie.path}</span><small>{cookie.httpOnly ? 'HttpOnly · ' : ''}{cookie.secure ? 'Secure · ' : ''}{cookie.sameSite ?? 'Unspecified'}</small></div>)}</div>
-                  <button type="button" className={styles.dangerButton} disabled={!activeTabId || !activeUrl} onClick={() => void clearCurrentOriginStorage()}><strong>Clear current site data</strong><span>Cookies, storage, cache data for the current origin</span></button>
+                  <div className={styles.sectionHeader}><div><h2>{copy.pageStorage}</h2><p>{copy.pageStorageLead}</p></div><button type="button" className={styles.secondaryButton} disabled={!activeTabId} onClick={() => void refreshPageStorage()}>{copy.refresh}</button></div>
+                  {pageStorage ? <><h3 className={styles.subheading}>localStorage</h3><pre className={styles.debugOutput}>{JSON.stringify(pageStorage.localStorage, null, 2)}</pre><h3 className={styles.subheading}>sessionStorage</h3><pre className={styles.debugOutput}>{JSON.stringify(pageStorage.sessionStorage, null, 2)}</pre></> : <div className={styles.emptyState}>{copy.noPageStorage}</div>}
+                  <h3 className={styles.subheading}>{copy.cookies} ({cookies.length})</h3>
+                  <div className={styles.cookieList}>{cookies.map((cookie) => <div key={`${cookie.domain}-${cookie.path}-${cookie.name}`} className={styles.cookieRow}><strong>{cookie.name}</strong><span>{cookie.domain}{cookie.path}</span><small>{cookie.httpOnly ? 'HttpOnly · ' : ''}{cookie.secure ? 'Secure · ' : ''}{cookie.sameSite ?? copy.unspecified}</small></div>)}</div>
+                  <button type="button" className={styles.dangerButton} disabled={!activeTabId || !activeUrl} onClick={() => void clearCurrentOriginStorage()}><strong>{copy.clearCurrentSite}</strong><span>{copy.clearCurrentSiteHint}</span></button>
                 </div>
               </div>
             )}
 
             {section === 'site' && activeTabId && (
               <div className={styles.section}>
-                <div className={styles.sectionHeader}><div><h2>Site</h2><p>Page identity, security and permission state.</p></div><button type="button" className={styles.secondaryButton} onClick={() => void refreshPageInfo()}>Refresh</button></div>
+                <div className={styles.sectionHeader}><div><h2>{copy.site}</h2><p>{copy.siteLead}</p></div><button type="button" className={styles.secondaryButton} onClick={() => void refreshPageInfo()}>{copy.refresh}</button></div>
                 <div className={styles.metricGrid}>
-                  <div className={styles.metricCard}><span>Security</span><strong>{securityState}</strong></div>
-                  <div className={styles.metricCard}><span>Ready state</span><strong>{pageInfo?.readyState ?? '—'}</strong></div>
-                  <div className={styles.metricCard}><span>Visibility</span><strong>{pageInfo?.visibilityState ?? '—'}</strong></div>
-                  <div className={styles.metricCard}><span>Online</span><strong>{pageInfo?.online === undefined ? '—' : pageInfo.online ? 'Yes' : 'No'}</strong></div>
-                  <div className={styles.metricCard}><span>Cookies</span><strong>{pageInfo?.cookieEnabled === undefined ? '—' : pageInfo.cookieEnabled ? 'Enabled' : 'Disabled'}</strong></div>
-                  <div className={styles.metricCard}><span>History length</span><strong>{pageInfo?.historyLength ?? '—'}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.security}</span><strong>{localizeTechnicalState(locale, securityState)}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.readyState}</span><strong>{localizeTechnicalState(locale, pageInfo?.readyState)}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.visibility}</span><strong>{localizeTechnicalState(locale, pageInfo?.visibilityState)}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.online}</span><strong>{pageInfo?.online === undefined ? '—' : pageInfo.online ? copy.yes : copy.no}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.cookies}</span><strong>{pageInfo?.cookieEnabled === undefined ? '—' : pageInfo.cookieEnabled ? copy.enabled : copy.disabled}</strong></div>
+                  <div className={styles.metricCard}><span>{copy.historyLength}</span><strong>{pageInfo?.historyLength ?? '—'}</strong></div>
                 </div>
                 <div className={styles.infoList}>
-                  <div><span>Title</span><code>{pageInfo?.title ?? '—'}</code></div><div><span>Origin</span><code>{pageInfo?.origin ?? '—'}</code></div><div><span>Language</span><code>{pageInfo?.language ?? '—'}</code></div><div><span>Charset</span><code>{pageInfo?.charset ?? '—'}</code></div><div><span>Referrer</span><code>{pageInfo?.referrer || '—'}</code></div><div><span>Viewport</span><code>{pageInfo?.viewport ? `${pageInfo.viewport.width ?? '?'} × ${pageInfo.viewport.height ?? '?'} @ ${pageInfo.devicePixelRatio ?? 1}x` : '—'}</code></div>
+                  <div><span>{copy.title}</span><code>{pageInfo?.title ?? '—'}</code></div><div><span>{copy.origin}</span><code>{pageInfo?.origin ?? '—'}</code></div><div><span>{copy.language}</span><code>{pageInfo?.language ?? '—'}</code></div><div><span>{copy.charset}</span><code>{pageInfo?.charset ?? '—'}</code></div><div><span>{copy.referrer}</span><code>{pageInfo?.referrer || '—'}</code></div><div><span>{copy.viewport}</span><code>{pageInfo?.viewport ? `${pageInfo.viewport.width ?? '?'} × ${pageInfo.viewport.height ?? '?'} @ ${pageInfo.devicePixelRatio ?? 1}x` : '—'}</code></div>
                 </div>
-                <h3 className={styles.subheading}>Permissions</h3>
-                <div className={styles.permissionGrid}>{Object.entries(pageInfo?.permissions ?? {}).map(([name, state]) => <div key={name} className={styles.permissionCard}><span>{name}</span><strong>{state}</strong></div>)}</div>
+                <h3 className={styles.subheading}>{copy.permissions}</h3>
+                <div className={styles.permissionGrid}>{Object.entries(pageInfo?.permissions ?? {}).map(([name, state]) => <div key={name} className={styles.permissionCard}><span>{name}</span><strong>{localizeTechnicalState(locale, state)}</strong></div>)}</div>
               </div>
             )}
 
             {section === 'events' && activeTabId && (
               <div className={styles.sectionFill}>
-                <div className={styles.paneToolbar}><div className={styles.filterRow}><input value={eventFilter} onChange={(event) => setEventFilter(event.target.value)} placeholder="Filter CDP events…" /></div><span className={styles.toolbarStat}>{rawEvents.length} buffered</span><button type="button" className={styles.smallButton} onClick={() => setRawEvents([])}>Clear</button></div>
-                <div className={styles.eventList}>{filteredEvents.map((event, index) => <details key={`${event.timestampMs}-${event.event}-${index}`} className={styles.eventEntry}><summary><span>{event.event}</span><time>{new Date(event.timestampMs).toLocaleTimeString()}</time></summary><pre>{JSON.stringify(safeJson(event.paramsJson), null, 2)}</pre></details>)}{filteredEvents.length === 0 && <div className={styles.emptyState}>No matching CDP events.</div>}</div>
+                <div className={styles.paneToolbar}><div className={styles.filterRow}><input value={eventFilter} onChange={(event) => setEventFilter(event.target.value)} placeholder={copy.filterEvents} /></div><span className={styles.toolbarStat}>{rawEvents.length} {copy.buffered}</span><button type="button" className={styles.smallButton} onClick={() => setRawEvents([])}>{copy.clear}</button></div>
+                <div className={styles.eventList}>{filteredEvents.map((event, index) => <details key={`${event.timestampMs}-${event.event}-${index}`} className={styles.eventEntry}><summary><span>{event.event}</span><time>{new Date(event.timestampMs).toLocaleTimeString(dateLocale)}</time></summary><pre>{JSON.stringify(safeJson(event.paramsJson), null, 2)}</pre></details>)}{filteredEvents.length === 0 && <div className={styles.emptyState}>{copy.noEvents}</div>}</div>
               </div>
             )}
           </main>
         </div>
 
         <footer className={styles.footer}>
-          <span>F12 / Esc to close</span>
-          <span className={styles.status}>{status ?? (activeTabId ? 'CDP-backed Nebula inspector' : 'Waiting for a tab')}</span>
+          <span>{copy.closeFooter}</span>
+          <span className={styles.status}>{status ?? (activeTabId ? copy.cdpInspector : copy.waitingTab)}</span>
         </footer>
       </section>
     </div>,

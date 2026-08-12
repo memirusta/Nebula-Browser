@@ -6,10 +6,12 @@ import { extname, join, normalize, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { mkdtemp, rm } from 'node:fs/promises'
 import net from 'node:net'
+import { Cdp, pollUntil } from './e2e-cdp.mjs'
 
 const root = resolve(process.cwd())
 const distDir = join(root, 'dist')
 const timeoutMs = Number(process.env.NEBULA_E2E_TIMEOUT_MS || 20_000)
+let fatalBrowserError = null
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -188,101 +190,12 @@ async function waitForJson(url, deadline = Date.now() + timeoutMs) {
   )
 }
 
-class Cdp {
-  constructor(wsUrl) {
-    this.ws = new WebSocket(wsUrl)
-    this.nextId = 1
-    this.pending = new Map()
-  }
-
-  async open() {
-    await new Promise((resolvePromise, reject) => {
-      this.ws.addEventListener('open', resolvePromise, { once: true })
-      this.ws.addEventListener('error', reject, { once: true })
-    })
-
-    this.ws.addEventListener('message', (event) => {
-      const message = JSON.parse(String(event.data))
-
-      if (!message.id) return
-
-      const pending = this.pending.get(message.id)
-      if (!pending) return
-
-      this.pending.delete(message.id)
-
-      if (message.error) {
-        pending.reject(
-          new Error(message.error.message || JSON.stringify(message.error)),
-        )
-      } else {
-        pending.resolve(message.result)
-      }
-    })
-  }
-
-  call(method, params = {}) {
-    const id = this.nextId++
-
-    return new Promise((resolvePromise, reject) => {
-      this.pending.set(id, {
-        resolve: resolvePromise,
-        reject,
-      })
-
-      this.ws.send(
-        JSON.stringify({
-          id,
-          method,
-          params,
-        }),
-      )
-    })
-  }
-
-  async eval(expression) {
-    const result = await this.call('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    })
-
-    if (result.exceptionDetails) {
-      throw new Error(
-        result.exceptionDetails.exception?.description ||
-          result.exceptionDetails.text ||
-          'Runtime.evaluate failed',
-      )
-    }
-
-    return result.result?.value
-  }
-
-  close() {
-    try {
-      this.ws.close()
-    } catch {
-      // noop
-    }
-  }
-}
-
 async function poll(
   label,
   fn,
   deadline = Date.now() + timeoutMs,
 ) {
-  let value
-
-  while (Date.now() < deadline) {
-    value = await fn()
-
-    if (value) return value
-
-    await sleep(100)
-  }
-
-  throw new Error(`Timeout: ${label}`)
+  return pollUntil(label, fn, deadline, () => fatalBrowserError)
 }
 
 async function run() {
@@ -290,6 +203,7 @@ async function run() {
   let browser
   let cdp
   let profileDir
+  let shuttingDown = false
 
   try {
     const started = await startStaticServer()
@@ -325,10 +239,17 @@ async function run() {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    browser.on('exit', (code) => {
-      if (code && code !== 0) {
-        console.error(`Browser exited with code ${code}`)
-      }
+    browser.on('error', (error) => {
+      if (shuttingDown) return
+      fatalBrowserError = error
+      cdp?.abort(error)
+    })
+    browser.on('exit', (code, signal) => {
+      if (shuttingDown) return
+      fatalBrowserError = new Error(
+        `Browser exited before smoke completion (code=${code}, signal=${signal || 'none'}).`,
+      )
+      cdp?.abort(fatalBrowserError)
     })
 
     const targets = await poll('browser target', async () => {
@@ -351,7 +272,9 @@ async function run() {
       }
     })
 
-    cdp = new Cdp(targets.webSocketDebuggerUrl)
+    cdp = new Cdp(targets.webSocketDebuggerUrl, {
+      callTimeoutMs: timeoutMs,
+    })
 
     await cdp.open()
     await cdp.call('Runtime.enable')
@@ -781,6 +704,13 @@ console.log('✓ Keyboard shortcuts reference')
       (() => {
         const now = Date.now()
 
+        // Page.reload is only the transport for this fixture. Suppress the
+        // app's graceful pagehide/beforeunload cleanup so the reload models an
+        // unclean renderer exit instead of deleting or overwriting the session.
+        const suppressGracefulExit = (event) => event.stopImmediatePropagation()
+        window.addEventListener('beforeunload', suppressGracefulExit, true)
+        window.addEventListener('pagehide', suppressGracefulExit, true)
+
         localStorage.setItem(
           'nebula-browser-run-state-v1',
           JSON.stringify({
@@ -812,6 +742,21 @@ console.log('✓ Keyboard shortcuts reference')
           })
         )
 
+        const protectedKeys = new Set([
+          'nebula-browser-run-state-v1',
+          'nebula-current-browser-session-v1',
+        ])
+        const originalSetItem = Storage.prototype.setItem
+        const originalRemoveItem = Storage.prototype.removeItem
+        Storage.prototype.setItem = function (key, value) {
+          if (this === localStorage && protectedKeys.has(String(key))) return
+          return originalSetItem.call(this, key, value)
+        }
+        Storage.prototype.removeItem = function (key) {
+          if (this === localStorage && protectedKeys.has(String(key))) return
+          return originalRemoveItem.call(this, key)
+        }
+
         return true
       })()
     `)
@@ -821,6 +766,20 @@ console.log('✓ Keyboard shortcuts reference')
     })
 
     await sleep(250)
+
+    await poll('Crash fixture survives unclean reload', () =>
+      cdp.eval(`
+        (() => {
+          const run = JSON.parse(
+            localStorage.getItem('nebula-browser-run-state-v1') || 'null'
+          )
+          const session = JSON.parse(
+            localStorage.getItem('nebula-current-browser-session-v1') || 'null'
+          )
+          return run?.launchId !== 'e2e-old-run' && session?.id === 'e2e-session'
+        })()
+      `),
+    )
 
     await poll('Crash recovery alert', () =>
       cdp.eval(`
@@ -883,8 +842,109 @@ console.log('✓ Keyboard shortcuts reference')
 
     console.log('✓ Crash recovery focus trap')
 
+    await cdp.eval(`
+      (() => {
+        const dialog = document.querySelector('[role="alertdialog"]')
+        const restore = Array.from(dialog?.querySelectorAll('button') || [])
+          .find((button) => /geri yükle|restore/i.test(button.innerText || ''))
+        restore?.click()
+        return Boolean(restore)
+      })()
+    `)
+
+    await poll('Crash recovery restore closes prompt', () =>
+      cdp.eval(`!document.querySelector('[role="alertdialog"]')`),
+    )
+    await poll('Crash recovery restores both tabs', () =>
+      cdp.eval(`
+        document.querySelectorAll(
+          'iframe[title="Example"], iframe[title="Example Org"]'
+        ).length === 2
+      `),
+    )
+    assert(
+      await cdp.eval(`Boolean(document.querySelector('iframe[title="Example"]:not([hidden])'))`),
+      'Crash recovery aktif sekmeyi geri yüklemedi.',
+    )
+
+    console.log('✓ Crash recovery Restore restores tabs and active tab')
+
+    // Exercise the other destructive choice with a distinct session. The
+    // dismissed tabs must not be opened automatically.
+    await cdp.eval(`
+      (() => {
+        const now = Date.now()
+        const suppressGracefulExit = (event) => event.stopImmediatePropagation()
+        window.addEventListener('beforeunload', suppressGracefulExit, true)
+        window.addEventListener('pagehide', suppressGracefulExit, true)
+        localStorage.setItem(
+          'nebula-browser-run-state-v1',
+          JSON.stringify({
+            version: 1,
+            launchId: 'e2e-dismiss-old-run',
+            startedAt: now - 30000,
+            cleanExit: false,
+          })
+        )
+        localStorage.setItem(
+          'nebula-current-browser-session-v1',
+          JSON.stringify({
+            id: 'e2e-dismiss-session',
+            savedAt: now - 5000,
+            activeTabId: 'e2e-dismiss-tab',
+            tabs: [{
+              id: 'e2e-dismiss-tab',
+              url: 'https://example.net/',
+              title: 'Dismiss Fixture',
+            }],
+          })
+        )
+        const protectedKeys = new Set([
+          'nebula-browser-run-state-v1',
+          'nebula-current-browser-session-v1',
+        ])
+        const originalSetItem = Storage.prototype.setItem
+        const originalRemoveItem = Storage.prototype.removeItem
+        Storage.prototype.setItem = function (key, value) {
+          if (this === localStorage && protectedKeys.has(String(key))) return
+          return originalSetItem.call(this, key, value)
+        }
+        Storage.prototype.removeItem = function (key) {
+          if (this === localStorage && protectedKeys.has(String(key))) return
+          return originalRemoveItem.call(this, key)
+        }
+        return true
+      })()
+    `)
+    await cdp.call('Page.reload', { ignoreCache: true })
+    await poll('Crash recovery dismiss prompt', () =>
+      cdp.eval(`Boolean(document.querySelector('[role="alertdialog"]'))`),
+    )
+    assert(
+      await cdp.eval(`
+        (() => {
+          const dialog = document.querySelector('[role="alertdialog"]')
+          const dismiss = Array.from(dialog?.querySelectorAll('button') || [])
+            .find((button) => /şimdi değil|not now/i.test(button.innerText || ''))
+          dismiss?.click()
+          return Boolean(dismiss)
+        })()
+      `),
+      'Crash recovery Dismiss butonu bulunamadı.',
+    )
+    await poll('Crash recovery dismiss closes prompt', () =>
+      cdp.eval(`!document.querySelector('[role="alertdialog"]')`),
+    )
+    assert(
+      !(await cdp.eval(`Boolean(document.querySelector('iframe[title="Dismiss Fixture"]'))`)),
+      'Dismiss edilen crash session sekmesi açıldı.',
+    )
+
+    console.log('✓ Crash recovery Dismiss leaves fixture tabs closed')
+
     console.log('\nNebula UI/E2E smoke: PASS')
   } finally {
+    shuttingDown = true
     cdp?.close()
 
     if (browser && !browser.killed) {

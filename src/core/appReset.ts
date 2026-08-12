@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '../platform/runtime'
+import { runFactoryReset } from './factoryResetFlow'
 
 const NEBULA_STORAGE_PREFIX = 'nebula-'
 
@@ -35,9 +36,12 @@ export function reloadNebulaApp(): void {
 
 /** Wipe all persisted Nebula state and restart like a fresh install. */
 export async function factoryResetNebulaApp(): Promise<void> {
-  if (isTauri) {
-    await invoke('password_vault_clear')
-  }
-  resetNebulaAppData()
-  reloadNebulaApp()
+  await runFactoryReset({
+    clearBrowserProfiles: () =>
+      isTauri ? invoke('webview_factory_reset_profiles') : Promise.resolve(),
+    clearPasswordVault: () =>
+      isTauri ? invoke('password_vault_clear') : Promise.resolve(),
+    clearShellStorage: resetNebulaAppData,
+    reloadShell: reloadNebulaApp,
+  })
 }

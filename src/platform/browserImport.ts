@@ -10,7 +10,7 @@ export interface BrowserInfo {
 
 const UNKNOWN_BROWSER: BrowserInfo = {
   browser: 'unknown',
-  displayName: 'Tarayıcı',
+  displayName: '',
   bookmarksAvailable: false,
 }
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { SystemStats } from '../core/types'
 import { showAppAlert } from '../core/appDialog'
 import { loadLocale } from '../core/locale'
+import { useLocale } from './useLocale'
+import { SingleFlightPoll } from '../core/singleFlightPoll'
 import { isTauri } from '../platform/runtime'
 import { fetchSystemStats } from '../platform/systemStats'
 import {
@@ -57,59 +59,60 @@ export function useSystemStats(enabled = true) {
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
 
-    const schedule = (poll: () => Promise<void>) => {
-      if (cancelled) return
-      timer = setTimeout(() => void poll(), POLL_MS)
+    const clearScheduledPoll = () => {
+      if (!timer) return
+      clearTimeout(timer)
+      timer = undefined
     }
 
-    if (!isTauri) {
-      const poll = async () => {
-        if (cancelled) return
-        if (!document.hidden) {
-          setStats((prev) => nextMockStats(prev))
-        }
-        schedule(poll)
-      }
-      const onVisibility = () => {
-        if (document.hidden) return
-        if (timer) clearTimeout(timer)
-        void poll()
-      }
-      timer = setTimeout(() => {
+    const pollOnce = async () => {
+      if (cancelled || document.hidden) return
+
+      if (!isTauri) {
         setStats((prev) => nextMockStats(prev))
-        schedule(poll)
-      }, POLL_MS)
-      document.addEventListener('visibilitychange', onVisibility)
-      return () => {
-        cancelled = true
-        if (timer) clearTimeout(timer)
-        document.removeEventListener('visibilitychange', onVisibility)
-      }
-    }
-
-    const poll = async () => {
-      if (cancelled) return
-      if (document.hidden) {
-        schedule(poll)
         return
       }
+
       const snapshot = await fetchSystemStats()
       if (!cancelled && snapshot) {
         setStats((prev) => withHistory(prev, snapshot))
       }
-      schedule(poll)
+    }
+
+    const poller = new SingleFlightPoll(pollOnce, (run) => {
+      if (cancelled) return
+      clearScheduledPoll()
+      timer = setTimeout(() => {
+        timer = undefined
+        run()
+      }, POLL_MS)
+    })
+
+    const triggerNow = () => {
+      if (cancelled || document.hidden) return
+      clearScheduledPoll()
+      poller.trigger()
     }
 
     const onVisibility = () => {
       if (document.hidden) return
-      if (timer) clearTimeout(timer)
-      void poll()
+      triggerNow()
     }
-    void poll()
+
+    if (isTauri) {
+      triggerNow()
+    } else {
+      timer = setTimeout(() => {
+        timer = undefined
+        poller.trigger()
+      }, POLL_MS)
+    }
+
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
-      if (timer) clearTimeout(timer)
+      poller.stop()
+      clearScheduledPoll()
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [enabled])
@@ -118,6 +121,7 @@ export function useSystemStats(enabled = true) {
 }
 
 export function useClock() {
+  const { locale } = useLocale()
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
@@ -143,8 +147,9 @@ export function useClock() {
     }
   }, [])
 
-  const time = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-  const date = now.toLocaleDateString('tr-TR', {
+  const dateLocale = locale === 'tr' ? 'tr-TR' : 'en-US'
+  const time = now.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
+  const date = now.toLocaleDateString(dateLocale, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
