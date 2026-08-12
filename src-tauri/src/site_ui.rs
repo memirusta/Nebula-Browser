@@ -761,7 +761,9 @@ mod imp {
                                     && username.len() <= 1024
                                     && password.len() <= 16_384;
                                 let payload_ok = match message_kind {
-                                    Some("nebula-password-step-identity") => !username.trim().is_empty(),
+                                    Some("nebula-password-step-identity") => {
+                                        !username.trim().is_empty()
+                                    }
                                     Some("nebula-password-step-submit") => !password.is_empty(),
                                     _ => false,
                                 };
