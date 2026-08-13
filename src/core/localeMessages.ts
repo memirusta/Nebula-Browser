@@ -65,6 +65,78 @@ export const LOCALE_MESSAGES = {
     en: 'Sign in with Google on the profile step first, then return here.',
   },
   googleLinked: { tr: 'Google hesabın bağlandı.', en: 'Your Google account is linked.' },
+    syncRestoreTitle: {
+    tr: 'Nebula Sync verilerini geri yükle',
+    en: 'Restore your Nebula Sync data',
+  },
+  syncRestoreLead: {
+    tr: '{email} hesabında daha önce oluşturulmuş bir Nebula Sync yedeği olup olmadığını kontrol edebiliriz.',
+    en: 'We can check whether {email} has an existing Nebula Sync backup.',
+  },
+  syncRestoreUnavailable: {
+    tr: 'Nebula Sync geri yükleme Google hesabıyla masaüstü uygulamasında kullanılabilir.',
+    en: 'Nebula Sync restore is available with a Google account in the desktop app.',
+  },
+  syncRestoreCheck: {
+    tr: 'Nebula Sync yedeğini kontrol et',
+    en: 'Check for Nebula Sync backup',
+  },
+  syncRestoreWorking: {
+    tr: 'Kontrol ediliyor…',
+    en: 'Checking…',
+  },
+  syncRestoreApply: {
+    tr: 'Yedeği geri yükle',
+    en: 'Restore backup',
+  },
+  syncRestoreBackupFound: {
+    tr: 'Yedek bulundu. Şifreleri geri yüklemek için Nebula Sync parolanı gir.',
+    en: 'Backup found. Enter your Nebula Sync password to restore passwords.',
+  },
+  syncRestoreEmpty: {
+    tr: 'Bu hesapta henüz bir Nebula Sync yedeği yok.',
+    en: 'No Nebula Sync backup was found for this account.',
+  },
+  syncRestorePasswordLabel: {
+    tr: 'Nebula Sync parolası',
+    en: 'Nebula Sync password',
+  },
+  syncRestorePasswordPlaceholder: {
+    tr: 'Sync parolan',
+    en: 'Your Sync password',
+  },
+  syncRestorePasswordHint: {
+    tr: 'Bu parola yalnızca senkronize edilmiş şifrelerinin şifresini çözmek için kullanılır.',
+    en: 'This password is used only to decrypt your synchronized passwords.',
+  },
+  syncRestorePasswordRequired: {
+    tr: 'Nebula Sync parolan en az 8 karakter olmalı.',
+    en: 'Your Nebula Sync password must be at least 8 characters.',
+  },
+  syncRestoreFailed: {
+    tr: 'Nebula Sync yedeği geri yüklenemedi. Parolanı ve Google hesabını kontrol edip tekrar dene.',
+    en: 'Nebula Sync could not be restored. Check your password and Google account, then try again.',
+  },
+  defaultBrowserTitle: {
+    tr: "Nebula'yı varsayılan tarayıcın yap",
+    en: 'Make Nebula your default browser',
+  },
+  defaultBrowserLead: {
+    tr: "HTTP ve HTTPS bağlantılarını doğrudan Nebula'da açmak için Windows Varsayılan Uygulamalar ekranından Nebula'yı seçebilirsin.",
+    en: 'Choose Nebula in Windows Default Apps to open HTTP and HTTPS links directly in Nebula.',
+  },
+  defaultBrowserOpen: {
+    tr: 'Windows ayarlarını aç',
+    en: 'Open Windows settings',
+  },
+  defaultBrowserOpenFailed: {
+    tr: 'Windows Varsayılan Uygulamalar ekranı açılamadı.',
+    en: 'Windows Default Apps settings could not be opened.',
+  },
+  defaultBrowserDesktopOnly: {
+    tr: 'Varsayılan tarayıcı seçimi masaüstü uygulamasında kullanılabilir.',
+    en: 'Default browser selection is available in the desktop app.',
+  },
   doneTitle: { tr: 'Hazırsın', en: 'You are all set' },
   doneBookmarks: { tr: 'yer işareti menüye eklenecek.', en: 'bookmarks will be added to the menu.' },
   doneEmptyMenu: {
@@ -613,10 +685,6 @@ catShortcutsDesc: {
     en: 'Selected settings and bookmarks on this device will be replaced with the cloud version. Continue?',
   },
   syncRestoreDone: { tr: 'Bulut verileri geri yüklendi. Nebula yenileniyor…', en: 'Cloud data restored. Reloading Nebula…' },
-  syncRestoreFailed: {
-    tr: 'Bulut verileri geri yüklenemedi. Sync şifresini de kontrol et.',
-    en: 'Could not restore cloud data. Check the Sync password too.',
-  },
   syncNoCloudData: { tr: 'Bu hesap için henüz Nebula yedeği yok.', en: 'There is no Nebula backup for this account yet.' },
   syncDisable: { tr: 'Bu cihazda kapat', en: 'Turn off on this device' },
   syncDisabling: { tr: 'Kapatılıyor…', en: 'Turning off…' },

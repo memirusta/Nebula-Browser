@@ -53,7 +53,9 @@ commands.allow = [
   "google_sync_status",
   "google_sync_pull",
   "google_sync_push",
-  "google_sync_forget"
+  "google_sync_forget",
+  "take_pending_open_urls",
+  "open_default_browser_settings"
 ]
 
 [[permission]]

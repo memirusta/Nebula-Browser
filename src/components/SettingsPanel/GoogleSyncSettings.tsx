@@ -1,24 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  applyGoogleSyncStorage,
   buildGoogleSyncBundle,
-  decryptSyncedPasswords,
   DEFAULT_GOOGLE_SYNC_PREFERENCES,
   loadGoogleSyncLastSuccess,
   loadGoogleSyncPreferences,
   mergeGoogleSyncBackupBundle,
-  mergeSyncedPasswords,
   parseGoogleSyncBundle,
   saveGoogleSyncLastSuccess,
   saveGoogleSyncPreferences,
   type GoogleSyncPreferences,
 } from '../../core/googleSync'
+
+import {
+  applyGoogleSyncRestore,
+} from '../../core/googleSyncRestore'
 import {
   createGooglePkceRequest,
   getGoogleClientId,
 } from '../../core/googleSignIn'
 import { showAppConfirmation } from '../../core/appDialog'
-import { loadPasswordVault, savePasswordVault } from '../../core/passwordVault'
+import { loadPasswordVault} from '../../core/passwordVault'
 import { useLocale } from '../../hooks/useLocale'
 import {
   enableGoogleSyncLoopback,
@@ -151,19 +152,30 @@ export function GoogleSyncSettings({ email }: GoogleSyncSettingsProps) {
         setError(t('syncNoCloudData'))
         return
       }
-      const bundle = parseGoogleSyncBundle(cloud.content)
-      if (preferences.passwords && bundle.categories.passwords && bundle.passwords) {
-        if (syncPassword.length < 8) {
-          setError(t('syncPasswordRequired'))
-          return
-        }
-        const remotePasswords = await decryptSyncedPasswords(bundle.passwords, syncPassword)
-        const localPasswords = await loadPasswordVault()
-        await savePasswordVault(mergeSyncedPasswords(localPasswords, remotePasswords))
-      }
-      applyGoogleSyncStorage(bundle, preferences)
-      const now = Date.now()
-      saveGoogleSyncLastSuccess(now)
+     const bundle =
+  parseGoogleSyncBundle(
+    cloud.content,
+  )
+
+if (
+  preferences.passwords &&
+  bundle.categories.passwords &&
+  bundle.passwords &&
+  syncPassword.length < 8
+) {
+  setError(
+    t('syncPasswordRequired'),
+  )
+
+  return
+}
+
+const now =
+  await applyGoogleSyncRestore({
+    bundle,
+    preferences,
+    syncPassword,
+  })
       setLastSuccess(now)
       setMessage(t('syncRestoreDone'))
       window.setTimeout(() => window.location.reload(), 450)

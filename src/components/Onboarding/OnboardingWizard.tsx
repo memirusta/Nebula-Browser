@@ -7,26 +7,35 @@ import {
   signInWithGoogleProfile,
   takePendingGoogleClaims,
 } from '../../core/googleSignIn'
-import { loadNebulaAccount, type NebulaAccount } from '../../core/nebulaAccount'
+import {
+  loadNebulaAccount,
+  type NebulaAccount,
+} from '../../core/nebulaAccount'
 import { tf } from '../../core/locale'
 import type { NebulaLocale } from '../../hooks/useLocale'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import {
   isOAuthReturnUrl,
+  ONBOARDING_STEPS,
   peekOnboardingImportedShortcuts,
   saveOnboardingImportedShortcuts,
   saveOnboardingResumeStep,
   type OnboardingStep,
 } from '../../core/onboarding'
 import { GoogleAccountSetupPanel } from '../GoogleAccountSetupModal/GoogleAccountSetupPanel'
-import { mergeImportedPasswords, parsePasswordCsv } from '../../core/passwordImport'
+import {
+  mergeImportedPasswords,
+  parsePasswordCsv,
+} from '../../core/passwordImport'
 import type { Shortcut } from '../../core/types'
 import {
   detectDefaultBrowser,
   importDefaultBrowserBookmarks,
   type BrowserInfo,
 } from '../../platform/browserImport'
+import { OnboardingSyncRestoreStep } from './OnboardingSyncRestoreStep'
+import { OnboardingDefaultBrowserStep } from './OnboardingDefaultBrowserStep'
 import { getGoogleOAuthStatus } from '../../platform/googleOAuth'
 import { isTauri } from '../../platform/runtime'
 import styles from './OnboardingWizard.module.css'
@@ -39,484 +48,1443 @@ export interface OnboardingResult {
 interface OnboardingWizardProps {
   open: boolean
   initialStep?: OnboardingStep
-  onApplyImportedShortcuts?: (shortcuts: Shortcut[]) => void
-  onComplete: (result: OnboardingResult) => void
-  onOpenBrowseUrl?: (url: string) => void
+  onApplyImportedShortcuts?: (
+    shortcuts: Shortcut[],
+  ) => void
+  onComplete: (
+    result: OnboardingResult,
+  ) => void
+  onOpenBrowseUrl?: (
+    url: string,
+  ) => void
 }
 
 type Step = OnboardingStep
 
-const STEPS: Step[] = ['language', 'welcome', 'bookmarks', 'profile', 'googleLink', 'done']
+const STEPS: readonly Step[] =
+  ONBOARDING_STEPS
 
-export function OnboardingWizard({ open, initialStep, onApplyImportedShortcuts, onComplete, onOpenBrowseUrl }: OnboardingWizardProps) {
-  const { locale, setLocale, t } = useLocale()
-  const [step, setStep] = useState<Step>(initialStep ?? 'language')
-  const [browserInfo, setBrowserInfo] = useState<BrowserInfo | null>(null)
-  const [importing, setImporting] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
-  const [importedCount, setImportedCount] = useState(0)
-  const [displayName, setDisplayName] = useState('')
-  const [googleStarting, setGoogleStarting] = useState(false)
-  const [googleError, setGoogleError] = useState<string | null>(null)
-  const [googleConfigHint, setGoogleConfigHint] = useState<string | null>(null)
-  const [googleLinkMessage, setGoogleLinkMessage] = useState<string | null>(null)
-  const importedShortcutsRef = useRef<Shortcut[]>([])
-  const accountRef = useRef<NebulaAccount | null>(null)
-  const csvInputRef = useRef<HTMLInputElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
+export function OnboardingWizard({
+  open,
+  initialStep,
+  onApplyImportedShortcuts,
+  onComplete,
+  onOpenBrowseUrl,
+}: OnboardingWizardProps) {
+  const {
+    locale,
+    setLocale,
+    t,
+  } = useLocale()
+
+  const [
+    step,
+    setStep,
+  ] = useState<Step>(
+    initialStep ??
+      'language',
+  )
+
+  const [
+    browserInfo,
+    setBrowserInfo,
+  ] = useState<BrowserInfo | null>(
+    null,
+  )
+
+  const [
+    importing,
+    setImporting,
+  ] = useState(false)
+
+  const [
+    importError,
+    setImportError,
+  ] = useState<string | null>(
+    null,
+  )
+
+  const [
+    importedCount,
+    setImportedCount,
+  ] = useState(0)
+
+  const [
+    displayName,
+    setDisplayName,
+  ] = useState('')
+
+  const [
+    googleStarting,
+    setGoogleStarting,
+  ] = useState(false)
+
+  const [
+    googleError,
+    setGoogleError,
+  ] = useState<string | null>(
+    null,
+  )
+
+  const [
+    googleConfigHint,
+    setGoogleConfigHint,
+  ] = useState<string | null>(
+    null,
+  )
+
+  const [
+    googleLinkMessage,
+    setGoogleLinkMessage,
+  ] = useState<string | null>(
+    null,
+  )
+
+  const importedShortcutsRef =
+    useRef<Shortcut[]>([])
+
+  const accountRef =
+    useRef<NebulaAccount | null>(
+      null,
+    )
+
+  const csvInputRef =
+    useRef<HTMLInputElement>(
+      null,
+    )
+
+  const panelRef =
+    useRef<HTMLDivElement>(
+      null,
+    )
+
   const browserDisplayName =
-    browserInfo && browserInfo.browser !== 'unknown' && browserInfo.displayName.trim()
+    browserInfo &&
+    browserInfo.browser !==
+      'unknown' &&
+    browserInfo.displayName.trim()
       ? browserInfo.displayName
       : t('genericBrowser')
 
-  useDialogFocusTrap({ active: open, containerRef: panelRef, restoreFocus: false })
+  useDialogFocusTrap({
+    active: open,
+    containerRef: panelRef,
+    restoreFocus: false,
+  })
 
-  const handleGoogleClaims = useCallback(
-    (claims: { name?: string; email?: string; picture?: string }) => {
-      const name = claims.name?.trim() || claims.email?.split('@')[0] || t('userFallback')
-      setDisplayName(name)
-      accountRef.current = {
-        provider: 'google',
-        displayName: name,
-        email: claims.email,
-        avatarUrl: claims.picture,
-      }
-    },
-    [t],
-  )
+  const handleGoogleClaims =
+    useCallback(
+      (
+        claims: {
+          name?: string
+          email?: string
+          picture?: string
+        },
+      ) => {
+        const name =
+          claims.name?.trim() ||
+          claims.email?.split(
+            '@',
+          )[0] ||
+          t('userFallback')
+
+        setDisplayName(
+          name,
+        )
+
+        accountRef.current = {
+          provider:
+            'google',
+          displayName:
+            name,
+          email:
+            claims.email,
+          avatarUrl:
+            claims.picture,
+        }
+      },
+      [t],
+    )
 
   useEffect(() => {
     if (!open) return
 
     if (initialStep) {
-      const pendingClaims = takePendingGoogleClaims()
+      const pendingClaims =
+        takePendingGoogleClaims()
+
       if (pendingClaims) {
-        handleGoogleClaims(pendingClaims)
+        handleGoogleClaims(
+          pendingClaims,
+        )
       } else {
-        const saved = loadNebulaAccount()
-        if (saved?.provider === 'google') {
+        const saved =
+          loadNebulaAccount()
+
+        if (
+          saved?.provider ===
+          'google'
+        ) {
           handleGoogleClaims({
-            name: saved.displayName,
-            email: saved.email,
-            picture: saved.avatarUrl,
+            name:
+              saved.displayName,
+            email:
+              saved.email,
+            picture:
+              saved.avatarUrl,
           })
         }
       }
 
-      const pendingImports = peekOnboardingImportedShortcuts()
-      if (pendingImports.length > 0) {
-        importedShortcutsRef.current = pendingImports
-        setImportedCount(pendingImports.length)
+      const pendingImports =
+        peekOnboardingImportedShortcuts()
+
+      if (
+        pendingImports.length >
+        0
+      ) {
+        importedShortcutsRef.current =
+          pendingImports
+
+        setImportedCount(
+          pendingImports.length,
+        )
       }
 
-      setStep(initialStep)
+      setStep(
+        initialStep,
+      )
+
       return
     }
 
-    if (isOAuthReturnUrl()) {
+    if (
+      isOAuthReturnUrl()
+    ) {
       return
     }
 
-    const pendingClaims = takePendingGoogleClaims()
+    const pendingClaims =
+      takePendingGoogleClaims()
+
     if (pendingClaims) {
-      handleGoogleClaims(pendingClaims)
+      handleGoogleClaims(
+        pendingClaims,
+      )
     }
 
-    setStep('language')
-    setBrowserInfo(null)
-    setImporting(false)
-    setImportError(null)
-    setImportedCount(0)
-    setDisplayName('')
-    setGoogleStarting(false)
-    setGoogleError(null)
-    setGoogleConfigHint(null)
-    setGoogleLinkMessage(null)
-    importedShortcutsRef.current = []
-    accountRef.current = null
-  }, [open, initialStep, handleGoogleClaims])
+    setStep(
+      'language',
+    )
 
-  const handleGoogleSignIn = useCallback(() => {
-    setGoogleStarting(true)
-    setGoogleError(null)
-    saveOnboardingResumeStep(step)
+    setBrowserInfo(
+      null,
+    )
 
-    if (isTauri) {
-      void signInWithGoogleProfile().then(({ claims, error }) => {
-        setGoogleStarting(false)
-        if (claims) {
-          handleGoogleClaims(claims)
-          return
-        }
-        if (import.meta.env.DEV && error) console.warn('[nebula] Google sign-in failed', error)
-        setGoogleError(error || t('googleSignInFailed'))
-      })
-      return
-    }
+    setImporting(
+      false,
+    )
 
-    void signInWithGoogleProfile('onboarding-profile')
-  }, [step, handleGoogleClaims, t])
+    setImportError(
+      null,
+    )
 
-  useEffect(() => {
-    if (!open || step !== 'profile' || !isTauri) return
-    void getGoogleOAuthStatus().then((status) => {
-      if (!status || status.clientIdConfigured) {
-        setGoogleConfigHint(null)
+    setImportedCount(
+      0,
+    )
+
+    setDisplayName(
+      '',
+    )
+
+    setGoogleStarting(
+      false,
+    )
+
+    setGoogleError(
+      null,
+    )
+
+    setGoogleConfigHint(
+      null,
+    )
+
+    setGoogleLinkMessage(
+      null,
+    )
+
+    importedShortcutsRef.current =
+      []
+
+    accountRef.current =
+      null
+  }, [
+    open,
+    initialStep,
+    handleGoogleClaims,
+  ])
+
+  const handleGoogleSignIn =
+    useCallback(() => {
+      setGoogleStarting(
+        true,
+      )
+
+      setGoogleError(
+        null,
+      )
+
+      saveOnboardingResumeStep(
+        step,
+      )
+
+      if (isTauri) {
+        void signInWithGoogleProfile()
+          .then(
+            ({
+              claims,
+              error,
+            }) => {
+              setGoogleStarting(
+                false,
+              )
+
+              if (
+                claims
+              ) {
+                handleGoogleClaims(
+                  claims,
+                )
+
+                return
+              }
+
+              if (
+                import.meta.env
+                  .DEV &&
+                error
+              ) {
+                console.warn(
+                  '[nebula] Google sign-in failed',
+                  error,
+                )
+              }
+
+              setGoogleError(
+                error ||
+                  t(
+                    'googleSignInFailed',
+                  ),
+              )
+            },
+          )
+
         return
       }
-      setGoogleConfigHint(tf(locale, 'accountGoogleSecretMissing', { path: status.appdataEnvPath }))
-    })
-  }, [open, step, locale])
+
+      void signInWithGoogleProfile(
+        'onboarding-profile',
+      )
+    }, [
+      step,
+      handleGoogleClaims,
+      t,
+    ])
 
   useEffect(() => {
-    if (!open || step !== 'bookmarks') return
-    void detectDefaultBrowser().then(setBrowserInfo)
-  }, [open, step])
-
-  const handleSelectLocale = useCallback((next: NebulaLocale) => {
-    setLocale(next)
-    setStep('welcome')
-  }, [setLocale])
-
-  const handleImportBookmarks = useCallback(async () => {
-    setImporting(true)
-    setImportError(null)
-    try {
-      const bookmarks = await importDefaultBrowserBookmarks(40)
-      const shortcuts = shortcutsFromImportedBookmarks(bookmarks)
-      importedShortcutsRef.current = shortcuts
-      setImportedCount(shortcuts.length)
-      if (shortcuts.length > 0) {
-        saveOnboardingImportedShortcuts(shortcuts)
-      }
-      if (shortcuts.length === 0) {
-        setImportError(t('bookmarksNone'))
-      }
-    } catch {
-      setImportError(t('bookmarksFailed'))
-    } finally {
-      setImporting(false)
-    }
-  }, [t])
-
-  const finish = useCallback(() => {
-    const trimmed = displayName.trim()
-    if (!accountRef.current && trimmed) {
-      accountRef.current = {
-        provider: 'local',
-        displayName: trimmed,
-      }
+    if (
+      !open ||
+      step !==
+        'profile' ||
+      !isTauri
+    ) {
+      return
     }
 
-    onComplete({
-      account: accountRef.current ?? loadNebulaAccount(),
-      importedShortcuts: importedShortcutsRef.current,
-    })
-  }, [displayName, onComplete])
+    void getGoogleOAuthStatus()
+      .then(
+        (
+          status,
+        ) => {
+          if (
+            !status ||
+            status.clientIdConfigured
+          ) {
+            setGoogleConfigHint(
+              null,
+            )
+
+            return
+          }
+
+          setGoogleConfigHint(
+            tf(
+              locale,
+              'accountGoogleSecretMissing',
+              {
+                path:
+                  status.appdataEnvPath,
+              },
+            ),
+          )
+        },
+      )
+  }, [
+    open,
+    step,
+    locale,
+  ])
+
+  useEffect(() => {
+    if (
+      !open ||
+      step !==
+        'bookmarks'
+    ) {
+      return
+    }
+
+    void detectDefaultBrowser()
+      .then(
+        setBrowserInfo,
+      )
+  }, [
+    open,
+    step,
+  ])
+
+  const handleSelectLocale =
+    useCallback(
+      (
+        next: NebulaLocale,
+      ) => {
+        setLocale(
+          next,
+        )
+
+        setStep(
+          'welcome',
+        )
+      },
+      [setLocale],
+    )
+
+  const handleImportBookmarks =
+    useCallback(
+      async () => {
+        setImporting(
+          true,
+        )
+
+        setImportError(
+          null,
+        )
+
+        try {
+          const bookmarks =
+            await importDefaultBrowserBookmarks(
+              40,
+            )
+
+          const shortcuts =
+            shortcutsFromImportedBookmarks(
+              bookmarks,
+            )
+
+          importedShortcutsRef.current =
+            shortcuts
+
+          setImportedCount(
+            shortcuts.length,
+          )
+
+          if (
+            shortcuts.length >
+            0
+          ) {
+            saveOnboardingImportedShortcuts(
+              shortcuts,
+            )
+          }
+
+          if (
+            shortcuts.length ===
+            0
+          ) {
+            setImportError(
+              t(
+                'bookmarksNone',
+              ),
+            )
+          }
+        } catch {
+          setImportError(
+            t(
+              'bookmarksFailed',
+            ),
+          )
+        } finally {
+          setImporting(
+            false,
+          )
+        }
+      },
+      [t],
+    )
+
+  const finish =
+    useCallback(() => {
+      const trimmed =
+        displayName.trim()
+
+      if (
+        !accountRef.current &&
+        trimmed
+      ) {
+        accountRef.current = {
+          provider:
+            'local',
+          displayName:
+            trimmed,
+        }
+      }
+
+      onComplete({
+        account:
+          accountRef.current ??
+          loadNebulaAccount(),
+
+        importedShortcuts:
+          importedShortcutsRef.current,
+      })
+    }, [
+      displayName,
+      onComplete,
+    ])
 
   const googleEmail =
-    accountRef.current?.provider === 'google' ? accountRef.current.email : undefined
+    accountRef.current
+      ?.provider ===
+      'google'
+      ? accountRef.current
+          .email
+      : undefined
 
-  const goNext = useCallback(() => {
-    if (step === 'bookmarks' && importedShortcutsRef.current.length > 0) {
-      onApplyImportedShortcuts?.(importedShortcutsRef.current)
-    }
+  const goNext =
+    useCallback(() => {
+      if (
+        step ===
+          'bookmarks' &&
+        importedShortcutsRef
+          .current
+          .length >
+          0
+      ) {
+        onApplyImportedShortcuts?.(
+          importedShortcutsRef.current,
+        )
+      }
 
-    if (step === 'profile') {
-      if (googleEmail) {
-        setStep('googleLink')
+      if (
+        step ===
+        'profile'
+      ) {
+        if (
+          googleEmail
+        ) {
+          setStep(
+            'googleLink',
+          )
+
+          return
+        }
+
+        setStep(
+          'defaultBrowser',
+        )
+
         return
       }
-      setStep('done')
-      return
-    }
 
-    const index = STEPS.indexOf(step)
-    if (index < STEPS.length - 1) {
-      setStep(STEPS[index + 1])
-      return
-    }
-    finish()
-  }, [step, finish, onApplyImportedShortcuts, googleEmail])
+      const index =
+        STEPS.indexOf(
+          step,
+        )
 
-  const handleCsvSelected = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+      if (
+        index <
+        STEPS.length -
+          1
+      ) {
+        setStep(
+          STEPS[
+            index + 1
+          ],
+        )
 
-    try {
-      const text = await file.text()
-      const imported = parsePasswordCsv(text)
-      if (imported.length === 0) {
-        setGoogleLinkMessage(t('accountCsvEmpty'))
         return
       }
-      await mergeImportedPasswords(
-        imported.map((item) => ({
-          label: item.label,
-          url: item.url,
-          username: item.username,
-          password: item.password,
-        })),
+
+      finish()
+    }, [
+      step,
+      finish,
+      onApplyImportedShortcuts,
+      googleEmail,
+    ])
+
+  const handleCsvSelected =
+    useCallback(
+      async (
+        event:
+          React.ChangeEvent<HTMLInputElement>,
+      ) => {
+        const file =
+          event.target
+            .files?.[0]
+
+        event.target.value =
+          ''
+
+        if (!file) {
+          return
+        }
+
+        try {
+          const text =
+            await file.text()
+
+          const imported =
+            parsePasswordCsv(
+              text,
+            )
+
+          if (
+            imported.length ===
+            0
+          ) {
+            setGoogleLinkMessage(
+              t(
+                'accountCsvEmpty',
+              ),
+            )
+
+            return
+          }
+
+          await mergeImportedPasswords(
+            imported.map(
+              (
+                item,
+              ) => ({
+                label:
+                  item.label,
+                url:
+                  item.url,
+                username:
+                  item.username,
+                password:
+                  item.password,
+              }),
+            ),
+          )
+
+          setGoogleLinkMessage(
+            tf(
+              locale,
+              'accountCsvImported',
+              {
+                count:
+                  imported.length,
+              },
+            ),
+          )
+        } catch {
+          setGoogleLinkMessage(
+            t(
+              'accountCsvReadError',
+            ),
+          )
+        }
+      },
+      [
+        locale,
+        t,
+      ],
+    )
+
+  const skipGoogleLink =
+    useCallback(() => {
+      setStep(
+        isTauri &&
+          googleEmail
+          ? 'syncRestore'
+          : 'defaultBrowser',
       )
-      setGoogleLinkMessage(tf(locale, 'accountCsvImported', { count: imported.length }))
-    } catch {
-      setGoogleLinkMessage(t('accountCsvReadError'))
-    }
-  }, [locale, t])
+    }, [
+      googleEmail,
+    ])
 
-  const skipGoogleLink = useCallback(() => {
-    setStep('done')
-  }, [])
+  const completeGoogleLink =
+    useCallback(() => {
+      setGoogleLinkMessage(
+        t(
+          'googleLinked',
+        ),
+      )
 
-  const completeGoogleLink = useCallback(() => {
-    setGoogleLinkMessage(t('googleLinked'))
-    setStep('done')
-  }, [t])
+      setStep(
+        isTauri &&
+          googleEmail
+          ? 'syncRestore'
+          : 'defaultBrowser',
+      )
+    }, [
+      googleEmail,
+      t,
+    ])
 
-  const goBack = useCallback(() => {
-    const index = STEPS.indexOf(step)
-    if (index > 0) setStep(STEPS[index - 1])
-  }, [step])
+  const goBack =
+    useCallback(() => {
+      const index =
+        STEPS.indexOf(
+          step,
+        )
 
-  if (!open) return null
+      if (
+        index >
+        0
+      ) {
+        setStep(
+          STEPS[
+            index - 1
+          ],
+        )
+      }
+    }, [
+      step,
+    ])
 
-  const stepIndex = STEPS.indexOf(step)
-  const hasGoogleClient = isGoogleSignInSupported()
-  const redirectUri = googleRedirectUri()
+  if (!open) {
+    return null
+  }
+
+  const stepIndex =
+    STEPS.indexOf(
+      step,
+    )
+
+  const hasGoogleClient =
+    isGoogleSignInSupported()
+
+  const redirectUri =
+    googleRedirectUri()
 
   return createPortal(
-    <div className={styles.backdrop} role="presentation">
+    <div
+      className={
+        styles.backdrop
+      }
+      role="presentation"
+    >
       <div
         ref={panelRef}
-        className={styles.panel}
+        className={
+          styles.panel
+        }
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
         tabIndex={-1}
       >
-        <header className={styles.header}>
-          <p className={styles.kicker}>{t('onboardingKicker')}</p>
-          <div className={styles.progress} aria-hidden="true">
-            {STEPS.map((item, index) => (
-              <span
-                key={item}
-                className={[
-                  styles.progressDot,
-                  index <= stepIndex ? styles.progressDotActive : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              />
-            ))}
+        <header
+          className={
+            styles.header
+          }
+        >
+          <p
+            className={
+              styles.kicker
+            }
+          >
+            {t(
+              'onboardingKicker',
+            )}
+          </p>
+
+          <div
+            className={
+              styles.progress
+            }
+            aria-hidden="true"
+          >
+            {STEPS.map(
+              (
+                item,
+                index,
+              ) => (
+                <span
+                  key={
+                    item
+                  }
+                  className={[
+                    styles.progressDot,
+
+                    index <=
+                    stepIndex
+                      ? styles.progressDotActive
+                      : '',
+                  ]
+                    .filter(
+                      Boolean,
+                    )
+                    .join(
+                      ' ',
+                    )}
+                />
+              ),
+            )}
           </div>
         </header>
 
-        <div className={styles.body}>
-          {step === 'language' && (
+        <div
+          className={
+            styles.body
+          }
+        >
+          {step ===
+            'language' && (
             <>
-              <h1 id="onboarding-title" className={styles.title}>
-                {t('chooseLanguageTitle')}
+              <h1
+                id="onboarding-title"
+                className={
+                  styles.title
+                }
+              >
+                {t(
+                  'chooseLanguageTitle',
+                )}
               </h1>
-              <p className={styles.lead}>{t('chooseLanguageLead')}</p>
-              <div className={styles.languageGrid}>
+
+              <p
+                className={
+                  styles.lead
+                }
+              >
+                {t(
+                  'chooseLanguageLead',
+                )}
+              </p>
+
+              <div
+                className={
+                  styles.languageGrid
+                }
+              >
                 <button
                   type="button"
                   className={[
                     styles.languageBtn,
-                    locale === 'en' ? styles.languageBtnActive : '',
+
+                    locale ===
+                    'en'
+                      ? styles.languageBtnActive
+                      : '',
                   ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  onClick={() => handleSelectLocale('en')}
+                    .filter(
+                      Boolean,
+                    )
+                    .join(
+                      ' ',
+                    )}
+                  onClick={() =>
+                    handleSelectLocale(
+                      'en',
+                    )
+                  }
                 >
-                  {t('languageEnglish')}
+                  {t(
+                    'languageEnglish',
+                  )}
                 </button>
+
                 <button
                   type="button"
                   className={[
                     styles.languageBtn,
-                    locale === 'tr' ? styles.languageBtnActive : '',
+
+                    locale ===
+                    'tr'
+                      ? styles.languageBtnActive
+                      : '',
                   ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  onClick={() => handleSelectLocale('tr')}
+                    .filter(
+                      Boolean,
+                    )
+                    .join(
+                      ' ',
+                    )}
+                  onClick={() =>
+                    handleSelectLocale(
+                      'tr',
+                    )
+                  }
                 >
-                  {t('languageTurkish')}
+                  {t(
+                    'languageTurkish',
+                  )}
                 </button>
               </div>
             </>
           )}
 
-          {step === 'welcome' && (
+          {step ===
+            'welcome' && (
             <>
-              <h1 id="onboarding-title" className={styles.title}>
-                {t('welcomeTitle')}
+              <h1
+                id="onboarding-title"
+                className={
+                  styles.title
+                }
+              >
+                {t(
+                  'welcomeTitle',
+                )}
               </h1>
-              <p className={styles.lead}>{t('welcomeLead')}</p>
+
+              <p
+                className={
+                  styles.lead
+                }
+              >
+                {t(
+                  'welcomeLead',
+                )}
+              </p>
             </>
           )}
 
-          {step === 'bookmarks' && (
+          {step ===
+            'bookmarks' && (
             <>
-              <h2 className={styles.title}>{t('bookmarksTitle')}</h2>
-              <p className={styles.lead}>
+              <h2
+                className={
+                  styles.title
+                }
+              >
+                {t(
+                  'bookmarksTitle',
+                )}
+              </h2>
+
+              <p
+                className={
+                  styles.lead
+                }
+              >
                 {isTauri
                   ? browserInfo
-                    ? browserInfo.bookmarksAvailable
-                      ? `${browserDisplayName} ${t('bookmarksCanImport')}`
-                      : `${browserDisplayName} ${t('bookmarksUnavailable')}`
-                    : t('bookmarksSearching')
-                  : t('bookmarksWebOnly')}
+                    ? browserInfo
+                        .bookmarksAvailable
+                      ? `${browserDisplayName} ${t(
+                          'bookmarksCanImport',
+                        )}`
+                      : `${browserDisplayName} ${t(
+                          'bookmarksUnavailable',
+                        )}`
+                    : t(
+                        'bookmarksSearching',
+                      )
+                  : t(
+                      'bookmarksWebOnly',
+                    )}
               </p>
 
-              {importedCount > 0 && (
-                <p className={styles.success}>
-                  {importedCount} {t('bookmarksReady')}
+              {importedCount >
+                0 && (
+                <p
+                  className={
+                    styles.success
+                  }
+                >
+                  {
+                    importedCount
+                  }{' '}
+                  {t(
+                    'bookmarksReady',
+                  )}
                 </p>
               )}
-              {importError && <p className={styles.error}>{importError}</p>}
 
-              {isTauri && browserInfo?.bookmarksAvailable && (
-                <button
-                  type="button"
-                  className={styles.secondaryBtn}
-                  onClick={() => void handleImportBookmarks()}
-                  disabled={importing}
+              {importError && (
+                <p
+                  className={
+                    styles.error
+                  }
                 >
-                  {importing
-                    ? t('bookmarksImporting')
-                    : `${browserDisplayName} ${t('bookmarksImportBtn')}`}
-                </button>
+                  {
+                    importError
+                  }
+                </p>
               )}
+
+              {isTauri &&
+                browserInfo
+                  ?.bookmarksAvailable && (
+                  <button
+                    type="button"
+                    className={
+                      styles.secondaryBtn
+                    }
+                    onClick={() =>
+                      void handleImportBookmarks()
+                    }
+                    disabled={
+                      importing
+                    }
+                  >
+                    {importing
+                      ? t(
+                          'bookmarksImporting',
+                        )
+                      : `${browserDisplayName} ${t(
+                          'bookmarksImportBtn',
+                        )}`}
+                  </button>
+                )}
             </>
           )}
 
-          {step === 'profile' && (
+          {step ===
+            'profile' && (
             <>
-              <h2 className={styles.title}>{t('profileTitle')}</h2>
-              <p className={styles.lead}>{t('profileLead')}</p>
+              <h2
+                className={
+                  styles.title
+                }
+              >
+                {t(
+                  'profileTitle',
+                )}
+              </h2>
+
+              <p
+                className={
+                  styles.lead
+                }
+              >
+                {t(
+                  'profileLead',
+                )}
+              </p>
 
               {hasGoogleClient ? (
                 <>
                   <button
                     type="button"
-                    className={styles.googleBtn}
-                    onClick={handleGoogleSignIn}
-                    disabled={googleStarting}
+                    className={
+                      styles.googleBtn
+                    }
+                    onClick={
+                      handleGoogleSignIn
+                    }
+                    disabled={
+                      googleStarting
+                    }
                   >
-                    <span className={styles.googleMark} aria-hidden="true">G</span>
+                    <span
+                      className={
+                        styles.googleMark
+                      }
+                      aria-hidden="true"
+                    >
+                      G
+                    </span>
+
                     {googleStarting
                       ? isTauri
-                        ? t('googleOpeningTauri')
-                        : t('googleRedirecting')
-                      : t('googleSignIn')}
+                        ? t(
+                            'googleOpeningTauri',
+                          )
+                        : t(
+                            'googleRedirecting',
+                          )
+                      : t(
+                          'googleSignIn',
+                        )}
                   </button>
+
                   {isTauri ? (
-                    <p className={styles.redirectHint}>{t('googleReturnHintTauri')}</p>
+                    <p
+                      className={
+                        styles.redirectHint
+                      }
+                    >
+                      {t(
+                        'googleReturnHintTauri',
+                      )}
+                    </p>
                   ) : (
-                    <p className={styles.redirectHint}>
-                      {t('googleRedirectUri')}
-                      <code>{redirectUri}</code>
+                    <p
+                      className={
+                        styles.redirectHint
+                      }
+                    >
+                      {t(
+                        'googleRedirectUri',
+                      )}
+
+                      <code>
+                        {
+                          redirectUri
+                        }
+                      </code>
                     </p>
                   )}
-                  {googleConfigHint && <p className={styles.hint}>{googleConfigHint}</p>}
-                  {googleError && <p className={styles.error}>{googleError}</p>}
-                  <p className={styles.divider}>{t('orDivider')}</p>
+
+                  {googleConfigHint && (
+                    <p
+                      className={
+                        styles.hint
+                      }
+                    >
+                      {
+                        googleConfigHint
+                      }
+                    </p>
+                  )}
+
+                  {googleError && (
+                    <p
+                      className={
+                        styles.error
+                      }
+                    >
+                      {
+                        googleError
+                      }
+                    </p>
+                  )}
+
+                  <p
+                    className={
+                      styles.divider
+                    }
+                  >
+                    {t(
+                      'orDivider',
+                    )}
+                  </p>
                 </>
               ) : (
-                <p className={styles.hint}>{t('googleConfigMissing')}</p>
+                <p
+                  className={
+                    styles.hint
+                  }
+                >
+                  {t(
+                    'googleConfigMissing',
+                  )}
+                </p>
               )}
 
-              <label className={styles.fieldLabel}>
-                {t('displayNameLabel')}
+              <label
+                className={
+                  styles.fieldLabel
+                }
+              >
+                {t(
+                  'displayNameLabel',
+                )}
+
                 <input
-                  className={styles.textInput}
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  placeholder={t('displayNamePlaceholder')}
-                  maxLength={48}
+                  className={
+                    styles.textInput
+                  }
+                  value={
+                    displayName
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setDisplayName(
+                      event
+                        .target
+                        .value,
+                    )
+                  }
+                  placeholder={t(
+                    'displayNamePlaceholder',
+                  )}
+                  maxLength={
+                    48
+                  }
                   autoComplete="nickname"
                 />
               </label>
             </>
           )}
 
-          {step === 'googleLink' && googleEmail && (
-            <>
-              <h2 className={styles.title}>{t('googleLinkTitle')}</h2>
-              <GoogleAccountSetupPanel
-                email={googleEmail}
-                onOpenBrowseUrl={(url) => onOpenBrowseUrl?.(url)}
-                onMergePasswords={async (entries) => {
-                  await mergeImportedPasswords(entries)
-                }}
-                onRequestCsvImport={() => csvInputRef.current?.click()}
-                onApplied={completeGoogleLink}
-                showSkip
-                onSkip={skipGoogleLink}
-              />
-              {googleLinkMessage && <p className={styles.success}>{googleLinkMessage}</p>}
-              <input
-                ref={csvInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className={styles.hiddenFileInput}
-                onChange={(event) => void handleCsvSelected(event)}
-              />
-            </>
+          {step ===
+            'googleLink' &&
+            googleEmail && (
+              <>
+                <h2
+                  className={
+                    styles.title
+                  }
+                >
+                  {t(
+                    'googleLinkTitle',
+                  )}
+                </h2>
+
+                <GoogleAccountSetupPanel
+                  email={
+                    googleEmail
+                  }
+                  onOpenBrowseUrl={(
+                    url,
+                  ) =>
+                    onOpenBrowseUrl?.(
+                      url,
+                    )
+                  }
+                  onMergePasswords={async (
+                    entries,
+                  ) => {
+                    await mergeImportedPasswords(
+                      entries,
+                    )
+                  }}
+                  onRequestCsvImport={() =>
+                    csvInputRef.current?.click()
+                  }
+                  onApplied={
+                    completeGoogleLink
+                  }
+                  showSkip
+                  onSkip={
+                    skipGoogleLink
+                  }
+                />
+
+                {googleLinkMessage && (
+                  <p
+                    className={
+                      styles.success
+                    }
+                  >
+                    {
+                      googleLinkMessage
+                    }
+                  </p>
+                )}
+
+                <input
+                  ref={
+                    csvInputRef
+                  }
+                  type="file"
+                  accept=".csv,text/csv"
+                  className={
+                    styles.hiddenFileInput
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    void handleCsvSelected(
+                      event,
+                    )
+                  }
+                />
+              </>
+            )}
+
+          {step ===
+            'googleLink' &&
+            !googleEmail && (
+              <>
+                <h2
+                  className={
+                    styles.title
+                  }
+                >
+                  {t(
+                    'googleLinkTitle',
+                  )}
+                </h2>
+
+                <p
+                  className={
+                    styles.lead
+                  }
+                >
+                  {t(
+                    'googleLinkNeedSignIn',
+                  )}
+                </p>
+              </>
+            )}
+
+          {step ===
+            'syncRestore' && (
+            <OnboardingSyncRestoreStep
+              email={
+                googleEmail
+              }
+              account={
+                accountRef.current
+              }
+              onContinue={() => {
+                setStep(
+                  'defaultBrowser',
+                )
+              }}
+            />
           )}
 
-          {step === 'googleLink' && !googleEmail && (
-            <>
-              <h2 className={styles.title}>{t('googleLinkTitle')}</h2>
-              <p className={styles.lead}>{t('googleLinkNeedSignIn')}</p>
-            </>
+          {step ===
+            'defaultBrowser' && (
+            <OnboardingDefaultBrowserStep />
           )}
 
-          {step === 'done' && (
+          {step ===
+            'done' && (
             <>
-              <h2 className={styles.title}>{t('doneTitle')}</h2>
-              <p className={styles.lead}>
-                {importedCount > 0
-                  ? `${importedCount} ${t('doneBookmarks')}`
-                  : t('doneEmptyMenu')}
+              <h2
+                className={
+                  styles.title
+                }
+              >
+                {t(
+                  'doneTitle',
+                )}
+              </h2>
+
+              <p
+                className={
+                  styles.lead
+                }
+              >
+                {importedCount >
+                0
+                  ? `${importedCount} ${t(
+                      'doneBookmarks',
+                    )}`
+                  : t(
+                      'doneEmptyMenu',
+                    )}
+
                 {displayName.trim()
-                  ? ` ${t('doneWelcome')}, ${displayName.trim()}.`
-                  : ` ${t('doneProfileLater')}`}
+                  ? ` ${t(
+                      'doneWelcome',
+                    )}, ${displayName.trim()}.`
+                  : ` ${t(
+                      'doneProfileLater',
+                    )}`}
               </p>
             </>
           )}
         </div>
 
-        {step !== 'language' && (
-        <footer className={styles.footer}>
-          {stepIndex > 0 && step !== 'done' && step !== 'googleLink' && (
-            <button type="button" className={styles.ghostBtn} onClick={goBack}>
-              {t('back')}
-            </button>
-          )}
-          <div className={styles.footerSpacer} />
-          {step === 'bookmarks' && (
-            <button type="button" className={styles.ghostBtn} onClick={goNext}>
-              {t('skip')}
-            </button>
-          )}
-          {step === 'googleLink' && (
-            <button type="button" className={styles.ghostBtn} onClick={skipGoogleLink}>
-              {t('skip')}
-            </button>
-          )}
-          {step !== 'googleLink' && (
-            <button
-              type="button"
-              className={styles.primaryBtn}
-              onClick={step === 'done' ? finish : goNext}
-            >
-              {step === 'done' ? t('start') : t('continue')}
-            </button>
-          )}
-        </footer>
+        {step !==
+          'language' && (
+          <footer
+            className={
+              styles.footer
+            }
+          >
+            {stepIndex >
+              0 &&
+              step !==
+                'done' &&
+              step !==
+                'googleLink' &&
+              step !==
+                'syncRestore' && (
+                <button
+                  type="button"
+                  className={
+                    styles.ghostBtn
+                  }
+                  onClick={
+                    goBack
+                  }
+                >
+                  {t(
+                    'back',
+                  )}
+                </button>
+              )}
+
+            <div
+              className={
+                styles.footerSpacer
+              }
+            />
+
+            {step ===
+              'bookmarks' && (
+              <button
+                type="button"
+                className={
+                  styles.ghostBtn
+                }
+                onClick={
+                  goNext
+                }
+              >
+                {t(
+                  'skip',
+                )}
+              </button>
+            )}
+
+            {step ===
+              'googleLink' && (
+              <button
+                type="button"
+                className={
+                  styles.ghostBtn
+                }
+                onClick={
+                  skipGoogleLink
+                }
+              >
+                {t(
+                  'skip',
+                )}
+              </button>
+            )}
+
+            {step !==
+              'googleLink' &&
+              step !==
+                'syncRestore' && (
+                <button
+                  type="button"
+                  className={
+                    styles.primaryBtn
+                  }
+                  onClick={
+                    step ===
+                    'done'
+                      ? finish
+                      : goNext
+                  }
+                >
+                  {step ===
+                  'done'
+                    ? t(
+                        'start',
+                      )
+                    : t(
+                        'continue',
+                      )}
+                </button>
+              )}
+          </footer>
         )}
       </div>
     </div>,

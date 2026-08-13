@@ -2,7 +2,18 @@ export const ONBOARDING_COMPLETE_KEY = 'nebula-onboarding-complete-v1'
 export const ONBOARDING_IMPORTED_SHORTCUTS_KEY = 'nebula-onboarding-imported-shortcuts'
 export const ONBOARDING_RESUME_STEP_KEY = 'nebula-onboarding-resume-step'
 
-export type OnboardingStep = 'language' | 'welcome' | 'bookmarks' | 'profile' | 'googleLink' | 'done'
+export const ONBOARDING_STEPS = [
+  'language',
+  'welcome',
+  'bookmarks',
+  'profile',
+  'googleLink',
+  'syncRestore',
+  'defaultBrowser',
+  'done',
+] as const
+
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number]
 
 export function isOnboardingComplete(): boolean {
   try {
@@ -22,10 +33,10 @@ export function saveOnboardingResumeStep(step: OnboardingStep): void {
 
 export function peekOnboardingResumeStep(): OnboardingStep | null {
   const value = sessionStorage.getItem(ONBOARDING_RESUME_STEP_KEY)
-  if (value === 'language' || value === 'welcome' || value === 'bookmarks' || value === 'profile' || value === 'googleLink' || value === 'done') {
-    return value
-  }
-  return null
+
+  return ONBOARDING_STEPS.includes(value as OnboardingStep)
+    ? (value as OnboardingStep)
+    : null
 }
 
 export function peekOnboardingImportedShortcuts(): import('./types').Shortcut[] {
@@ -51,8 +62,13 @@ export function takeOnboardingImportedShortcuts(): import('./types').Shortcut[] 
   }
 }
 
-export function saveOnboardingImportedShortcuts(shortcuts: import('./types').Shortcut[]): void {
-  sessionStorage.setItem(ONBOARDING_IMPORTED_SHORTCUTS_KEY, JSON.stringify(shortcuts))
+export function saveOnboardingImportedShortcuts(
+  shortcuts: import('./types').Shortcut[],
+): void {
+  sessionStorage.setItem(
+    ONBOARDING_IMPORTED_SHORTCUTS_KEY,
+    JSON.stringify(shortcuts),
+  )
 }
 
 export function takeOnboardingResumeStep(): OnboardingStep | null {
@@ -66,12 +82,22 @@ export function isOAuthReturnUrl(): boolean {
   return params.has('code') && params.has('state')
 }
 
-/** Step to open after Google redirects back (sync, before React effects). */
+/**
+ * Step to open synchronously before React effects.
+ *
+ * The saved resume step is also used for non-OAuth reloads, most notably after
+ * restoring Nebula Sync settings during first-run setup.
+ */
 export function onboardingStepAfterOAuthReturn(): OnboardingStep | undefined {
-  if (!isOAuthReturnUrl()) return undefined
-
   const resume = peekOnboardingResumeStep()
-  if (resume === 'profile') return 'googleLink'
-  if (resume) return resume
-  return 'googleLink'
+
+  if (!isOAuthReturnUrl()) {
+    return resume ?? undefined
+  }
+
+  if (resume === 'profile') {
+    return 'googleLink'
+  }
+
+  return resume ?? 'googleLink'
 }

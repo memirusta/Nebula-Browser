@@ -46,13 +46,15 @@
                                      "resources/extensions/**/*"
                                  ],
                    "windows":  {
-                                   "nsis":  {
-                                                "displayLanguageSelector":  true,
-                                                "languages":  [
-                                                                  "English",
-                                                                  "Turkish"
-                                                              ]
-                                            }
+                                   "nsis": {
+  "installMode": "currentUser",
+  "installerHooks": "./windows/hooks.nsh",
+  "displayLanguageSelector": true,
+  "languages": [
+    "English",
+    "Turkish"
+  ]
+}
                                },
                    "android":  {
                                    "debugApplicationIdSuffix":  ".debug"

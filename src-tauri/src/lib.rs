@@ -1,8 +1,10 @@
 mod browser_bookmarks;
 mod browser_passwords;
 mod context_menu;
+mod default_browser;
 mod devtools_bridge;
 mod download_manager;
+mod external_open;
 mod google_oauth;
 mod google_sync;
 mod password_webview;
@@ -964,14 +966,25 @@ fn load_runtime_env() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        external_open::handle_second_instance(app, &args);
+    }));
+
+    builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             load_runtime_env();
 
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            external_open::capture_startup_args();
+
             webview_branding::setup_webview_branding(app.handle(), "main")
                 .map_err(std::io::Error::other)?;
+
             tab_error_page::setup_tab_error_page(app.handle(), "main")
                 .map_err(std::io::Error::other)?;
 
@@ -982,9 +995,12 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            default_browser::open_default_browser_settings,
+            external_open::take_pending_open_urls,
             write_transition_log,
             search_suggestions,
             webview_set_shortcut_bindings,
