@@ -1,0 +1,35 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: #1a2e22;
+  background-image: url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%232a4a35' fill-opacity='0.35'%3E%3Cpath d='M60 10c8 0 14 6 14 14s-6 14-14 14-14-6-14-14 6-14 14-14zm0 52c8 0 14 6 14 14s-6 14-14 14-14-6-14-14 6-14 14-14zm52-52c8 0 14 6 14 14s-6 14-14 14-14-6-14-14 6-14 14-14zm-52 52c8 0 14 6 14 14s-6 14-14 14-14-6-14-14 6-14 14-14z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  transform: translateZ(0);
+}
+
+.root[data-custom='true'] {
+  background-image: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(10, 20, 14, 0.15) 0%,
+    rgba(5, 10, 8, 0.45) 100%
+  );
+  pointer-events: none;
+}
+
+.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-fast) var(--ease-out-expo),
+    visibility var(--duration-fast);
+}

@@ -1,6 +1,7 @@
 import type { NebulaAccount } from './nebulaAccount'
 import { isTauri } from '../platform/runtime'
-import { exchangeGoogleOAuthToken, signInWithGoogleLoopback } from '../platform/googleOAuth'
+import { exchangeGoogleOAuthToken } from '../platform/googleOAuth'
+import { enableGoogleSyncLoopback } from '../platform/googleSync'
 
 export interface GoogleSignInResult {
   claims: GoogleProfileClaims | null
@@ -117,7 +118,7 @@ export function decodeGoogleCredential(credential: string): GoogleProfileClaims 
   }
 }
 
-/** Tauri: loopback via system browser. Browser dev: same-window redirect. */
+/** Tauri uses one authorization for profile + Nebula Sync. Browser dev keeps profile-only redirect. */
 export async function signInWithGoogleProfile(
   oauthReturn?: string,
 ): Promise<GoogleSignInResult> {
@@ -129,18 +130,31 @@ export async function signInWithGoogleProfile(
   if (isTauri) {
     const { verifier, challenge, state } = await createGooglePkceRequest()
 
-    const { claims, error } = await signInWithGoogleLoopback({
-      clientId,
-      codeVerifier: verifier,
-      codeChallenge: challenge,
-      state,
-    })
+    try {
+      const claims = await enableGoogleSyncLoopback({
+        clientId,
+        codeVerifier: verifier,
+        codeChallenge: challenge,
+        state,
+        expectedEmail: '',
+      })
 
-    if (claims) {
       writeStoredAuth(PENDING_CLAIMS_KEY, JSON.stringify(claims))
-    }
+      return { claims }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Google girisi basarisiz.'
 
-    return { claims, error }
+      if (import.meta.env.DEV) {
+        console.warn('[nebula] Google sign-in failed', error)
+      }
+
+      return { claims: null, error: message }
+    }
   }
 
   if (oauthReturn) {
@@ -186,8 +200,6 @@ export async function consumeGoogleSignInRedirect(): Promise<GoogleProfileClaims
 
   consumeInFlight = consumeGoogleSignInRedirectOnce()
     .catch((error) => {
-      // A transient fetch/IPC failure must not permanently mark this OAuth code as
-      // consumed. The caller can recover to onboarding and the next sign-in starts cleanly.
       removeStoredAuth(GOOGLE_OAUTH_USED_CODE_KEY)
       throw error
     })

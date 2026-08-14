@@ -18,6 +18,7 @@ import {
 } from './passwordVault'
 import {
   enableGoogleSyncLoopback,
+  getGoogleSyncStatus,
   pullGoogleSyncData,
 } from '../platform/googleSync'
 
@@ -40,19 +41,33 @@ export async function probeGoogleSyncRestore(
     throw new Error('Google OAuth client is not configured.')
   }
 
-  const {
-    verifier,
-    challenge,
-    state,
-  } = await createGooglePkceRequest()
+  const status = await getGoogleSyncStatus()
+  const linkedEmail = status.email?.trim()
+  const needsAuthorization =
+    !status.enabled ||
+    Boolean(
+      linkedEmail &&
+      email.trim() &&
+      linkedEmail.toLowerCase() !== email.trim().toLowerCase(),
+    )
 
-  await enableGoogleSyncLoopback({
-    clientId,
-    codeVerifier: verifier,
-    codeChallenge: challenge,
-    state,
-    expectedEmail: email,
-  })
+  // New installs already stored the offline credential during profile sign-in.
+  // Keep this fallback for older installs or a changed Google account.
+  if (needsAuthorization) {
+    const {
+      verifier,
+      challenge,
+      state,
+    } = await createGooglePkceRequest()
+
+    await enableGoogleSyncLoopback({
+      clientId,
+      codeVerifier: verifier,
+      codeChallenge: challenge,
+      state,
+      expectedEmail: email,
+    })
+  }
 
   const cloud = await pullGoogleSyncData(clientId)
 

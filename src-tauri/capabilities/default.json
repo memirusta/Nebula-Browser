@@ -25,6 +25,7 @@
   "core:webview:allow-set-webview-focus",
   "core:webview:allow-webview-close",
   "core:webview:allow-get-all-webviews",
+  "dialog:allow-open",
   "allow-nebula-webview-commands",
   "allow-search-suggestions",
   "core:event:allow-listen"

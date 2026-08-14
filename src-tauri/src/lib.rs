@@ -20,6 +20,8 @@ mod ublock_extension;
 mod webview_branding;
 mod webview_controls;
 mod webview_privacy;
+mod wallpaper_media;
+mod weather_location;
 
 static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -257,6 +259,40 @@ async fn webview_execute_script(
 fn webview_set_ui_locale(locale: String) -> Result<(), String> {
     tab_error_page::set_ui_locale(&locale);
     Ok(())
+}
+
+#[tauri::command]
+fn webview_setup_main_site_permissions(app: tauri::AppHandle) -> Result<(), String> {
+    site_ui::setup_main_permission_ui(&app)
+}
+
+#[tauri::command]
+async fn weather_search_cities(
+    query: String,
+    country_code: String,
+    language: String,
+) -> Result<Vec<weather_location::WeatherCity>, String> {
+    weather_location::search_cities(query, country_code, language).await
+}
+
+#[tauri::command]
+async fn weather_search_subdivisions(
+    city_name: String,
+    country_code: String,
+    latitude: f64,
+    longitude: f64,
+    time_zone: String,
+    language: String,
+) -> Result<Vec<weather_location::WeatherSubdivision>, String> {
+    weather_location::search_subdivisions(
+        city_name,
+        country_code,
+        latitude,
+        longitude,
+        time_zone,
+        language,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -975,6 +1011,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             load_runtime_env();
@@ -1026,6 +1063,9 @@ pub fn run() {
             webview_restore_browsing_layout,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,
+            webview_setup_main_site_permissions,
+            weather_search_cities,
+            weather_search_subdivisions,
             site_ui_respond,
             site_context_menu_respond,
             webview_devtools_call,
@@ -1044,6 +1084,9 @@ pub fn run() {
             secure_password_vault::password_vault_save,
             secure_password_vault::password_vault_clear,
             system_stats::get_system_stats,
+            wallpaper_media::wallpaper_import_video,
+            wallpaper_media::wallpaper_clear_videos,
+            system_stats::get_network_stats,
             system_stats::get_system_memory_pressure,
             browser_bookmarks::detect_default_browser,
             browser_bookmarks::import_default_browser_bookmarks,

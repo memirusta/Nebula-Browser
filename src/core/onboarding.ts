@@ -3,7 +3,6 @@ export const ONBOARDING_IMPORTED_SHORTCUTS_KEY = 'nebula-onboarding-imported-sho
 export const ONBOARDING_RESUME_STEP_KEY = 'nebula-onboarding-resume-step'
 
 export const ONBOARDING_STEPS = [
-  'language',
   'welcome',
   'bookmarks',
   'profile',

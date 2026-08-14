@@ -454,3 +454,242 @@
   color: var(--nebula-text);
   font-weight: 500;
 }
+
+/* Native live network widget --------------------------------------------- */
+
+.networkNative {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.networkTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.networkAdapter {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+}
+
+.networkAdapter > span {
+  flex: 0 0 auto;
+  color: var(--nebula-accent);
+  font-weight: 650;
+}
+
+.networkAdapter > small {
+  overflow: hidden;
+  max-width: 104px;
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.networkSpeeds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.networkSpeedCard {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 60px;
+  padding: 9px 10px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.networkSpeedHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.networkSpeedHeader b {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.networkArrowDown {
+  color: var(--nebula-accent);
+}
+
+.networkArrowUp {
+  color: #c18cff;
+}
+
+.networkSpeedCard > div {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.networkSpeedCard strong {
+  overflow: hidden;
+  color: var(--nebula-text);
+  font-size: 17px;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-overflow: ellipsis;
+}
+
+.networkSpeedCard small {
+  flex: 0 0 auto;
+  color: var(--nebula-text-muted);
+  font-size: 8px;
+}
+
+.networkChart {
+  flex: 1;
+  min-height: 58px;
+  overflow: hidden;
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(126, 200, 227, 0.04),
+      transparent
+    );
+}
+
+.networkChart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 58px;
+  overflow: visible;
+}
+
+.networkChartBaseline {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.networkDownloadLine,
+.networkUploadLine {
+  fill: none;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.networkDownloadLine {
+  stroke: var(--nebula-accent);
+}
+
+.networkUploadLine {
+  stroke: #c18cff;
+}
+
+.networkLegend {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--nebula-text-muted);
+  font-size: 8px;
+}
+
+.networkLegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.networkLegend > span i {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.networkLegendDownload {
+  background: var(--nebula-accent);
+}
+
+.networkLegendUpload {
+  background: #c18cff;
+}
+
+.networkLegend > small {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--nebula-text-muted);
+  font-size: 8px;
+  opacity: 0.72;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Network widget — compact usage-only layout ------------------------------ */
+
+.networkNative {
+  gap: 10px;
+  padding: 11px 13px;
+}
+
+.networkUsageLabel {
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.networkSpeeds {
+  gap: 8px;
+}
+
+.networkSpeedCard {
+  min-height: 56px;
+  padding: 9px 10px;
+}
+
+/* Network widget — compact usage-only layout ------------------------------ */
+
+.networkNative {
+  gap: 10px;
+  padding: 11px 13px;
+}
+
+.networkUsageLabel {
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.networkSpeeds {
+  gap: 8px;
+}
+
+.networkSpeedCard {
+  min-height: 56px;
+  padding: 9px 10px;
+}

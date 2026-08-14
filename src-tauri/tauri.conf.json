@@ -1,74 +1,80 @@
 {
-    "$schema":  "../node_modules/@tauri-apps/cli/config.schema.json",
-    "productName":  "Nebula",
-    "version":  "1.4.1",
-    "identifier":  "com.nebula.browser",
-    "build":  {
-                  "frontendDist":  "../dist",
-                  "devUrl":  "http://localhost:5173",
-                  "beforeDevCommand":  "npm run dev",
-                  "beforeBuildCommand":  "npm run build"
-              },
-    "app":  {
-                "windows":  [
-                                {
-                                    "label":  "main",
-                                    "title":  "Nebula",
-                                    "width":  1280,
-                                    "height":  800,
-                                    "resizable":  true,
-                                    "fullscreen":  false,
-                                    "decorations":  false,
-                                    "transparent":  true,
-                                    "backgroundColor":  "#00000000",
-                                    "dragDropEnabled":  false,
-                                    "browserExtensionsEnabled":  true
-                                }
-                            ],
-                "security":  {
-                                 "csp":  "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 data: https: blob:; connect-src \u0027self\u0027 https: http:; frame-src https: http:; font-src \u0027self\u0027 data:"
-                             }
-            },
-    "bundle":  {
-                   "active":  true,
-                   "targets":  [
-                                   "nsis"
-                               ],
-                   "createUpdaterArtifacts":  true,
-                   "icon":  [
-                                "icons/32x32.png",
-                                "icons/128x128.png",
-                                "icons/128x128@2x.png",
-                                "icons/icon.icns",
-                                "icons/icon.ico"
-                            ],
-                   "resources":  [
-                                     "resources/extensions/**/*"
-                                 ],
-                   "windows":  {
-                                   "nsis": {
-  "installMode": "currentUser",
-  "installerHooks": "./windows/hooks.nsh",
-  "displayLanguageSelector": true,
-  "languages": [
-    "English",
-    "Turkish"
-  ]
-}
-                               },
-                   "android":  {
-                                   "debugApplicationIdSuffix":  ".debug"
-                               }
-               },
-    "plugins":  {
-                    "updater":  {
-                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDRUQ5QzgxMzg4ODhDMDYKUldRR2pJZzRnWnp0bk1YNXNJN3orVUYwMU5UMERJS2g0MCtoNWxmRjIya2kzdHk3VCtGRE1aczQK",
-                                    "endpoints":  [
-                                                      "https://github.com/memirusta/Nebula-Browser/releases/latest/download/latest.json"
-                                                  ],
-                                    "windows":  {
-                                                    "installMode":  "passive"
-                                                }
-                                }
-                }
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Nebula",
+  "version": "1.5.0",
+  "identifier": "com.nebula.browser",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nebula",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "dragDropEnabled": false,
+        "browserExtensionsEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; connect-src 'self' https: http:; frame-src https: http:; font-src 'self' data:; media-src 'self' asset: http://asset.localhost blob:;",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/wallpapers/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/extensions/**/*"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./windows/hooks.nsh",
+        "displayLanguageSelector": true,
+        "languages": [
+          "English",
+          "Turkish"
+        ]
+      }
+    },
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDRUQ5QzgxMzg4ODhDMDYKUldRR2pJZzRnWnp0bk1YNXNJN3orVUYwMU5UMERJS2g0MCtoNWxmRjIya2kzdHk3VCtGRE1aczQK",
+      "endpoints": [
+        "https://github.com/memirusta/Nebula-Browser/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

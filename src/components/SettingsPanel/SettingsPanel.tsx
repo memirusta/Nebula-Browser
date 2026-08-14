@@ -14,6 +14,8 @@ import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { showAppConfirmation } from '../../core/appDialog'
 import type { NebulaSettings } from '../../core/nebulaSettings'
+import type { WallpaperConfig } from '../../core/wallpaperConfig'
+import { WallpaperSettingsSection } from './WallpaperSettingsSection'
 import {
   SettingColorRow,
   SettingDangerRow,
@@ -319,7 +321,10 @@ interface SettingsPanelProps {
   open: boolean
   anchor: SettingsAnchor | null
   onClose: () => void
+  wallpaperConfig: WallpaperConfig
+  onUpdateWallpaper: (patch: Partial<WallpaperConfig>) => void
   onPickWallpaper: () => void
+  onPickVideoWallpaper: () => void
   onResetWallpaper: () => void
   onResetShortcuts: () => void
   onClearSavedSession: () => void
@@ -352,7 +357,10 @@ interface SettingsPanelProps {
 
 function CategoryContent({
   categoryId,
+  wallpaperConfig,
+  onUpdateWallpaper,
   onPickWallpaper,
+  onPickVideoWallpaper,
   onResetWallpaper,
   onResetShortcuts,
   onClearSavedSession,
@@ -379,7 +387,10 @@ function CategoryContent({
   onOpenBrowseUrl,
 }: {
   categoryId: SettingsCategoryId
+  wallpaperConfig: WallpaperConfig
+  onUpdateWallpaper: (patch: Partial<WallpaperConfig>) => void
   onPickWallpaper: () => void
+  onPickVideoWallpaper: () => void
   onResetWallpaper: () => void
   onResetShortcuts: () => void
   onClearSavedSession: () => void
@@ -477,20 +488,13 @@ function CategoryContent({
             ]}
             onChange={(value) => setLocale(value as NebulaLocale)}
           />
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('wallpaper')}</div>
-              <div className={styles.rowHint}>{t('wallpaperHint')}</div>
-            </div>
-            <div className={styles.rowActions}>
-              <button type="button" className={styles.actionBtn} onClick={onPickWallpaper}>
-                {t('select')}
-              </button>
-              <button type="button" className={styles.actionBtn} onClick={onResetWallpaper}>
-                {t('reset')}
-              </button>
-            </div>
-          </div>
+          <WallpaperSettingsSection
+            config={wallpaperConfig}
+            onChange={onUpdateWallpaper}
+            onPickImage={onPickWallpaper}
+            onPickVideo={onPickVideoWallpaper}
+            onReset={onResetWallpaper}
+          />
           <SettingSelectRow
             label={t('theme')}
             hint={t('themeHint')}
@@ -1192,7 +1196,10 @@ export function SettingsPanel({
   open,
   anchor: _anchor,
   onClose,
+  wallpaperConfig,
+  onUpdateWallpaper,
   onPickWallpaper,
+  onPickVideoWallpaper,
   onResetWallpaper,
   onResetShortcuts,
   onClearSavedSession,
@@ -1345,7 +1352,10 @@ export function SettingsPanel({
           <div className={styles.contentBody}>
             <CategoryContent
               categoryId={activeId}
+              wallpaperConfig={wallpaperConfig}
+              onUpdateWallpaper={onUpdateWallpaper}
               onPickWallpaper={onPickWallpaper}
+              onPickVideoWallpaper={onPickVideoWallpaper}
               onResetWallpaper={onResetWallpaper}
               onResetShortcuts={onResetShortcuts}
               onClearSavedSession={onClearSavedSession}

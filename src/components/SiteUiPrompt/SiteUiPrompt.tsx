@@ -46,24 +46,34 @@ const COPY = {
   tr: {
     thisFeature: 'bu özellik',
     sitePermission: 'Site izni',
-    wantsToUse: (title: string, permission: string) => `${title} ${permission} kullanmak istiyor`,
-    allowAccess: (origin: string, permission: string) => `${origin} adresinin ${permission} erişimine izin verilsin mi?`,
+    nebulaPermission: 'Nebula izni',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} ${permission} kullanmak istiyor`,
+    allowAccess: (origin: string, permission: string) =>
+      `${origin} adresinin ${permission} erişimine izin verilsin mi?`,
+    nebulaLocationTitle: 'Nebula konumunu kullanabilir mi?',
+    nebulaLocationMessage:
+      'Hava durumu konumunu otomatik ayarlamak için hassas konumunu kullanabilir.',
     allow: 'İzin ver',
     block: 'Engelle',
     authRequired: 'Kimlik doğrulama gerekli',
     signInTo: (title: string) => `${title} için giriş yap`,
-    serverChallenge: (challenge: string) => `Sunucu kimlik bilgisi istedi (${challenge}).`,
+    serverChallenge: (challenge: string) =>
+      `Sunucu kimlik bilgisi istedi (${challenge}).`,
     serverCredentials: 'Sunucu kullanıcı adı ve parola istedi.',
     signIn: 'Giriş yap',
     cancel: 'İptal',
     emailLinks: 'e-posta bağlantılarını',
     protocolLinks: (scheme: string) => `${scheme}: bağlantılarını`,
     protocolHandler: 'Protokol işleyicisi',
-    wantsToOpen: (title: string, label: string) => `${title} ${label} açmak istiyor`,
-    allowHandle: (origin: string, label: string) => `${origin} adresinin ${label} Nebula içinde işlemesine izin verilsin mi?`,
+    wantsToOpen: (title: string, label: string) =>
+      `${title} ${label} açmak istiyor`,
+    allowHandle: (origin: string, label: string) =>
+      `${origin} adresinin ${label} Nebula içinde işlemesine izin verilsin mi?`,
     openExternal: 'Harici uygulama açılsın mı?',
     wantsAnotherApp: (title: string) => `${title} başka bir uygulama açmak istiyor`,
-    allowOutside: (scheme: string) => `Bu sitenin Nebula dışında ${scheme}: bağlantısı açmasına izin verilsin mi?`,
+    allowOutside: (scheme: string) =>
+      `Bu sitenin Nebula dışında ${scheme}: bağlantısı açmasına izin verilsin mi?`,
     open: 'Aç',
     leaveSite: 'Siteden ayrıl?',
     unsaved: 'Yaptığınız değişiklikler kaydedilmeyebilir.',
@@ -80,24 +90,34 @@ const COPY = {
   en: {
     thisFeature: 'this feature',
     sitePermission: 'Site permission',
-    wantsToUse: (title: string, permission: string) => `${title} wants to use ${permission}`,
-    allowAccess: (origin: string, permission: string) => `Allow ${origin} to access ${permission}?`,
+    nebulaPermission: 'Nebula permission',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} wants to use ${permission}`,
+    allowAccess: (origin: string, permission: string) =>
+      `Allow ${origin} to access ${permission}?`,
+    nebulaLocationTitle: 'Allow Nebula to use your location?',
+    nebulaLocationMessage:
+      'Nebula can use your precise location to set the weather location automatically.',
     allow: 'Allow',
     block: 'Block',
     authRequired: 'Authentication required',
     signInTo: (title: string) => `Sign in to ${title}`,
-    serverChallenge: (challenge: string) => `The server requested credentials (${challenge}).`,
+    serverChallenge: (challenge: string) =>
+      `The server requested credentials (${challenge}).`,
     serverCredentials: 'The server requested a username and password.',
     signIn: 'Sign in',
     cancel: 'Cancel',
     emailLinks: 'email links',
     protocolLinks: (scheme: string) => `${scheme}: links`,
     protocolHandler: 'Protocol handler',
-    wantsToOpen: (title: string, label: string) => `${title} wants to open ${label}`,
-    allowHandle: (origin: string, label: string) => `Allow ${origin} to handle ${label} in Nebula?`,
+    wantsToOpen: (title: string, label: string) =>
+      `${title} wants to open ${label}`,
+    allowHandle: (origin: string, label: string) =>
+      `Allow ${origin} to handle ${label} in Nebula?`,
     openExternal: 'Open external app?',
     wantsAnotherApp: (title: string) => `${title} wants to open another application`,
-    allowOutside: (scheme: string) => `Allow this site to open a ${scheme}: link outside Nebula?`,
+    allowOutside: (scheme: string) =>
+      `Allow this site to open a ${scheme}: link outside Nebula?`,
     open: 'Open',
     leaveSite: 'Leave site?',
     unsaved: 'Changes you made may not be saved.',
@@ -121,7 +141,11 @@ function originText(uri: string, fallback: string): string {
   }
 }
 
-export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptProps) {
+export function SiteUiPrompt({
+  request,
+  pendingCount,
+  onRespond,
+}: SiteUiPromptProps) {
   const { locale } = useLocale()
   const copy = COPY[locale]
   const [text, setText] = useState(request.defaultText ?? '')
@@ -132,6 +156,11 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
   const dialogRef = useRef<HTMLElement>(null)
   useModalFocusTrap(dialogRef)
 
+  const isInternalLocation =
+    request.requestType === 'permission' &&
+    request.permissionKind === 'geolocation' &&
+    request.tabLabel === 'main'
+
   useEffect(() => {
     setText(request.defaultText ?? '')
     setUsername('')
@@ -141,12 +170,31 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
   }, [request])
 
   const presentation = useMemo(() => {
+    if (isInternalLocation) {
+      return {
+        eyebrow: copy.nebulaPermission,
+        title: copy.nebulaLocationTitle,
+        message: copy.nebulaLocationMessage,
+        accept: copy.allow,
+        cancel: copy.block,
+      }
+    }
+
     if (request.requestType === 'permission') {
-      const permission = PERMISSION_LABELS[locale][request.permissionKind as keyof typeof PERMISSION_LABELS.tr] ?? request.permissionKind ?? copy.thisFeature
+      const permission =
+        PERMISSION_LABELS[locale][
+          request.permissionKind as keyof typeof PERMISSION_LABELS.tr
+        ] ??
+        request.permissionKind ??
+        copy.thisFeature
+
       return {
         eyebrow: copy.sitePermission,
         title: copy.wantsToUse(request.title, permission),
-        message: copy.allowAccess(originText(request.uri, request.title), permission),
+        message: copy.allowAccess(
+          originText(request.uri, request.title),
+          permission,
+        ),
         accept: copy.allow,
         cancel: copy.block,
       }
@@ -166,11 +214,18 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
 
     if (request.requestType === 'protocol-handler') {
       const scheme = request.permissionKind ?? 'link'
-      const label = scheme === 'mailto' ? copy.emailLinks : copy.protocolLinks(scheme)
+      const label =
+        scheme === 'mailto'
+          ? copy.emailLinks
+          : copy.protocolLinks(scheme)
+
       return {
         eyebrow: copy.protocolHandler,
         title: copy.wantsToOpen(request.title, label),
-        message: copy.allowHandle(originText(request.uri, request.title), label),
+        message: copy.allowHandle(
+          originText(request.uri, request.title),
+          label,
+        ),
         accept: copy.allow,
         cancel: copy.block,
       }
@@ -178,6 +233,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
 
     if (request.requestType === 'external-uri') {
       const scheme = request.permissionKind ?? 'external'
+
       return {
         eyebrow: copy.openExternal,
         title: copy.wantsAnotherApp(request.title),
@@ -221,7 +277,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
           cancel: '',
         }
     }
-  }, [copy, locale, request])
+  }, [copy, isInternalLocation, locale, request])
 
   const submit = () => {
     onRespond({
@@ -247,6 +303,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
             event.preventDefault()
             onRespond({ accepted: false })
           }
+
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault()
             submit()
@@ -254,26 +311,42 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
         }}
       >
         <div className={styles.headerRow}>
-          <div className={styles.siteMark}>{request.title.slice(0, 1).toUpperCase()}</div>
+          <div className={styles.siteMark}>
+            {isInternalLocation
+              ? 'N'
+              : request.title.slice(0, 1).toUpperCase()}
+          </div>
+
           <div className={styles.heading}>
             <span>{presentation.eyebrow}</span>
             <h2 id="nebula-site-ui-title">{presentation.title}</h2>
           </div>
-          {pendingCount > 1 && <span className={styles.queueBadge}>+{pendingCount - 1}</span>}
+
+          {pendingCount > 1 && (
+            <span className={styles.queueBadge}>
+              +{pendingCount - 1}
+            </span>
+          )}
         </div>
 
         <p className={styles.message}>{presentation.message}</p>
-        <div className={styles.origin}>{originText(request.uri, request.uri)}</div>
 
-        {request.requestType === 'script-dialog' && request.dialogKind === 'prompt' && (
-          <input
-            ref={inputRef}
-            className={styles.input}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            aria-label={copy.promptResponse}
-          />
+        {!isInternalLocation && (
+          <div className={styles.origin}>
+            {originText(request.uri, request.uri)}
+          </div>
         )}
+
+        {request.requestType === 'script-dialog' &&
+          request.dialogKind === 'prompt' && (
+            <input
+              ref={inputRef}
+              className={styles.input}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              aria-label={copy.promptResponse}
+            />
+          )}
 
         {request.requestType === 'basic-auth' && (
           <div className={styles.formGrid}>
@@ -285,6 +358,7 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
               placeholder={copy.username}
               autoComplete="username"
             />
+
             <input
               className={styles.input}
               type="password"
@@ -296,24 +370,38 @@ export function SiteUiPrompt({ request, pendingCount, onRespond }: SiteUiPromptP
           </div>
         )}
 
-        {request.requestType === 'permission' && (
-          <label className={styles.rememberRow}>
-            <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-            <span>{copy.remember}</span>
-          </label>
-        )}
+        {request.requestType === 'permission' &&
+          !isInternalLocation && (
+            <label className={styles.rememberRow}>
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(event) => setRemember(event.target.checked)}
+              />
+
+              <span>{copy.remember}</span>
+            </label>
+          )}
 
         <div className={styles.actions}>
           {presentation.cancel && (
-            <button type="button" className={styles.secondary} onClick={() => onRespond({ accepted: false })}>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => onRespond({ accepted: false })}
+            >
               {presentation.cancel}
             </button>
           )}
+
           <button
             type="button"
             className={styles.primary}
             onClick={submit}
-            disabled={request.requestType === 'basic-auth' && !username.trim()}
+            disabled={
+              request.requestType === 'basic-auth' &&
+              !username.trim()
+            }
           >
             {presentation.accept}
           </button>

@@ -12,7 +12,6 @@ import {
   type NebulaAccount,
 } from '../../core/nebulaAccount'
 import { tf } from '../../core/locale'
-import type { NebulaLocale } from '../../hooks/useLocale'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import {
@@ -36,6 +35,7 @@ import {
 } from '../../platform/browserImport'
 import { OnboardingSyncRestoreStep } from './OnboardingSyncRestoreStep'
 import { OnboardingDefaultBrowserStep } from './OnboardingDefaultBrowserStep'
+import { OnboardingWelcomeStep } from './OnboardingWelcomeStep'
 import { getGoogleOAuthStatus } from '../../platform/googleOAuth'
 import { isTauri } from '../../platform/runtime'
 import styles from './OnboardingWizard.module.css'
@@ -64,6 +64,37 @@ type Step = OnboardingStep
 const STEPS: readonly Step[] =
   ONBOARDING_STEPS
 
+const BOOKMARK_COPY = {
+  en: {
+    title: 'Pick up where you left off.',
+    lead: (browser: string) =>
+      `Bring your bookmarks from ${browser} to Nebula.`,
+    detected: 'Bookmarks found',
+    searching: 'Detecting your default browser…',
+    unavailable: 'No supported bookmark source was found.',
+    webOnly: 'Bookmark import is available in the desktop app.',
+    import: 'Import bookmarks',
+    importing: 'Importing…',
+    imported: 'Bookmarks imported',
+    ready: (count: number) =>
+      `${count} sites are ready in Nebula`,
+  },
+  tr: {
+    title: 'Kaldığın yerden devam et.',
+    lead: (browser: string) =>
+      `${browser} yer imlerini Nebula’ya taşı.`,
+    detected: 'Yer imleri bulundu',
+    searching: 'Varsayılan tarayıcı algılanıyor…',
+    unavailable: 'Desteklenen bir yer imi kaynağı bulunamadı.',
+    webOnly: 'Yer imi içe aktarma masaüstü uygulamasında kullanılabilir.',
+    import: 'Yer imlerini içe aktar',
+    importing: 'İçe aktarılıyor…',
+    imported: 'Yer imleri içe aktarıldı',
+    ready: (count: number) =>
+      `${count} site Nebula’da hazır`,
+  },
+} as const
+
 export function OnboardingWizard({
   open,
   initialStep,
@@ -77,12 +108,14 @@ export function OnboardingWizard({
     t,
   } = useLocale()
 
+  const bookmarkCopy = BOOKMARK_COPY[locale]
+
   const [
     step,
     setStep,
   ] = useState<Step>(
     initialStep ??
-      'language',
+      'welcome',
   )
 
   const [
@@ -274,7 +307,7 @@ export function OnboardingWizard({
     }
 
     setStep(
-      'language',
+      'welcome',
     )
 
     setBrowserInfo(
@@ -453,22 +486,6 @@ export function OnboardingWizard({
     step,
   ])
 
-  const handleSelectLocale =
-    useCallback(
-      (
-        next: NebulaLocale,
-      ) => {
-        setLocale(
-          next,
-        )
-
-        setStep(
-          'welcome',
-        )
-      },
-      [setLocale],
-    )
-
   const handleImportBookmarks =
     useCallback(
       async () => {
@@ -618,7 +635,8 @@ export function OnboardingWizard({
       ) {
         setStep(
           STEPS[
-            index + 1
+            index +
+              1
           ],
         )
 
@@ -746,23 +764,42 @@ export function OnboardingWizard({
 
   const goBack =
     useCallback(() => {
-      const index =
-        STEPS.indexOf(
-          step,
-        )
+      switch (step) {
+        case 'bookmarks':
+          setStep('welcome')
+          return
 
-      if (
-        index >
-        0
-      ) {
-        setStep(
-          STEPS[
-            index - 1
-          ],
-        )
+        case 'profile':
+          setStep('bookmarks')
+          return
+
+        case 'googleLink':
+          setStep('profile')
+          return
+
+        case 'syncRestore':
+          setStep('googleLink')
+          return
+
+        case 'defaultBrowser':
+          setStep(
+            isTauri &&
+              googleEmail
+              ? 'syncRestore'
+              : 'profile',
+          )
+          return
+
+        case 'done':
+          setStep('defaultBrowser')
+          return
+
+        default:
+          return
       }
     }, [
       step,
+      googleEmail,
     ])
 
   if (!open) {
@@ -853,173 +890,171 @@ export function OnboardingWizard({
           }
         >
           {step ===
-            'language' && (
-            <>
-              <h1
-                id="onboarding-title"
-                className={
-                  styles.title
-                }
-              >
-                {t(
-                  'chooseLanguageTitle',
-                )}
-              </h1>
-
-              <p
-                className={
-                  styles.lead
-                }
-              >
-                {t(
-                  'chooseLanguageLead',
-                )}
-              </p>
-
-              <div
-                className={
-                  styles.languageGrid
-                }
-              >
-                <button
-                  type="button"
-                  className={[
-                    styles.languageBtn,
-
-                    locale ===
-                    'en'
-                      ? styles.languageBtnActive
-                      : '',
-                  ]
-                    .filter(
-                      Boolean,
-                    )
-                    .join(
-                      ' ',
-                    )}
-                  onClick={() =>
-                    handleSelectLocale(
-                      'en',
-                    )
-                  }
-                >
-                  {t(
-                    'languageEnglish',
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  className={[
-                    styles.languageBtn,
-
-                    locale ===
-                    'tr'
-                      ? styles.languageBtnActive
-                      : '',
-                  ]
-                    .filter(
-                      Boolean,
-                    )
-                    .join(
-                      ' ',
-                    )}
-                  onClick={() =>
-                    handleSelectLocale(
-                      'tr',
-                    )
-                  }
-                >
-                  {t(
-                    'languageTurkish',
-                  )}
-                </button>
-              </div>
-            </>
-          )}
-
-          {step ===
             'welcome' && (
-            <>
-              <h1
-                id="onboarding-title"
-                className={
-                  styles.title
-                }
-              >
-                {t(
-                  'welcomeTitle',
-                )}
-              </h1>
-
-              <p
-                className={
-                  styles.lead
-                }
-              >
-                {t(
-                  'welcomeLead',
-                )}
-              </p>
-            </>
+            <OnboardingWelcomeStep
+              locale={
+                locale
+              }
+              onLocaleChange={
+                setLocale
+              }
+              onContinue={() =>
+                setStep(
+                  'bookmarks',
+                )
+              }
+            />
           )}
 
           {step ===
             'bookmarks' && (
-            <>
-              <h2
+            <div
+              className={
+                styles.bookmarkStep
+              }
+            >
+              <div
                 className={
-                  styles.title
+                  styles.bookmarkIntro
                 }
               >
-                {t(
-                  'bookmarksTitle',
-                )}
-              </h2>
-
-              <p
-                className={
-                  styles.lead
-                }
-              >
-                {isTauri
-                  ? browserInfo
-                    ? browserInfo
-                        .bookmarksAvailable
-                      ? `${browserDisplayName} ${t(
-                          'bookmarksCanImport',
-                        )}`
-                      : `${browserDisplayName} ${t(
-                          'bookmarksUnavailable',
-                        )}`
-                    : t(
-                        'bookmarksSearching',
-                      )
-                  : t(
-                      'bookmarksWebOnly',
-                    )}
-              </p>
-
-              {importedCount >
-                0 && (
-                <p
+                <h2
                   className={
-                    styles.success
+                    styles.title
                   }
                 >
                   {
-                    importedCount
-                  }{' '}
-                  {t(
-                    'bookmarksReady',
-                  )}
+                    bookmarkCopy.title
+                  }
+                </h2>
+
+                <p
+                  className={
+                    styles.lead
+                  }
+                >
+                  {isTauri
+                    ? browserInfo
+                      ? bookmarkCopy.lead(
+                          browserDisplayName,
+                        )
+                      : bookmarkCopy.searching
+                    : bookmarkCopy.webOnly}
                 </p>
+              </div>
+
+              {importedCount >
+              0 ? (
+                <div
+                  className={
+                    styles.bookmarkSuccessCard
+                  }
+                >
+                  <div
+                    className={
+                      styles.bookmarkSuccessIcon
+                    }
+                    aria-hidden="true"
+                  >
+                    ✓
+                  </div>
+
+                  <div
+                    className={
+                      styles.bookmarkSourceText
+                    }
+                  >
+                    <strong>
+                      {
+                        bookmarkCopy.imported
+                      }
+                    </strong>
+
+                    <span>
+                      {
+                        bookmarkCopy.ready(
+                          importedCount,
+                        )
+                      }
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={
+                    styles.bookmarkSourceCard
+                  }
+                >
+                  <div
+                    className={
+                      styles.bookmarkBrowserMark
+                    }
+                    aria-hidden="true"
+                  >
+                    {
+                      browserDisplayName
+                        .trim()
+                        .slice(
+                          0,
+                          1,
+                        )
+                        .toUpperCase() ||
+                      'B'
+                    }
+                  </div>
+
+                  <div
+                    className={
+                      styles.bookmarkSourceText
+                    }
+                  >
+                    <strong>
+                      {
+                        browserInfo
+                          ? browserDisplayName
+                          : t(
+                              'genericBrowser',
+                            )
+                      }
+                    </strong>
+
+                    <span>
+                      {browserInfo
+                        ? browserInfo
+                            .bookmarksAvailable
+                          ? bookmarkCopy.detected
+                          : bookmarkCopy.unavailable
+                        : bookmarkCopy.searching}
+                    </span>
+                  </div>
+
+                  {isTauri &&
+                    browserInfo
+                      ?.bookmarksAvailable && (
+                      <button
+                        type="button"
+                        className={
+                          styles.bookmarkImportButton
+                        }
+                        onClick={() =>
+                          void handleImportBookmarks()
+                        }
+                        disabled={
+                          importing
+                        }
+                      >
+                        {importing
+                          ? bookmarkCopy.importing
+                          : bookmarkCopy.import}
+                      </button>
+                    )}
+                </div>
               )}
 
               {importError && (
                 <p
                   className={
-                    styles.error
+                    styles.bookmarkError
                   }
                 >
                   {
@@ -1027,32 +1062,7 @@ export function OnboardingWizard({
                   }
                 </p>
               )}
-
-              {isTauri &&
-                browserInfo
-                  ?.bookmarksAvailable && (
-                  <button
-                    type="button"
-                    className={
-                      styles.secondaryBtn
-                    }
-                    onClick={() =>
-                      void handleImportBookmarks()
-                    }
-                    disabled={
-                      importing
-                    }
-                  >
-                    {importing
-                      ? t(
-                          'bookmarksImporting',
-                        )
-                      : `${browserDisplayName} ${t(
-                          'bookmarksImportBtn',
-                        )}`}
-                  </button>
-                )}
-            </>
+            </div>
           )}
 
           {step ===
@@ -1098,7 +1108,30 @@ export function OnboardingWizard({
                       }
                       aria-hidden="true"
                     >
-                      G
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="20"
+                        height="20"
+                        role="img"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fill="#EA4335"
+                          d="M12 10.2v3.9h5.4c-.23 1.26-.95 2.33-2.04 3.05l3.29 2.55c1.92-1.77 3.02-4.38 3.02-7.5 0-.72-.06-1.4-.19-2.05H12z"
+                        />
+                        <path
+                          fill="#4285F4"
+                          d="M12 22c2.73 0 5.02-.9 6.69-2.43l-3.29-2.55c-.91.61-2.08.98-3.4.98-2.61 0-4.82-1.76-5.61-4.12H3.01v2.6A10.09 10.09 0 0 0 12 22z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M6.39 13.88A6.07 6.07 0 0 1 6.08 12c0-.65.11-1.28.31-1.88V7.52H3.01A10.09 10.09 0 0 0 1.92 12c0 1.63.39 3.18 1.09 4.48l3.38-2.6z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 5.99c1.48 0 2.81.51 3.86 1.52l2.89-2.89C17.01 2.98 14.72 2 12 2A10.09 10.09 0 0 0 3.01 7.52l3.38 2.6C7.18 7.75 9.39 5.99 12 5.99z"
+                        />
+                      </svg>
                     </span>
 
                     {googleStarting
@@ -1389,7 +1422,7 @@ export function OnboardingWizard({
         </div>
 
         {step !==
-          'language' && (
+          'welcome' && (
           <footer
             className={
               styles.footer
@@ -1425,23 +1458,6 @@ export function OnboardingWizard({
             />
 
             {step ===
-              'bookmarks' && (
-              <button
-                type="button"
-                className={
-                  styles.ghostBtn
-                }
-                onClick={
-                  goNext
-                }
-              >
-                {t(
-                  'skip',
-                )}
-              </button>
-            )}
-
-            {step ===
               'googleLink' && (
               <button
                 type="button"
@@ -1453,7 +1469,7 @@ export function OnboardingWizard({
                 }
               >
                 {t(
-                  'skip',
+                  'continue',
                 )}
               </button>
             )}

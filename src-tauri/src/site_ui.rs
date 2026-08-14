@@ -14,7 +14,8 @@ mod imp {
         ICoreWebView2LaunchingExternalUriSchemeEventArgs,
         ICoreWebView2LaunchingExternalUriSchemeEventHandler,
         ICoreWebView2NewWindowRequestedEventHandler, ICoreWebView2PermissionRequestedEventArgs,
-        ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2ScriptDialogOpeningEventArgs,
+        ICoreWebView2PermissionRequestedEventArgs3,
+        ICoreWebView2PermissionRequestedEventHandler, ICoreWebView2ScriptDialogOpeningEventArgs,
         ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WebMessageReceivedEventHandler,
         ICoreWebView2WindowCloseRequestedEventHandler, ICoreWebView2_10, ICoreWebView2_18,
         COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
@@ -23,8 +24,9 @@ mod imp {
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
         BasicAuthenticationRequestedEventHandler, LaunchingExternalUriSchemeEventHandler,
-        NewWindowRequestedEventHandler, ScriptDialogOpeningEventHandler,
-        WebMessageReceivedEventHandler, WindowCloseRequestedEventHandler,
+        NewWindowRequestedEventHandler, PermissionRequestedEventHandler,
+        ScriptDialogOpeningEventHandler, WebMessageReceivedEventHandler,
+        WindowCloseRequestedEventHandler,
     };
     use windows::core::PCWSTR;
     use windows_core::{Interface, HSTRING, PWSTR};
@@ -43,6 +45,8 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashSet::new()));
     static TOKENS: LazyLock<Mutex<HashMap<String, HandlerTokens>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static MAIN_PERMISSION_UI_CONFIGURED: LazyLock<Mutex<bool>> =
+        LazyLock::new(|| Mutex::new(false));
 
     struct HandlerTokens {
         script_dialog: i64,
@@ -60,6 +64,11 @@ mod imp {
         _window_close: ICoreWebView2WindowCloseRequestedEventHandler,
         _web_message: ICoreWebView2WebMessageReceivedEventHandler,
         _external_uri: Option<ICoreWebView2LaunchingExternalUriSchemeEventHandler>,
+    }
+
+    struct MainPermissionUiHandler {
+        _permission: ICoreWebView2PermissionRequestedEventHandler,
+        _token: i64,
     }
 
     enum PendingRequest {
@@ -104,6 +113,8 @@ mod imp {
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, Handlers>> = RefCell::new(HashMap::new());
         static PENDING: RefCell<HashMap<String, PendingRequest>> = RefCell::new(HashMap::new());
+        static MAIN_PERMISSION_UI_HANDLER: RefCell<Option<MainPermissionUiHandler>> =
+            const { RefCell::new(None) };
     }
 
     #[derive(Clone, Serialize)]
@@ -669,6 +680,91 @@ mod imp {
             },
         );
         Ok(())
+    }
+
+    pub fn setup_main_permission_ui(app: &AppHandle) -> Result<(), String> {
+        {
+            let configured = MAIN_PERMISSION_UI_CONFIGURED
+                .lock()
+                .map_err(|error| error.to_string())?;
+
+            if *configured {
+                return Ok(());
+            }
+        }
+
+        let webview = app
+            .get_webview("main")
+            .ok_or_else(|| "webview 'main' not found".to_string())?;
+
+        let permission_app = app.clone();
+
+        webview
+            .with_webview(move |inner| unsafe {
+                let result = (|| -> windows_core::Result<MainPermissionUiHandler> {
+                    let core = inner.controller().CoreWebView2()?;
+                    let request_app = permission_app.clone();
+
+                    let permission = PermissionRequestedEventHandler::create(Box::new(
+                        move |_, args| {
+                            let Some(args) = args else { return Ok(()) };
+                            let uri = take_string(|value| args.Uri(value));
+                            let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+
+                            if args.PermissionKind(&mut kind).is_err() {
+                                args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
+                                return Ok(());
+                            }
+
+                            let mut initiated = windows_core::BOOL::default();
+                            let _ = args.IsUserInitiated(&mut initiated);
+
+                            request_permission(
+                                &request_app,
+                                "main",
+                                args,
+                                uri,
+                                kind,
+                                initiated.as_bool(),
+                            )
+                        },
+                    ));
+
+                    let mut token = 0i64;
+                    core.add_PermissionRequested(&permission, &mut token)?;
+
+                    Ok(MainPermissionUiHandler {
+                        _permission: permission,
+                        _token: token,
+                    })
+                })();
+
+                match result {
+                    Ok(handler) => {
+                        MAIN_PERMISSION_UI_HANDLER.with(|slot| {
+                            *slot.borrow_mut() = Some(handler);
+                        });
+
+                        if let Ok(mut configured) = MAIN_PERMISSION_UI_CONFIGURED.lock() {
+                            *configured = true;
+                        }
+                    }
+                    Err(error) => {
+                        #[cfg(debug_assertions)]
+                        eprintln!("[nebula site ui] main permission UI: {error}");
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+
+        if *MAIN_PERMISSION_UI_CONFIGURED
+            .lock()
+            .map_err(|error| error.to_string())?
+        {
+            Ok(())
+        } else {
+            Err("failed to configure permission UI for main webview".to_string())
+        }
     }
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
@@ -1258,7 +1354,7 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{request_permission, respond, setup, teardown, SiteUiResponse};
+pub use imp::{request_permission, respond, setup, setup_main_permission_ui, teardown, SiteUiResponse};
 
 #[cfg(not(target_os = "windows"))]
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -1277,6 +1373,11 @@ pub struct SiteUiResponse {
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn setup_main_permission_ui(_app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 

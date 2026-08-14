@@ -29,7 +29,7 @@ export function GoogleAccountSetupPanel({
 }: GoogleAccountSetupPanelProps) {
   const { locale, t } = useLocale()
   const [importPasswords, setImportPasswords] = useState(true)
-  const [linkBrowserSession, setLinkBrowserSession] = useState(true)
+  const [linkBrowserSession, setLinkBrowserSession] = useState(false)
   const [working, setWorking] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [statusError, setStatusError] = useState(false)
@@ -37,7 +37,7 @@ export function GoogleAccountSetupPanel({
 
   useEffect(() => {
     setImportPasswords(true)
-    setLinkBrowserSession(true)
+    setLinkBrowserSession(false)
     setWorking(false)
     setStatusMessage(null)
     setStatusError(false)

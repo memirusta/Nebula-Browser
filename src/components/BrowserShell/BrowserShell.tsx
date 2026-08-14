@@ -126,7 +126,7 @@ import {
   type ClosedTabEntry,
 } from '../../core/browsingHistory'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
-import { useWallpaper } from '../../hooks/useSystemStats'
+import { useWallpaper } from '../../hooks/useWallpaper'
 import type { ToolbarAnchor } from '../RightToolbar/RightToolbar'
 import type { Shortcut } from '../../core/types'
 import { TabbedBrowserContent } from './TabbedBrowserContent'
@@ -219,7 +219,9 @@ export function BrowserShell() {
 
   const {
     wallpaper,
+    updateWallpaper,
     pickWallpaper,
+    pickVideoWallpaper,
     resetWallpaper,
   } = useWallpaper()
 
@@ -4951,8 +4953,15 @@ export function BrowserShell() {
     >
       {showHomeSurface && (
         <WallpaperBackground
-          imageUrl={
+          config={
             wallpaper
+          }
+          active={
+            isHome &&
+            !settingsOpen &&
+            !onboardingOpen &&
+            !developerToolsOpen &&
+            !siteSurfaceActive
           }
           hidden={
             shortcutInteractionActive &&
@@ -5818,8 +5827,17 @@ export function BrowserShell() {
             onClose={
               closeSettings
             }
+            wallpaperConfig={
+              wallpaper
+            }
+            onUpdateWallpaper={
+              updateWallpaper
+            }
             onPickWallpaper={
               pickWallpaper
+            }
+            onPickVideoWallpaper={
+              pickVideoWallpaper
             }
             onResetWallpaper={
               resetWallpaper

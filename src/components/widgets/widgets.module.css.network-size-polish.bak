@@ -1,0 +1,646 @@
+.widget {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 12px;
+  gap: 4px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+  flex-shrink: 0;
+}
+
+.value {
+  font-size: 11px;
+  color: var(--nebula-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chart svg {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+
+.clock {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  padding: 8px 12px;
+  gap: 4px;
+}
+
+.time {
+  font-size: clamp(24px, 5vw, 36px);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--nebula-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.date {
+  font-size: 12px;
+  color: var(--nebula-text-muted);
+  text-transform: capitalize;
+}
+
+.blank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--nebula-text-muted);
+  text-align: center;
+  padding: 12px;
+}
+
+.blankIcon {
+  font-size: 24px;
+  opacity: 0.5;
+}
+
+.blankText {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.notesLabel {
+  font-size: 11px;
+  color: var(--nebula-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.notesEditor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--nebula-text);
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px dashed var(--nebula-glass-border);
+  border-radius: 8px;
+  padding: 9px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.notesEditor:focus {
+  border-color: var(--nebula-accent-dim);
+}
+
+.blank {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--widget-accent) 12%, transparent), transparent 55%);
+}
+
+.blankHeader {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+}
+
+.blankHeader input,
+.blank textarea {
+  width: 100%;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 7px;
+  color: var(--nebula-text);
+  background: rgba(0, 0, 0, 0.12);
+  font: inherit;
+  outline: none;
+}
+
+.blankHeader input:first-child {
+  min-width: 0;
+  padding: 6px 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.blankHeader input[type='color'] {
+  width: 30px;
+  height: 28px;
+  padding: 2px;
+  flex: 0 0 auto;
+}
+
+.blank textarea {
+  flex: 1;
+  min-height: 0;
+  padding: 7px;
+  resize: none;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.widgetHint {
+  margin: 0;
+  color: var(--nebula-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.calendar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+.calendarMonth {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--nebula-text);
+  text-transform: capitalize;
+}
+
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  flex: 1;
+  align-items: center;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendarWeekday {
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.calendarDay {
+  display: grid;
+  place-items: center;
+  min-height: 22px;
+  border-radius: 7px;
+  color: var(--nebula-text);
+  font-size: 10px;
+}
+
+.calendarToday {
+  background: color-mix(in srgb, var(--nebula-accent) 22%, transparent);
+  color: var(--nebula-accent);
+  font-weight: 700;
+}
+
+.weather,
+.network,
+.quickLinks {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+.weatherSearch,
+.quickLinkForm {
+  display: flex;
+  gap: 6px;
+}
+
+.weatherSearch input,
+.quickLinkForm input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.12);
+  color: var(--nebula-text);
+  padding: 6px 7px;
+  font: inherit;
+  font-size: 10px;
+  outline: none;
+}
+
+.weatherSearch button,
+.quickLinkForm button {
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nebula-text);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.weatherSearch button:disabled,
+.quickLinkForm button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.weatherCurrent {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.weatherTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.weatherIcon {
+  font-size: 34px;
+  line-height: 1;
+  color: var(--nebula-accent);
+}
+
+.weatherTop div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.weatherTop strong {
+  color: var(--nebula-text);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.weatherTop span:last-child {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--nebula-text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weatherMeta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  color: var(--nebula-text-muted);
+  font-size: 10px;
+}
+
+.weatherMeta span {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 7px;
+  padding: 6px;
+}
+
+.weatherMeta b {
+  color: var(--nebula-text);
+}
+
+.quickLinksList {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 5px;
+  overflow: auto;
+}
+
+.quickLinkRow {
+  display: flex;
+  gap: 4px;
+}
+
+.quickLinkOpen {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--nebula-text);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quickLinkOpen:hover {
+  border-color: var(--nebula-glass-border);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.quickLinkOpen > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quickLinkIcon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--nebula-accent) 16%, transparent);
+  color: var(--nebula-accent);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.quickLinkRemove {
+  width: 28px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--nebula-text-muted);
+  cursor: pointer;
+}
+
+.quickLinkRemove:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--nebula-text);
+}
+
+.quickLinkForm {
+  flex-wrap: wrap;
+}
+
+.quickLinkForm input:first-child {
+  flex: 0.7;
+}
+
+.quickLinkForm input:nth-child(2) {
+  flex: 1.3;
+}
+
+.network {
+  justify-content: center;
+}
+
+.networkStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--nebula-text-muted);
+  font-size: 12px;
+}
+
+.networkStatus strong {
+  color: var(--nebula-text);
+  font-weight: 600;
+}
+
+.networkDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--nebula-text-muted);
+}
+
+.networkStatus[data-online='true'] .networkDot {
+  background: var(--nebula-accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--nebula-accent) 65%, transparent);
+}
+
+.networkRows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.networkRows div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--nebula-text-muted);
+  font-size: 10px;
+}
+
+.networkRows b {
+  color: var(--nebula-text);
+  font-weight: 500;
+}
+
+/* Native live network widget --------------------------------------------- */
+
+.networkNative {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 9px;
+  padding: 9px 11px;
+}
+
+.networkTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.networkAdapter {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 5px;
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+}
+
+.networkAdapter > span {
+  flex: 0 0 auto;
+  color: var(--nebula-accent);
+  font-weight: 650;
+}
+
+.networkAdapter > small {
+  overflow: hidden;
+  max-width: 88px;
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.networkSpeeds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.networkSpeedCard {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.networkSpeedHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--nebula-text-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.networkSpeedHeader b {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.networkArrowDown {
+  color: var(--nebula-accent);
+}
+
+.networkArrowUp {
+  color: #c18cff;
+}
+
+.networkSpeedCard > div {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.networkSpeedCard strong {
+  overflow: hidden;
+  color: var(--nebula-text);
+  font-size: 17px;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-overflow: ellipsis;
+}
+
+.networkSpeedCard small {
+  flex: 0 0 auto;
+  color: var(--nebula-text-muted);
+  font-size: 8px;
+}
+
+.networkChart {
+  flex: 1;
+  min-height: 38px;
+  overflow: hidden;
+  border-radius: 7px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(126, 200, 227, 0.035),
+      transparent
+    );
+}
+
+.networkChart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 38px;
+  overflow: visible;
+}
+
+.networkChartBaseline {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.networkDownloadLine,
+.networkUploadLine {
+  fill: none;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.networkDownloadLine {
+  stroke: var(--nebula-accent);
+}
+
+.networkUploadLine {
+  stroke: #c18cff;
+}
+
+.networkLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--nebula-text-muted);
+  font-size: 8px;
+}
+
+.networkLegend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.networkLegend > span i {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.networkLegendDownload {
+  background: var(--nebula-accent);
+}
+
+.networkLegendUpload {
+  background: #c18cff;
+}
+
+.networkLegend > small {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--nebula-text-muted);
+  font-size: 8px;
+  opacity: 0.72;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

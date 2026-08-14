@@ -1,0 +1,148 @@
+.welcomeSetup {
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+}
+
+.welcomeHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0 30px;
+  text-align: center;
+}
+
+.nebulaLogo {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(126, 200, 227, 0.28);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      circle at 30% 25%,
+      rgba(126, 200, 227, 0.34),
+      rgba(126, 200, 227, 0.08) 45%,
+      rgba(255, 255, 255, 0.02)
+    );
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: var(--nebula-accent);
+  font-size: 27px;
+}
+
+.welcomeTitle {
+  margin: 0;
+  color: #f4f7f5;
+  font-size: 31px;
+  line-height: 1.1;
+  font-weight: 650;
+}
+
+.welcomeSubtitle {
+  margin: 9px 0 0;
+  color: rgba(244, 247, 245, 0.64);
+  font-size: 14px;
+}
+
+.setupFields {
+  display: grid;
+  gap: 16px;
+}
+
+.regionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.setupField {
+  display: grid;
+  gap: 8px;
+  color: rgba(244, 247, 245, 0.65);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.setupField select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f4f7f5;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.setupField select:hover {
+  border-color: rgba(126, 200, 227, 0.38);
+  background: rgba(126, 200, 227, 0.065);
+}
+
+.setupField select:focus {
+  outline: none;
+  border-color: rgba(126, 200, 227, 0.8);
+  box-shadow: 0 0 0 3px rgba(126, 200, 227, 0.09);
+}
+
+.locationAssist {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 30px;
+  color: rgba(244, 247, 245, 0.46);
+  font-size: 11px;
+}
+
+.locationButton {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--nebula-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.locationButton:hover {
+  text-decoration: underline;
+}
+
+.locationButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.preferencesHint {
+  margin: 0;
+  color: rgba(244, 247, 245, 0.36);
+  font-size: 11px;
+}
+
+.welcomeContinue {
+  align-self: flex-end;
+  margin-top: 26px;
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 22px;
+  background: linear-gradient(135deg, #7ec8e3, #62b3d7);
+  color: #071117;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .regionRow {
+    grid-template-columns: 1fr;
+  }
+}

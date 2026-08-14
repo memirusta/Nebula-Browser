@@ -87,10 +87,11 @@ export const WIDGET_DEFAULT_SIZES: Record<WidgetType, WidgetSize> = {
   weather: { w: 4, h: 6, minW: 4, minH: 5 },
   calendar: { w: 4, h: 7, minW: 4, minH: 6 },
   quickLinks: { w: 4, h: 6, minW: 3, minH: 4 },
-  network: { w: 4, h: 4, minW: 3, minH: 3 },
+  network: { w: 4, h: 5, minW: 3, minH: 4 },
 }
 
 export const WIDGET_LAYOUT_KEY = 'nebula-widget-layout-v1'
+const NETWORK_USAGE_ONLY_MIGRATION_KEY = 'nebula-widget-network-usage-only-v1'
 
 export interface WidgetQuickLink {
   id: string
@@ -286,14 +287,53 @@ function normalizeWidgetData(value: unknown): WidgetPaneData {
   return normalized
 }
 
+function migrateNetworkUsageOnlyLayout(
+  state: WidgetLayoutState,
+): WidgetLayoutState {
+  try {
+    if (
+      localStorage.getItem(NETWORK_USAGE_ONLY_MIGRATION_KEY) === '1'
+    ) {
+      return state
+    }
+
+    const networkPaneIds = new Set(
+      state.panes
+        .filter((pane) => pane.widgetType === 'network')
+        .map((pane) => pane.id),
+    )
+
+    const layout = state.layout.map((item) =>
+      networkPaneIds.has(item.i) && item.h === 6
+        ? {
+            ...item,
+            h: WIDGET_DEFAULT_SIZES.network.h,
+            minH: WIDGET_DEFAULT_SIZES.network.minH,
+          }
+        : item,
+    )
+
+    localStorage.setItem(
+      NETWORK_USAGE_ONLY_MIGRATION_KEY,
+      '1',
+    )
+
+    return {
+      ...state,
+      layout,
+    }
+  } catch {
+    return state
+  }
+}
 export function loadWidgetLayout(): WidgetLayoutState {
   try {
     const raw = localStorage.getItem(WIDGET_LAYOUT_KEY)
     if (raw) {
-      return normalizeWidgetLayout(JSON.parse(raw) as Partial<WidgetLayoutState>)
+      return migrateNetworkUsageOnlyLayout(normalizeWidgetLayout(JSON.parse(raw) as Partial<WidgetLayoutState>))
     }
   } catch {
     /* ignore */
   }
-  return normalizeWidgetLayout(null)
+  return migrateNetworkUsageOnlyLayout(normalizeWidgetLayout(null))
 }

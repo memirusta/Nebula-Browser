@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useLocale } from '../../hooks/useLocale'
+import {
+  loadRegionalPreferences,
+  type RegionalPreferences,
+} from '../../core/regionalPreferences'
 import styles from './widgets.module.css'
 
 interface WeatherValue {
@@ -26,6 +30,51 @@ function weatherSymbol(code: number): string {
   return '◌'
 }
 
+function regionalWeatherValue(
+  preferences: RegionalPreferences,
+): WeatherValue | null {
+  const weatherLocation =
+    preferences.weatherLocation
+
+  if (
+    !weatherLocation ||
+    !Number.isFinite(weatherLocation.latitude) ||
+    !Number.isFinite(weatherLocation.longitude)
+  ) {
+    return null
+  }
+
+  const location =
+    weatherLocation.label?.trim() ||
+    [
+      weatherLocation.district,
+      weatherLocation.city,
+    ]
+      .filter(Boolean)
+      .join(', ') ||
+    preferences.regionCode
+
+  return {
+    location,
+    latitude:
+      weatherLocation.latitude,
+    longitude:
+      weatherLocation.longitude,
+  }
+}
+
+function sameWeatherValue(
+  left: WeatherValue | undefined,
+  right: WeatherValue,
+): boolean {
+  return Boolean(
+    left &&
+    left.location === right.location &&
+    left.latitude === right.latitude &&
+    left.longitude === right.longitude,
+  )
+}
+
 export function WeatherWidget({
   value,
   onChange,
@@ -46,6 +95,67 @@ export function WeatherWidget({
     setQuery(location)
   }, [location])
 
+  /*
+   * Onboarding stores the canonical weather location in regional preferences.
+   * A newly-added/existing Weather widget with no location adopts it once and
+   * persists it through its normal onChange -> widget layout state path.
+   */
+  useEffect(() => {
+    if (value) return
+
+    const regional =
+      regionalWeatherValue(
+        loadRegionalPreferences(),
+      )
+
+    if (regional) {
+      onChange(regional)
+    }
+  }, [onChange, value])
+
+  /*
+   * Keep an already-mounted Home weather widget in sync while onboarding is
+   * still covering the app. saveRegionalPreferences dispatches this event when
+   * the user presses Continue on the Welcome step.
+   */
+  useEffect(() => {
+    const handleRegionalChange = (
+      event: Event,
+    ) => {
+      const preferences =
+        (
+          event as CustomEvent<RegionalPreferences>
+        ).detail
+
+      const regional =
+        regionalWeatherValue(
+          preferences,
+        )
+
+      if (
+        regional &&
+        !sameWeatherValue(
+          value,
+          regional,
+        )
+      ) {
+        onChange(regional)
+      }
+    }
+
+    window.addEventListener(
+      'nebula-regional-preferences-changed',
+      handleRegionalChange,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'nebula-regional-preferences-changed',
+        handleRegionalChange,
+      )
+    }
+  }, [onChange, value])
+
   useEffect(() => {
     if (latitude === undefined || longitude === undefined) {
       setWeather(null)
@@ -53,15 +163,18 @@ export function WeatherWidget({
       setError(false)
       return
     }
+
     let cancelled = false
     setLoading(true)
     setError(false)
+
     const params = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
       current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code',
       timezone: 'auto',
     })
+
     fetch(`https://api.open-meteo.com/v1/forecast?${params}`)
       .then((res) => {
         if (!res.ok) throw new Error('weather request failed')
@@ -76,9 +189,16 @@ export function WeatherWidget({
           weatherCode: data.current.weather_code,
         })
       })
-      .catch(() => { if (!cancelled) setError(true) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [latitude, longitude])
 
   const search = async () => {
@@ -86,16 +206,47 @@ export function WeatherWidget({
     if (!text) return
     setLoading(true)
     setError(false)
+
     try {
-      const params = new URLSearchParams({ name: text, count: '1', language: locale, format: 'json' })
-      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params}`)
+      const params = new URLSearchParams({
+        name: text,
+        count: '1',
+        language: locale,
+        format: 'json',
+      })
+      const res = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?${params}`,
+      )
       if (!res.ok) throw new Error('geocoding failed')
-      const data = await res.json() as { results?: Array<{ name: string; admin1?: string; country?: string; latitude: number; longitude: number }> }
+      const data = await res.json() as {
+        results?: Array<{
+          name: string
+          admin1?: string
+          country?: string
+          latitude: number
+          longitude: number
+        }>
+      }
       const match = data.results?.[0]
       if (!match) throw new Error('no location')
-      const location = [match.name, match.admin1, match.country].filter(Boolean).filter((part, index, all) => all.indexOf(part) === index).join(', ')
-      onChange({ location, latitude: match.latitude, longitude: match.longitude })
-      setQuery(location)
+      const nextLocation = [
+        match.name,
+        match.admin1,
+        match.country,
+      ]
+        .filter(Boolean)
+        .filter(
+          (part, index, all) =>
+            all.indexOf(part) === index,
+        )
+        .join(', ')
+
+      onChange({
+        location: nextLocation,
+        latitude: match.latitude,
+        longitude: match.longitude,
+      })
+      setQuery(nextLocation)
     } catch {
       setError(true)
       setLoading(false)
@@ -108,23 +259,49 @@ export function WeatherWidget({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void search() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void search()
+          }}
           placeholder={t('weatherLocationPlaceholder')}
         />
-        <button type="button" onClick={() => void search()} disabled={loading || !query.trim()}>{t('weatherSearch')}</button>
+        <button
+          type="button"
+          onClick={() => void search()}
+          disabled={loading || !query.trim()}
+        >
+          {t('weatherSearch')}
+        </button>
       </div>
-      {loading && !weather && <p className={styles.widgetHint}>{t('weatherLoading')}</p>}
-      {error && <p className={styles.widgetHint}>{t('weatherError')}</p>}
-      {!value && !loading && !error && <p className={styles.widgetHint}>{t('weatherNoLocation')}</p>}
+
+      {loading && !weather && (
+        <p className={styles.widgetHint}>{t('weatherLoading')}</p>
+      )}
+      {error && (
+        <p className={styles.widgetHint}>{t('weatherError')}</p>
+      )}
+      {!value && !loading && !error && (
+        <p className={styles.widgetHint}>{t('weatherNoLocation')}</p>
+      )}
       {value && weather && (
         <div className={styles.weatherCurrent}>
           <div className={styles.weatherTop}>
-            <span className={styles.weatherIcon}>{weatherSymbol(weather.weatherCode)}</span>
-            <div><strong>{Math.round(weather.temperature)}°</strong><span>{value.location}</span></div>
+            <span className={styles.weatherIcon}>
+              {weatherSymbol(weather.weatherCode)}
+            </span>
+            <div>
+              <strong>{Math.round(weather.temperature)}°</strong>
+              <span>{value.location}</span>
+            </div>
           </div>
           <div className={styles.weatherMeta}>
-            <span>{t('weatherFeelsLike')} <b>{Math.round(weather.apparentTemperature)}°</b></span>
-            <span>{t('weatherHumidity')} <b>{Math.round(weather.humidity)}%</b></span>
+            <span>
+              {t('weatherFeelsLike')}{' '}
+              <b>{Math.round(weather.apparentTemperature)}°</b>
+            </span>
+            <span>
+              {t('weatherHumidity')}{' '}
+              <b>{Math.round(weather.humidity)}%</b>
+            </span>
           </div>
         </div>
       )}
