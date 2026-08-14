@@ -44,3 +44,7 @@ perf-stress-*.csv
 .release-test/
 
 docs/ARCHITECTURE.md
+
+# Local Nebula patch/script backups
+.nebula-*-backup-*/
+.nebula-v1.6-version-backup*/
