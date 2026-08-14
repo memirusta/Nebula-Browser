@@ -63,9 +63,7 @@ fn network_connection_type(name: &str) -> &'static str {
         || normalized.contains("wireless")
     {
         "Wi-Fi"
-    } else if normalized.contains("ethernet")
-        || normalized.starts_with("eth")
-    {
+    } else if normalized.contains("ethernet") || normalized.starts_with("eth") {
         "Ethernet"
     } else if normalized.contains("cellular")
         || normalized.contains("mobile")
@@ -79,20 +77,11 @@ fn network_connection_type(name: &str) -> &'static str {
     }
 }
 
-fn choose_network_interface(
-    networks: &Networks,
-    previous: Option<&str>,
-) -> Option<String> {
+fn choose_network_interface(networks: &Networks, previous: Option<&str>) -> Option<String> {
     let mut active = networks
         .iter()
         .filter(|(name, _)| !should_ignore_network_interface(name))
-        .map(|(name, data)| {
-            (
-                name,
-                data.received()
-                    .saturating_add(data.transmitted()),
-            )
-        })
+        .map(|(name, data)| (name, data.received().saturating_add(data.transmitted())))
         .collect::<Vec<_>>();
 
     active.sort_by_key(|(_, bytes)| std::cmp::Reverse(*bytes));
@@ -104,9 +93,7 @@ fn choose_network_interface(
     }
 
     if let Some(previous) = previous {
-        if networks.contains_key(previous)
-            && !should_ignore_network_interface(previous)
-        {
+        if networks.contains_key(previous) && !should_ignore_network_interface(previous) {
             return Some(previous.to_string());
         }
     }
@@ -133,8 +120,7 @@ pub fn get_network_stats() -> Result<NetworkStatsPayload, String> {
 
     if guard.is_none() {
         let networks = Networks::new_with_refreshed_list();
-        let active_interface =
-            choose_network_interface(&networks, None);
+        let active_interface = choose_network_interface(&networks, None);
 
         let payload = if let Some(name) = active_interface.as_deref() {
             NetworkStatsPayload {
@@ -176,10 +162,7 @@ pub fn get_network_stats() -> Result<NetworkStatsPayload, String> {
     sampler.networks.refresh(true);
     sampler.sampled_at = now;
 
-    let selected = choose_network_interface(
-        &sampler.networks,
-        sampler.active_interface.as_deref(),
-    );
+    let selected = choose_network_interface(&sampler.networks, sampler.active_interface.as_deref());
 
     sampler.active_interface = selected.clone();
 
@@ -205,11 +188,9 @@ pub fn get_network_stats() -> Result<NetworkStatsPayload, String> {
 
     let bits_per_megabit = 1_000_000.0;
 
-    let download_mbps =
-        data.received() as f64 * 8.0 / elapsed_seconds / bits_per_megabit;
+    let download_mbps = data.received() as f64 * 8.0 / elapsed_seconds / bits_per_megabit;
 
-    let upload_mbps =
-        data.transmitted() as f64 * 8.0 / elapsed_seconds / bits_per_megabit;
+    let upload_mbps = data.transmitted() as f64 * 8.0 / elapsed_seconds / bits_per_megabit;
 
     Ok(NetworkStatsPayload {
         connection_type: network_connection_type(&interface_name).to_string(),
@@ -219,7 +200,6 @@ pub fn get_network_stats() -> Result<NetworkStatsPayload, String> {
         available: true,
     })
 }
-
 
 fn bytes_to_gb(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0 * 1024.0)

@@ -17,11 +17,11 @@ mod tab_fullscreen;
 mod tab_metadata;
 mod tab_shortcuts;
 mod ublock_extension;
+mod wallpaper_media;
+mod weather_location;
 mod webview_branding;
 mod webview_controls;
 mod webview_privacy;
-mod wallpaper_media;
-mod weather_location;
 
 static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

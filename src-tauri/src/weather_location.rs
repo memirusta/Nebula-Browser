@@ -3,12 +3,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-const OPEN_METEO_GEOCODING_URL: &str =
-    "https://geocoding-api.open-meteo.com/v1/search";
-const DEFAULT_OVERPASS_URL: &str =
-    "https://overpass-api.de/api/interpreter";
-const USER_AGENT: &str =
-    "NebulaBrowser/1.5 (+https://github.com/memirusta/Nebula-Browser)";
+const OPEN_METEO_GEOCODING_URL: &str = "https://geocoding-api.open-meteo.com/v1/search";
+const DEFAULT_OVERPASS_URL: &str = "https://overpass-api.de/api/interpreter";
+const USER_AGENT: &str = "NebulaBrowser/1.5 (+https://github.com/memirusta/Nebula-Browser)";
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,9 +177,7 @@ pub async fn search_cities(
     );
 
     if !status.is_success() {
-        return Err(format!(
-            "location provider returned HTTP {status}"
-        ));
+        return Err(format!("location provider returned HTTP {status}"));
     }
 
     let payload = response
@@ -206,9 +201,7 @@ pub async fn search_cities(
             .map(|result| {
                 format!(
                     "{} [{}] ({})",
-                    result.name,
-                    result.feature_code,
-                    result.country_code
+                    result.name, result.feature_code, result.country_code
                 )
             })
             .collect::<Vec<_>>();
@@ -223,22 +216,20 @@ pub async fn search_cities(
     let mut ranked = Vec::new();
 
     for result in payload.results {
-        let feature_rank = if result.feature_code.is_empty()
-            || result.feature_code.starts_with("PPL")
-        {
-            0u8
-        } else if result.feature_code.starts_with("ADM") {
-            1u8
-        } else {
-            #[cfg(debug_assertions)]
-            eprintln!(
+        let feature_rank =
+            if result.feature_code.is_empty() || result.feature_code.starts_with("PPL") {
+                0u8
+            } else if result.feature_code.starts_with("ADM") {
+                1u8
+            } else {
+                #[cfg(debug_assertions)]
+                eprintln!(
                 "[nebula weather] city search filtered non-city result name={:?} feature_code={:?}",
-                result.name,
-                result.feature_code
+                result.name, result.feature_code
             );
 
-            continue;
-        };
+                continue;
+            };
 
         let dedupe = format!(
             "{}\0{}\0{:.4}\0{:.4}",
@@ -301,16 +292,14 @@ pub async fn search_cities(
 fn element_coordinates(element: &OverpassElement) -> Option<(f64, f64)> {
     match (element.lat, element.lon) {
         (Some(lat), Some(lon)) => Some((lat, lon)),
-        _ => element.center.as_ref().map(|center| (center.lat, center.lon)),
+        _ => element
+            .center
+            .as_ref()
+            .map(|center| (center.lat, center.lon)),
     }
 }
 
-fn haversine_km(
-    lat1: f64,
-    lon1: f64,
-    lat2: f64,
-    lon2: f64,
-) -> f64 {
+fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     const EARTH_RADIUS_KM: f64 = 6_371.0;
 
     let lat1 = lat1.to_radians();
@@ -318,8 +307,7 @@ fn haversine_km(
     let dlat = lat2 - lat1;
     let dlon = (lon2 - lon1).to_radians();
 
-    let a = (dlat / 2.0).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
 
     2.0 * EARTH_RADIUS_KM * a.sqrt().asin()
 }
@@ -357,8 +345,8 @@ pub async fn search_subdivisions(
 
     let country_code = clean_country_code(&country_code)?;
     let language = clean_language(&language);
-    let endpoint = std::env::var("NEBULA_OVERPASS_URL")
-        .unwrap_or_else(|_| DEFAULT_OVERPASS_URL.to_string());
+    let endpoint =
+        std::env::var("NEBULA_OVERPASS_URL").unwrap_or_else(|_| DEFAULT_OVERPASS_URL.to_string());
 
     /*
      * A city can contain administrative districts as well as OSM place

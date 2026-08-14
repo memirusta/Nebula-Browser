@@ -14,12 +14,12 @@ mod imp {
         ICoreWebView2LaunchingExternalUriSchemeEventArgs,
         ICoreWebView2LaunchingExternalUriSchemeEventHandler,
         ICoreWebView2NewWindowRequestedEventHandler, ICoreWebView2PermissionRequestedEventArgs,
-        ICoreWebView2PermissionRequestedEventArgs3,
-        ICoreWebView2PermissionRequestedEventHandler, ICoreWebView2ScriptDialogOpeningEventArgs,
-        ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WebMessageReceivedEventHandler,
-        ICoreWebView2WindowCloseRequestedEventHandler, ICoreWebView2_10, ICoreWebView2_18,
-        COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
-        COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_SCRIPT_DIALOG_KIND,
+        ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2PermissionRequestedEventHandler,
+        ICoreWebView2ScriptDialogOpeningEventArgs, ICoreWebView2ScriptDialogOpeningEventHandler,
+        ICoreWebView2WebMessageReceivedEventHandler, ICoreWebView2WindowCloseRequestedEventHandler,
+        ICoreWebView2_10, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
+        COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
+        COREWEBVIEW2_SCRIPT_DIALOG_KIND,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
@@ -705,8 +705,8 @@ mod imp {
                     let core = inner.controller().CoreWebView2()?;
                     let request_app = permission_app.clone();
 
-                    let permission = PermissionRequestedEventHandler::create(Box::new(
-                        move |_, args| {
+                    let permission =
+                        PermissionRequestedEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
                             let uri = take_string(|value| args.Uri(value));
                             let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
@@ -727,8 +727,7 @@ mod imp {
                                 kind,
                                 initiated.as_bool(),
                             )
-                        },
-                    ));
+                        }));
 
                     let mut token = 0i64;
                     core.add_PermissionRequested(&permission, &mut token)?;
@@ -1354,7 +1353,9 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{request_permission, respond, setup, setup_main_permission_ui, teardown, SiteUiResponse};
+pub use imp::{
+    request_permission, respond, setup, setup_main_permission_ui, teardown, SiteUiResponse,
+};
 
 #[cfg(not(target_os = "windows"))]
 #[derive(Clone, Debug, serde::Deserialize)]
