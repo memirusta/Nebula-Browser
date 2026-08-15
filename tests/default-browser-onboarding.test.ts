@@ -65,7 +65,7 @@ test('Windows installer registers Nebula as a browser candidate without touching
   )
 })
 
-test('external HTTP links use single-instance and the existing shell open-tab bridge', () => {
+test('external HTTP links are queued and opened as dedicated new tabs', () => {
   const cargo =
     source('../src-tauri/Cargo.toml')
 
@@ -77,6 +77,12 @@ test('external HTTP links use single-instance and the existing shell open-tab br
 
   const frontend =
     source('../src/platform/externalOpen.ts')
+
+  const shell =
+    source('../src/components/BrowserShell/BrowserShell.tsx')
+
+  const main =
+    source('../src/main.tsx')
 
   assert.match(
     cargo,
@@ -90,16 +96,46 @@ test('external HTTP links use single-instance and the existing shell open-tab br
 
   assert.match(
     external,
-    /nebula-chrome-action/,
+    /PENDING_EXTERNAL_URLS/,
   )
 
   assert.match(
     external,
-    /"open-tab"/,
+    /nebula-external-url-pending/,
+  )
+
+  assert.doesNotMatch(
+    external,
+    /nebula-chrome-action/,
   )
 
   assert.match(
     frontend,
     /take_pending_open_urls/,
+  )
+
+  assert.match(
+    frontend,
+    /nebula-external-url-pending/,
+  )
+
+  assert.match(
+    shell,
+    /listenExternalUrlPending/,
+  )
+
+  assert.match(
+    shell,
+    /takePendingExternalUrls/,
+  )
+
+  assert.match(
+    shell,
+    /openUrlInNewTab\s*\(\s*url/,
+  )
+
+  assert.doesNotMatch(
+    main,
+    /flushPendingExternalUrls/,
   )
 })
