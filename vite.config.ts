@@ -4,7 +4,6 @@ import pkg from './package.json' with { type: 'json' }
 
 const host = process.env.TAURI_DEV_HOST
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   define: {
@@ -35,5 +34,6 @@ export default defineConfig({
         ? 'chrome105'
         : 'safari13',
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    cssMinify: false,
   },
 })
