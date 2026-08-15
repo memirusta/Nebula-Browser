@@ -48,3 +48,9 @@ docs/ARCHITECTURE.md
 # Local Nebula patch/script backups
 .nebula-*-backup-*/
 .nebula-v1.6-version-backup*/
+
+# Editor / patch / temporary backups
+*.bak
+*.orig
+*.rej
+*.tmp
