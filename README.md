@@ -459,6 +459,16 @@ That experiment has grown into a browser you can actually use.
 
 ---
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/),
+certificate by [SignPath Foundation](https://signpath.org/).
+
+See [CODE_SIGNING.md](CODE_SIGNING.md) for Nebula's code signing policy
+and [PRIVACY.md](PRIVACY.md) for its privacy policy.
+
+---
+
 ## License
 
 Nebula is free and open-source software licensed under the **GNU General Public License v3.0 only (GPL-3.0-only)**.
