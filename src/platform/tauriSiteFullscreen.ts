@@ -19,7 +19,6 @@ import {
   ensureChromeWebviewVisible,
   forceChromeWebviewCompactBounds,
   getChromeWebview,
-  syncChromeWebviewBounds,
 } from './tauriChromeWebview'
 import {
   cancelScheduledStack,
@@ -248,7 +247,7 @@ async function exitSiteFullscreen(): Promise<void> {
 
   try {
     await ensureChromeWebviewVisible()
-    await syncChromeWebviewBounds()
+    await forceChromeWebviewCompactBounds()
   } catch (error) {
     if (import.meta.env.DEV) {
       console.warn('[nebula] restore chrome after site fullscreen failed', error)
