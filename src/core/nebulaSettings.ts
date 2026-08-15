@@ -1,5 +1,4 @@
 import { LEGACY_PREVIEW_ON_HOVER_KEY, SEMI_LUNAR_SETTINGS_KEY } from './semiLunarSettings'
-import { isTauri } from '../platform/runtime'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
 
 export const NEBULA_SETTINGS_KEY = 'nebula-settings-v1'
@@ -236,6 +235,15 @@ function migrateLunarGlassBlur(value: unknown, fallback: number, rgb: string): n
   return blur
 }
 
+function hexToRgb(hex: string): [number, number, number] {
+  const value = hex.replace('#', '')
+  return [
+    parseInt(value.slice(0, 2), 16),
+    parseInt(value.slice(2, 4), 16),
+    parseInt(value.slice(4, 6), 16),
+  ]
+}
+
 export function normalizeNebulaSettings(
   partial: Partial<NebulaSettings> | null | undefined,
 ): NebulaSettings {
@@ -454,7 +462,25 @@ export function applyNebulaCssVars(settings: NebulaSettings): void {
   const motion = s.reducedMotion
   const openMs = motion ? 0 : s.openDurationMs
   const closeMs = motion ? 0 : s.closeDurationMs
+  
+  const [accentR, accentG, accentB] = hexToRgb(a.accentColor)
+  const [goldR, goldG, goldB] = hexToRgb(a.goldColor)
 
+root.style.setProperty('--nebula-accent', a.accentColor)
+root.style.setProperty(
+  '--nebula-accent-dim',
+  `rgba(${accentR}, ${accentG}, ${accentB}, 0.35)`,
+)
+root.style.setProperty(
+  '--nebula-accent-glow',
+  `rgba(${accentR}, ${accentG}, ${accentB}, 0.55)`,
+)
+
+root.style.setProperty('--nebula-gold', a.goldColor)
+root.style.setProperty(
+  '--nebula-gold-glow',
+  `rgba(${goldR}, ${goldG}, ${goldB}, 0.45)`,
+)
   root.style.setProperty('--title-bar-height', '0px')
   root.style.setProperty('--semi-lunar-hit-zone-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.style.setProperty('--browsing-chrome-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
@@ -462,17 +488,12 @@ export function applyNebulaCssVars(settings: NebulaSettings): void {
   root.style.setProperty('--glass-blur', `${a.glassBlurPx}px`)
   root.style.setProperty('--glass-saturate', String(a.glassSaturate))
   root.style.setProperty('--nebula-glass', `rgba(255, 255, 255, ${a.glassOpacity / 100})`)
-  root.style.setProperty('--nebula-accent', a.accentColor)
-  root.style.setProperty('--nebula-gold', a.goldColor)
   root.style.setProperty('--lunar-width', `${s.lunarWidthPx}px`)
   root.style.setProperty('--lunar-height', `${s.lunarHeightPx}px`)
   root.style.setProperty('--lunar-glass-saturate', '1.75')
   root.style.setProperty('--lunar-glass-rgb', a.lunarGlassRgb)
   root.style.setProperty('--lunar-glass-opacity', String(a.lunarGlassOpacity / 100))
-  const lunarFill = a.lunarGlassOpacity / 100
-  const lunarFillEffective = isTauri
-    ? Math.min(0.94, lunarFill * 2.4 + 0.14)
-    : lunarFill
+  const lunarFillEffective = a.lunarGlassOpacity / 100
   root.style.setProperty('--lunar-glass-fill', String(lunarFillEffective))
   root.style.setProperty('--lunar-glass-blur', `${a.lunarGlassBlurPx}px`)
 

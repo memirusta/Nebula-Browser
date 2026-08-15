@@ -44,9 +44,27 @@ body {
   border-radius: 3px;
 }
 
+
+[data-theme='forest'] {
+  --nebula-void: #07110c;
+  --nebula-deep: rgba(12, 24, 17, 0.78);
+
+  --nebula-text: #f1f5f2;
+  --nebula-text-muted: rgba(220, 230, 223, 0.58);
+
+  --nebula-glass-border: rgba(190, 230, 205, 0.14);
+  --nebula-glass-highlight: rgba(220, 255, 230, 0.11);
+}
+
 [data-theme='dark'] {
-  --nebula-void: #000000;
-  --nebula-deep: rgba(6, 10, 8, 0.82);
+  --nebula-void: #09090b;
+  --nebula-deep: rgba(10, 10, 13, 0.82);
+
+  --nebula-text: #f4f4f5;
+  --nebula-text-muted: rgba(244, 244, 245, 0.55);
+
+  --nebula-glass-border: rgba(255, 255, 255, 0.12);
+  --nebula-glass-highlight: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme='light'] {

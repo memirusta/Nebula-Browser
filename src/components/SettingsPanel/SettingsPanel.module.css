@@ -21,12 +21,27 @@
   display: flex;
   border-radius: 20px;
   border: 1px solid var(--nebula-glass-border);
-  background: rgba(100, 100, 105, 0.88);
-  backdrop-filter: blur(52px) saturate(1.2);
-  -webkit-backdrop-filter: blur(52px) saturate(1.2);
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.06),
+      transparent
+    ),
+    var(--nebula-glass);
+
+  backdrop-filter:
+    blur(var(--glass-blur))
+    saturate(var(--glass-saturate));
+
+  -webkit-backdrop-filter:
+    blur(var(--glass-blur))
+    saturate(var(--glass-saturate));
+
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 var(--nebula-glass-highlight);
+
   overflow: hidden;
   transform: translate(-50%, -50%) scale(1);
   opacity: 1;

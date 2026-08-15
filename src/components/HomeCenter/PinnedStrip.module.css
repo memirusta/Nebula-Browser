@@ -72,7 +72,7 @@
   width: calc(46px * var(--pin-scale));
   height: calc(46px * var(--pin-scale));
   border-radius: calc(14px * var(--pin-scale));
-  border: 2px dashed rgba(126, 200, 227, 0.45);
+  border: 2px dashed var(--nebula-accent-dim);
   animation: placeholderPulse 1.2s ease-in-out infinite;
 }
 
@@ -133,11 +133,11 @@
 }
 
 .pinBtnPreviewing .iconWrap {
-  border-color: rgba(126, 200, 227, 0.55);
+  border-color: var(--nebula-accent-glow);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.28),
-    0 0 0 2px rgba(126, 200, 227, 0.5),
-    0 0 14px rgba(126, 200, 227, 0.35);
+    0 0 0 2px var(--nebula-accent-glow),
+0 0 14px var(--nebula-accent-dim);
   transform: scale(1.02);
 }
 
@@ -153,7 +153,7 @@
   height: 46px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(20, 28, 24, 0.94);
+  background: var(--nebula-deep);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   display: flex;
@@ -306,7 +306,7 @@
     transform: scale(1.05);
     box-shadow:
       0 12px 32px rgba(0, 0, 0, 0.35),
-      0 0 20px rgba(126, 200, 227, 0.35);
+      0 0 20px var(--nebula-accent-dim);
   }
 }
 
