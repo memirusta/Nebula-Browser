@@ -154,8 +154,8 @@
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: var(--nebula-deep);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,8 +233,8 @@
   align-items: center;
   justify-content: center;
   background: var(--nebula-glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   border: 1px solid var(--nebula-glass-border);
   box-shadow: var(--glass-shadow);
   overflow: hidden;

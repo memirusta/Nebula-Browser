@@ -38,8 +38,8 @@
   width: 100%;
   padding: 14px 22px;
   background: var(--nebula-deep);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   border: 1px solid var(--nebula-glass-border);
   border-radius: 40px;
   box-shadow: var(--glass-shadow);

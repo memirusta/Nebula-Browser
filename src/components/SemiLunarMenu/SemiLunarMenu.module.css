@@ -662,7 +662,7 @@
   align-items: center;
   justify-content: center;
   transform: translate(-50%, -50%);
-  animation: mergeToCenter 420ms var(--ease-spring) forwards;
+  animation: mergeToCenter var(--merge-anim-duration, 420ms) var(--ease-spring) forwards;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
@@ -675,7 +675,12 @@
 
 .mergeGhostFolder {
   border-radius: 14px;
-  animation: mergeFolderForm 420ms var(--ease-spring) forwards;
+ animation:
+   mergeFolderForm
+    var(--merge-folder-duration, 220ms)
+    var(--ease-spring)
+    var(--merge-folder-delay, 200ms)
+    forwards;
 }
 
 @keyframes mergeToCenter {

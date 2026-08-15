@@ -9,8 +9,8 @@
   gap: 12px;
   padding: 10px 16px;
   background: rgba(18, 26, 22, 0.9);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   border: 1px solid var(--nebula-glass-border);
   border-radius: 28px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);

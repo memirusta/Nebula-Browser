@@ -32,11 +32,13 @@
 
   backdrop-filter:
     blur(var(--glass-blur))
-    saturate(var(--glass-saturate));
+    saturate(var(--glass-saturate))
+    contrast(var(--glass-contrast));
 
   -webkit-backdrop-filter:
     blur(var(--glass-blur))
-    saturate(var(--glass-saturate));
+    saturate(var(--glass-saturate))
+    contrast(var(--glass-contrast));
 
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.5),

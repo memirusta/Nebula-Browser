@@ -531,12 +531,22 @@ function CategoryContent({
           <SettingRangeRow
             label={t('glassSaturate')}
             hint={t('glassSaturateHint')}
-            value={Math.round(appearance.glassSaturate * 10)}
-            min={5}
-            max={30}
-            step={1}
-            unit="×0.1"
-            onChange={(v) => onUpdate('appearance', 'glassSaturate', v / 10)}
+            value={Math.round(appearance.glassSaturate * 100)}
+            min={50}
+            max={200}
+            step={5}
+            unit="%"
+            onChange={(v) => onUpdate('appearance', 'glassSaturate', v / 100)}
+          />
+          <SettingRangeRow
+            label={t('glassContrast')}
+            hint={t('glassContrastHint')}
+            value={Math.round(appearance.glassContrast * 100)}
+            min={60}
+            max={120}
+            step={2}
+            unit="%"
+            onChange={(v) => onUpdate('appearance', 'glassContrast', v / 100)}
           />
           <SettingColorRow
             label={t('accentColor')}

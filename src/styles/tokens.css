@@ -3,7 +3,9 @@
   --nebula-void: #000000;
   --nebula-deep: rgba(10, 20, 14, 0.72);
   --nebula-surface: rgba(255, 255, 255, 0.07);
-  --nebula-glass: rgba(255, 255, 255, 0.09);
+  --nebula-glass-tint-rgb: 12, 24, 17;
+  --nebula-glass-opacity: 0.14;
+  --nebula-glass: rgba(var(--nebula-glass-tint-rgb), var(--nebula-glass-opacity));
   --nebula-glass-border: rgba(255, 255, 255, 0.14);
   --nebula-glass-highlight: rgba(255, 255, 255, 0.1);
 
@@ -17,8 +19,9 @@
   --nebula-text-muted: rgba(220, 225, 230, 0.55);
   --nebula-danger: #ff6b8a;
 
-  --glass-blur: 22px;
-  --glass-saturate: 1.4;
+  --glass-blur: 40px;
+  --glass-saturate: 1.1;
+  --glass-contrast: 0.82;
   --glass-radius: 16px;
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 var(--nebula-glass-highlight);

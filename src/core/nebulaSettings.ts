@@ -10,6 +10,7 @@ export interface AppearanceSettings {
   theme: NebulaTheme
   glassBlurPx: number
   glassSaturate: number
+  glassContrast: number
   glassOpacity: number
   accentColor: string
   goldColor: string
@@ -114,9 +115,10 @@ export interface NebulaSettings {
 export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
   appearance: {
     theme: 'forest',
-    glassBlurPx: 22,
-    glassSaturate: 1.4,
-    glassOpacity: 9,
+    glassBlurPx: 40,
+    glassSaturate: 1.1,
+    glassContrast: 0.82,
+    glassOpacity: 14,
     accentColor: '#7ec8e3',
     goldColor: '#d4c48a',
     lunarGlassRgb: '235, 242, 250',
@@ -264,7 +266,8 @@ export function normalizeNebulaSettings(
           ? a.theme
           : d.appearance.theme,
       glassBlurPx: clampNum(a?.glassBlurPx, 0, 80, d.appearance.glassBlurPx),
-      glassSaturate: clampFloat(a?.glassSaturate, 0.5, 3, d.appearance.glassSaturate),
+      glassSaturate: clampFloat(a?.glassSaturate, 0.5, 2, d.appearance.glassSaturate),
+      glassContrast: clampFloat(a?.glassContrast, 0.6, 1.2, d.appearance.glassContrast),
       glassOpacity: clampNum(a?.glassOpacity, 0, 40, d.appearance.glassOpacity),
       accentColor: hexColor(a?.accentColor, d.appearance.accentColor),
       goldColor: hexColor(a?.goldColor, d.appearance.goldColor),
@@ -460,12 +463,17 @@ export function applyNebulaCssVars(settings: NebulaSettings): void {
   const { appearance: a, semiLunar: s, browsing: b } = settings
 
   const motion = s.reducedMotion
+  const mergeMs = motion ? 0 : s.mergeAnimMs
+  const mergeFolderDelayMs = motion ? 0 : Math.round(mergeMs * 0.48)
+  const mergeFolderDurationMs = motion ? 0 : Math.max(0, mergeMs - mergeFolderDelayMs)
   const openMs = motion ? 0 : s.openDurationMs
   const closeMs = motion ? 0 : s.closeDurationMs
   
   const [accentR, accentG, accentB] = hexToRgb(a.accentColor)
   const [goldR, goldG, goldB] = hexToRgb(a.goldColor)
-
+root.style.setProperty('--merge-anim-duration', `${mergeMs}ms`)
+root.style.setProperty('--merge-folder-delay', `${mergeFolderDelayMs}ms`)
+root.style.setProperty('--merge-folder-duration', `${mergeFolderDurationMs}ms`)
 root.style.setProperty('--nebula-accent', a.accentColor)
 root.style.setProperty(
   '--nebula-accent-dim',
@@ -487,7 +495,9 @@ root.style.setProperty(
   root.dataset.theme = a.theme
   root.style.setProperty('--glass-blur', `${a.glassBlurPx}px`)
   root.style.setProperty('--glass-saturate', String(a.glassSaturate))
-  root.style.setProperty('--nebula-glass', `rgba(255, 255, 255, ${a.glassOpacity / 100})`)
+  root.style.setProperty('--glass-contrast', String(a.glassContrast))
+  root.style.removeProperty('--nebula-glass')
+  root.style.setProperty('--nebula-glass-opacity', String(a.glassOpacity / 100))
   root.style.setProperty('--lunar-width', `${s.lunarWidthPx}px`)
   root.style.setProperty('--lunar-height', `${s.lunarHeightPx}px`)
   root.style.setProperty('--lunar-glass-saturate', '1.75')

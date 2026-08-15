@@ -1332,7 +1332,6 @@ const members = memberIds
                     style={{
                       left: `${mergeAnim.targetX}px`,
                       top: `${mergeAnim.targetY}px`,
-                      animationDelay: '200ms',
                     }}
                   >
                     <ShortcutFolderIcon

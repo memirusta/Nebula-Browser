@@ -28,8 +28,8 @@ body {
 
 .glass-panel {
   background: var(--nebula-glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   border: 1px solid var(--nebula-glass-border);
   border-radius: var(--glass-radius);
   box-shadow: var(--glass-shadow);
@@ -46,6 +46,7 @@ body {
 
 
 [data-theme='forest'] {
+  --nebula-glass-tint-rgb: 12, 24, 17;
   --nebula-void: #07110c;
   --nebula-deep: rgba(12, 24, 17, 0.78);
 
@@ -57,6 +58,7 @@ body {
 }
 
 [data-theme='dark'] {
+  --nebula-glass-tint-rgb: 10, 10, 13;
   --nebula-void: #09090b;
   --nebula-deep: rgba(10, 10, 13, 0.82);
 
@@ -68,6 +70,7 @@ body {
 }
 
 [data-theme='light'] {
+  --nebula-glass-tint-rgb: 255, 255, 255;
   --nebula-void: #e4ebe6;
   --nebula-deep: rgba(255, 255, 255, 0.72);
   --nebula-text: #141814;
