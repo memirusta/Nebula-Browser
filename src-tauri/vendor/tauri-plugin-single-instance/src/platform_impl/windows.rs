@@ -18,14 +18,13 @@ use windows_sys::Win32::{
         LibraryLoader::GetModuleHandleW,
         Threading::{CreateMutexW, ReleaseMutex},
     },
-   UI::WindowsAndMessaging::{
-    self as w32wm, AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW,
-    DestroyWindow, FindWindowW, GetWindowThreadProcessId, RegisterClassExW,
-    SendMessageW, CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE,
-    WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-    WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
-},
+    UI::WindowsAndMessaging::{
+        self as w32wm, AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DestroyWindow,
+        FindWindowW, GetWindowThreadProcessId, RegisterClassExW, SendMessageW, CREATESTRUCTW,
+        GWLP_USERDATA, GWL_STYLE, WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY,
+        WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+    },
 };
 
 const WMCOPYDATA_SINGLE_INSTANCE_DATA: usize = 1542;
@@ -95,7 +94,7 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
 
     let cwd = std::env::current_dir().unwrap_or_default();
     let cwd = cwd.to_str().unwrap_or_default();
-                        
+
 
                         let args = std::env::args().collect::<Vec<String>>().join("|");
 
