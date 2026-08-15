@@ -23,6 +23,7 @@ commands.allow = [
   "webview_raise_tab_fullscreen",
   "window_enter_site_fullscreen",
   "window_exit_site_fullscreen",
+  "window_toggle_browser_fullscreen",
   "webview_restore_browsing_layout",
   "webview_setup_tab_error_pages",
   "webview_set_ui_locale",

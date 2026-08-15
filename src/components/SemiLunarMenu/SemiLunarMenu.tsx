@@ -122,7 +122,7 @@ export function SemiLunarMenu({
   iconSizePx = DEFAULT_NEBULA_SETTINGS.semiLunar.iconSizePx,
   lunarWidthPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarWidthPx,
   lunarHeightPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarHeightPx,
-  rememberLayout = DEFAULT_NEBULA_SETTINGS.semiLunar.rememberLayout,
+  rememberLayout = true,
   onRemoveMemberFromFolder,
   mode = 'home',
   shellViewMode = 'browsing',

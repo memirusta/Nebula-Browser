@@ -61,7 +61,7 @@ export function ChromeApp() {
     removeShortcutFromFolders,
     removeMemberFromFolder,
     renameFolder,
-  } = useShortcutFolders(visibleShortcuts, semiLunar.rememberFolders)
+  } = useShortcutFolders(visibleShortcuts, settings.browsing.restoreTabsOnStartup)
 
   const { getSession } = useBrowseSessions()
 
@@ -295,7 +295,7 @@ export function ChromeApp() {
       iconSizePx={semiLunar.iconSizePx}
       lunarWidthPx={adaptiveLunar.width}
       lunarHeightPx={adaptiveLunar.height}
-      rememberLayout={semiLunar.rememberLayout}
+      rememberLayout={settings.browsing.restoreTabsOnStartup}
       mode={mode}
       shellViewMode={viewMode}
       onHomeClick={

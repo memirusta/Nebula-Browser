@@ -12,6 +12,7 @@ import {
   setSiteFullscreenBoundsMode,
   syncTabWebviewFullscreenBounds,
   forceSyncActiveTabBounds,
+  getActiveBrowseTabId,
 } from './tauriBrowser'
 import { hideMainWebview, showMainWebview } from './tauriMainWebview'
 import {
@@ -447,28 +448,55 @@ export function forceExitSiteFullscreen(
 }
 
 /** Toggle Nebula's browser-window fullscreen (F11), separate from HTML5 site fullscreen. */
-export async function toggleBrowserWindowFullscreen(): Promise<void> {
-  if (!isTauri) return
+export function toggleBrowserWindowFullscreen(): Promise<void> {
+  if (!isTauri) return Promise.resolve()
 
-  // If a page currently owns HTML5 fullscreen, F11 first returns to normal
-  // browsing. A second F11 can then enter browser-window fullscreen.
-  if (siteFullscreenActive) {
-    await forceExitSiteFullscreen()
-    return
-  }
+  // Serialize F11 with HTML5 fullscreen transitions. Rapid F11 -> F11 presses
+  // must observe the state left by the previous transition.
+  return enqueueFullscreenTransition(async () => {
+    // If a page currently owns HTML5 fullscreen, the first F11 only returns
+    // from document fullscreen. A second F11 toggles Nebula fullscreen.
+    if (siteFullscreenActive) {
+      const documentTabId = fullscreenTabId
+      if (documentTabId) {
+        requestDocumentFullscreenExit(documentTabId)
+      }
 
-  const appWindow = getCurrentWindow()
-  const fullscreen = await appWindow.isFullscreen()
-  await appWindow.setFullscreen(!fullscreen)
-  await waitForWindowLayoutSettle(appWindow)
+      await exitSiteFullscreen()
+      return
+    }
 
-  // Child webviews have their own physical bounds. Repair them after the host
-  // window changes mode instead of relying on a compositor race.
-  await forceSyncActiveTabBounds()
+    const appWindow = getCurrentWindow()
 
-  try {
-    await syncChromeWebviewBounds()
-  } catch {
-    // Chrome may not exist on first Home paint.
-  }
+    // Tauri setFullscreen() leaves the taskbar visible on Nebula's
+    // transparent frameless Windows window. The native command covers the
+    // monitor rect and informs Explorer about fullscreen state.
+    await invoke<boolean>('window_toggle_browser_fullscreen')
+
+    await waitForWindowLayoutSettle(appWindow)
+
+    // Site WebViews are independent child HWNDs and must be resized after the
+    // parent client area changes.
+    await forceSyncActiveTabBounds()
+
+    // ChromeApp owns Semi-Lunar geometry and reacts to the same resize event.
+    // Re-establish z-order after the active tab bounds have settled.
+    try {
+      await ensureChromeWebviewVisible()
+      await forceChromeWebviewCompactBounds()
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[nebula] restore chrome after browser fullscreen failed',
+          error,
+        )
+      }
+    }
+
+    setBrowsingChromeExpected(true)
+
+    await stackBrowsingChromeAboveBrowser(
+      getActiveBrowseTabId(),
+    )
+  })
 }

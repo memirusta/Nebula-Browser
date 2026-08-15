@@ -713,11 +713,11 @@ function CategoryContent({
             }
           />
           <SettingToggleRow
-            label={locale === 'tr' ? 'Son oturumdaki sekmeleri yeniden aç' : 'Reopen tabs from the last session'}
+            label={locale === 'tr' ? 'Son oturumu geri yükle' : 'Restore the last session'}
             hint={
               locale === 'tr'
-                ? 'Nebula normal şekilde kapatıldığında açık sekmeleri bir sonraki açılışta geri getirir. Çökme kurtarma sistemi bundan bağımsız çalışır.'
-                : 'Restores open tabs on the next launch after Nebula closes normally. Crash recovery remains independent.'
+                ? 'Nebula normal şekilde kapatıldığında açık sekmeleri, Semi-Lunar klasörlerini ve ikon yerleşimini bir sonraki açılışta geri getirir. Kapalıysa yeni açılış temiz bir oturumla başlar; pinler, ayarlar ve geçmiş korunur. Çökme kurtarma sistemi bundan bağımsız çalışır.'
+                : 'Restores open tabs, Semi-Lunar folders, and icon layout after a normal restart. When off, the next launch starts with a clean session while pins, settings, and history stay intact. Crash recovery remains independent.'
             }
             checked={browsing.restoreTabsOnStartup}
             onChange={() =>
@@ -935,18 +935,6 @@ function CategoryContent({
             unit="%"
             onChange={(v) => onUpdate('browsing', 'overlayBrightnessPercent', v)}
           />
-          <SettingToggleRow
-            label={locale === 'tr' ? 'İkon yerleşimini hatırla' : 'Remember icon layout'}
-            hint={
-              locale === 'tr'
-                ? 'Semi-Lunar ikon konumlarını normal kapanışlar arasında saklar.'
-                : 'Keeps Semi-Lunar icon positions between normal restarts.'
-            }
-            checked={semiLunar.rememberLayout}
-            onChange={() =>
-              onUpdate('semiLunar', 'rememberLayout', !semiLunar.rememberLayout)
-            }
-          />
           <div className={styles.row}>
             <div className={styles.rowText}>
               <div className={styles.rowLabel}>
@@ -962,18 +950,6 @@ function CategoryContent({
               {locale === 'tr' ? 'Sıfırla' : 'Reset'}
             </button>
           </div>
-          <SettingToggleRow
-            label={locale === 'tr' ? 'Klasörleri hatırla' : 'Remember folders'}
-            hint={
-              locale === 'tr'
-                ? 'Semi-Lunar klasör yapısını normal kapanışlar arasında saklar.'
-                : 'Keeps the Semi-Lunar folder structure between normal restarts.'
-            }
-            checked={semiLunar.rememberFolders}
-            onChange={() =>
-              onUpdate('semiLunar', 'rememberFolders', !semiLunar.rememberFolders)
-            }
-          />
           <div className={styles.row}>
             <div className={styles.rowText}>
               <div className={styles.rowLabel}>
@@ -1101,12 +1077,6 @@ function CategoryContent({
             hint={t('privateModeHint')}
             checked={privacy.privateMode}
             onChange={() => onUpdate('privacy', 'privateMode', !privacy.privateMode)}
-          />
-          <SettingToggleRow
-            label={t('clearOnExit')}
-            hint={t('clearOnExitHint')}
-            checked={privacy.clearOnExit}
-            onChange={() => onUpdate('privacy', 'clearOnExit', !privacy.clearOnExit)}
           />
           <SettingTextRow
             label={t('privacyExceptions')}

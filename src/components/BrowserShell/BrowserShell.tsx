@@ -268,7 +268,7 @@ export function BrowserShell() {
     resetFolders,
   } = useShortcutFolders(
     visibleShortcuts,
-    settings.semiLunar.rememberFolders,
+    settings.browsing.restoreTabsOnStartup,
   )
 
   const {
@@ -362,8 +362,7 @@ export function BrowserShell() {
   useEffect(() => {
     const clearNonPersistentStateOnExit = () => {
       if (
-        settings.browsing.restoreTabsOnStartup &&
-        !settings.privacy.clearOnExit
+        settings.browsing.restoreTabsOnStartup
       ) {
         saveCurrentSession(
           tabsRef.current,
@@ -373,11 +372,11 @@ export function BrowserShell() {
         localStorage.removeItem(CURRENT_SESSION_KEY)
       }
 
-      if (!settings.semiLunar.rememberLayout) {
+      if (!settings.browsing.restoreTabsOnStartup) {
         localStorage.removeItem(SHORTCUT_POSITIONS_KEY)
       }
 
-      if (!settings.semiLunar.rememberFolders) {
+      if (!settings.browsing.restoreTabsOnStartup) {
         localStorage.removeItem(SHORTCUT_FOLDERS_KEY)
       }
     }
@@ -393,9 +392,6 @@ export function BrowserShell() {
     activeTabIdRef,
     saveCurrentSession,
     settings.browsing.restoreTabsOnStartup,
-    settings.privacy.clearOnExit,
-    settings.semiLunar.rememberFolders,
-    settings.semiLunar.rememberLayout,
     tabsRef,
   ])
 
@@ -447,8 +443,7 @@ export function BrowserShell() {
   ] = useState(
     () =>
       previousRunUnclean &&
-      previousSession !== null &&
-      !settings.privacy.clearOnExit,
+      previousSession !== null,
   )
 
   const [
@@ -466,15 +461,6 @@ export function BrowserShell() {
   const observedDownloadIdsRef =
     useRef<Set<string>>(
       new Set(),
-    )
-
-  const startupPrivacyClearRef =
-    useRef(false)
-
-  const clearPreviousSessionOnStartupRef =
-    useRef(
-      settings.privacy
-        .clearOnExit,
     )
 
   useEffect(() => {
@@ -2526,7 +2512,6 @@ export function BrowserShell() {
       previousRunUnclean ||
       crashRecoveryOpen ||
       !settings.browsing.restoreTabsOnStartup ||
-      settings.privacy.clearOnExit ||
       !previousSession
     ) {
       return
@@ -2541,7 +2526,6 @@ export function BrowserShell() {
     previousRunUnclean,
     previousSession,
     settings.browsing.restoreTabsOnStartup,
-    settings.privacy.clearOnExit,
   ])
 
   const dismissCrashRecovery =
@@ -4650,22 +4634,6 @@ export function BrowserShell() {
     ).catch((error: unknown) => {
       console.error('[nebula privacy] Failed to apply browser privacy settings.', error)
     })
-
-    if (
-      clearPreviousSessionOnStartupRef
-        .current &&
-      !startupPrivacyClearRef
-        .current
-    ) {
-      startupPrivacyClearRef.current =
-        true
-
-      clearAllHistory()
-
-      void clearBrowseData(
-        null,
-      )
-    }
   }, [
     clearAllHistory,
     openTabIds,
@@ -4803,7 +4771,7 @@ export function BrowserShell() {
       semiLunar.iconSizePx,
 
     rememberLayout:
-      semiLunar.rememberLayout,
+      settings.browsing.restoreTabsOnStartup,
   }
 
   const semiLunarShortcuts =
@@ -5631,7 +5599,7 @@ export function BrowserShell() {
                   )
                 }
               >
-                ✕
+                âœ•
               </button>
 
               <div

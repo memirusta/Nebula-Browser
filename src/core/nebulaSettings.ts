@@ -72,8 +72,6 @@ export interface SemiLunarSettings {
   lunarWidthPx: number
   lunarHeightPx: number
   reducedMotion: boolean
-  rememberLayout: boolean
-  rememberFolders: boolean
 }
 
 export interface BrowsingSettings {
@@ -88,7 +86,6 @@ export interface PrivacySettings {
   httpsOnly: boolean
   trackingLevel: 'none' | 'balanced' | 'strict'
   globalPrivacyControl: boolean
-  clearOnExit: boolean
   privateMode: boolean
   siteExceptions: string
   customBlockList: string
@@ -165,8 +162,6 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     lunarWidthPx: 1100,
     lunarHeightPx: 152,
     reducedMotion: false,
-    rememberLayout: true,
-    rememberFolders: true,
   },
   browsing: {
     overlayBlurPx: 24,
@@ -179,7 +174,6 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     httpsOnly: false,
     trackingLevel: 'balanced',
     globalPrivacyControl: true,
-    clearOnExit: false,
     privateMode: false,
     siteExceptions: '',
     customBlockList: '',
@@ -364,10 +358,6 @@ export function normalizeNebulaSettings(
       lunarHeightPx: clampNum(s?.lunarHeightPx, 100, 220, d.semiLunar.lunarHeightPx),
       reducedMotion:
         typeof s?.reducedMotion === 'boolean' ? s.reducedMotion : d.semiLunar.reducedMotion,
-      rememberLayout:
-        typeof s?.rememberLayout === 'boolean' ? s.rememberLayout : d.semiLunar.rememberLayout,
-      rememberFolders:
-        typeof s?.rememberFolders === 'boolean' ? s.rememberFolders : d.semiLunar.rememberFolders,
     },
     browsing: {
       overlayBlurPx: clampNum(b?.overlayBlurPx, 0, 40, d.browsing.overlayBlurPx),
@@ -394,7 +384,6 @@ export function normalizeNebulaSettings(
           : d.privacy.trackingLevel,
       globalPrivacyControl:
         typeof p?.globalPrivacyControl === 'boolean' ? p.globalPrivacyControl : d.privacy.globalPrivacyControl,
-      clearOnExit: typeof p?.clearOnExit === 'boolean' ? p.clearOnExit : d.privacy.clearOnExit,
       privateMode: typeof p?.privateMode === 'boolean' ? p.privateMode : d.privacy.privateMode,
       siteExceptions: typeof p?.siteExceptions === 'string' ? p.siteExceptions.slice(0, 4000) : d.privacy.siteExceptions,
       customBlockList: typeof p?.customBlockList === 'string' ? p.customBlockList.slice(0, 12000) : d.privacy.customBlockList,
