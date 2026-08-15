@@ -44,10 +44,10 @@ test('restore-session UI owns tabs, folders, and Semi-Lunar layout', () => {
     'utf8',
   )
 
-  assert.match(panelSource, /Son oturumu geri yÃ¼kle/)
-  assert.match(panelSource, /Semi-Lunar klasÃ¶rlerini ve ikon yerleÅŸimini/)
-  assert.doesNotMatch(panelSource, /Ä°kon yerleÅŸimini hatÄ±rla/)
-  assert.doesNotMatch(panelSource, /KlasÃ¶rleri hatÄ±rla/)
+  assert.match(panelSource, /Restore the last session/)
+  assert.match(panelSource, /Semi-Lunar folders, and icon layout/)
+  assert.doesNotMatch(panelSource, /Remember icon layout/)
+  assert.doesNotMatch(panelSource, /Remember folders/)
   assert.doesNotMatch(panelSource, /clearOnExit/)
 
   assert.match(
