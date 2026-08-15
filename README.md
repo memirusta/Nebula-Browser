@@ -461,9 +461,17 @@ That experiment has grown into a browser you can actually use.
 
 ## License
 
-No open-source license has been published for Nebula yet.
+Nebula is free and open-source software licensed under the **GNU General Public License v3.0 only (GPL-3.0-only)**.
 
-Unless a license is added, the source code remains under its default copyright protections.
+You are free to use, study, modify, fork, and redistribute Nebula under the terms of the GPL.
+
+Modified versions must remain under the GPL when distributed and must preserve the notices required by the license.
+
+The **Nebula** name, logo, and project branding are handled separately from the source-code license. Community forks are welcome, but modified distributions must not present themselves as official Nebula releases.
+
+See [LICENSE](LICENSE) for the software license and [TRADEMARKS.md](TRADEMARKS.md) for the name and brand policy.
+
+Third-party components included with Nebula remain subject to their respective licenses.
 
 ---
 
