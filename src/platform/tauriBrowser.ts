@@ -30,7 +30,6 @@ import {
   browserWebviewPhysicalBounds,
 } from './windowClientBounds'
 
-const BROWSER_WEBVIEW_BG = '#000000'
 const LAYOUT_DEBOUNCE_MS = 120
 const UBLOCK_READY_TIMEOUT_MS = 4_000
 const WEBVIEW_CREATE_TIMEOUT_MS = 15_000
@@ -786,8 +785,6 @@ export async function prewarmBrowseWebview(): Promise<void> {
       focus: false,
       dragDropEnabled:
         false,
-      backgroundColor:
-        BROWSER_WEBVIEW_BG,
       incognito:
         privateMode,
       browserExtensionsEnabled:
@@ -2469,8 +2466,6 @@ async function getOrCreateTabWebview(
           false,
         dragDropEnabled:
           false,
-        backgroundColor:
-          BROWSER_WEBVIEW_BG,
         incognito:
           privacyOptions.privateMode,
         browserExtensionsEnabled:
@@ -2607,8 +2602,6 @@ async function getOrCreateTabWebview(
             false,
           dragDropEnabled:
             false,
-          backgroundColor:
-            BROWSER_WEBVIEW_BG,
           incognito:
             privacyOptions.privateMode,
 
