@@ -118,8 +118,8 @@
   border-radius: 50%;
   border: 1px solid var(--nebula-glass-border);
   background: rgba(12, 18, 14, 0.28);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   color: var(--nebula-text);
   cursor: pointer;
   display: flex;
@@ -152,8 +152,8 @@
   border-radius: 50%;
   border: 1px solid var(--nebula-glass-border);
   background: rgba(12, 18, 14, 0.28);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) contrast(var(--glass-contrast));
   color: var(--nebula-text-muted);
   font-size: 14px;
   cursor: pointer;
