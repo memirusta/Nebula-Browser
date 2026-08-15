@@ -1,17 +1,12 @@
-use serde::Serialize;
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{SetForegroundWindow, ShowWindowAsync, SW_RESTORE};
+
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
 static PENDING_EXTERNAL_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct OpenTabAction<'a> {
-    #[serde(rename = "type")]
-    action_type: &'static str,
-    shortcut_id: &'static str,
-    url: &'a str,
-}
+const EXTERNAL_URL_PENDING_EVENT: &str = "nebula-external-url-pending";
 
 fn is_supported_external_url(value: &str) -> bool {
     let Ok(url) = url::Url::parse(value) else {
@@ -39,27 +34,55 @@ where
         .collect()
 }
 
+fn queue_external_urls(urls: Vec<String>) -> bool {
+    if urls.is_empty() {
+        return false;
+    }
+
+    let Ok(mut pending) = PENDING_EXTERNAL_URLS.lock() else {
+        return false;
+    };
+
+    pending.extend(urls);
+    true
+}
+
 /// Capture HTTP/HTTPS arguments from the first process.
 ///
 /// The frontend is not ready yet at this point, so the URLs remain queued until
-/// the main WebView drains them after React has mounted.
+/// BrowserShell is mounted and drains them.
 pub fn capture_startup_args() {
     let urls = extract_external_urls(std::env::args());
+    let _ = queue_external_urls(urls);
+}
 
-    if urls.is_empty() {
-        return;
-    }
+fn activate_main_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    let was_minimized = window.is_minimized().unwrap_or(false);
 
-    if let Ok(mut pending) = PENDING_EXTERNAL_URLS.lock() {
-        pending.extend(urls);
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                if was_minimized {
+                    let _ = ShowWindowAsync(hwnd, SW_RESTORE);
+                }
+
+                let _ = SetForegroundWindow(hwnd);
+            }
+        }
     }
 }
 
 /// Called by tauri-plugin-single-instance when Windows attempts to start a
 /// second Nebula process.
 ///
-/// The main BrowserShell already consumes `nebula-chrome-action/open-tab`, so
-/// external URLs deliberately use that existing navigation pipeline.
+/// External URLs always enter the durable queue first. The event is only a
+/// wake-up signal; if it is missed while the frontend is starting, the queued
+/// URLs remain available for the next drain.
 pub fn handle_second_instance<R: tauri::Runtime>(app: &tauri::AppHandle<R>, args: &[String]) {
     let urls = extract_external_urls(args);
 
@@ -67,21 +90,14 @@ pub fn handle_second_instance<R: tauri::Runtime>(app: &tauri::AppHandle<R>, args
         return;
     }
 
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+    let queued = queue_external_urls(urls);
+
+    if let Some(window) = app.get_window("main") {
+        activate_main_window(&window);
     }
 
-    for url in urls {
-        let _ = app.emit(
-            "nebula-chrome-action",
-            OpenTabAction {
-                action_type: "open-tab",
-                shortcut_id: "",
-                url: &url,
-            },
-        );
+    if queued {
+        let _ = app.emit(EXTERNAL_URL_PENDING_EVENT, ());
     }
 }
 

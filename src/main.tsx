@@ -11,7 +11,6 @@ import { isTauri } from './platform/runtime'
 import { syncTauriViewMode } from './platform/tauriBrowsingMode'
 import { prewarmBrowseWebview, prewarmUblockProfile } from './platform/tauriBrowser'
 import { writeTransitionLog } from './platform/tauriTransitionLog'
-import { flushPendingExternalUrls } from './platform/externalOpen'
 
 applyNebulaCssVars(loadNebulaSettings())
 applyDocumentLocale()
@@ -48,22 +47,23 @@ async function renderRoot() {
     </StrictMode>,
   )
 
-    if (isTauri && !chromeShell) {
+if (isTauri && !chromeShell) {
+  requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        void writeTransitionLog('performance.frontend-ready', 'ok', {
-          durationMs: Math.round(performance.now() * 10) / 10,
-          timeOrigin: Math.round(performance.timeOrigin),
-        })
-
-        void flushPendingExternalUrls().catch((error: unknown) => {
-          if (import.meta.env.DEV) {
-            console.warn('[nebula] failed to open startup URL', error)
-          }
-        })
-      })
+      void writeTransitionLog(
+        'performance.frontend-ready',
+        'ok',
+        {
+          durationMs:
+            Math.round(performance.now() * 10) / 10,
+          timeOrigin:
+            Math.round(performance.timeOrigin),
+        },
+      )
     })
-  }
+  })
 }
+}
+
 
 void renderRoot()

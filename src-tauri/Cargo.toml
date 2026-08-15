@@ -41,8 +41,7 @@ tempfile = "3.27"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
-tauri-plugin-single-instance = "2"
-
+tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
 [profile.release]
 codegen-units = 1
 lto = "thin"

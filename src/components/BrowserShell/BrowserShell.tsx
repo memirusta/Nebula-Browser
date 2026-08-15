@@ -7,6 +7,10 @@ import {
   useRef,
   useState,
 } from 'react'
+import {
+  listenExternalUrlPending,
+  takePendingExternalUrls,
+} from '../../platform/externalOpen'
 import { createPortal } from 'react-dom'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
@@ -2998,6 +3002,96 @@ export function BrowserShell() {
         t,
       ],
     )
+
+    useEffect(() => {
+    if (!isTauri) return
+
+    let disposed =
+      false
+
+    let unlisten:
+      | (() => void)
+      | undefined
+
+    const drainExternalUrls =
+      async () => {
+        try {
+          const urls =
+            await takePendingExternalUrls()
+
+          if (
+            disposed
+          ) {
+            return
+          }
+
+          for (
+            const url of
+            urls
+          ) {
+            openUrlInNewTab(
+              url,
+            )
+          }
+        } catch (error) {
+          if (
+            import.meta.env.DEV
+          ) {
+            console.warn(
+              '[nebula] failed to open external URL',
+              error,
+            )
+          }
+        }
+      }
+
+    const register =
+      async () => {
+        const dispose =
+          await listenExternalUrlPending(
+            () => {
+              void drainExternalUrls()
+            },
+          )
+
+        if (
+          disposed
+        ) {
+          dispose()
+          return
+        }
+
+        unlisten =
+          dispose
+
+        // Also drains URLs captured during cold startup or while the
+        // frontend listener was not ready yet.
+        await drainExternalUrls()
+      }
+
+    void register().catch(
+      (error) => {
+        if (
+          import.meta.env.DEV
+        ) {
+          console.warn(
+            '[nebula] external URL listener failed to register',
+            error,
+          )
+        }
+      },
+    )
+
+    return () => {
+      disposed =
+        true
+
+      unlisten?.()
+    }
+  }, [
+    openUrlInNewTab,
+  ])
+
 
   const openHomeNavigate =
     useCallback(
