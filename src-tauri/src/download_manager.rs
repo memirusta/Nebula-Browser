@@ -47,6 +47,10 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashSet::new()));
     static LAST_PROGRESS_EMITS: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static COMPLETION_FALLBACKS: LazyLock<Mutex<HashSet<String>>> =
+        LazyLock::new(|| Mutex::new(HashSet::new()));
+    static RECENT_DOWNLOADS: LazyLock<Mutex<HashMap<String, Instant>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
     thread_local! {
         static START_HANDLERS: RefCell<HashMap<String, StartHandlers>> =
@@ -260,6 +264,137 @@ mod imp {
         if let Ok(mut emits) = LAST_PROGRESS_EMITS.lock() {
             emits.remove(id);
         }
+        if let Ok(mut fallbacks) = COMPLETION_FALLBACKS.lock() {
+            fallbacks.remove(id);
+        }
+    }
+
+    pub(crate) fn has_recent_or_active_download_for_label(label: &str) -> bool {
+        let recent = RECENT_DOWNLOADS
+            .lock()
+            .map(|downloads| {
+                downloads
+                    .get(label)
+                    .is_some_and(|started| started.elapsed() <= Duration::from_secs(5))
+            })
+            .unwrap_or(false);
+
+        if recent {
+            return true;
+        }
+
+        DOWNLOADS.with(|downloads| {
+            downloads
+                .borrow()
+                .values()
+                .any(|registration| registration.label == label)
+        })
+    }
+
+    fn schedule_completion_fallback(
+        app: AppHandle,
+        id: String,
+        file_path: String,
+        expected_size: i64,
+    ) {
+        if expected_size <= 0 || file_path.is_empty() {
+            return;
+        }
+
+        let should_schedule = COMPLETION_FALLBACKS
+            .lock()
+            .map(|mut pending| pending.insert(id.clone()))
+            .unwrap_or(false);
+
+        if !should_schedule {
+            return;
+        }
+
+        std::thread::spawn(move || {
+            let expected_size = expected_size as u64;
+            let mut file_ready = false;
+
+            // Give WebView2 up to five seconds to expose the final file.
+            for _ in 0..20 {
+                std::thread::sleep(Duration::from_millis(250));
+
+                file_ready = std::fs::metadata(&file_path)
+                    .map(|metadata| metadata.len() >= expected_size)
+                    .unwrap_or(false);
+
+                if file_ready {
+                    break;
+                }
+            }
+
+            if !file_ready {
+                if let Ok(mut pending) = COMPLETION_FALLBACKS.lock() {
+                    pending.remove(&id);
+                }
+                return;
+            }
+
+            let app_for_main = app.clone();
+            let id_for_main = id.clone();
+
+            if app
+                .run_on_main_thread(move || {
+                    let active = DOWNLOADS.with(|downloads| {
+                        downloads.borrow().get(&id_for_main).map(|registration| {
+                            (
+                                registration.operation.clone(),
+                                registration.label.clone(),
+                                registration.started_at_ms,
+                            )
+                        })
+                    });
+
+                    let Some((operation, label, download_started_at)) = active else {
+                        if let Ok(mut pending) = COMPLETION_FALLBACKS.lock() {
+                            pending.remove(&id_for_main);
+                        }
+                        return;
+                    };
+
+                    let mut payload =
+                        read_payload(&id_for_main, &label, &operation, download_started_at);
+
+                    if is_terminal(&payload) {
+                        let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
+                        finalize_download(&id_for_main, &payload);
+                        return;
+                    }
+
+                    let target_is_complete = payload.total_bytes > 0
+                        && payload.received_bytes >= payload.total_bytes
+                        && payload.interrupt_reason == 0
+                        && !payload.paused
+                        && !payload.file_path.is_empty()
+                        && std::fs::metadata(&payload.file_path)
+                            .map(|metadata| metadata.len() >= payload.total_bytes as u64)
+                            .unwrap_or(false);
+
+                    if target_is_complete {
+                        // Some WebView2 runtimes can finish the file without
+                        // delivering the final StateChanged/Completed event.
+                        // Only fall back when both WebView2's byte counters and
+                        // the final on-disk file agree that the transfer is done.
+                        payload.state = "completed".to_string();
+                        payload.can_resume = false;
+
+                        let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
+                        finalize_download(&id_for_main, &payload);
+                    } else if let Ok(mut pending) = COMPLETION_FALLBACKS.lock() {
+                        pending.remove(&id_for_main);
+                    }
+                })
+                .is_err()
+            {
+                if let Ok(mut pending) = COMPLETION_FALLBACKS.lock() {
+                    pending.remove(&id);
+                }
+            }
+        });
     }
 
     fn should_emit_progress(id: &str) -> bool {
@@ -355,6 +490,10 @@ mod imp {
                             return Ok(());
                         };
 
+                        if let Ok(mut recent) = RECENT_DOWNLOADS.lock() {
+                            recent.insert(download_label.clone(), Instant::now());
+                        }
+
                         // Keep WebView2's secure, session-aware download pipeline, but
                         // replace its default UI with Nebula's own session manager.
                         let id = format!(
@@ -369,13 +508,26 @@ mod imp {
                         let bytes_handler = BytesReceivedChangedEventHandler::create(Box::new(
                             move |sender, _args| {
                                 if let Some(operation) = sender {
+                                    let payload = read_payload(
+                                        &bytes_id,
+                                        &bytes_label,
+                                        &operation,
+                                        download_started_at,
+                                    );
+
                                     if should_emit_progress(&bytes_id) {
-                                        emit_download(
-                                            &bytes_app,
-                                            &bytes_id,
-                                            &bytes_label,
-                                            &operation,
-                                            download_started_at,
+                                        let _ = bytes_app.emit(DOWNLOAD_EVENT, payload.clone());
+                                    }
+
+                                    if payload.state == "in_progress"
+                                        && payload.total_bytes > 0
+                                        && payload.received_bytes >= payload.total_bytes
+                                    {
+                                        schedule_completion_fallback(
+                                            bytes_app.clone(),
+                                            bytes_id.clone(),
+                                            payload.file_path.clone(),
+                                            payload.total_bytes,
                                         );
                                     }
                                 }
@@ -521,6 +673,9 @@ mod imp {
         if let Ok(mut configured) = CONFIGURED_LABELS.lock() {
             configured.remove(label);
         }
+        if let Ok(mut recent) = RECENT_DOWNLOADS.lock() {
+            recent.remove(label);
+        }
     }
 
     fn wide(value: &str) -> Vec<u16> {
@@ -650,6 +805,9 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::{control_download, setup_tab_downloads, teardown_tab_downloads};
+
+#[cfg(target_os = "windows")]
+pub(crate) use imp::has_recent_or_active_download_for_label;
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_downloads(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
