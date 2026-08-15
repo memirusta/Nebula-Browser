@@ -34,6 +34,8 @@ export default defineConfig({
         ? 'chrome105'
         : 'safari13',
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    // Keep CSS unminified: Lightning CSS changes backdrop-filter behavior
+    // on Nebula glass surfaces in production builds.
     cssMinify: false,
   },
 })
