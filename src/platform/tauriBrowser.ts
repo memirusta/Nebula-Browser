@@ -181,7 +181,6 @@ export interface BrowserPrivacyOptions {
   httpsOnly: boolean
   trackingLevel: 'none' | 'balanced' | 'strict'
   globalPrivacyControl: boolean
-  clearOnExit: boolean
   privateMode: boolean
   siteExceptions: string
   customBlockList: string
@@ -199,7 +198,6 @@ let privacyOptions: BrowserPrivacyOptions = {
   httpsOnly: false,
   trackingLevel: 'balanced',
   globalPrivacyControl: true,
-  clearOnExit: false,
   privateMode: false,
   siteExceptions: '',
   customBlockList: '',

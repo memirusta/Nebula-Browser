@@ -929,6 +929,11 @@ fn window_exit_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn window_toggle_browser_fullscreen(app: tauri::AppHandle) -> Result<bool, String> {
+    site_fullscreen_window::toggle_browser_fullscreen_window(&app)
+}
+
+#[tauri::command]
 fn webview_restore_browsing_layout(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -1060,6 +1065,7 @@ pub fn run() {
             webview_raise_tab_fullscreen,
             window_enter_site_fullscreen,
             window_exit_site_fullscreen,
+            window_toggle_browser_fullscreen,
             webview_restore_browsing_layout,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,

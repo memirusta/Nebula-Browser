@@ -460,8 +460,6 @@ catShortcutsDesc: {
   permissionExceptionsHint: { tr: 'Genel engelleme açıkken izin sorabilecek alan adları', en: 'Domains that may request permission while global blocking is enabled' },
   privateMode: { tr: 'Yeni sekmeler özel açılsın', en: 'Open new tabs privately' },
   privateModeHint: { tr: 'Yeni oluşturulan WebView sekmeleri kalıcı profil kullanmaz', en: 'New WebView tabs use an incognito profile' },
-  clearOnExit: { tr: 'Oturum verilerini açılışta temizle', en: 'Clear previous session data on startup' },
-  clearOnExitHint: { tr: 'Bir sonraki açılışta profil verilerini temizler', en: 'Clear profile data on the next launch' },
   privacyExceptions: { tr: 'Site istisnaları', en: 'Site exceptions' },
   privacyExceptionsHint: { tr: 'Virgül veya boşlukla ayrılmış alan adları', en: 'Domains separated by commas or spaces' },
   siteShield: { tr: 'Geçerli site kalkanı', en: 'Current site shield' },
