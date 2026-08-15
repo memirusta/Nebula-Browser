@@ -36,6 +36,7 @@ mod imp {
 
     const VERIFICATION_WINDOW: Duration = Duration::from_secs(45);
     const MAX_VERIFICATION_RETRIES: u8 = 2;
+    const DOWNLOAD_ABORT_GRACE: Duration = Duration::from_millis(900);
 
     pub fn set_ui_locale(locale: &str) {
         let normalized = if locale.eq_ignore_ascii_case("tr") {
@@ -262,6 +263,45 @@ mod imp {
         });
     }
 
+    fn show_connection_aborted_error_after(
+        app: AppHandle,
+        label: String,
+        failed_url: String,
+        error_status: String,
+    ) {
+        std::thread::spawn(move || {
+            std::thread::sleep(DOWNLOAD_ABORT_GRACE);
+
+            let app_for_main = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if crate::download_manager::has_recent_or_active_download_for_label(&label) {
+                    return;
+                }
+
+                let Some(webview) = app_for_main.get_webview(&label) else {
+                    return;
+                };
+
+                let _ = webview.with_webview(move |inner| unsafe {
+                    let Ok(core) = inner.controller().CoreWebView2() else {
+                        return;
+                    };
+
+                    let current = read_webview_source(&core);
+                    if current.starts_with("data:text/html")
+                        || !retry_target_is_current(&failed_url, &current)
+                    {
+                        return;
+                    }
+
+                    let locale = current_ui_locale();
+                    let error_url = build_error_page_url(&failed_url, &error_status, &locale);
+                    navigate_webview(&core, &error_url);
+                });
+            });
+        });
+    }
+
     pub fn setup_tab_error_page(app: &AppHandle, label: &str) -> Result<(), String> {
         if !crate::webview_branding::is_nebula_webview_label(label) {
             return Err(format!("error-page setup is not allowed for '{label}'"));
@@ -349,6 +389,18 @@ mod imp {
                                 );
                                 return Ok(());
                             }
+                        }
+
+                        if error_status == COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+                            && http_status == 0
+                        {
+                            show_connection_aborted_error_after(
+                                app_for_handler.clone(),
+                                label_for_handler.clone(),
+                                failed_url,
+                                format!("{error_status:?}"),
+                            );
+                            return Ok(());
                         }
 
                         let locale = current_ui_locale();
