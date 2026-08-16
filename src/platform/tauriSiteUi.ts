@@ -37,10 +37,22 @@ export interface SiteUiCancelledPayload {
   tabLabel: string
 }
 
+export interface PopupWindowFeatures {
+  hasPosition: boolean
+  hasSize: boolean
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export interface SiteNewWindowPayload {
+  requestId: string
   tabLabel: string
   uri: string
   userInitiated: boolean
+  privateMode: boolean
+  features: PopupWindowFeatures
 }
 
 export interface SiteCloseWindowPayload {

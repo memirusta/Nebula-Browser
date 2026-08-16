@@ -25,8 +25,11 @@ mod imp {
         IsDefaultDownloadDialogOpenChangedEventHandler, StateChangedEventHandler,
     };
     use windows::core::{PCWSTR, PWSTR};
-    use windows::Win32::System::Com::CoTaskMemFree;
-    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx, IDataObject};
+    use windows::Win32::System::Ole::{DROPEFFECT_COPY, IDropSource};
+    use windows::Win32::UI::Shell::{
+        BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop, ShellExecuteW,
+    };
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     use windows_core::{Interface, BOOL};
 
@@ -413,7 +416,7 @@ mod imp {
     }
 
     pub fn setup_tab_downloads(app: &AppHandle, label: &str) -> Result<(), String> {
-        if !label.starts_with("nebula-tab-") {
+        if !label.starts_with("nebula-tab-") && !label.starts_with("nebula-popup-content-") {
             return Ok(());
         }
         if CONFIGURED_LABELS
@@ -707,6 +710,62 @@ mod imp {
             .with(|finished| finished.borrow().get(id).map(|item| item.file_path.clone()))
     }
 
+    unsafe fn start_shell_file_drag(
+        hwnd: windows::Win32::Foundation::HWND,
+        file_path: &str,
+    ) -> Result<(), String> {
+        let file_path = wide(file_path);
+        let shell_item: IShellItem = SHCreateItemFromParsingName(
+            PCWSTR(file_path.as_ptr()),
+            None::<&IBindCtx>,
+        )
+        .map_err(|error| error.to_string())?;
+
+        let data_object: IDataObject = shell_item
+            .BindToHandler(None::<&IBindCtx>, &BHID_DataObject)
+            .map_err(|error| error.to_string())?;
+
+        SHDoDragDrop(
+            Some(hwnd),
+            &data_object,
+            None::<&IDropSource>,
+            DROPEFFECT_COPY,
+        )
+        .map_err(|error| error.to_string())?;
+
+        Ok(())
+    }
+
+    pub fn start_download_drag(app: AppHandle, id: String) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let app_for_main = app.clone();
+
+        app.run_on_main_thread(move || {
+            let result = (|| -> Result<(), String> {
+                let path = finished_download_path(&id)
+                    .ok_or_else(|| format!("completed download '{id}' not found"))?;
+                let metadata = std::fs::metadata(&path)
+                    .map_err(|_| "downloaded file no longer exists".to_string())?;
+                if !metadata.is_file() {
+                    return Err("downloaded path is not a file".to_string());
+                }
+
+                let window = app_for_main
+                    .get_window("main")
+                    .ok_or_else(|| "main window not found".to_string())?;
+                let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+
+                unsafe { start_shell_file_drag(hwnd, &path) }
+            })();
+
+            let _ = tx.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+
+        rx.recv()
+            .map_err(|_| "native download drag ended unexpectedly".to_string())?
+    }
+
     pub fn control_download(app: AppHandle, id: String, action: String) -> Result<(), String> {
         if !matches!(
             action.as_str(),
@@ -804,7 +863,7 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{control_download, setup_tab_downloads, teardown_tab_downloads};
+pub use imp::{control_download, setup_tab_downloads, start_download_drag, teardown_tab_downloads};
 
 #[cfg(target_os = "windows")]
 pub(crate) use imp::has_recent_or_active_download_for_label;
@@ -816,6 +875,11 @@ pub fn setup_tab_downloads(_app: &tauri::AppHandle, _label: &str) -> Result<(), 
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown_tab_downloads(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn start_download_drag(_app: tauri::AppHandle, _id: String) -> Result<(), String> {
+    Err("download drag-out is currently supported on Windows".to_string())
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn control_download(

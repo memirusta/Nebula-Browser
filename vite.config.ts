@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import pkg from './package.json' with { type: 'json' }
@@ -37,5 +38,11 @@ export default defineConfig({
     // Keep CSS unminified: Lightning CSS changes backdrop-filter behavior
     // on Nebula glass surfaces in production builds.
     cssMinify: false,
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        popup: resolve(__dirname, 'popup.html'),
+      },
+    },
   },
 })

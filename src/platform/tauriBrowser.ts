@@ -210,6 +210,7 @@ let privacyOptions: BrowserPrivacyOptions = {
 }
 
 let privacyRevision = 0
+const popupPrivacyModes = new Map<string, boolean>()
 
 function nativePrivacyOptions(options: BrowserPrivacyOptions) {
   return {
@@ -243,6 +244,45 @@ async function applyPrivacyToLabel(label: string): Promise<void> {
   await privacyApplyRunner.run(label)
 }
 
+async function applyPrivacyToPopupLabel(
+  label: string,
+  privateMode: boolean,
+): Promise<void> {
+  await invoke('webview_apply_privacy', {
+    label,
+    options: nativePrivacyOptions({
+      ...privacyOptions,
+      privateMode,
+    }),
+  })
+}
+
+/**
+ * Configure a newly-created, still-unnavigated popup target. The target's
+ * private-mode bit comes from the opener's actual WebView2 profile, not from
+ * the latest Settings value, so an already-open tab cannot accidentally spawn
+ * a popup into a different profile.
+ */
+export async function configurePopupBrowseWebview(
+  label: string,
+  privateMode: boolean,
+): Promise<void> {
+  if (!isTauri) return
+
+  await invoke('webview_setup_popup_target', { label })
+  await invoke('webview_apply_browser_identity', { label })
+  await applyPrivacyToPopupLabel(label, privateMode)
+  popupPrivacyModes.set(label, privateMode)
+}
+
+export async function teardownPopupBrowseWebview(
+  label: string,
+): Promise<void> {
+  popupPrivacyModes.delete(label)
+  if (!isTauri) return
+  await invoke('webview_teardown_popup_target', { label })
+}
+
 export async function setBrowsePrivacyOptions(
   options: BrowserPrivacyOptions,
   shortcutIds: string[],
@@ -261,12 +301,22 @@ export async function setBrowsePrivacyOptions(
   }
 
   await allSettledOrThrow(
-    shortcutIds.map((shortcutId) =>
-      applyPrivacyToLabel(
-        tabWebviewLabel(shortcutId),
+    [
+      ...shortcutIds.map((shortcutId) =>
+        applyPrivacyToLabel(
+          tabWebviewLabel(shortcutId),
+        ),
       ),
-    ),
-    'Failed to apply privacy settings to browser tabs',
+      ...Array.from(
+        popupPrivacyModes.entries(),
+        ([label, privateMode]) =>
+          applyPrivacyToPopupLabel(
+            label,
+            privateMode,
+          ),
+      ),
+    ],
+    'Failed to apply privacy settings to browser tabs or popup windows',
   )
 }
 
@@ -699,6 +749,17 @@ async function configureTabWebview(
       () =>
         invoke(
           'webview_setup_tab_error_pages',
+          { label },
+        ),
+    )
+
+    await traceTransitionCall(
+      traceId,
+      'browser.webview.apply-browser-identity',
+      { label },
+      () =>
+        invoke(
+          'webview_apply_browser_identity',
           { label },
         ),
     )

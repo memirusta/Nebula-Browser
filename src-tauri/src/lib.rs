@@ -330,6 +330,63 @@ async fn site_ui_respond(
 }
 
 #[tauri::command]
+fn webview_setup_popup_target(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    if !label.starts_with("nebula-popup-content-") {
+        return Err("popup target label is not allowed".to_string());
+    }
+
+    // Keep the target unnavigated until CoreWebView2 NewWindowRequested binds it
+    // as the site's real popup. All handlers that must exist before first
+    // navigation are installed here.
+    webview_branding::setup_webview_branding(&app, &label)?;
+    site_ui::setup(&app, &label)?;
+    if let Err(error) = context_menu::setup(&app, &label) {
+        #[cfg(debug_assertions)]
+        eprintln!("[nebula context menu] {label}: {error}");
+    }
+    download_manager::setup_tab_downloads(&app, &label)?;
+    tab_error_page::setup_tab_error_page(&app, &label)
+}
+
+#[tauri::command]
+async fn site_popup_attach(
+    app: tauri::AppHandle,
+    request_id: String,
+    popup_label: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        site_ui::attach_popup(app, request_id, popup_label)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn site_popup_cancel(
+    app: tauri::AppHandle,
+    request_id: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || site_ui::cancel_popup(app, request_id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn webview_teardown_popup_target(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    if !label.starts_with("nebula-popup-content-") {
+        return Err("popup target label is not allowed".to_string());
+    }
+
+    context_menu::teardown(&app, &label);
+    site_ui::teardown(&app, &label);
+    download_manager::teardown_tab_downloads(&app, &label);
+    webview_privacy::teardown(&app, &label);
+    tab_error_page::teardown_tab_error_page(&app, &label);
+    webview_branding::teardown_webview_branding(&label);
+    Ok(())
+}
+
+#[tauri::command]
 async fn site_context_menu_respond(
     app: tauri::AppHandle,
     request_id: String,
@@ -395,6 +452,18 @@ async fn webview_factory_reset_profiles(app: tauri::AppHandle) -> Result<(), Str
 fn webview_setup_branding(app: tauri::AppHandle, label: String) -> Result<(), String> {
     webview_branding::setup_webview_branding(&app, &label)?;
     tab_error_page::setup_tab_error_page(&app, &label)
+}
+
+#[tauri::command]
+async fn webview_apply_browser_identity(
+    app: tauri::AppHandle,
+    label: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        webview_branding::apply_browser_identity(&app, &label)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -466,6 +535,11 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
 #[tauri::command]
 fn download_control(app: tauri::AppHandle, id: String, action: String) -> Result<(), String> {
     download_manager::control_download(app, id, action)
+}
+
+#[tauri::command]
+fn download_start_drag(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    download_manager::start_download_drag(app, id)
 }
 
 #[tauri::command]
@@ -1073,6 +1147,10 @@ pub fn run() {
             weather_search_cities,
             weather_search_subdivisions,
             site_ui_respond,
+            webview_setup_popup_target,
+            site_popup_attach,
+            site_popup_cancel,
+            webview_teardown_popup_target,
             site_context_menu_respond,
             webview_devtools_call,
             webview_devtools_subscribe,
@@ -1084,8 +1162,10 @@ pub fn run() {
             ublock_extension::ublock_extension_install,
             ublock_extension::ublock_extension_status,
             webview_setup_branding,
+            webview_apply_browser_identity,
             webview_execute_script,
             download_control,
+            download_start_drag,
             secure_password_vault::password_vault_load,
             secure_password_vault::password_vault_save,
             secure_password_vault::password_vault_clear,

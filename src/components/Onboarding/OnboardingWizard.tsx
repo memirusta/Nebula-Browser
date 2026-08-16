@@ -22,11 +22,6 @@ import {
   saveOnboardingResumeStep,
   type OnboardingStep,
 } from '../../core/onboarding'
-import { GoogleAccountSetupPanel } from '../GoogleAccountSetupModal/GoogleAccountSetupPanel'
-import {
-  mergeImportedPasswords,
-  parsePasswordCsv,
-} from '../../core/passwordImport'
 import type { Shortcut } from '../../core/types'
 import {
   detectDefaultBrowser,
@@ -53,9 +48,6 @@ interface OnboardingWizardProps {
   ) => void
   onComplete: (
     result: OnboardingResult,
-  ) => void
-  onOpenBrowseUrl?: (
-    url: string,
   ) => void
 }
 
@@ -100,7 +92,6 @@ export function OnboardingWizard({
   initialStep,
   onApplyImportedShortcuts,
   onComplete,
-  onOpenBrowseUrl,
 }: OnboardingWizardProps) {
   const {
     locale,
@@ -160,15 +151,13 @@ export function OnboardingWizard({
   )
 
   const [
-    googleConfigHint,
-    setGoogleConfigHint,
-  ] = useState<string | null>(
-    null,
-  )
+    googleAvatarRetry,
+    setGoogleAvatarRetry,
+  ] = useState(0)
 
   const [
-    googleLinkMessage,
-    setGoogleLinkMessage,
+    googleConfigHint,
+    setGoogleConfigHint,
   ] = useState<string | null>(
     null,
   )
@@ -178,11 +167,6 @@ export function OnboardingWizard({
 
   const accountRef =
     useRef<NebulaAccount | null>(
-      null,
-    )
-
-  const csvInputRef =
-    useRef<HTMLInputElement>(
       null,
     )
 
@@ -223,6 +207,10 @@ export function OnboardingWizard({
 
         setDisplayName(
           name,
+        )
+
+        setGoogleAvatarRetry(
+          0,
         )
 
         accountRef.current = {
@@ -338,11 +326,11 @@ export function OnboardingWizard({
       null,
     )
 
-    setGoogleConfigHint(
-      null,
+    setGoogleAvatarRetry(
+      0,
     )
 
-    setGoogleLinkMessage(
+    setGoogleConfigHint(
       null,
     )
 
@@ -606,16 +594,6 @@ export function OnboardingWizard({
         step ===
         'profile'
       ) {
-        if (
-          googleEmail
-        ) {
-          setStep(
-            'googleLink',
-          )
-
-          return
-        }
-
         setStep(
           'defaultBrowser',
         )
@@ -648,118 +626,6 @@ export function OnboardingWizard({
       step,
       finish,
       onApplyImportedShortcuts,
-      googleEmail,
-    ])
-
-  const handleCsvSelected =
-    useCallback(
-      async (
-        event:
-          React.ChangeEvent<HTMLInputElement>,
-      ) => {
-        const file =
-          event.target
-            .files?.[0]
-
-        event.target.value =
-          ''
-
-        if (!file) {
-          return
-        }
-
-        try {
-          const text =
-            await file.text()
-
-          const imported =
-            parsePasswordCsv(
-              text,
-            )
-
-          if (
-            imported.length ===
-            0
-          ) {
-            setGoogleLinkMessage(
-              t(
-                'accountCsvEmpty',
-              ),
-            )
-
-            return
-          }
-
-          await mergeImportedPasswords(
-            imported.map(
-              (
-                item,
-              ) => ({
-                label:
-                  item.label,
-                url:
-                  item.url,
-                username:
-                  item.username,
-                password:
-                  item.password,
-              }),
-            ),
-          )
-
-          setGoogleLinkMessage(
-            tf(
-              locale,
-              'accountCsvImported',
-              {
-                count:
-                  imported.length,
-              },
-            ),
-          )
-        } catch {
-          setGoogleLinkMessage(
-            t(
-              'accountCsvReadError',
-            ),
-          )
-        }
-      },
-      [
-        locale,
-        t,
-      ],
-    )
-
-  const skipGoogleLink =
-    useCallback(() => {
-      setStep(
-        isTauri &&
-          googleEmail
-          ? 'syncRestore'
-          : 'defaultBrowser',
-      )
-    }, [
-      googleEmail,
-    ])
-
-  const completeGoogleLink =
-    useCallback(() => {
-      setGoogleLinkMessage(
-        t(
-          'googleLinked',
-        ),
-      )
-
-      setStep(
-        isTauri &&
-          googleEmail
-          ? 'syncRestore'
-          : 'defaultBrowser',
-      )
-    }, [
-      googleEmail,
-      t,
     ])
 
   const goBack =
@@ -773,21 +639,8 @@ export function OnboardingWizard({
           setStep('bookmarks')
           return
 
-        case 'googleLink':
-          setStep('profile')
-          return
-
-        case 'syncRestore':
-          setStep('googleLink')
-          return
-
         case 'defaultBrowser':
-          setStep(
-            isTauri &&
-              googleEmail
-              ? 'syncRestore'
-              : 'profile',
-          )
+          setStep('profile')
           return
 
         case 'done':
@@ -799,7 +652,6 @@ export function OnboardingWizard({
       }
     }, [
       step,
-      googleEmail,
     ])
 
   if (!open) {
@@ -1078,303 +930,297 @@ export function OnboardingWizard({
                 )}
               </h2>
 
-              <p
-                className={
-                  styles.lead
-                }
-              >
-                {t(
-                  'profileLead',
-                )}
-              </p>
-
-              {hasGoogleClient ? (
-                <>
-                  <button
-                    type="button"
-                    className={
-                      styles.googleBtn
-                    }
-                    onClick={
-                      handleGoogleSignIn
-                    }
-                    disabled={
-                      googleStarting
-                    }
-                  >
-                    <span
-                      className={
-                        styles.googleMark
-                      }
-                      aria-hidden="true"
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="20"
-                        height="20"
-                        role="img"
-                        aria-hidden="true"
-                      >
-                        <path
-                          fill="#EA4335"
-                          d="M12 10.2v3.9h5.4c-.23 1.26-.95 2.33-2.04 3.05l3.29 2.55c1.92-1.77 3.02-4.38 3.02-7.5 0-.72-.06-1.4-.19-2.05H12z"
-                        />
-                        <path
-                          fill="#4285F4"
-                          d="M12 22c2.73 0 5.02-.9 6.69-2.43l-3.29-2.55c-.91.61-2.08.98-3.4.98-2.61 0-4.82-1.76-5.61-4.12H3.01v2.6A10.09 10.09 0 0 0 12 22z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M6.39 13.88A6.07 6.07 0 0 1 6.08 12c0-.65.11-1.28.31-1.88V7.52H3.01A10.09 10.09 0 0 0 1.92 12c0 1.63.39 3.18 1.09 4.48l3.38-2.6z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 5.99c1.48 0 2.81.51 3.86 1.52l2.89-2.89C17.01 2.98 14.72 2 12 2A10.09 10.09 0 0 0 3.01 7.52l3.38 2.6C7.18 7.75 9.39 5.99 12 5.99z"
-                        />
-                      </svg>
-                    </span>
-
-                    {googleStarting
-                      ? isTauri
-                        ? t(
-                            'googleOpeningTauri',
-                          )
-                        : t(
-                            'googleRedirecting',
-                          )
-                      : t(
-                          'googleSignIn',
-                        )}
-                  </button>
-
-                  {isTauri ? (
-                    <p
-                      className={
-                        styles.redirectHint
-                      }
-                    >
-                      {t(
-                        'googleReturnHintTauri',
-                      )}
-                    </p>
-                  ) : (
-                    <p
-                      className={
-                        styles.redirectHint
-                      }
-                    >
-                      {t(
-                        'googleRedirectUri',
-                      )}
-
-                      <code>
-                        {
-                          redirectUri
-                        }
-                      </code>
-                    </p>
-                  )}
-
-                  {googleConfigHint && (
-                    <p
-                      className={
-                        styles.hint
-                      }
-                    >
-                      {
-                        googleConfigHint
-                      }
-                    </p>
-                  )}
-
-                  {googleError && (
-                    <p
-                      className={
-                        styles.error
-                      }
-                    >
-                      {
-                        googleError
-                      }
-                    </p>
-                  )}
-
-                  <p
-                    className={
-                      styles.divider
-                    }
-                  >
-                    {t(
-                      'orDivider',
-                    )}
-                  </p>
-                </>
-              ) : (
-                <p
-                  className={
-                    styles.hint
-                  }
-                >
-                  {t(
-                    'googleConfigMissing',
-                  )}
-                </p>
-              )}
-
-              <label
-                className={
-                  styles.fieldLabel
-                }
-              >
-                {t(
-                  'displayNameLabel',
-                )}
-
-                <input
-                  className={
-                    styles.textInput
-                  }
-                  value={
-                    displayName
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setDisplayName(
-                      event
-                        .target
-                        .value,
-                    )
-                  }
-                  placeholder={t(
-                    'displayNamePlaceholder',
-                  )}
-                  maxLength={
-                    48
-                  }
-                  autoComplete="nickname"
-                />
-              </label>
-            </>
-          )}
-
-          {step ===
-            'googleLink' &&
-            googleEmail && (
-              <>
-                <h2
-                  className={
-                    styles.title
-                  }
-                >
-                  {t(
-                    'googleLinkTitle',
-                  )}
-                </h2>
-
-                <GoogleAccountSetupPanel
-                  email={
-                    googleEmail
-                  }
-                  onOpenBrowseUrl={(
-                    url,
-                  ) =>
-                    onOpenBrowseUrl?.(
-                      url,
-                    )
-                  }
-                  onMergePasswords={async (
-                    entries,
-                  ) => {
-                    await mergeImportedPasswords(
-                      entries,
-                    )
-                  }}
-                  onRequestCsvImport={() =>
-                    csvInputRef.current?.click()
-                  }
-                  onApplied={
-                    completeGoogleLink
-                  }
-                  showSkip
-                  onSkip={
-                    skipGoogleLink
-                  }
-                />
-
-                {googleLinkMessage && (
-                  <p
-                    className={
-                      styles.success
-                    }
-                  >
-                    {
-                      googleLinkMessage
-                    }
-                  </p>
-                )}
-
-                <input
-                  ref={
-                    csvInputRef
-                  }
-                  type="file"
-                  accept=".csv,text/csv"
-                  className={
-                    styles.hiddenFileInput
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    void handleCsvSelected(
-                      event,
-                    )
-                  }
-                />
-              </>
-            )}
-
-          {step ===
-            'googleLink' &&
-            !googleEmail && (
-              <>
-                <h2
-                  className={
-                    styles.title
-                  }
-                >
-                  {t(
-                    'googleLinkTitle',
-                  )}
-                </h2>
-
+              {!googleEmail && (
                 <p
                   className={
                     styles.lead
                   }
                 >
                   {t(
-                    'googleLinkNeedSignIn',
+                    'profileLead',
                   )}
                 </p>
-              </>
-            )}
+              )}
 
-          {step ===
-            'syncRestore' && (
-            <OnboardingSyncRestoreStep
-              email={
-                googleEmail
-              }
-              account={
-                accountRef.current
-              }
-              onContinue={() => {
-                setStep(
-                  'defaultBrowser',
-                )
-              }}
-            />
+              {googleEmail &&
+              accountRef.current?.provider ===
+                'google' ? (
+                <>
+                  <p
+                    className={
+                      styles.success
+                    }
+                  >
+                    {t(
+                      'googleLinked',
+                    )}
+                  </p>
+
+                  <div
+                    className={
+                      styles.googleAccountCard
+                    }
+                  >
+                    <div
+                      className={
+                        styles.googleAccountAvatarFrame
+                      }
+                      aria-hidden="true"
+                    >
+                      <div
+                        className={
+                          styles.googleAccountAvatarPlaceholder
+                        }
+                      >
+                        {accountRef.current
+                          .displayName
+                          .charAt(0)
+                          .toUpperCase()}
+                      </div>
+
+                      {accountRef.current
+                        .avatarUrl &&
+                        googleAvatarRetry < 3 && (
+                          <img
+                            key={
+                              googleAvatarRetry
+                            }
+                            className={
+                              styles.googleAccountAvatar
+                            }
+                            src={
+                              googleAvatarRetry === 0
+                                ? accountRef.current
+                                    .avatarUrl
+                                : `${accountRef.current.avatarUrl}${
+                                    accountRef.current.avatarUrl.includes('?')
+                                      ? '&'
+                                      : '?'
+                                  }nebula_retry=${googleAvatarRetry}`
+                            }
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            onError={() => {
+                              const nextRetry =
+                                googleAvatarRetry + 1
+
+                              window.setTimeout(
+                                () =>
+                                  setGoogleAvatarRetry(
+                                    nextRetry,
+                                  ),
+                                nextRetry === 1
+                                  ? 350
+                                  : 900,
+                              )
+                            }}
+                          />
+                        )}
+                    </div>
+
+                    <div
+                      className={
+                        styles.googleAccountMeta
+                      }
+                    >
+                      <strong>
+                        {
+                          accountRef.current
+                            .displayName
+                        }
+                      </strong>
+                      <span>
+                        {googleEmail}
+                      </span>
+                    </div>
+                  </div>
+
+                  <OnboardingSyncRestoreStep
+                    email={
+                      googleEmail
+                    }
+                    account={
+                      accountRef.current
+                    }
+                    onContinue={() => {
+                      setStep(
+                        'defaultBrowser',
+                      )
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  {hasGoogleClient ? (
+                    <>
+                      <button
+                        type="button"
+                        className={
+                          styles.googleBtn
+                        }
+                        onClick={
+                          handleGoogleSignIn
+                        }
+                        disabled={
+                          googleStarting
+                        }
+                      >
+                        <span
+                          className={
+                            styles.googleMark
+                          }
+                          aria-hidden="true"
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            width="20"
+                            height="20"
+                            role="img"
+                            aria-hidden="true"
+                          >
+                            <path
+                              fill="#EA4335"
+                              d="M12 10.2v3.9h5.4c-.23 1.26-.95 2.33-2.04 3.05l3.29 2.55c1.92-1.77 3.02-4.38 3.02-7.5 0-.72-.06-1.4-.19-2.05H12z"
+                            />
+                            <path
+                              fill="#4285F4"
+                              d="M12 22c2.73 0 5.02-.9 6.69-2.43l-3.29-2.55c-.91.61-2.08.98-3.4.98-2.61 0-4.82-1.76-5.61-4.12H3.01v2.6A10.09 10.09 0 0 0 12 22z"
+                            />
+                            <path
+                              fill="#FBBC05"
+                              d="M6.39 13.88A6.07 6.07 0 0 1 6.08 12c0-.65.11-1.28.31-1.88V7.52H3.01A10.09 10.09 0 0 0 1.92 12c0 1.63.39 3.18 1.09 4.48l3.38-2.6z"
+                            />
+                            <path
+                              fill="#34A853"
+                              d="M12 5.99c1.48 0 2.81.51 3.86 1.52l2.89-2.89C17.01 2.98 14.72 2 12 2A10.09 10.09 0 0 0 3.01 7.52l3.38 2.6C7.18 7.75 9.39 5.99 12 5.99z"
+                            />
+                          </svg>
+                        </span>
+
+                        {googleStarting
+                          ? isTauri
+                            ? t(
+                                'googleOpeningTauri',
+                              )
+                            : t(
+                                'googleRedirecting',
+                              )
+                          : t(
+                              'googleSignIn',
+                            )}
+                      </button>
+
+                      {isTauri ? (
+                        <p
+                          className={
+                            styles.redirectHint
+                          }
+                        >
+                          {t(
+                            'googleReturnHintTauri',
+                          )}
+                        </p>
+                      ) : (
+                        <p
+                          className={
+                            styles.redirectHint
+                          }
+                        >
+                          {t(
+                            'googleRedirectUri',
+                          )}
+
+                          <code>
+                            {
+                              redirectUri
+                            }
+                          </code>
+                        </p>
+                      )}
+
+                      {googleConfigHint && (
+                        <p
+                          className={
+                            styles.hint
+                          }
+                        >
+                          {
+                            googleConfigHint
+                          }
+                        </p>
+                      )}
+
+                      {googleError && (
+                        <p
+                          className={
+                            styles.error
+                          }
+                        >
+                          {
+                            googleError
+                          }
+                        </p>
+                      )}
+
+                      <p
+                        className={
+                          styles.divider
+                        }
+                      >
+                        {t(
+                          'orDivider',
+                        )}
+                      </p>
+                    </>
+                  ) : (
+                    <p
+                      className={
+                        styles.hint
+                      }
+                    >
+                      {t(
+                        'googleConfigMissing',
+                      )}
+                    </p>
+                  )}
+
+                  <label
+                    className={
+                      styles.fieldLabel
+                    }
+                  >
+                    {t(
+                      'displayNameLabel',
+                    )}
+
+                    <input
+                      className={
+                        styles.textInput
+                      }
+                      value={
+                        displayName
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setDisplayName(
+                          event
+                            .target
+                            .value,
+                        )
+                      }
+                      placeholder={t(
+                        'displayNamePlaceholder',
+                      )}
+                      maxLength={
+                        48
+                      }
+                      autoComplete="nickname"
+                    />
+                  </label>
+                </>
+              )}
+            </>
           )}
 
           {step ===
@@ -1431,11 +1277,7 @@ export function OnboardingWizard({
             {stepIndex >
               0 &&
               step !==
-                'done' &&
-              step !==
-                'googleLink' &&
-              step !==
-                'syncRestore' && (
+                'done' && (
                 <button
                   type="button"
                   className={
@@ -1457,27 +1299,11 @@ export function OnboardingWizard({
               }
             />
 
-            {step ===
-              'googleLink' && (
-              <button
-                type="button"
-                className={
-                  styles.ghostBtn
-                }
-                onClick={
-                  skipGoogleLink
-                }
-              >
-                {t(
-                  'continue',
-                )}
-              </button>
-            )}
-
-            {step !==
-              'googleLink' &&
-              step !==
-                'syncRestore' && (
+            {!(
+              step ===
+                'profile' &&
+              googleEmail
+            ) && (
                 <button
                   type="button"
                   className={

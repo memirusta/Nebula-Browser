@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { downloadProgress, isDownloadActive, type DownloadAction, type DownloadItem } from '../../core/download'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { downloadProgress, isDownloadActive, startDownloadDrag, type DownloadAction, type DownloadItem } from '../../core/download'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './DownloadManager.module.css'
 
@@ -206,6 +206,22 @@ export function DownloadManager({
     }
   }
 
+  const beginNativeDrag = (event: DragEvent<HTMLElement>, item: DownloadItem) => {
+    if (item.state !== 'completed') {
+      event.preventDefault()
+      return
+    }
+
+    // Cancel Chromium's HTML drag loop and hand the same mouse gesture to the
+    // native Windows Shell. The native command resolves the local path from the
+    // completed download id, so the webview never gets an arbitrary file-drag API.
+    event.preventDefault()
+    setActionError(null)
+    void startDownloadDrag(item.id).catch(() => {
+      setActionError(t('downloadActionFailed'))
+    })
+  }
+
   return (
     <section
       data-nebula-download-panel="true"
@@ -270,14 +286,25 @@ export function DownloadManager({
 
             return (
               <article key={item.id} className={styles.item}>
-                <div className={[styles.fileGlyph, completed ? styles.fileGlyphCompleted : '', !active && !completed ? styles.fileGlyphFailed : ''].filter(Boolean).join(' ')}>
+                <div
+                  className={[
+                    styles.fileGlyph,
+                    completed ? styles.fileGlyphCompleted : '',
+                    !active && !completed ? styles.fileGlyphFailed : '',
+                    completed ? styles.fileDragSource : '',
+                  ].filter(Boolean).join(' ')}
+                  draggable={completed}
+                  onDragStart={(event) => beginNativeDrag(event, item)}
+                >
                   <DownloadGlyph state={item.state} />
                 </div>
                 <div className={styles.itemBody}>
                   <button
                     type="button"
-                    className={styles.fileName}
+                    className={[styles.fileName, completed ? styles.fileDragSource : ''].filter(Boolean).join(' ')}
                     disabled={!completed}
+                    draggable={completed}
+                    onDragStart={(event) => beginNativeDrag(event, item)}
                     onClick={() => void runAction(item.id, 'open')}
                     title={item.fileName}
                   >

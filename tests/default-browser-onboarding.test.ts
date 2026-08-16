@@ -9,12 +9,15 @@ function source(path: string): string {
   )
 }
 
-test('onboarding restores sync before offering default-browser setup', () => {
+test('onboarding keeps Google sign-in and Sync restore on one profile step', () => {
   const onboarding =
     source('../src/core/onboarding.ts')
 
-  const syncIndex =
-    onboarding.indexOf("'syncRestore'")
+  const wizard =
+    source('../src/components/Onboarding/OnboardingWizard.tsx')
+
+  const profileIndex =
+    onboarding.indexOf("'profile'")
 
   const defaultIndex =
     onboarding.indexOf("'defaultBrowser'")
@@ -22,9 +25,14 @@ test('onboarding restores sync before offering default-browser setup', () => {
   const doneIndex =
     onboarding.indexOf("'done'")
 
-  assert.ok(syncIndex >= 0)
-  assert.ok(defaultIndex > syncIndex)
+  assert.ok(profileIndex >= 0)
+  assert.ok(defaultIndex > profileIndex)
   assert.ok(doneIndex > defaultIndex)
+  assert.doesNotMatch(onboarding, /\n\s*'googleLink',/)
+  assert.doesNotMatch(onboarding, /\n\s*'syncRestore',/)
+  assert.match(wizard, /step ===\s*'profile'/)
+  assert.match(wizard, /<OnboardingSyncRestoreStep/)
+  assert.match(wizard, /setStep\(\s*'defaultBrowser'/)
 })
 
 test('Windows installer registers Nebula as a browser candidate without touching UserChoice', () => {

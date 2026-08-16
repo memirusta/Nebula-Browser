@@ -12,12 +12,12 @@ import { syncTauriViewMode } from './platform/tauriBrowsingMode'
 import { prewarmBrowseWebview, prewarmUblockProfile } from './platform/tauriBrowser'
 import { writeTransitionLog } from './platform/tauriTransitionLog'
 
+const chromeShell = isChromeShell()
+
 applyNebulaCssVars(loadNebulaSettings())
 applyDocumentLocale()
 resetHomeMenuStorageOnce()
 migrateToEmptySemiLunarDockOnce(DEFAULT_SHORTCUTS)
-
-const chromeShell = isChromeShell()
 
 if (isTauri) {
   document.documentElement.dataset.nebulaTauri = 'true'
@@ -47,23 +47,22 @@ async function renderRoot() {
     </StrictMode>,
   )
 
-if (isTauri && !chromeShell) {
-  requestAnimationFrame(() => {
+  if (isTauri && !chromeShell) {
     requestAnimationFrame(() => {
-      void writeTransitionLog(
-        'performance.frontend-ready',
-        'ok',
-        {
-          durationMs:
-            Math.round(performance.now() * 10) / 10,
-          timeOrigin:
-            Math.round(performance.timeOrigin),
-        },
-      )
+      requestAnimationFrame(() => {
+        void writeTransitionLog(
+          'performance.frontend-ready',
+          'ok',
+          {
+            durationMs:
+              Math.round(performance.now() * 10) / 10,
+            timeOrigin:
+              Math.round(performance.timeOrigin),
+          },
+        )
+      })
     })
-  })
+  }
 }
-}
-
 
 void renderRoot()

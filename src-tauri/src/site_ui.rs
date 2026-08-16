@@ -9,15 +9,16 @@ mod imp {
     use serde::{Deserialize, Serialize};
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2BasicAuthenticationRequestedEventArgs,
+        ICoreWebView2, ICoreWebView2BasicAuthenticationRequestedEventArgs,
         ICoreWebView2BasicAuthenticationRequestedEventHandler, ICoreWebView2Deferral,
         ICoreWebView2LaunchingExternalUriSchemeEventArgs,
         ICoreWebView2LaunchingExternalUriSchemeEventHandler,
-        ICoreWebView2NewWindowRequestedEventHandler, ICoreWebView2PermissionRequestedEventArgs,
+        ICoreWebView2NewWindowRequestedEventArgs, ICoreWebView2NewWindowRequestedEventHandler,
+        ICoreWebView2PermissionRequestedEventArgs,
         ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2PermissionRequestedEventHandler,
         ICoreWebView2ScriptDialogOpeningEventArgs, ICoreWebView2ScriptDialogOpeningEventHandler,
         ICoreWebView2WebMessageReceivedEventHandler, ICoreWebView2WindowCloseRequestedEventHandler,
-        ICoreWebView2_10, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
+        ICoreWebView2_10, ICoreWebView2_13, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
         COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
         COREWEBVIEW2_SCRIPT_DIALOG_KIND,
     };
@@ -38,7 +39,9 @@ mod imp {
     const SITE_POINTER_DOWN_EVENT: &str = "nebula-site-pointer-down";
     const PASSWORD_STEP_EVENT: &str = "nebula-password-step";
     const SITE_UI_TIMEOUT: Duration = Duration::from_secs(60);
+    const POPUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
     const MAX_PENDING_SITE_UI_PER_TAB: usize = 8;
+    const MAX_PENDING_POPUPS_PER_TAB: usize = 4;
 
     static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -69,6 +72,12 @@ mod imp {
     struct MainPermissionUiHandler {
         _permission: ICoreWebView2PermissionRequestedEventHandler,
         _token: i64,
+    }
+
+    struct PendingPopup {
+        opener_label: String,
+        args: ICoreWebView2NewWindowRequestedEventArgs,
+        deferral: ICoreWebView2Deferral,
     }
 
     enum PendingRequest {
@@ -113,6 +122,7 @@ mod imp {
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, Handlers>> = RefCell::new(HashMap::new());
         static PENDING: RefCell<HashMap<String, PendingRequest>> = RefCell::new(HashMap::new());
+        static PENDING_POPUPS: RefCell<HashMap<String, PendingPopup>> = RefCell::new(HashMap::new());
         static MAIN_PERMISSION_UI_HANDLER: RefCell<Option<MainPermissionUiHandler>> =
             const { RefCell::new(None) };
     }
@@ -142,10 +152,24 @@ mod imp {
 
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
+    struct PopupWindowFeaturesPayload {
+        has_position: bool,
+        has_size: bool,
+        left: u32,
+        top: u32,
+        width: u32,
+        height: u32,
+    }
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct NewWindowPayload {
+        request_id: String,
         tab_label: String,
         uri: String,
         user_initiated: bool,
+        private_mode: bool,
+        features: PopupWindowFeaturesPayload,
     }
 
     #[derive(Clone, Serialize)]
@@ -477,6 +501,64 @@ mod imp {
             .unwrap_or_else(|| "Website".to_string())
     }
 
+    fn is_site_webview_label(label: &str) -> bool {
+        label.starts_with("nebula-tab-") || label.starts_with("nebula-popup-content-")
+    }
+
+    unsafe fn popup_window_features(
+        args: &ICoreWebView2NewWindowRequestedEventArgs,
+    ) -> PopupWindowFeaturesPayload {
+        let Ok(features) = args.WindowFeatures() else {
+            return PopupWindowFeaturesPayload {
+                has_position: false,
+                has_size: false,
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+            };
+        };
+
+        let mut has_position = windows_core::BOOL::default();
+        let mut has_size = windows_core::BOOL::default();
+        let _ = features.HasPosition(&mut has_position);
+        let _ = features.HasSize(&mut has_size);
+
+        let mut left = 0u32;
+        let mut top = 0u32;
+        let mut width = 0u32;
+        let mut height = 0u32;
+
+        if has_position.as_bool() {
+            let _ = features.Left(&mut left);
+            let _ = features.Top(&mut top);
+        }
+        if has_size.as_bool() {
+            let _ = features.Width(&mut width);
+            let _ = features.Height(&mut height);
+        }
+
+        PopupWindowFeaturesPayload {
+            has_position: has_position.as_bool(),
+            has_size: has_size.as_bool(),
+            left,
+            top,
+            width,
+            height,
+        }
+    }
+
+    unsafe fn webview_private_mode(core: &ICoreWebView2) -> bool {
+        let Ok(core13) = core.cast::<ICoreWebView2_13>() else {
+            return false;
+        };
+        let Ok(profile) = core13.Profile() else {
+            return false;
+        };
+        let mut private_mode = windows_core::BOOL::default();
+        profile.IsInPrivateModeEnabled(&mut private_mode).is_ok() && private_mode.as_bool()
+    }
+
     fn script_dialog_kind(kind: COREWEBVIEW2_SCRIPT_DIALOG_KIND) -> &'static str {
         match kind.0 {
             0 => "alert",
@@ -593,6 +675,70 @@ mod imp {
                 tab_label
             })
         })
+    }
+
+    fn cancel_popup_request(request: PendingPopup) {
+        unsafe {
+            let _ = request.args.SetHandled(true);
+            let _ = request.deferral.Complete();
+        }
+    }
+
+    fn remove_and_cancel_pending_popup(request_id: &str) -> Option<String> {
+        PENDING_POPUPS.with(|pending| {
+            pending.borrow_mut().remove(request_id).map(|request| {
+                let opener_label = request.opener_label.clone();
+                cancel_popup_request(request);
+                opener_label
+            })
+        })
+    }
+
+    fn expire_popup_request(request_id: &str) {
+        let _ = remove_and_cancel_pending_popup(request_id);
+    }
+
+    fn schedule_popup_timeout(app: &AppHandle, request_id: String) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(POPUP_REQUEST_TIMEOUT).await;
+            let _ = app.run_on_main_thread(move || {
+                expire_popup_request(&request_id);
+            });
+        });
+    }
+
+    fn enqueue_popup_request(
+        app: &AppHandle,
+        payload: NewWindowPayload,
+        request: PendingPopup,
+    ) {
+        let request_id = payload.request_id.clone();
+        let opener_label = request.opener_label.clone();
+        let inserted = PENDING_POPUPS.with(|pending| {
+            let mut pending = pending.borrow_mut();
+            if !has_pending_capacity(
+                pending.values().map(|request| request.opener_label.as_str()),
+                &opener_label,
+                MAX_PENDING_POPUPS_PER_TAB,
+            ) {
+                return Err(request);
+            }
+            pending.insert(request_id.clone(), request);
+            Ok(())
+        });
+
+        if let Err(request) = inserted {
+            cancel_popup_request(request);
+            return;
+        }
+
+        if app.emit(SITE_NEW_WINDOW_EVENT, payload).is_err() {
+            let _ = remove_and_cancel_pending_popup(&request_id);
+            return;
+        }
+
+        schedule_popup_timeout(app, request_id);
     }
 
     fn expire_site_ui_request(app: &AppHandle, request_id: &str) {
@@ -767,8 +913,8 @@ mod imp {
     }
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
-        if !label.starts_with("nebula-tab-") {
-            return Err("site UI handlers are limited to browser tabs".to_string());
+        if !is_site_webview_label(label) {
+            return Err("site UI handlers are limited to browser tabs and popup content".to_string());
         }
         if CONFIGURED
             .lock()
@@ -1028,23 +1174,36 @@ mod imp {
 
                     let new_window_app = app_for_handlers.clone();
                     let new_window_label = label_for_handlers.clone();
-                    let new_window =
-                        NewWindowRequestedEventHandler::create(Box::new(move |_, args| {
+                    let new_window_private_mode = webview_private_mode(&core);
+                    let new_window = NewWindowRequestedEventHandler::create(Box::new(
+                        move |_, args| {
                             let Some(args) = args else { return Ok(()) };
+                            let deferral = args.GetDeferral()?;
                             let uri = take_string(|value| args.Uri(value));
                             let mut initiated = windows_core::BOOL::default();
                             let _ = args.IsUserInitiated(&mut initiated);
-                            args.SetHandled(true)?;
-                            let _ = new_window_app.emit(
-                                SITE_NEW_WINDOW_EVENT,
+                            let features = popup_window_features(&args);
+                            let request_id = next_request_id("popup");
+
+                            enqueue_popup_request(
+                                &new_window_app,
                                 NewWindowPayload {
+                                    request_id: request_id.clone(),
                                     tab_label: new_window_label.clone(),
                                     uri,
                                     user_initiated: initiated.as_bool(),
+                                    private_mode: new_window_private_mode,
+                                    features,
+                                },
+                                PendingPopup {
+                                    opener_label: new_window_label.clone(),
+                                    args,
+                                    deferral,
                                 },
                             );
                             Ok(())
-                        }));
+                        },
+                    ));
                     let mut new_window_token = 0i64;
                     core.add_NewWindowRequested(&new_window, &mut new_window_token)?;
 
@@ -1158,6 +1317,93 @@ mod imp {
         } else {
             Err(format!("failed to configure site UI for '{label}'"))
         }
+    }
+
+    pub fn attach_popup(
+        app: AppHandle,
+        request_id: String,
+        popup_label: String,
+    ) -> Result<(), String> {
+        if !popup_label.starts_with("nebula-popup-content-") {
+            return Err("popup target label is not allowed".to_string());
+        }
+
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let app_for_main = app.clone();
+
+        app.run_on_main_thread(move || {
+            let Some(webview) = app_for_main.get_webview(&popup_label) else {
+                let _ = remove_and_cancel_pending_popup(&request_id);
+                let _ = tx.send(Err(format!("webview '{popup_label}' not found")));
+                return;
+            };
+
+            let callback_request_id = request_id.clone();
+            let callback_tx = tx.clone();
+            let queued = webview.with_webview(move |inner| {
+                let result = PENDING_POPUPS.with(|pending| {
+                    let request = pending
+                        .borrow_mut()
+                        .remove(&callback_request_id)
+                        .ok_or_else(|| {
+                            format!(
+                                "popup request '{callback_request_id}' is no longer pending"
+                            )
+                        })?;
+
+                    let attach_result = unsafe {
+                        (|| -> Result<(), String> {
+                            let core = inner
+                                .controller()
+                                .CoreWebView2()
+                                .map_err(|error| error.to_string())?;
+                            request
+                                .args
+                                .SetNewWindow(&core)
+                                .map_err(|error| error.to_string())?;
+                            request
+                                .args
+                                .SetHandled(true)
+                                .map_err(|error| error.to_string())?;
+                            request
+                                .deferral
+                                .Complete()
+                                .map_err(|error| error.to_string())?;
+                            Ok(())
+                        })()
+                    };
+
+                    if attach_result.is_err() {
+                        cancel_popup_request(request);
+                    }
+
+                    attach_result
+                });
+
+                let _ = callback_tx.send(result);
+            });
+
+            if let Err(error) = queued {
+                let _ = remove_and_cancel_pending_popup(&request_id);
+                let _ = tx.send(Err(error.to_string()));
+            }
+        })
+        .map_err(|error| error.to_string())?;
+
+        rx.recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "timed out attaching popup webview".to_string())?
+    }
+
+    pub fn cancel_popup(app: AppHandle, request_id: String) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = remove_and_cancel_pending_popup(&request_id);
+            let _ = tx.send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "timed out cancelling popup request".to_string())?
     }
 
     pub fn respond(
@@ -1288,6 +1534,18 @@ mod imp {
                     },
                 );
             }
+
+            let popup_ids = PENDING_POPUPS.with(|pending| {
+                pending
+                    .borrow()
+                    .iter()
+                    .filter(|(_, request)| request.opener_label == label)
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            });
+            for id in popup_ids {
+                let _ = remove_and_cancel_pending_popup(&id);
+            }
         });
     }
 
@@ -1354,7 +1612,8 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::{
-    request_permission, respond, setup, setup_main_permission_ui, teardown, SiteUiResponse,
+    attach_popup, cancel_popup, request_permission, respond, setup, setup_main_permission_ui,
+    teardown, SiteUiResponse,
 };
 
 #[cfg(not(target_os = "windows"))]
@@ -1384,6 +1643,20 @@ pub fn setup_main_permission_ui(_app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn attach_popup(
+    _app: tauri::AppHandle,
+    _request_id: String,
+    _popup_label: String,
+) -> Result<(), String> {
+    Err("popup windows are currently supported on Windows".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn cancel_popup(_app: tauri::AppHandle, _request_id: String) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn respond(

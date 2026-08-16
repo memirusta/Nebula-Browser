@@ -47,6 +47,11 @@ import { writeTransitionLog } from '../../platform/tauriTransitionLog'
 import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
 import { setChromeWebviewSuppressed } from '../../platform/tauriChromeWebview'
 import {
+  closeSitePopupForContent,
+  isPopupContentLabel,
+  openSitePopup,
+} from '../../platform/tauriPopup'
+import {
   listenSiteCloseWindows,
   listenSiteNewWindows,
   listenSitePointerDown,
@@ -1172,7 +1177,7 @@ export function BrowserShell() {
         )
 
         setOnboardingInitialStep(
-          'googleLink',
+          'profile',
         )
 
         window.history.replaceState(
@@ -3239,14 +3244,32 @@ export function BrowserShell() {
               },
             ),
             () => listenSiteNewWindows(
-              ({ uri }) => {
-                openUrlInNewTab(
-                  uri,
-                )
+              (payload) => {
+                void openSitePopup(
+                  payload,
+                ).catch((error) => {
+                  if (import.meta.env.DEV) {
+                    console.warn(
+                      '[nebula] popup window creation failed',
+                      error,
+                    )
+                  }
+                })
               },
             ),
             () => listenSiteCloseWindows(
               ({ tabLabel }) => {
+                if (
+                  isPopupContentLabel(
+                    tabLabel,
+                  )
+                ) {
+                  void closeSitePopupForContent(
+                    tabLabel,
+                  )
+                  return
+                }
+
                 const shortcutId =
                   shortcutIdForTabWebviewLabel(
                     tabLabel,
@@ -5857,17 +5880,6 @@ export function BrowserShell() {
             }
             onComplete={
               handleOnboardingComplete
-            }
-            onOpenBrowseUrl={(
-              url,
-            ) =>
-              openBrowseUrl(
-                url,
-                {
-                  activate:
-                    true,
-                },
-              )
             }
           />
         </Suspense>

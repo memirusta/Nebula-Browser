@@ -185,6 +185,19 @@
   cursor: pointer;
 }
 
+.fileDragSource {
+  cursor: grab;
+  user-select: none;
+}
+
+.fileDragSource:active {
+  cursor: grabbing;
+}
+
+.fileName.fileDragSource:not(:disabled) {
+  cursor: grab;
+}
+
 .fileName:not(:disabled):hover {
   color: #d8bdff;
 }

@@ -37,15 +37,15 @@ export const LOCALE_MESSAGES = {
   },
   profileTitle: { tr: 'Profilini ayarla', en: 'Set up your profile' },
   profileLead: {
-    tr: 'Google ile giriş yaparsan bir sonraki adımda şifreleri ve site oturumunu bağlarız. İstersen sadece ismini de yazabilirsin.',
-    en: 'Sign in with Google to link passwords and site sessions in the next step. Or enter a display name only.',
+    tr: 'Google ile giriş yaparak profilini ve Nebula Sync’i tek seferde ayarla. İstersen yalnızca bir görünen ad da kullanabilirsin.',
+    en: 'Sign in with Google to set up your profile and Nebula Sync in one step. Or use a display name only.',
   },
-  googleOpeningTauri: { tr: 'Tarayıcıda Google açılıyor…', en: 'Opening Google in your browser…' },
+  googleOpeningTauri: { tr: 'Google penceresi açılıyor…', en: 'Opening Google…' },
   googleRedirecting: { tr: "Google'a yönlendiriliyor…", en: 'Redirecting to Google…' },
   googleSignIn: { tr: 'Google ile giriş yap', en: 'Sign in with Google' },
   googleReturnHintTauri: {
-    tr: 'Sistem tarayıcında Google açılır; girişten sonra bu pencereye dön.',
-    en: 'Google opens in your system browser; return here after signing in.',
+    tr: 'Google, Nebula içinde ayrı bir pencerede açılır. Giriş tamamlanınca pencere otomatik kapanır.',
+    en: 'Google opens in a separate Nebula window. It closes automatically when sign-in finishes.',
   },
   googleRedirectUri: { tr: 'Google Console redirect URI:', en: 'Google Console redirect URI:' },
   googleConfigMissing: {

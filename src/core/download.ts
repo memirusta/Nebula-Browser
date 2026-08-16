@@ -39,6 +39,11 @@ export async function controlDownload(id: string, action: DownloadAction): Promi
   await invoke('download_control', { id, action })
 }
 
+export async function startDownloadDrag(id: string): Promise<void> {
+  if (!isTauri) return
+  await invoke('download_start_drag', { id })
+}
+
 export function isDownloadActive(download: DownloadItem): boolean {
   return download.state === 'in_progress' || download.state === 'paused'
 }

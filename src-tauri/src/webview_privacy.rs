@@ -860,8 +860,8 @@ mod imp {
     }
 
     pub fn apply(app: &AppHandle, label: &str, next: PrivacyOptions) -> Result<(), String> {
-        if !label.starts_with("nebula-tab-") {
-            return Err("privacy settings are limited to browser tabs".to_string());
+        if !label.starts_with("nebula-tab-") && !label.starts_with("nebula-popup-content-") {
+            return Err("privacy settings are limited to browser tabs and popup content".to_string());
         }
         let previous = OPTIONS
             .lock()
