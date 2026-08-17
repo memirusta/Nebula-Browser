@@ -362,10 +362,7 @@ async fn site_popup_attach(
 }
 
 #[tauri::command]
-async fn site_popup_cancel(
-    app: tauri::AppHandle,
-    request_id: String,
-) -> Result<(), String> {
+async fn site_popup_cancel(app: tauri::AppHandle, request_id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || site_ui::cancel_popup(app, request_id))
         .await
         .map_err(|error| error.to_string())?

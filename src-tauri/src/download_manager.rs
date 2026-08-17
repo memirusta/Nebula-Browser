@@ -26,7 +26,7 @@ mod imp {
     };
     use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx, IDataObject};
-    use windows::Win32::System::Ole::{DROPEFFECT_COPY, IDropSource};
+    use windows::Win32::System::Ole::{IDropSource, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::{
         BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop, ShellExecuteW,
     };
@@ -715,11 +715,9 @@ mod imp {
         file_path: &str,
     ) -> Result<(), String> {
         let file_path = wide(file_path);
-        let shell_item: IShellItem = SHCreateItemFromParsingName(
-            PCWSTR(file_path.as_ptr()),
-            None::<&IBindCtx>,
-        )
-        .map_err(|error| error.to_string())?;
+        let shell_item: IShellItem =
+            SHCreateItemFromParsingName(PCWSTR(file_path.as_ptr()), None::<&IBindCtx>)
+                .map_err(|error| error.to_string())?;
 
         let data_object: IDataObject = shell_item
             .BindToHandler(None::<&IBindCtx>, &BHID_DataObject)

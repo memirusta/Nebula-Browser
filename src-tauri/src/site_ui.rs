@@ -14,13 +14,12 @@ mod imp {
         ICoreWebView2LaunchingExternalUriSchemeEventArgs,
         ICoreWebView2LaunchingExternalUriSchemeEventHandler,
         ICoreWebView2NewWindowRequestedEventArgs, ICoreWebView2NewWindowRequestedEventHandler,
-        ICoreWebView2PermissionRequestedEventArgs,
-        ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2PermissionRequestedEventHandler,
-        ICoreWebView2ScriptDialogOpeningEventArgs, ICoreWebView2ScriptDialogOpeningEventHandler,
-        ICoreWebView2WebMessageReceivedEventHandler, ICoreWebView2WindowCloseRequestedEventHandler,
-        ICoreWebView2_10, ICoreWebView2_13, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
-        COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
-        COREWEBVIEW2_SCRIPT_DIALOG_KIND,
+        ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2PermissionRequestedEventArgs3,
+        ICoreWebView2PermissionRequestedEventHandler, ICoreWebView2ScriptDialogOpeningEventArgs,
+        ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WebMessageReceivedEventHandler,
+        ICoreWebView2WindowCloseRequestedEventHandler, ICoreWebView2_10, ICoreWebView2_13,
+        ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_SCRIPT_DIALOG_KIND,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
@@ -760,17 +759,15 @@ mod imp {
         });
     }
 
-    fn enqueue_popup_request(
-        app: &AppHandle,
-        payload: NewWindowPayload,
-        request: PendingPopup,
-    ) {
+    fn enqueue_popup_request(app: &AppHandle, payload: NewWindowPayload, request: PendingPopup) {
         let request_id = payload.request_id.clone();
         let opener_label = request.opener_label.clone();
         let inserted = PENDING_POPUPS.with(|pending| {
             let mut pending = pending.borrow_mut();
             if !has_pending_capacity(
-                pending.values().map(|request| request.opener_label.as_str()),
+                pending
+                    .values()
+                    .map(|request| request.opener_label.as_str()),
                 &opener_label,
                 MAX_PENDING_POPUPS_PER_TAB,
             ) {
@@ -966,7 +963,9 @@ mod imp {
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
         if !is_site_webview_label(label) {
-            return Err("site UI handlers are limited to browser tabs and popup content".to_string());
+            return Err(
+                "site UI handlers are limited to browser tabs and popup content".to_string(),
+            );
         }
         if CONFIGURED
             .lock()
@@ -1270,8 +1269,8 @@ mod imp {
                     let new_window_app = app_for_handlers.clone();
                     let new_window_label = label_for_handlers.clone();
                     let new_window_private_mode = webview_private_mode(&core);
-                    let new_window = NewWindowRequestedEventHandler::create(Box::new(
-                        move |_, args| {
+                    let new_window =
+                        NewWindowRequestedEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
                             let deferral = args.GetDeferral()?;
                             let uri = take_string(|value| args.Uri(value));
@@ -1297,8 +1296,7 @@ mod imp {
                                 },
                             );
                             Ok(())
-                        },
-                    ));
+                        }));
                     let mut new_window_token = 0i64;
                     core.add_NewWindowRequested(&new_window, &mut new_window_token)?;
 
@@ -1441,9 +1439,7 @@ mod imp {
                         .borrow_mut()
                         .remove(&callback_request_id)
                         .ok_or_else(|| {
-                            format!(
-                                "popup request '{callback_request_id}' is no longer pending"
-                            )
+                            format!("popup request '{callback_request_id}' is no longer pending")
                         })?;
 
                     let attach_result = unsafe {

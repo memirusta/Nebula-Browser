@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tauri::Manager;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::time::{timeout, Duration};
-use tauri::Manager;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -283,25 +283,22 @@ fn open_google_oauth_popup(
             .as_millis()
     );
 
-    let mut builder = tauri::WebviewWindowBuilder::new(
-        app,
-        label,
-        tauri::WebviewUrl::External(parsed_url),
-    )
-    .title("")
-    .inner_size(520.0, 680.0)
-    .center()
-    .prevent_overflow()
-    .decorations(true)
-    .resizable(true)
-    .maximizable(false)
-    .minimizable(false)
-    .closable(true)
-    .focused(true)
-    .visible(true)
-    .theme(Some(tauri::Theme::Dark))
-    .incognito(false)
-    .browser_extensions_enabled(true);
+    let mut builder =
+        tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::External(parsed_url))
+            .title("")
+            .inner_size(520.0, 680.0)
+            .center()
+            .prevent_overflow()
+            .decorations(true)
+            .resizable(true)
+            .maximizable(false)
+            .minimizable(false)
+            .closable(true)
+            .focused(true)
+            .visible(true)
+            .theme(Some(tauri::Theme::Dark))
+            .incognito(false)
+            .browser_extensions_enabled(true);
 
     if let Some(main) = app.get_webview_window("main") {
         builder = builder.parent(&main).map_err(|error| error.to_string())?;

@@ -15,11 +15,10 @@ mod imp {
     use webview2_com::{
         take_pwstr, CallDevToolsProtocolMethodCompletedHandler,
         Microsoft::Web::WebView2::Win32::{
-            ICoreWebView2Settings2, ICoreWebView2Settings3,
-            ICoreWebView2Settings4,
+            ICoreWebView2Settings2, ICoreWebView2Settings3, ICoreWebView2Settings4,
         },
     };
-    use windows_core::{HSTRING, Interface, PWSTR};
+    use windows_core::{Interface, HSTRING, PWSTR};
 
     use super::is_nebula_webview_label;
 
@@ -150,9 +149,7 @@ mod imp {
         .to_string())
     }
 
-    unsafe fn apply_site_user_agent(
-        settings: &ICoreWebView2Settings2,
-    ) -> Result<String, String> {
+    unsafe fn apply_site_user_agent(settings: &ICoreWebView2Settings2) -> Result<String, String> {
         let mut raw_user_agent = PWSTR::null();
         settings
             .UserAgent(&mut raw_user_agent)
@@ -164,8 +161,7 @@ mod imp {
             return Err("WebView2 returned an empty User-Agent".to_string());
         }
 
-        let rewritten =
-            generic_chromium_user_agent(current).unwrap_or_else(|| current.to_string());
+        let rewritten = generic_chromium_user_agent(current).unwrap_or_else(|| current.to_string());
 
         if rewritten != current {
             let rewritten_hstring = HSTRING::from(&rewritten);
@@ -315,22 +311,18 @@ mod imp {
                 let params = HSTRING::from(params);
                 let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
                     move |result, response| {
-                        let output = result
-                            .map(|_| response)
-                            .map_err(|error| {
-                                format!(
-                                    "CDP User-Agent override failed for '{}': {}",
-                                    label_for_callback, error
-                                )
-                            });
+                        let output = result.map(|_| response).map_err(|error| {
+                            format!(
+                                "CDP User-Agent override failed for '{}': {}",
+                                label_for_callback, error
+                            )
+                        });
                         let _ = tx.send(output);
                         Ok(())
                     },
                 ));
 
-                if let Err(error) =
-                    core.CallDevToolsProtocolMethod(&method, &params, &handler)
-                {
+                if let Err(error) = core.CallDevToolsProtocolMethod(&method, &params, &handler) {
                     let _ = failure_tx.send(Err(error.to_string()));
                 }
             })
@@ -368,15 +360,13 @@ AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.
 
             assert_eq!(
                 generic_chromium_user_agent(current).as_deref(),
-                Some(
-                    concat!(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
-                        "AppleWebKit/537.36 (KHTML, like Gecko) ",
-                        "Chrome/151.0.0.0 Safari/537.36 ",
-                        "Nebula/",
-                        env!("CARGO_PKG_VERSION")
-                    )
-                )
+                Some(concat!(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
+                    "AppleWebKit/537.36 (KHTML, like Gecko) ",
+                    "Chrome/151.0.0.0 Safari/537.36 ",
+                    "Nebula/",
+                    env!("CARGO_PKG_VERSION")
+                ))
             );
         }
 
@@ -392,8 +382,7 @@ AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.
 
         #[test]
         fn preserves_real_runtime_version_tokens() {
-            let current =
-                "Mozilla/5.0 Chrome/152.7.1234.5 Safari/537.36 Edg/152.7.1234.5";
+            let current = "Mozilla/5.0 Chrome/152.7.1234.5 Safari/537.36 Edg/152.7.1234.5";
             let expected = format!(
                 "Mozilla/5.0 Chrome/152.7.1234.5 Safari/537.36 Nebula/{}",
                 env!("CARGO_PKG_VERSION")
@@ -429,19 +418,15 @@ AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.
 
         #[test]
         fn client_hint_metadata_contains_no_edge_brands() {
-            let json = super::client_hints_override_json(
-                "Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36",
-            )
-            .expect("client-hints JSON should be generated");
+            let json =
+                super::client_hints_override_json("Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36")
+                    .expect("client-hints JSON should be generated");
 
             assert!(json.contains(r#""brand":"Chromium""#));
             assert!(json.contains(r#""brand":"Nebula""#));
             assert!(json.contains(r#""version":"151""#));
             assert!(json.contains(r#""version":"151.0.0.0""#));
-            assert!(json.contains(&format!(
-                r#""version":"{}""#,
-                env!("CARGO_PKG_VERSION")
-            )));
+            assert!(json.contains(&format!(r#""version":"{}""#, env!("CARGO_PKG_VERSION"))));
             assert!(json.contains(r#""platform":"Windows""#));
             assert!(json.contains(r#""platformVersion":"""#));
             assert!(json.contains(r#""architecture":"x86""#));
@@ -452,8 +437,6 @@ AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.
             assert!(!json.contains("WebView2"));
         }
     }
-
-
 }
 
 #[cfg(target_os = "windows")]

@@ -246,7 +246,9 @@ mod imp {
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
         if !label.starts_with("nebula-tab-") && !label.starts_with("nebula-popup-content-") {
-            return Err("context menu setup is limited to browser tabs and popup content".to_string());
+            return Err(
+                "context menu setup is limited to browser tabs and popup content".to_string(),
+            );
         }
         if CONFIGURED
             .lock()
