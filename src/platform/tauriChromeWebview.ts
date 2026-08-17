@@ -34,6 +34,7 @@ let lastChromeBoundsKey: string | null = null
 let chromeBoundsListenerBound = false
 let chromeOverlayLogicalWidth: number | null = null
 let chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
+let chromeOverlayMinimumLogicalHeight = 0
 // Hover preview needs the full client height for its centered card, but its
 // width stays compact and centered. Resizing the chrome WebView from compact
 // width to full width made WebView2 briefly reflow its surface and visibly
@@ -63,7 +64,7 @@ async function chromePhysicalBounds(): Promise<{
     (requestedLogicalWidth + CHROME_OVERLAY_WIDTH_GUTTER) * scaleFactor,
   )
   const requestedPhysicalHeight = Math.ceil(
-    Math.max(1, chromeOverlayLogicalHeight) * scaleFactor,
+    Math.max(1, chromeOverlayLogicalHeight, chromeOverlayMinimumLogicalHeight) * scaleFactor,
   )
 
   const width = Math.max(1, Math.min(windowSize.width, requestedPhysicalWidth))
@@ -171,6 +172,16 @@ async function waitForWebviewCreated(webview: Webview): Promise<void> {
 
 export function setChromeWebviewHeight(logicalHeight: number): void {
   chromeOverlayLogicalHeight = Math.max(1, logicalHeight)
+}
+
+/** Keep transient chrome UI visible without changing Semi-Lunar's own layout. */
+export async function setChromeOverlayMinimumLogicalHeight(
+  logicalHeight: number,
+): Promise<void> {
+  chromeOverlayMinimumLogicalHeight = Math.max(0, logicalHeight)
+  const webview = await getChromeWebview()
+  if (!webview) return
+  await syncChromeBounds(webview)
 }
 
 /**

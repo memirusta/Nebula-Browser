@@ -77,7 +77,7 @@ pub fn webview_go_forward(app: AppHandle, label: String) -> Result<bool, String>
 }
 
 #[tauri::command]
-pub fn webview_zoom(app: AppHandle, label: String, action: String) -> Result<(), String> {
+pub fn webview_zoom(app: AppHandle, label: String, action: String) -> Result<f64, String> {
     #[cfg(target_os = "windows")]
     {
         let zoom_action = action.clone();
@@ -95,14 +95,15 @@ pub fn webview_zoom(app: AppHandle, label: String, action: String) -> Result<(),
             };
             controller
                 .SetZoomFactor(factor)
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+            Ok(factor)
         })
     }
 
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (app, label, action);
-        Ok(())
+        Ok(1.0)
     }
 }
 
@@ -301,6 +302,10 @@ pub struct WebviewPrintOptions {
     headers_and_footers: bool,
     #[serde(default)]
     selection_only: bool,
+    #[serde(default = "default_print_paper_size")]
+    paper_size: String,
+    #[serde(default = "default_print_margins")]
+    margins: String,
 }
 
 fn default_print_copies() -> i32 {
@@ -309,6 +314,14 @@ fn default_print_copies() -> i32 {
 
 fn default_print_scale() -> f64 {
     1.0
+}
+
+fn default_print_paper_size() -> String {
+    "a4".to_string()
+}
+
+fn default_print_margins() -> String {
+    "default".to_string()
 }
 
 #[tauri::command]
@@ -353,6 +366,40 @@ pub fn webview_print(
 
             settings
                 .SetScaleFactor(options.scale.clamp(0.1, 2.0))
+                .map_err(|error| error.to_string())?;
+
+            let (page_width, page_height) = match options.paper_size.as_str() {
+                "letter" => (8.5, 11.0),
+                _ => (8.267_716_535_4, 11.692_913_385_8),
+            };
+            let (page_width, page_height) = if options.landscape {
+                (page_height, page_width)
+            } else {
+                (page_width, page_height)
+            };
+            settings
+                .SetPageWidth(page_width)
+                .map_err(|error| error.to_string())?;
+            settings
+                .SetPageHeight(page_height)
+                .map_err(|error| error.to_string())?;
+
+            let margin = match options.margins.as_str() {
+                "none" => 0.0,
+                "minimum" => 0.25,
+                _ => 0.4,
+            };
+            settings
+                .SetMarginTop(margin)
+                .map_err(|error| error.to_string())?;
+            settings
+                .SetMarginBottom(margin)
+                .map_err(|error| error.to_string())?;
+            settings
+                .SetMarginLeft(margin)
+                .map_err(|error| error.to_string())?;
+            settings
+                .SetMarginRight(margin)
                 .map_err(|error| error.to_string())?;
 
             settings

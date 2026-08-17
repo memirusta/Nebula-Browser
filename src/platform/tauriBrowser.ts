@@ -3635,10 +3635,66 @@ export interface BrowsePrintOptions {
   backgrounds: boolean
   headersAndFooters: boolean
   selectionOnly: boolean
+  paperSize: 'a4' | 'letter'
+  margins: 'default' | 'minimum' | 'none'
+}
+
+interface BrowsePreviewCapture {
+  data?: string
+}
+
+export async function captureBrowseWebviewPreview(
+  label: string,
+): Promise<string | null> {
+  if (!isTauri) return null
+
+  try {
+    const raw = await invoke<string>(
+      'webview_devtools_call',
+      {
+        label,
+        method: 'Page.captureScreenshot',
+        paramsJson: JSON.stringify({
+          format: 'jpeg',
+          quality: 78,
+          fromSurface: true,
+          captureBeyondViewport: false,
+        }),
+      },
+    )
+    const capture = JSON.parse(
+      raw,
+    ) as BrowsePreviewCapture
+
+    return capture.data
+      ? `data:image/jpeg;base64,${capture.data}`
+      : null
+  } catch (error) {
+    if (
+      import.meta.env.DEV
+    ) {
+      console.warn(
+        '[nebula] print preview capture failed',
+        error,
+      )
+    }
+
+    return null
+  }
 }
 
 export async function printBrowseTab(
   shortcutId: string,
+  options: BrowsePrintOptions,
+): Promise<void> {
+  return printBrowseWebview(
+    tabWebviewLabel(shortcutId),
+    options,
+  )
+}
+
+export async function printBrowseWebview(
+  label: string,
   options: BrowsePrintOptions,
 ): Promise<void> {
   if (!isTauri) return
@@ -3647,10 +3703,7 @@ export async function printBrowseTab(
     await invoke(
       'webview_print',
       {
-        label:
-          tabWebviewLabel(
-            shortcutId,
-          ),
+        label,
         options,
       },
     )
@@ -3674,11 +3727,11 @@ export async function zoomBrowseTab(
     | 'in'
     | 'out'
     | 'reset',
-): Promise<void> {
-  if (!isTauri) return
+): Promise<number> {
+  if (!isTauri) return 1
 
   try {
-    await invoke(
+    return await invoke<number>(
       'webview_zoom',
       {
         label:
@@ -3697,6 +3750,8 @@ export async function zoomBrowseTab(
         error,
       )
     }
+
+    return 1
   }
 }
 

@@ -35,6 +35,7 @@ const ACTIVE_URL_EVENT = 'nebula-active-url'
 const TAB_CATALOG_EVENT = 'nebula-tab-catalog'
 const VIEW_MODE_EVENT = 'nebula-view-mode'
 const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
+const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
 
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
@@ -124,5 +125,22 @@ export function listenDownloadUiState(
 
   return listen<DownloadUiStatePayload>(DOWNLOAD_UI_STATE_EVENT, (event) => {
     handler(event.payload)
+  })
+}
+
+export async function emitZoomIndicator(percent: number): Promise<void> {
+  if (!isTauri) return
+  await emit(ZOOM_INDICATOR_EVENT, { percent })
+}
+
+export function listenZoomIndicator(
+  handler: (percent: number) => void,
+): Promise<() => void> {
+  if (!isTauri) {
+    return Promise.resolve(() => {})
+  }
+
+  return listen<{ percent: number }>(ZOOM_INDICATOR_EVENT, (event) => {
+    handler(event.payload.percent)
   })
 }

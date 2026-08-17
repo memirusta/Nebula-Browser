@@ -63,6 +63,17 @@ export interface SitePointerDownPayload {
   tabLabel: string
 }
 
+export interface SitePrintRequestPayload {
+  tabLabel: string
+  title: string
+  url: string
+}
+
+export interface SiteZoomRequestPayload {
+  tabLabel: string
+  action: 'in' | 'out'
+}
+
 export async function respondToSiteUi(
   requestId: string,
   response: SiteUiResponse,
@@ -120,5 +131,23 @@ export function listenSitePointerDown(
   if (!isTauri) return Promise.resolve(() => {})
   return listen<SitePointerDownPayload>('nebula-site-pointer-down', ({ payload }) =>
     onPointerDown(payload),
+  )
+}
+
+export function listenSitePrintRequests(
+  onPrintRequest: (payload: SitePrintRequestPayload) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<SitePrintRequestPayload>('nebula-site-print-request', ({ payload }) =>
+    onPrintRequest(payload),
+  )
+}
+
+export function listenSiteZoomRequests(
+  onZoomRequest: (payload: SiteZoomRequestPayload) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<SiteZoomRequestPayload>('nebula-site-zoom-request', ({ payload }) =>
+    onZoomRequest(payload),
   )
 }

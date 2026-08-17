@@ -1,0 +1,86 @@
+.zoomIndicator {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 184px;
+  height: 50px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 25px;
+  background: rgba(18, 23, 32, 0.9);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  pointer-events: auto;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  animation: zoomIndicatorIn 150ms ease-out;
+}
+
+.zoomIndicatorIcon {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.zoomIndicatorButton,
+.zoomIndicatorValue {
+  height: 34px;
+  border: 0;
+  border-radius: 17px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.zoomIndicatorButton {
+  width: 34px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.zoomIndicatorValue {
+  min-width: 48px;
+  padding: 0 4px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoomIndicatorButton:hover,
+.zoomIndicatorValue:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.zoomIndicatorButton:focus-visible,
+.zoomIndicatorValue:focus-visible {
+  outline: 2px solid rgba(119, 139, 255, 0.9);
+  outline-offset: 1px;
+}
+
+@keyframes zoomIndicatorIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoomIndicator {
+    animation: none;
+  }
+}

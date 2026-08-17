@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emit } from '@tauri-apps/api/event'
 import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
@@ -12,6 +12,7 @@ import {
   listenDownloadUiState,
   listenTabCatalog,
   listenViewMode,
+  listenZoomIndicator,
   type DownloadUiStatePayload,
   type ShellViewMode,
   type TabCatalogPayload,
@@ -25,7 +26,9 @@ import { useNebulaSettings } from './hooks/useNebulaSettings'
 import { usePinnedShortcuts } from './hooks/usePinnedShortcuts'
 import { useShortcutFolders } from './hooks/useShortcutFolders'
 import { useShortcutPreferences } from './hooks/useShortcutPreferences'
+import { setChromeOverlayMinimumLogicalHeight } from './platform/tauriChromeWebview'
 import './styles/global.css'
+import styles from './ChromeApp.module.css'
 
 /**
  * Dedicated always-on-top Nebula chrome surface.
@@ -77,6 +80,35 @@ export function ChromeApp() {
     aggregateProgress: null,
     panelOpen: false,
   })
+  const [zoomIndicatorPercent, setZoomIndicatorPercent] = useState<number | null>(null)
+  const zoomIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showZoomIndicator = useCallback((percent: number) => {
+    if (!Number.isFinite(percent)) return
+    setZoomIndicatorPercent(Math.round(percent))
+    if (zoomIndicatorTimerRef.current) {
+      clearTimeout(zoomIndicatorTimerRef.current)
+    }
+    zoomIndicatorTimerRef.current = setTimeout(() => {
+      setZoomIndicatorPercent(null)
+      zoomIndicatorTimerRef.current = null
+    }, 2800)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (zoomIndicatorTimerRef.current) {
+        clearTimeout(zoomIndicatorTimerRef.current)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    void setChromeOverlayMinimumLogicalHeight(
+      viewMode === 'browsing' && zoomIndicatorPercent !== null ? 78 : 0,
+    )
+  }, [viewMode, zoomIndicatorPercent])
 
   useEffect(() => {
     document.documentElement.dataset.nebulaChrome = 'true'
@@ -102,6 +134,7 @@ export function ChromeApp() {
       () => listenActiveUrl(setActiveUrl),
       () => listenViewMode(setViewMode),
       () => listenDownloadUiState(setDownloadUi),
+      () => listenZoomIndicator(showZoomIndicator),
     ])
       .then((dispose) => {
         if (disposed) {
@@ -121,7 +154,7 @@ export function ChromeApp() {
       disposed = true
       disposeListeners?.()
     }
-  }, [])
+  }, [showZoomIndicator])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -260,6 +293,58 @@ export function ChromeApp() {
   ])
   return (
     <>
+      {viewMode === 'browsing' && zoomIndicatorPercent !== null && (
+        <div
+          className={styles.zoomIndicator}
+          role="status"
+          aria-live="polite"
+          onPointerEnter={() => {
+            if (zoomIndicatorTimerRef.current) {
+              clearTimeout(zoomIndicatorTimerRef.current)
+              zoomIndicatorTimerRef.current = null
+            }
+          }}
+          onPointerLeave={() => {
+            zoomIndicatorTimerRef.current = setTimeout(() => {
+              setZoomIndicatorPercent(null)
+              zoomIndicatorTimerRef.current = null
+            }, 900)
+          }}
+        >
+          <button
+            type="button"
+            className={styles.zoomIndicatorButton}
+            title="Uzaklaştır"
+            aria-label="Uzaklaştır"
+            onClick={() => void emit('nebula-browser-shortcut', 'zoom-out')}
+          >
+            −
+          </button>
+          <svg className={styles.zoomIndicatorIcon} viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m15.5 15.5 5 5" />
+          </svg>
+          <button
+            type="button"
+            className={styles.zoomIndicatorValue}
+            title="%100'e sıfırla"
+            aria-label={`Yakınlaştırmayı sıfırla: ${zoomIndicatorPercent}%`}
+            onClick={() => void emit('nebula-browser-shortcut', 'zoom-reset')}
+          >
+            {zoomIndicatorPercent}%
+          </button>
+          <button
+            type="button"
+            className={styles.zoomIndicatorButton}
+            title="Yakınlaştır"
+            aria-label="Yakınlaştır"
+            onClick={() => void emit('nebula-browser-shortcut', 'zoom-in')}
+          >
+            +
+          </button>
+        </div>
+      )}
+
       <SemiLunarMenu
       shortcuts={semiLunarShortcuts}
       dockItemIds={dockItemIds}

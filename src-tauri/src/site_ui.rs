@@ -37,6 +37,8 @@ mod imp {
     const SITE_NEW_WINDOW_EVENT: &str = "nebula-site-new-window";
     const SITE_CLOSE_WINDOW_EVENT: &str = "nebula-site-close-window";
     const SITE_POINTER_DOWN_EVENT: &str = "nebula-site-pointer-down";
+    const SITE_PRINT_REQUEST_EVENT: &str = "nebula-site-print-request";
+    const SITE_ZOOM_REQUEST_EVENT: &str = "nebula-site-zoom-request";
     const PASSWORD_STEP_EVENT: &str = "nebula-password-step";
     const SITE_UI_TIMEOUT: Duration = Duration::from_secs(60);
     const POPUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -220,6 +222,43 @@ mod imp {
     window.location.protocol === 'http:' ||
     window.location.protocol === 'https:';
 
+  // WebView2 normally routes window.print() to Chromium's built-in print UI.
+  // Keep all print entry points inside Nebula by forwarding the request to the
+  // shell. The original function remains the fallback for internal/opaque
+  // documents where Wry cannot safely receive a WebMessage.
+  const nativeWindowPrint =
+    typeof window.print === 'function'
+      ? window.print.bind(window)
+      : null;
+
+  function requestNebulaPrint() {
+    if (!canReportSitePointerDown) {
+      if (nativeWindowPrint) nativeWindowPrint();
+      return;
+    }
+
+    try {
+      bridge.postMessage(JSON.stringify({
+        type: 'nebula-print-request',
+        title: String(document.title || '').slice(0, 1024),
+        url: String(window.location.href || '').slice(0, 8192)
+      }));
+    } catch (_) {
+      if (nativeWindowPrint) nativeWindowPrint();
+    }
+  }
+
+  try {
+    Object.defineProperty(window, 'print', {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: requestNebulaPrint
+    });
+  } catch (_) {
+    try { window.print = requestNebulaPrint; } catch (_) {}
+  }
+
   function isVisibleInput(input) {
     try {
       if (!input || input.tagName !== 'INPUT' || input.disabled || input.readOnly) return false;
@@ -398,6 +437,19 @@ mod imp {
   }
 
   if (canReportSitePointerDown) {
+    // WebView2's built-in zoom controller is disabled so Nebula can apply the
+    // same bounded zoom steps for keyboard shortcuts and Ctrl+mouse-wheel.
+    window.addEventListener('wheel', function (event) {
+      if (!event.isTrusted || !event.ctrlKey || event.deltaY === 0) return;
+      event.preventDefault();
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-zoom-request',
+          action: event.deltaY < 0 ? 'in' : 'out'
+        }));
+      } catch (_) {}
+    }, { capture: true, passive: false });
+
     window.addEventListener('pointerdown', function (event) {
       if (!event.isTrusted) return;
 
@@ -969,6 +1021,49 @@ mod imp {
                                         "tabLabel": protocol_label.clone(),
                                     }),
                                 );
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-print-request")
+                            {
+                                let title = value
+                                    .get("title")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let url = value
+                                    .get("url")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                if title.len() <= 1024 && url.len() <= 8192 {
+                                    let _ = protocol_app.emit(
+                                        SITE_PRINT_REQUEST_EVENT,
+                                        serde_json::json!({
+                                            "tabLabel": protocol_label.clone(),
+                                            "title": title,
+                                            "url": url,
+                                        }),
+                                    );
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-zoom-request")
+                            {
+                                let action = value
+                                    .get("action")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                if matches!(action, "in" | "out") {
+                                    let _ = protocol_app.emit(
+                                        SITE_ZOOM_REQUEST_EVENT,
+                                        serde_json::json!({
+                                            "tabLabel": protocol_label.clone(),
+                                            "action": action,
+                                        }),
+                                    );
+                                }
                                 return Ok(());
                             }
 

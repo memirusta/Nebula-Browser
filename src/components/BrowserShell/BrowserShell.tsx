@@ -27,6 +27,7 @@ import {
   emitDownloadUiState,
   emitTabCatalog,
   emitViewMode,
+  emitZoomIndicator,
 } from '../../core/nebulaBridge'
 import type { DownloadUiStatePayload, ShellViewMode } from '../../core/nebulaBridge'
 import type { BrowserShortcutId } from '../../core/browserShortcuts'
@@ -55,6 +56,8 @@ import {
   listenSiteCloseWindows,
   listenSiteNewWindows,
   listenSitePointerDown,
+  listenSitePrintRequests,
+  listenSiteZoomRequests,
   listenSiteUiCancelled,
   listenSiteUiRequests,
   respondToSiteUi,
@@ -92,7 +95,7 @@ import {
   reloadBrowseTab,
   listenTabWebviewSnapshots,
   listenTabWebviewLoadingStates,
-  printBrowseTab,
+  printBrowseWebview,
   zoomBrowseTab,
   setBrowsePrivacyOptions,
   clearBrowseData,
@@ -106,6 +109,7 @@ import { useBrowserShortcutBindings } from '../../hooks/useBrowserShortcutBindin
 import {
   shortcutFromTab,
   shortcutIdForTabWebviewLabel,
+  tabWebviewLabel,
   titleFromUrl,
   type BrowserTab,
 } from '../../core/browserTab'
@@ -168,6 +172,12 @@ import { CrashRecoveryPrompt } from '../CrashRecoveryPrompt/CrashRecoveryPrompt'
 import styles from './BrowserShell.module.css'
 
 type ViewMode = 'home' | 'browsing' | 'overlay'
+
+interface PrintTarget {
+  webviewLabel: string
+  title: string
+  url: string
+}
 
 const HomeWidgetGrid = lazy(() =>
   import('../SpatialGrid/HomeWidgetGrid').then((module) => ({
@@ -428,11 +438,77 @@ export function BrowserShell() {
   ] = useState(false)
 
   const [
-    printDialogTabId,
-    setPrintDialogTabId,
-  ] = useState<string | null>(
+    printTarget,
+    setPrintTarget,
+  ] = useState<PrintTarget | null>(
     null,
   )
+
+  const [, setTabZoomPercent] =
+    useState<Record<string, number>>({})
+
+  const openPrintDialogForTab =
+    useCallback(
+      (tabId: string) => {
+        const tab =
+          tabsRef.current.find(
+            (entry) =>
+              entry.shortcutId ===
+              tabId,
+          )
+
+        setPrintTarget({
+          webviewLabel:
+            tabWebviewLabel(
+              tabId,
+            ),
+          title:
+            tab?.title ??
+            t('untitledPage'),
+          url:
+            tab?.url ?? '',
+        })
+      },
+      [t, tabsRef],
+    )
+
+  const changeActiveTabZoom =
+    useCallback(
+      async (
+        action:
+          | 'in'
+          | 'out'
+          | 'reset',
+      ) => {
+        const tabId =
+          activeTabIdRef.current
+
+        if (!tabId || !isTauri) return
+
+        const factor =
+          await zoomBrowseTab(
+            tabId,
+            action,
+          )
+
+        const percent =
+          Math.round(
+            factor * 100,
+          )
+
+        setTabZoomPercent(
+          (current) => ({
+            ...current,
+            [tabId]: percent,
+          }),
+        )
+
+        void emitZoomIndicator(
+          percent,
+        )
+      },
+      [activeTabIdRef],
+    )
 
   const downloadUiStateRef =
     useRef<DownloadUiStatePayload>({
@@ -3243,6 +3319,54 @@ export function BrowserShell() {
                 )
               },
             ),
+            () => listenSitePrintRequests(
+              (request) => {
+                const tabId =
+                  shortcutIdForTabWebviewLabel(
+                    request.tabLabel,
+                  ) ?? null
+                const tab =
+                  tabId
+                    ? tabsRef.current.find(
+                        (entry) =>
+                          entry.shortcutId ===
+                          tabId,
+                      )
+                    : null
+
+                setPrintTarget({
+                  webviewLabel:
+                    request.tabLabel,
+                  title:
+                    request.title ||
+                    tab?.title ||
+                    t('untitledPage'),
+                  url:
+                    request.url ||
+                    tab?.url ||
+                    '',
+                })
+              },
+            ),
+            () => listenSiteZoomRequests(
+              ({ tabLabel, action }) => {
+                const tabId =
+                  shortcutIdForTabWebviewLabel(
+                    tabLabel,
+                  )
+                if (
+                  !tabId ||
+                  tabId !==
+                    activeTabIdRef.current
+                ) {
+                  return
+                }
+
+                void changeActiveTabZoom(
+                  action,
+                )
+              },
+            ),
             () => listenSiteNewWindows(
               (payload) => {
                 void openSitePopup(
@@ -3304,15 +3428,19 @@ export function BrowserShell() {
       disposeListeners?.()
     }
   }, [
+    activeTabIdRef,
+    changeActiveTabZoom,
     handleCloseTab,
     openUrlInNewTab,
+    t,
+    tabsRef,
   ])
 
   useEffect(() => {
     const open =
       siteUiQueue.length > 0 ||
       siteContextMenu !== null ||
-      printDialogTabId !== null ||
+      printTarget !== null ||
       passwordPromptOffer !== null
 
     if (
@@ -3397,7 +3525,7 @@ export function BrowserShell() {
     passwordPromptOffer,
     siteContextMenu,
     siteUiQueue.length,
-    printDialogTabId,
+    printTarget,
   ])
 
   const handleSiteContextMenuSelect =
@@ -3430,7 +3558,7 @@ export function BrowserShell() {
               )
 
             if (shortcutId) {
-              setPrintDialogTabId(
+              openPrintDialogForTab(
                 shortcutId,
               )
             }
@@ -3444,7 +3572,7 @@ export function BrowserShell() {
           }
         }
       },
-      [siteContextMenu],
+      [openPrintDialogForTab, siteContextMenu],
     )
 
   const handleSiteUiResponse =
@@ -4073,13 +4201,13 @@ export function BrowserShell() {
         }
 
         if (
-          printDialogTabId
+          printTarget
         ) {
           if (
             action ===
             'close-overlay'
           ) {
-            setPrintDialogTabId(
+            setPrintTarget(
               null,
             )
           }
@@ -4194,7 +4322,7 @@ export function BrowserShell() {
               activeTabIdRef.current &&
               isTauri
             ) {
-              setPrintDialogTabId(
+              openPrintDialogForTab(
                 activeTabIdRef.current,
               )
             }
@@ -4220,8 +4348,7 @@ export function BrowserShell() {
                     ? 'out'
                     : 'reset'
 
-              void zoomBrowseTab(
-                activeTabIdRef.current,
+              void changeActiveTabZoom(
                 zoomAction,
               )
             }
@@ -4252,7 +4379,9 @@ export function BrowserShell() {
         goHome,
         handleCloseTab,
         onboardingOpen,
-        printDialogTabId,
+        printTarget,
+        openPrintDialogForTab,
+        changeActiveTabZoom,
         openNewBlankTab,
         reloadActiveTab,
         reopenLastClosedTab,
@@ -4987,6 +5116,7 @@ export function BrowserShell() {
     forceOpen:
       !isHome &&
       downloadPanelOpen,
+
   }
 
   const toolbarProps = {
@@ -5017,6 +5147,7 @@ export function BrowserShell() {
 
     downloadProgress:
       downloads.aggregateProgress,
+
   }
 
   return (
@@ -5744,40 +5875,25 @@ export function BrowserShell() {
         />
       )}
 
-      {printDialogTabId && (
+      {printTarget && (
         <PrintDialog
-          title={
-            getTab(
-              printDialogTabId,
-            )?.title ??
-            t('untitledPage')
-          }
-          url={
-            getTab(
-              printDialogTabId,
-            )?.url ??
-            activeUrl ??
-            ''
-          }
+          webviewLabel={printTarget.webviewLabel}
+          title={printTarget.title}
+          url={printTarget.url}
           onCancel={() => {
-            setPrintDialogTabId(
+            setPrintTarget(
               null,
             )
           }}
           onPrint={async (
             options,
           ) => {
-            const tabId =
-              printDialogTabId
-
-            if (!tabId) return
-
-            await printBrowseTab(
-              tabId,
+            await printBrowseWebview(
+              printTarget.webviewLabel,
               options,
             )
 
-            setPrintDialogTabId(
+            setPrintTarget(
               null,
             )
           }}

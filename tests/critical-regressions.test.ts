@@ -597,6 +597,100 @@ test('blocking modal surfaces trap focus and browser shortcuts cannot close thei
   }
 })
 
+test('window.print routes to the Nebula print surface and keeps native print settings', () => {
+  const nativeSiteUi = readFileSync(
+    new URL('../src-tauri/src/site_ui.rs', import.meta.url),
+    'utf8',
+  )
+  const nativeControls = readFileSync(
+    new URL('../src-tauri/src/webview_controls.rs', import.meta.url),
+    'utf8',
+  )
+  const browserShell = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+  const browserPlatform = readFileSync(
+    new URL('../src/platform/tauriBrowser.ts', import.meta.url),
+    'utf8',
+  )
+  const printDialog = readFileSync(
+    new URL('../src/components/PrintDialog/PrintDialog.tsx', import.meta.url),
+    'utf8',
+  )
+  const printStyles = readFileSync(
+    new URL('../src/components/PrintDialog/PrintDialog.module.css', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(nativeSiteUi, /Object\.defineProperty\(window, 'print'/)
+  assert.match(nativeSiteUi, /type: 'nebula-print-request'/)
+  assert.match(nativeSiteUi, /SITE_PRINT_REQUEST_EVENT/)
+  assert.match(browserShell, /listenSitePrintRequests/)
+  assert.match(browserShell, /printBrowseWebview/)
+  assert.match(browserPlatform, /Page\.captureScreenshot/)
+  assert.match(printDialog, /captureBrowseWebviewPreview/)
+  assert.match(printDialog, /className=\{styles\.previewImage\}/)
+  assert.match(printStyles, /height:\s*calc\(100dvh - 32px\)/)
+  assert.match(printStyles, /\.paperPortrait[\s\S]*min\(100dvh, 1012px\)/)
+  assert.match(nativeControls, /SetPageWidth/)
+  assert.match(nativeControls, /SetMarginTop/)
+})
+
+test('browser zoom is shortcut-only and Ctrl+wheel uses the native zoom path', () => {
+  const toolbar = readFileSync(
+    new URL('../src/components/RightToolbar/RightToolbar.tsx', import.meta.url),
+    'utf8',
+  )
+  const lunarMenu = readFileSync(
+    new URL('../src/components/SemiLunarMenu/SemiLunarMenu.tsx', import.meta.url),
+    'utf8',
+  )
+  const shortcuts = readFileSync(
+    new URL('../src/core/browserShortcuts.ts', import.meta.url),
+    'utf8',
+  )
+  const chromeApp = readFileSync(
+    new URL('../src/ChromeApp.tsx', import.meta.url),
+    'utf8',
+  )
+  const chromeStyles = readFileSync(
+    new URL('../src/ChromeApp.module.css', import.meta.url),
+    'utf8',
+  )
+  const chromeWebview = readFileSync(
+    new URL('../src/platform/tauriChromeWebview.ts', import.meta.url),
+    'utf8',
+  )
+  const nativeSiteUi = readFileSync(
+    new URL('../src-tauri/src/site_ui.rs', import.meta.url),
+    'utf8',
+  )
+  const nativeControls = readFileSync(
+    new URL('../src-tauri/src/webview_controls.rs', import.meta.url),
+    'utf8',
+  )
+
+  assert.doesNotMatch(toolbar, /zoomPercent/)
+  assert.doesNotMatch(lunarMenu, /lunarZoomControl/)
+  assert.match(shortcuts, /'zoom-in': \['Ctrl\+\+', 'Ctrl\+='\]/)
+  assert.match(shortcuts, /'zoom-out': \['Ctrl\+-'\]/)
+  assert.match(shortcuts, /'zoom-reset': \['Ctrl\+0'\]/)
+  assert.match(nativeSiteUi, /addEventListener\('wheel'/)
+  assert.match(nativeSiteUi, /type: 'nebula-zoom-request'/)
+  assert.match(nativeSiteUi, /event\.deltaY < 0 \? 'in' : 'out'/)
+  assert.match(chromeApp, /listenZoomIndicator/)
+  assert.match(chromeApp, /zoomIndicatorPercent}%/)
+  assert.match(chromeApp, /'zoom-out'/)
+  assert.match(chromeApp, /'zoom-reset'/)
+  assert.match(chromeApp, /'zoom-in'/)
+  assert.match(chromeStyles, /\.zoomIndicator/)
+  assert.match(chromeStyles, /min-width:\s*184px/)
+  assert.match(chromeWebview, /chromeOverlayMinimumLogicalHeight/)
+  assert.match(nativeControls, /Result<f64, String>/)
+  assert.match(nativeControls, /Ok\(factor\)/)
+})
+
 test('selected app locale drives clock formatting and native error-page copy', () => {
   const clock = readFileSync(
     new URL('../src/hooks/useSystemStats.ts', import.meta.url),
