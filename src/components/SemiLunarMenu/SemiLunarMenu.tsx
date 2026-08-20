@@ -90,6 +90,8 @@ interface SemiLunarMenuProps {
   onShortcutInteractionChange?: (active: boolean) => void
   activeUrl?: string | null
   getSession?: (url: string) => BrowseSession | null
+  siteInfoOpen?: boolean
+  onSiteInfoClick?: () => void
 }
 
 export function SemiLunarMenu({
@@ -137,6 +139,8 @@ export function SemiLunarMenu({
   onShortcutInteractionChange,
   activeUrl = null,
   getSession,
+  siteInfoOpen = false,
+  onSiteInfoClick,
 }: SemiLunarMenuProps) {
   const { t, tf } = useLocale()
   const isHome = mode === 'home'
@@ -987,6 +991,18 @@ const handleFolderMemberClose = useCallback(
 
   if (mode === 'overlay') return null
 
+  let activeSiteHost = ''
+  let activeSiteSecure = false
+  try {
+    const parsed = activeUrl ? new URL(activeUrl) : null
+    if (parsed && ['http:', 'https:'].includes(parsed.protocol)) {
+      activeSiteHost = parsed.hostname
+      activeSiteSecure = parsed.protocol === 'https:'
+    }
+  } catch {
+    activeSiteHost = ''
+  }
+
   const rootClass = [
     isBrowsing ? styles.browsingRoot : styles.root,
     isExpanded ? styles.rootExpanded : '',
@@ -1176,6 +1192,37 @@ const handleFolderMemberClose = useCallback(
                   <path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z" />
                 </svg>
               </button>
+              {isBrowsing && activeSiteHost && onSiteInfoClick && (
+                <button
+                  type="button"
+                  className={[
+                    styles.evBtn,
+                    styles.siteSecurityBtn,
+                    siteInfoOpen ? styles.siteSecurityBtnActive : '',
+                    !activeSiteSecure ? styles.siteSecurityBtnWarning : '',
+                  ].filter(Boolean).join(' ')}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onSiteInfoClick()
+                  }}
+                  title={`${t('siteInfo')} · ${activeSiteHost}`}
+                  aria-label={tf('siteInfoAria', { host: activeSiteHost })}
+                  data-semi-lunar-safe=""
+                >
+                  {activeSiteSecure ? (
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M8 10V7a4 4 0 0 1 7.3-2.3M5 10h14v11H5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span className={styles.siteSecurityWarning} aria-hidden="true">!</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
 
@@ -1364,6 +1411,9 @@ const members = memberIds
           isMuted={isMuted(
             resolveCloseTabId(contextMenu.shortcut.id) ?? contextMenu.shortcut.id,
           )}
+          isTabOpen={
+            resolveCloseTabId(contextMenu.shortcut.id) !== null
+          }
           isPinned={isPinned(contextMenu.shortcut.id)}
           canPinMore={canPinMore}
           onClose={handleContextMenuClose}

@@ -5,6 +5,8 @@ import { isTauri } from '../platform/runtime'
 
 export type ChromeShellAction =
   | { type: 'request-state' }
+  | { type: 'request-site-info' }
+  | { type: 'raise-chrome-overlay' }
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
   | { type: 'switch-tab'; shortcutId: string }
@@ -16,6 +18,14 @@ export type ChromeShellAction =
   | { type: 'close-download-panel' }
   | { type: 'remove-download'; id: string }
   | { type: 'clear-finished-downloads' }
+  | { type: 'set-site-protection'; hostname: string; disabled: boolean }
+  | {
+      type: 'set-site-notification-permission'
+      origin: string
+      permission: 'allow' | 'block' | null
+    }
+  | { type: 'reset-site-permissions'; shortcutId: string; origin: string }
+  | { type: 'clear-site-data'; shortcutId: string; origin: string }
 
 export interface TabCatalogPayload {
   tabs: BrowserTab[]
@@ -29,6 +39,27 @@ export interface DownloadUiStatePayload {
   panelOpen: boolean
 }
 
+export type SitePermissionState =
+  | 'granted'
+  | 'denied'
+  | 'prompt'
+  | 'unsupported'
+
+export interface SiteInfoStatePayload {
+  shortcutId: string | null
+  url: string | null
+  origin: string | null
+  hostname: string | null
+  protectionDisabled: boolean
+  permissionPromptsAllowed: boolean
+  notificationPermission: 'allow' | 'block' | null
+  permissions: {
+    camera: SitePermissionState
+    microphone: SitePermissionState
+    location: SitePermissionState
+  }
+}
+
 export type ShellViewMode = 'home' | 'browsing' | 'overlay'
 
 const CHROME_ACTION_EVENT = 'nebula-chrome-action'
@@ -38,6 +69,7 @@ const VIEW_MODE_EVENT = 'nebula-view-mode'
 const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
 const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
 const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
+const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
 
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
@@ -155,4 +187,20 @@ export async function emitTabSearchRequest(): Promise<void> {
 export function listenTabSearchRequests(handler: () => void): Promise<() => void> {
   if (!isTauri) return Promise.resolve(() => {})
   return listen(TAB_SEARCH_REQUEST_EVENT, handler)
+}
+
+export async function emitSiteInfoState(
+  state: SiteInfoStatePayload,
+): Promise<void> {
+  if (!isTauri) return
+  await emit(SITE_INFO_STATE_EVENT, state)
+}
+
+export function listenSiteInfoState(
+  handler: (state: SiteInfoStatePayload) => void,
+): Promise<() => void> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<SiteInfoStatePayload>(SITE_INFO_STATE_EVENT, (event) => {
+    handler(event.payload)
+  })
 }

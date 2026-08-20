@@ -45,6 +45,7 @@ commands.allow = [
   "webview_devtools_unsubscribe",
   "webview_apply_privacy",
   "webview_clear_browsing_data",
+  "webview_clear_site_permissions",
   "webview_factory_reset_profiles",
   "ublock_extension_info",
   "ublock_extension_install",

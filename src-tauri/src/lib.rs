@@ -132,13 +132,14 @@ fn sanitize_transition_log_value(value: serde_json::Value, key: Option<&str>) ->
 }
 
 #[tauri::command]
-fn show_native_notification(
+async fn show_native_notification(
     app: tauri::AppHandle,
     title: String,
     body: String,
     tab_label: Option<String>,
     origin: Option<String>,
     download_id: Option<String>,
+    icon_url: Option<String>,
 ) -> Result<(), String> {
     let title = title.trim().chars().take(180).collect::<String>();
     let body = body.trim().chars().take(500).collect::<String>();
@@ -155,7 +156,17 @@ fn show_native_notification(
     });
     let download_id =
         download_id.filter(|value| value.starts_with("download-") && value.chars().count() <= 180);
-    native_notification::show(&app, &title, &body, tab_label, origin, download_id)
+    let icon_url = icon_url.filter(|value| value.chars().count() <= 2048);
+    native_notification::show(
+        &app,
+        &title,
+        &body,
+        tab_label,
+        origin,
+        download_id,
+        icon_url,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -608,6 +619,15 @@ async fn webview_clear_browsing_data(
     kind: String,
 ) -> Result<(), String> {
     webview_privacy::clear_browsing_data(&app, &label, &kind).await
+}
+
+#[tauri::command]
+async fn webview_clear_site_permissions(
+    app: tauri::AppHandle,
+    label: String,
+    origin: String,
+) -> Result<(), String> {
+    webview_privacy::clear_site_permissions(&app, &label, &origin).await
 }
 
 #[tauri::command]
@@ -1328,6 +1348,7 @@ pub fn run() {
             webview_devtools_unsubscribe,
             webview_apply_privacy,
             webview_clear_browsing_data,
+            webview_clear_site_permissions,
             webview_factory_reset_profiles,
             ublock_extension::ublock_extension_info,
             ublock_extension::ublock_extension_install,

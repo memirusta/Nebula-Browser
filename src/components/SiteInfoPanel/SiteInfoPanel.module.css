@@ -1,0 +1,64 @@
+.panel {
+  position: fixed;
+  left: 50%;
+  z-index: 12000;
+  width: min(430px, calc(100vw - 24px));
+  padding: 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  background: rgba(15, 19, 25, 0.97);
+  color: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.56), inset 0 1px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  pointer-events: auto;
+  animation: panelIn 150ms ease-out;
+}
+
+.header { display: flex; align-items: center; gap: 11px; padding: 2px 2px 13px; }
+.favicon { display: grid; place-items: center; width: 38px; height: 38px; overflow: hidden; border-radius: 11px; background: linear-gradient(135deg, #843bff, #5d21c8); font-weight: 800; }
+.favicon img { width: 24px; height: 24px; object-fit: contain; }
+.identity { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.identity strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.identity span { color: rgba(255, 255, 255, 0.52); font-size: 11px; }
+.close { width: 32px; height: 32px; border: 0; border-radius: 10px; background: transparent; color: rgba(255, 255, 255, 0.7); cursor: pointer; font-size: 22px; }
+.close:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
+
+.securityRow, .protectionButton { display: flex; align-items: center; gap: 11px; width: 100%; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 14px; background: rgba(255, 255, 255, 0.045); color: inherit; text-align: left; }
+.securityRow { padding: 11px 12px; }
+.securityRow > span:last-child, .protectionButton > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.securityRow strong, .protectionButton strong { font-size: 12px; }
+.securityRow small, .protectionButton small { color: rgba(255, 255, 255, 0.5); font-size: 10px; }
+.securityIcon, .shield { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 9px; background: rgba(69, 211, 143, 0.12); color: #66e0a4; }
+.securityIcon svg, .shield svg, .permissionIcon svg, .permissionIconActive svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.sectionHeader { display: flex; align-items: center; justify-content: space-between; padding: 16px 3px 7px; color: rgba(255, 255, 255, 0.5); font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.good { color: #65dfa2; }
+.warning { color: #f4b95f; }
+.protectionButton { padding: 11px 12px; cursor: pointer; }
+.protectionButton:hover { border-color: rgba(139, 103, 255, 0.45); background: rgba(128, 86, 255, 0.1); }
+.shield { background: rgba(139, 103, 255, 0.14); color: #ae91ff; }
+
+.permissionList { overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 14px; background: rgba(255, 255, 255, 0.035); }
+.permissionRow { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px; min-height: 45px; padding: 7px 11px; border-bottom: 1px solid rgba(255, 255, 255, 0.065); font-size: 12px; }
+.permissionRow:last-child { border-bottom: 0; }
+.permissionRow strong { color: rgba(255, 255, 255, 0.48); font-size: 10px; }
+.permissionIcon, .permissionIconActive { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 9px; background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.62); }
+.permissionIconActive { background: rgba(73, 224, 151, 0.14); color: #68e2a8; box-shadow: 0 0 0 4px rgba(73, 224, 151, 0.055); }
+.permissionRow .inUse { color: #68e2a8; }
+
+.notificationRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 3px 4px; font-size: 12px; }
+.segmented { display: flex; padding: 3px; border-radius: 10px; background: rgba(255, 255, 255, 0.055); }
+.segmented button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: rgba(255, 255, 255, 0.54); cursor: pointer; font-size: 9px; font-weight: 700; }
+.segmented button:hover { color: #fff; }
+.segmented .segmentActive { background: rgba(127, 91, 245, 0.82); color: #fff; box-shadow: 0 4px 12px rgba(79, 43, 190, 0.3); }
+
+.footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 14px; }
+.secondary, .dangerConfirm { min-height: 34px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.11); border-radius: 10px; background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.77); cursor: pointer; font-size: 10px; font-weight: 700; }
+.secondary:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
+.dangerConfirm { border-color: rgba(255, 91, 105, 0.38); background: rgba(255, 70, 88, 0.12); color: #ff9da6; }
+
+button:focus-visible { outline: 2px solid rgba(137, 111, 255, 0.95); outline-offset: 2px; }
+@keyframes panelIn { from { opacity: 0; transform: translate(-50%, -7px) scale(0.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .panel { animation: none; } }

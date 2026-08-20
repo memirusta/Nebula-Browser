@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emit } from '@tauri-apps/api/event'
 import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { TabSearch } from './components/TabSearch/TabSearch'
+import { SiteInfoPanel } from './components/SiteInfoPanel/SiteInfoPanel'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
 import {
   matchBrowserShortcut,
@@ -18,9 +19,11 @@ import {
   listenTabSearchRequests,
   listenViewMode,
   listenZoomIndicator,
+  listenSiteInfoState,
   type DownloadUiStatePayload,
   type ShellViewMode,
   type TabCatalogPayload,
+  type SiteInfoStatePayload,
 } from './core/nebulaBridge'
 import {
   shortcutFromTab,
@@ -41,6 +44,7 @@ import { usePinnedShortcuts } from './hooks/usePinnedShortcuts'
 import { useShortcutFolders } from './hooks/useShortcutFolders'
 import { useShortcutPreferences } from './hooks/useShortcutPreferences'
 import { setChromeOverlayMinimumLogicalHeight } from './platform/tauriChromeWebview'
+import { hostHasSiteException, siteCompatibilityTarget } from './core/siteCompatibility'
 import './styles/global.css'
 import styles from './ChromeApp.module.css'
 
@@ -97,6 +101,21 @@ export function ChromeApp() {
   })
   const [zoomIndicatorPercent, setZoomIndicatorPercent] = useState<number | null>(null)
   const [tabSearchOpen, setTabSearchOpen] = useState(false)
+  const [siteInfoOpen, setSiteInfoOpen] = useState(false)
+  const [siteInfoState, setSiteInfoState] = useState<SiteInfoStatePayload>({
+    shortcutId: null,
+    url: null,
+    origin: null,
+    hostname: null,
+    protectionDisabled: false,
+    permissionPromptsAllowed: false,
+    notificationPermission: null,
+    permissions: {
+      camera: 'unsupported',
+      microphone: 'unsupported',
+      location: 'unsupported',
+    },
+  })
   const [sensitiveUsageByTab, setSensitiveUsageByTab] = useState(
     () => new Map<string, SensitiveFeatureUsage>(),
   )
@@ -149,6 +168,7 @@ export function ChromeApp() {
       () => listenDownloadUiState(setDownloadUi),
       () => listenZoomIndicator(showZoomIndicator),
       () => listenTabSearchRequests(() => setTabSearchOpen(true)),
+      () => listenSiteInfoState(setSiteInfoState),
       () => listenSensitiveFeatureUsage((usage) => {
         setSensitiveUsageByTab((current) => {
           const next = new Map(current)
@@ -252,10 +272,64 @@ export function ChromeApp() {
     return { camera, microphone, location, host, siteCount: active.length }
   }, [sensitiveUsageByTab])
 
+  const activeSensitiveUsage = useMemo(() => {
+    if (!siteInfoState.shortcutId || !siteInfoState.origin) {
+      return { camera: false, microphone: false, location: false }
+    }
+    for (const usage of sensitiveUsageByTab.values()) {
+      if (
+        shortcutIdForTabWebviewLabel(usage.tabLabel) === siteInfoState.shortcutId &&
+        usage.origin === siteInfoState.origin
+      ) {
+        return {
+          camera: usage.camera,
+          microphone: usage.microphone,
+          location: usage.location,
+        }
+      }
+    }
+    return { camera: false, microphone: false, location: false }
+  }, [sensitiveUsageByTab, siteInfoState.origin, siteInfoState.shortcutId])
+
+  const effectiveSiteInfoState = useMemo<SiteInfoStatePayload>(() => {
+    const target = activeUrl ? siteCompatibilityTarget(activeUrl) : null
+    if (!target) return siteInfoState
+    const active = catalog.activeTabId
+      ? tabById.get(catalog.activeTabId) ?? null
+      : null
+    const origin = new URL(target.url).origin
+    if (
+      siteInfoState.shortcutId === active?.shortcutId &&
+      siteInfoState.origin === origin
+    ) {
+      return siteInfoState
+    }
+    const permissionPromptsAllowed =
+      settings.privacy.permissionPolicy === 'ask' ||
+      hostHasSiteException(target.hostname, settings.privacy.permissionExceptions)
+    const fallbackPermission = permissionPromptsAllowed ? 'prompt' : 'denied'
+    return {
+      shortcutId: active?.shortcutId ?? null,
+      url: target.url,
+      origin,
+      hostname: target.hostname,
+      protectionDisabled: hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
+      permissionPromptsAllowed,
+      notificationPermission: null,
+      permissions: {
+        camera: fallbackPermission,
+        microphone: fallbackPermission,
+        location: fallbackPermission,
+      },
+    }
+  }, [activeUrl, catalog.activeTabId, settings.privacy, siteInfoState, tabById])
+
   useEffect(() => {
     const hasZoom = zoomIndicatorPercent !== null
     const hasSensitiveUsage = sensitiveUsageSummary !== null
-    const minimumHeight = tabSearchOpen
+    const minimumHeight = siteInfoOpen
+      ? 650
+      : tabSearchOpen
       ? 650
       : viewMode !== 'browsing'
       ? 0
@@ -264,8 +338,21 @@ export function ChromeApp() {
         : hasZoom || hasSensitiveUsage
           ? 78
           : 0
-    void setChromeOverlayMinimumLogicalHeight(minimumHeight)
-  }, [sensitiveUsageSummary, tabSearchOpen, viewMode, zoomIndicatorPercent])
+    void setChromeOverlayMinimumLogicalHeight(minimumHeight).then(() => {
+      if (viewMode === 'browsing' && catalog.activeTabId) {
+        return emitChromeAction({ type: 'raise-chrome-overlay' })
+      }
+    })
+  }, [catalog.activeTabId, sensitiveUsageSummary, siteInfoOpen, tabSearchOpen, viewMode, zoomIndicatorPercent])
+
+  useEffect(() => {
+    if (viewMode !== 'browsing') setSiteInfoOpen(false)
+  }, [viewMode])
+
+  useEffect(() => {
+    if (!siteInfoOpen) return
+    void emitChromeAction({ type: 'request-site-info' })
+  }, [activeUrl, siteInfoOpen])
 
   const getTab = useCallback(
     (shortcutId: string): BrowserTab | null => tabById.get(shortcutId) ?? null,
@@ -529,6 +616,11 @@ export function ChromeApp() {
       canPinMore={canPinMore}
       onRemoveMemberFromFolder={removeMemberFromFolder}
       activeUrl={activeUrl}
+      siteInfoOpen={siteInfoOpen}
+      onSiteInfoClick={() => {
+        setSiteInfoOpen((current) => !current)
+        void emitChromeAction({ type: 'request-site-info' })
+      }}
       getSession={getSession}
       previewOnHover={semiLunar.previewOnHover}
       homeAlwaysOpen={semiLunar.homeAlwaysOpen}
@@ -568,6 +660,45 @@ export function ChromeApp() {
       downloadPanelOpen={browsingDownloadPanelOpen}
       forceOpen={browsingDownloadPanelOpen}
       />
+
+      {siteInfoOpen && effectiveSiteInfoState.hostname && effectiveSiteInfoState.origin && effectiveSiteInfoState.shortcutId && (
+        <SiteInfoPanel
+          state={effectiveSiteInfoState}
+          favicon={tabById.get(effectiveSiteInfoState.shortcutId)?.favicon}
+          top={adaptiveLunar.height + 12}
+          usage={activeSensitiveUsage}
+          onClose={() => setSiteInfoOpen(false)}
+          onToggleProtection={() => {
+            void emitChromeAction({
+              type: 'set-site-protection',
+              hostname: effectiveSiteInfoState.hostname!,
+              disabled: !effectiveSiteInfoState.protectionDisabled,
+            })
+          }}
+          onSetNotificationPermission={(permission) => {
+            void emitChromeAction({
+              type: 'set-site-notification-permission',
+              origin: effectiveSiteInfoState.origin!,
+              permission,
+            })
+          }}
+          onResetPermissions={() => {
+            void emitChromeAction({
+              type: 'reset-site-permissions',
+              shortcutId: effectiveSiteInfoState.shortcutId!,
+              origin: effectiveSiteInfoState.origin!,
+            })
+          }}
+          onClearSiteData={() => {
+            void emitChromeAction({
+              type: 'clear-site-data',
+              shortcutId: effectiveSiteInfoState.shortcutId!,
+              origin: effectiveSiteInfoState.origin!,
+            })
+            setSiteInfoOpen(false)
+          }}
+        />
+      )}
 
       {browsingDownloadPanelOpen && (
         <DownloadManager
