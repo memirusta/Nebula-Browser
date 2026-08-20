@@ -7,7 +7,7 @@ const read = (path: string) =>
 
 test('resume waits for WebView2 StateChanged instead of finalizing its transient cancelled state', () => {
   const nativeSource = read('../src-tauri/src/download_manager.rs')
-  const resumeBranch = nativeSource.match(/"resume" => unsafe \{([\s\S]*?)\n\s*\},\n\s*"cancel"/)
+  const resumeBranch = nativeSource.match(/"resume" => unsafe \{([\s\S]*?)\r?\n\s*\},\r?\n\s*"cancel"/)
 
   assert.ok(resumeBranch)
   assert.match(resumeBranch[1], /operation\.Resume\(\)/)
@@ -17,7 +17,7 @@ test('resume waits for WebView2 StateChanged instead of finalizing its transient
 
 test('successful cancellation publishes an authoritative terminal state under UI-thread load', () => {
   const nativeSource = read('../src-tauri/src/download_manager.rs')
-  const cancelBranch = nativeSource.match(/"cancel" => unsafe \{([\s\S]*?)\n\s*\},\n\s*"keep"/)
+  const cancelBranch = nativeSource.match(/"cancel" => unsafe \{([\s\S]*?)\r?\n\s*\},\r?\n\s*"keep"/)
 
   assert.ok(cancelBranch)
   assert.match(cancelBranch[1], /operation\.Cancel\(\)/)
