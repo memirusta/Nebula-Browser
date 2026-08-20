@@ -14,7 +14,10 @@ import {
 import { createPortal } from 'react-dom'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
-import { getAppDialogsSnapshot } from '../../core/appDialog'
+import {
+  getAppDialogsSnapshot,
+  showAppConfirmation,
+} from '../../core/appDialog'
 import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
 import { PasswordSavePrompt } from '../PasswordSavePrompt/PasswordSavePrompt'
 import { PasswordFillPrompt } from '../PasswordFillPrompt/PasswordFillPrompt'
@@ -27,10 +30,16 @@ import {
   emitDownloadUiState,
   emitTabCatalog,
   emitTabSearchRequest,
+  emitSiteInfoState,
   emitViewMode,
   emitZoomIndicator,
 } from '../../core/nebulaBridge'
-import type { DownloadUiStatePayload, ShellViewMode } from '../../core/nebulaBridge'
+import type {
+  DownloadUiStatePayload,
+  ShellViewMode,
+  SiteInfoStatePayload,
+  SitePermissionState,
+} from '../../core/nebulaBridge'
 import type { BrowserShortcutId } from '../../core/browserShortcuts'
 import {
   NATIVE_TAB_FAILED_EVENT,
@@ -46,7 +55,10 @@ import {
   toggleBrowserWindowFullscreen,
 } from '../../platform/tauriSiteFullscreen'
 import { writeTransitionLog } from '../../platform/tauriTransitionLog'
-import { setOverlayModeActive } from '../../platform/tauriWebviewStack'
+import {
+  setOverlayModeActive,
+  stackBrowsingChromeAboveBrowser,
+} from '../../platform/tauriWebviewStack'
 import { setChromeWebviewSuppressed } from '../../platform/tauriChromeWebview'
 import {
   closeSitePopupForContent,
@@ -101,11 +113,21 @@ import {
   setBrowseTabZoom,
   zoomBrowseTab,
   setBrowsePrivacyOptions,
+  clearSitePermissions,
+  listenSiteCompatibilityRequests,
+  navigateBrowseTab,
   clearBrowseData,
   getUblockExtensionInfo,
   getUblockRuntimeStatus,
   type BrowsingDataKind,
 } from '../../platform/tauriBrowser'
+import {
+  addSiteException,
+  hostHasSiteException,
+  removeSiteException,
+  siteCompatibilityTarget,
+} from '../../core/siteCompatibility'
+import { callTabDevTools } from '../../platform/tauriDevTools'
 import { useBrowserTabs } from '../../hooks/useBrowserTabs'
 import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
 import { useBrowserShortcutBindings } from '../../hooks/useBrowserShortcutBindings'
@@ -205,6 +227,42 @@ const OnboardingWizard = lazy(() =>
     default: module.OnboardingWizard,
   })),
 )
+
+const SITE_PERMISSION_QUERY = `(async () => {
+  const result = {};
+  for (const name of ['camera', 'microphone', 'geolocation']) {
+    try { result[name] = (await navigator.permissions.query({ name })).state; }
+    catch { result[name] = 'unsupported'; }
+  }
+  return result;
+})()`
+
+async function readSitePermissionStates(
+  shortcutId: string,
+): Promise<SiteInfoStatePayload['permissions']> {
+  const response = await callTabDevTools<{
+    result?: { value?: Record<string, unknown> }
+  }>(shortcutId, 'Runtime.evaluate', {
+    expression: SITE_PERMISSION_QUERY,
+    awaitPromise: true,
+    returnByValue: true,
+  })
+  const value = response.result?.value ?? {}
+  const state = (name: string): SitePermissionState => {
+    const candidate = value[name]
+    return candidate === 'granted' ||
+      candidate === 'denied' ||
+      candidate === 'prompt' ||
+      candidate === 'unsupported'
+      ? candidate
+      : 'unsupported'
+  }
+  return {
+    camera: state('camera'),
+    microphone: state('microphone'),
+    location: state('geolocation'),
+  }
+}
 
 export function BrowserShell() {
   const { t } = useLocale()
@@ -1137,10 +1195,22 @@ export function BrowserShell() {
     setSiteContextMenu,
   ] = useState<SiteContextMenuRequest | null>(null)
 
+  const [
+    compatibilityPromptActive,
+    setCompatibilityPromptActive,
+  ] = useState(false)
+
+  const compatibilityPromptActiveRef =
+    useRef(false)
+
+  const compatibilityPromptedHostsRef =
+    useRef(new Map<string, number>())
+
   const siteSurfaceActive =
     siteUiQueue.length > 0 ||
     siteContextMenu !== null ||
-    passwordPromptOffer !== null
+    passwordPromptOffer !== null ||
+    compatibilityPromptActive
 
   const siteUiPreviousModeRef =
     useRef<ViewMode>('home')
@@ -1171,6 +1241,7 @@ export function BrowserShell() {
         siteUiQueue.length > 0 ||
         siteContextMenu !== null ||
         passwordPromptOffer !== null ||
+        compatibilityPromptActive ||
         (
           viewMode !== 'browsing' &&
           (
@@ -1182,6 +1253,7 @@ export function BrowserShell() {
     )
   }, [
     crashRecoveryOpen,
+    compatibilityPromptActive,
     developerToolsOpen,
     downloadPanelOpen,
     historyPanelOpen,
@@ -3603,7 +3675,8 @@ export function BrowserShell() {
       siteUiQueue.length > 0 ||
       siteContextMenu !== null ||
       printTarget !== null ||
-      passwordPromptOffer !== null
+      passwordPromptOffer !== null ||
+      compatibilityPromptActive
 
     if (
       open &&
@@ -3684,6 +3757,7 @@ export function BrowserShell() {
       open
   }, [
     activeTabIdRef,
+    compatibilityPromptActive,
     passwordPromptOffer,
     siteContextMenu,
     siteUiQueue.length,
@@ -4652,6 +4726,105 @@ export function BrowserShell() {
     return initSiteFullscreenBridge()
   }, [])
 
+  const activeSiteInfoState = useMemo<SiteInfoStatePayload>(() => {
+    const emptyPermissions: SiteInfoStatePayload['permissions'] = {
+      camera: 'unsupported',
+      microphone: 'unsupported',
+      location: 'unsupported',
+    }
+    if (!activeTab) {
+      return {
+        shortcutId: null,
+        url: null,
+        origin: null,
+        hostname: null,
+        protectionDisabled: false,
+        permissionPromptsAllowed: false,
+        notificationPermission: null,
+        permissions: emptyPermissions,
+      }
+    }
+
+    const target = siteCompatibilityTarget(activeTab.url)
+    if (!target) {
+      return {
+        shortcutId: activeTab.shortcutId,
+        url: activeTab.url,
+        origin: null,
+        hostname: null,
+        protectionDisabled: false,
+        permissionPromptsAllowed: false,
+        notificationPermission: null,
+        permissions: emptyPermissions,
+      }
+    }
+
+    const origin = new URL(target.url).origin
+    const permissionPromptsAllowed =
+      settings.privacy.permissionPolicy === 'ask' ||
+      hostHasSiteException(
+        target.hostname,
+        settings.privacy.permissionExceptions,
+      )
+    const defaultPermissionState: SitePermissionState =
+      permissionPromptsAllowed ? 'prompt' : 'denied'
+
+    return {
+      shortcutId: activeTab.shortcutId,
+      url: target.url,
+      origin,
+      hostname: target.hostname,
+      protectionDisabled: hostHasSiteException(
+        target.hostname,
+        settings.privacy.siteExceptions,
+      ),
+      permissionPromptsAllowed,
+      notificationPermission:
+        notificationCenter.sitePermissions[origin] ?? null,
+      permissions: {
+        camera: defaultPermissionState,
+        microphone: defaultPermissionState,
+        location: defaultPermissionState,
+      },
+    }
+  }, [
+    activeTab,
+    notificationCenter.sitePermissions,
+    settings.privacy.permissionExceptions,
+    settings.privacy.permissionPolicy,
+    settings.privacy.siteExceptions,
+  ])
+
+  const activeSiteInfoStateRef = useRef(activeSiteInfoState)
+  activeSiteInfoStateRef.current = activeSiteInfoState
+
+  const emitFreshSiteInfoState = useCallback(async () => {
+    const snapshot = activeSiteInfoStateRef.current
+    await emitSiteInfoState(snapshot)
+    if (!snapshot.shortcutId || !snapshot.origin) return
+
+    try {
+      const permissions = await readSitePermissionStates(snapshot.shortcutId)
+      const current = activeSiteInfoStateRef.current
+      if (
+        current.shortcutId !== snapshot.shortcutId ||
+        current.origin !== snapshot.origin
+      ) {
+        return
+      }
+      await emitSiteInfoState({ ...current, permissions })
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('[nebula] site permission state query failed', error)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isTauri) return
+    void emitFreshSiteInfoState()
+  }, [activeSiteInfoState, emitFreshSiteInfoState])
+
   useEffect(() => {
     if (!isTauri) return
 
@@ -4696,8 +4869,17 @@ export function BrowserShell() {
             void emitDownloadUiState(
               downloadUiStateRef.current,
             )
+            void emitFreshSiteInfoState()
             break
           }
+
+          case 'request-site-info':
+            void emitFreshSiteInfoState()
+            break
+
+          case 'raise-chrome-overlay':
+            void stackBrowsingChromeAboveBrowser(activeTabIdRef.current)
+            break
 
           case 'open-tab':
             if (
@@ -4760,6 +4942,67 @@ export function BrowserShell() {
                 if (import.meta.env.DEV) {
                   console.warn('[nebula] tab mute failed', error)
                 }
+              })
+            break
+          }
+
+          case 'set-site-protection': {
+            const site = activeSiteInfoStateRef.current
+            if (!site.hostname || site.hostname !== action.hostname) break
+            const siteExceptions = action.disabled
+              ? addSiteException(
+                  settings.privacy.siteExceptions,
+                  site.hostname,
+                )
+              : removeSiteException(
+                  settings.privacy.siteExceptions,
+                  site.hostname,
+                )
+            updateCategory('privacy', 'siteExceptions', siteExceptions)
+            break
+          }
+
+          case 'set-site-notification-permission': {
+            const site = activeSiteInfoStateRef.current
+            if (!site.origin || site.origin !== action.origin) break
+            setSiteNotificationPermission(action.origin, action.permission)
+            break
+          }
+
+          case 'reset-site-permissions': {
+            const site = activeSiteInfoStateRef.current
+            if (
+              site.shortcutId !== action.shortcutId ||
+              site.origin !== action.origin
+            ) {
+              break
+            }
+            void clearSitePermissions(action.shortcutId, action.origin)
+              .then(() => {
+                setSiteNotificationPermission(action.origin, null)
+                void emitFreshSiteInfoState()
+              })
+              .catch((error: unknown) => {
+                console.error('[nebula] site permission reset failed', error)
+              })
+            break
+          }
+
+          case 'clear-site-data': {
+            const site = activeSiteInfoStateRef.current
+            if (
+              site.shortcutId !== action.shortcutId ||
+              site.origin !== action.origin
+            ) {
+              break
+            }
+            void callTabDevTools(action.shortcutId, 'Storage.clearDataForOrigin', {
+              origin: action.origin,
+              storageTypes: 'all',
+            })
+              .then(() => reloadBrowseTab(action.shortcutId))
+              .catch((error: unknown) => {
+                console.error('[nebula] site data clear failed', error)
               })
             break
           }
@@ -4829,6 +5072,10 @@ export function BrowserShell() {
     activeTabIdRef,
     removeDownload,
     clearFinishedDownloads,
+    emitFreshSiteInfoState,
+    setSiteNotificationPermission,
+    settings.privacy.siteExceptions,
+    updateCategory,
   ])
 
   useEffect(() => {
@@ -4971,6 +5218,155 @@ export function BrowserShell() {
     notifications,
     privacy,
   } = settings
+
+  const compatibilityContextRef = useRef({
+    privacy,
+    siteNotifications:
+      notifications.siteNotifications,
+    showNotificationContent:
+      notifications.showNotificationContent,
+    notificationAllowedSites:
+      notificationCenter.allowedSites,
+    notificationBlockedSites:
+      notificationCenter.blockedSites,
+    openTabIds,
+  })
+
+  compatibilityContextRef.current = {
+    privacy,
+    siteNotifications:
+      notifications.siteNotifications,
+    showNotificationContent:
+      notifications.showNotificationContent,
+    notificationAllowedSites:
+      notificationCenter.allowedSites,
+    notificationBlockedSites:
+      notificationCenter.blockedSites,
+    openTabIds,
+  }
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+
+    void listenSiteCompatibilityRequests((request) => {
+      if (
+        disposed ||
+        compatibilityPromptActiveRef.current
+      ) {
+        return
+      }
+
+      const shortcutId =
+        shortcutIdForTabWebviewLabel(request.tabLabel)
+      const target = siteCompatibilityTarget(request.url)
+      if (
+        !shortcutId ||
+        !target ||
+        !getTab(shortcutId)
+      ) {
+        return
+      }
+
+      const current = compatibilityContextRef.current
+      if (
+        hostHasSiteException(
+          target.hostname,
+          current.privacy.siteExceptions,
+        )
+      ) {
+        return
+      }
+
+      const now = Date.now()
+      const promptedAt =
+        compatibilityPromptedHostsRef.current.get(
+          target.hostname,
+        ) ?? 0
+      if (now - promptedAt < 5 * 60_000) {
+        return
+      }
+
+      compatibilityPromptedHostsRef.current.set(
+        target.hostname,
+        now,
+      )
+      compatibilityPromptActiveRef.current = true
+      setCompatibilityPromptActive(true)
+
+      void showAppConfirmation(
+        `${target.hostname} ${t('siteCompatibilityMessage')}`,
+        t('siteCompatibilityTitle'),
+        {
+          acceptLabel: t('siteCompatibilityRetry'),
+          cancelLabel: t('siteCompatibilityNotNow'),
+        },
+      )
+        .then(async (accepted) => {
+          if (!accepted || !getTab(shortcutId)) return
+
+          const latest = compatibilityContextRef.current
+          const siteExceptions = addSiteException(
+            latest.privacy.siteExceptions,
+            target.hostname,
+          )
+          const nextPrivacy = {
+            ...latest.privacy,
+            siteExceptions,
+          }
+
+          await setBrowsePrivacyOptions(
+            {
+              ...nextPrivacy,
+              siteNotifications:
+                latest.siteNotifications,
+              showNotificationContent:
+                latest.showNotificationContent,
+              notificationAllowedSites:
+                latest.notificationAllowedSites,
+              notificationBlockedSites:
+                latest.notificationBlockedSites,
+            },
+            latest.openTabIds,
+          )
+
+          updateCategory(
+            'privacy',
+            'siteExceptions',
+            siteExceptions,
+          )
+          await navigateBrowseTab(shortcutId, target.url)
+        })
+        .catch((error: unknown) => {
+          console.error(
+            `[nebula compatibility] Failed to retry ${target.hostname} (${request.errorStatus}).`,
+            error,
+          )
+        })
+        .finally(() => {
+          compatibilityPromptActiveRef.current = false
+          setCompatibilityPromptActive(false)
+        })
+    }).then((dispose) => {
+      if (disposed) {
+        dispose()
+        return
+      }
+      unlisten = dispose
+    }).catch((error: unknown) => {
+      console.error(
+        '[nebula compatibility] Failed to listen for site failures.',
+        error,
+      )
+    })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [getTab, t, updateCategory])
 
   useEffect(() => {
     if (!isTauri) return

@@ -30,9 +30,16 @@ export function AppDialogHost() {
   if (!request) return null
 
   const acceptLabel =
-    request.kind === 'alert'
-      ? locale === 'tr' ? 'Tamam' : 'OK'
-      : locale === 'tr' ? 'Onayla' : 'Confirm'
+    request.acceptLabel ??
+    (
+      request.kind === 'alert'
+        ? locale === 'tr' ? 'Tamam' : 'OK'
+        : locale === 'tr' ? 'Onayla' : 'Confirm'
+    )
+
+  const cancelLabel =
+    request.cancelLabel ??
+    t('cancel')
 
   return createPortal(
     <div className={styles.backdrop} role="presentation">
@@ -77,7 +84,7 @@ export function AppDialogHost() {
               className={styles.secondary}
               onClick={() => resolveAppDialog(request.id, false)}
             >
-              {t('cancel')}
+              {cancelLabel}
             </button>
           )}
           <button

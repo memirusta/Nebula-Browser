@@ -1,6 +1,8 @@
 #[cfg(target_os = "windows")]
 mod imp {
     use serde::Serialize;
+    use std::hash::{Hash, Hasher};
+    use std::time::Duration;
     use tauri::{AppHandle, Emitter, Manager};
     use windows::Data::Xml::Dom::XmlDocument;
     use windows::Foundation::TypedEventHandler;
@@ -10,6 +12,7 @@ mod imp {
     const POWERSHELL_APP_ID: &str =
         "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
     const ACTIVATED_EVENT: &str = "nebula-native-notification-activated";
+    const MAX_SITE_ICON_BYTES: u64 = 1024 * 1024;
 
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -28,7 +31,13 @@ mod imp {
             .replace('\'', "&apos;")
     }
 
-    fn notification_icon_uri(app: &AppHandle) -> Option<String> {
+    fn file_uri(path: std::path::PathBuf) -> Option<String> {
+        url::Url::from_file_path(path)
+            .ok()
+            .map(|url| url.to_string())
+    }
+
+    fn fallback_notification_icon_uri(app: &AppHandle) -> Option<String> {
         const ICON_BYTES: &[u8] = include_bytes!("../icons/128x128.png");
         let icon_dir = app.path().app_cache_dir().ok()?.join("notifications");
         std::fs::create_dir_all(&icon_dir).ok()?;
@@ -39,21 +48,78 @@ mod imp {
         if needs_write {
             std::fs::write(&icon_path, ICON_BYTES).ok()?;
         }
-        url::Url::from_file_path(icon_path)
-            .ok()
-            .map(|url| url.to_string())
+        file_uri(icon_path)
     }
 
-    pub fn show(
+    fn validated_site_icon_url(value: &str) -> Option<url::Url> {
+        let url = url::Url::parse(value).ok()?;
+        let trusted_favicon_service = url.scheme() == "https"
+            && url.host_str() == Some("www.google.com")
+            && url.path() == "/s2/favicons";
+        trusted_favicon_service.then_some(url)
+    }
+
+    async fn cached_site_icon_uri(app: &AppHandle, value: &str) -> Option<String> {
+        let url = validated_site_icon_url(value)?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        url.as_str().hash(&mut hasher);
+
+        let icon_dir = app.path().app_cache_dir().ok()?.join("notifications");
+        std::fs::create_dir_all(&icon_dir).ok()?;
+        let icon_path = icon_dir.join(format!("site-{:016x}.png", hasher.finish()));
+        if std::fs::metadata(&icon_path)
+            .is_ok_and(|metadata| metadata.len() > 0 && metadata.len() <= MAX_SITE_ICON_BYTES)
+        {
+            return file_uri(icon_path);
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .redirect(reqwest::redirect::Policy::limited(3))
+            .build()
+            .ok()?;
+        let response = client.get(url).send().await.ok()?;
+        if !response.status().is_success()
+            || response
+                .content_length()
+                .is_some_and(|length| length > MAX_SITE_ICON_BYTES)
+            || !response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.to_ascii_lowercase().starts_with("image/"))
+        {
+            return None;
+        }
+        let bytes = response.bytes().await.ok()?;
+        if bytes.is_empty() || bytes.len() as u64 > MAX_SITE_ICON_BYTES {
+            return None;
+        }
+        std::fs::write(&icon_path, &bytes).ok()?;
+        file_uri(icon_path)
+    }
+
+    async fn notification_icon_uri(app: &AppHandle, icon_url: Option<&str>) -> Option<String> {
+        if let Some(icon_url) = icon_url {
+            if let Some(uri) = cached_site_icon_uri(app, icon_url).await {
+                return Some(uri);
+            }
+        }
+        fallback_notification_icon_uri(app)
+    }
+
+    pub async fn show(
         app: &AppHandle,
         title: &str,
         body: &str,
         tab_label: Option<String>,
         origin: Option<String>,
         download_id: Option<String>,
+        icon_url: Option<String>,
     ) -> Result<(), String> {
         let document = XmlDocument::new().map_err(|error| error.to_string())?;
-        let image = notification_icon_uri(app)
+        let image = notification_icon_uri(app, icon_url.as_deref())
+            .await
             .map(|uri| {
                 format!(
                     "<image placement=\"appLogoOverride\" hint-crop=\"circle\" src=\"{}\"/>",
@@ -119,13 +185,14 @@ mod imp {
 pub use imp::show;
 
 #[cfg(not(target_os = "windows"))]
-pub fn show(
+pub async fn show(
     _app: &tauri::AppHandle,
     _title: &str,
     _body: &str,
     _tab_label: Option<String>,
     _origin: Option<String>,
     _download_id: Option<String>,
+    _icon_url: Option<String>,
 ) -> Result<(), String> {
     Ok(())
 }

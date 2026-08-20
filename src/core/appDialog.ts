@@ -1,10 +1,17 @@
 export type AppDialogKind = 'alert' | 'confirm'
 
+export interface AppDialogOptions {
+  acceptLabel?: string
+  cancelLabel?: string
+}
+
 export interface AppDialogRequest {
   id: number
   kind: AppDialogKind
   title: string
   message: string
+  acceptLabel?: string
+  cancelLabel?: string
 }
 
 interface PendingAppDialog extends AppDialogRequest {
@@ -17,12 +24,16 @@ let dialogSnapshot: AppDialogRequest[] = []
 const listeners = new Set<() => void>()
 
 function publishSnapshot() {
-  dialogSnapshot = pendingDialogs.map(({ id, kind, title, message }) => ({
-    id,
-    kind,
-    title,
-    message,
-  }))
+  dialogSnapshot = pendingDialogs.map(
+    ({ id, kind, title, message, acceptLabel, cancelLabel }) => ({
+      id,
+      kind,
+      title,
+      message,
+      acceptLabel,
+      cancelLabel,
+    }),
+  )
   listeners.forEach((listener) => listener())
 }
 
@@ -30,6 +41,7 @@ function enqueueDialog(
   kind: AppDialogKind,
   message: string,
   title: string,
+  options: AppDialogOptions = {},
 ): Promise<boolean> {
   return new Promise((resolve) => {
     pendingDialogs = [
@@ -39,6 +51,8 @@ function enqueueDialog(
         kind,
         title,
         message,
+        acceptLabel: options.acceptLabel,
+        cancelLabel: options.cancelLabel,
         resolve,
       },
     ]
@@ -46,15 +60,20 @@ function enqueueDialog(
   })
 }
 
-export function showAppAlert(message: string, title = 'Nebula'): Promise<void> {
-  return enqueueDialog('alert', message, title).then(() => undefined)
+export function showAppAlert(
+  message: string,
+  title = 'Nebula',
+  options: AppDialogOptions = {},
+): Promise<void> {
+  return enqueueDialog('alert', message, title, options).then(() => undefined)
 }
 
 export function showAppConfirmation(
   message: string,
   title = 'Nebula',
+  options: AppDialogOptions = {},
 ): Promise<boolean> {
-  return enqueueDialog('confirm', message, title)
+  return enqueueDialog('confirm', message, title, options)
 }
 
 export function subscribeAppDialogs(listener: () => void): () => void {

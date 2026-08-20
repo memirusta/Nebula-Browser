@@ -1731,6 +1731,28 @@ async fn clear_non_default_permissions_and_wait(
     Ok(())
 }
 
+pub async fn clear_site_permissions(
+    app: &tauri::AppHandle,
+    label: &str,
+    origin: &str,
+) -> Result<(), String> {
+    let parsed = url::Url::parse(origin).map_err(|error| error.to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err("site permission origin must be HTTP or HTTPS".to_string());
+    }
+    let target_origin = parsed.origin().ascii_serialization();
+
+    for (permission_kind, permission_origin) in non_default_permission_settings(app, label).await? {
+        let matches_target = url::Url::parse(&permission_origin)
+            .map(|value| value.origin().ascii_serialization() == target_origin)
+            .unwrap_or(false);
+        if matches_target {
+            set_permission_default_and_wait(app, label, permission_kind, permission_origin).await?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 async fn clear_profile_data_and_wait(
     app: &tauri::AppHandle,

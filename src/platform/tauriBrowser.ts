@@ -81,6 +81,22 @@ export interface UblockRuntimeStatus {
   enabled: boolean
 }
 
+export interface SiteCompatibilityRequest {
+  tabLabel: string
+  url: string
+  errorStatus: string
+}
+
+export function listenSiteCompatibilityRequests(
+  onRequest: (request: SiteCompatibilityRequest) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<SiteCompatibilityRequest>(
+    'nebula-site-compatibility-request',
+    ({ payload }) => onRequest(payload),
+  )
+}
+
 type ExtensionWebviewOptions = WebviewOptions & {
   browserExtensionsEnabled: boolean
 }
@@ -3720,6 +3736,28 @@ export async function navigateBrowseTabForward(
 
     return false
   }
+}
+
+export async function clearSitePermissions(
+  shortcutId: string,
+  origin: string,
+): Promise<void> {
+  if (!isTauri) return
+  await invoke('webview_clear_site_permissions', {
+    label: tabWebviewLabel(shortcutId),
+    origin,
+  })
+}
+
+export async function navigateBrowseTab(
+  shortcutId: string,
+  url: string,
+): Promise<void> {
+  if (!isTauri) return
+  await invoke('webview_navigate', {
+    label: tabWebviewLabel(shortcutId),
+    url,
+  })
 }
 
 export async function reloadBrowseTab(

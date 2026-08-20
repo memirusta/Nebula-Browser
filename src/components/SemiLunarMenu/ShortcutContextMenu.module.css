@@ -1,68 +1,39 @@
 .menu {
   position: fixed;
   z-index: 10200;
-  min-width: 168px;
-  padding: 6px 0;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(28, 32, 36, 0.92);
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
-  box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: menuIn 0.15s var(--ease-out-expo);
+  width: 246px;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  background: rgba(17, 21, 27, 0.97);
+  color: rgba(255, 255, 255, 0.91);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: 0 20px 58px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.065);
+  animation: menuIn 140ms var(--ease-out-expo);
+  transform-origin: top left;
 }
 
-.item {
-  display: block;
-  width: 100%;
-  padding: 9px 14px;
-  border: none;
-  background: transparent;
-  color: var(--nebula-text);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: color var(--duration-fast);
-}
+.header { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 5px 6px 7px; }
+.favicon { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; overflow: hidden; border-radius: 10px; background: linear-gradient(135deg, rgba(139, 90, 255, 0.9), rgba(85, 37, 190, 0.95)); color: #fff; font-size: 14px; font-weight: 800; box-shadow: inset 0 1px rgba(255, 255, 255, 0.18); }
+.favicon img { width: 22px; height: 22px; object-fit: contain; }
+.identity { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.identity strong, .identity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity strong { font-size: 12px; font-weight: 750; }
+.identity span { color: rgba(255, 255, 255, 0.42); font-size: 9px; }
+.liveBadge { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: rgba(100, 225, 162, 0.11); color: #70e7ae; font-size: 8px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
 
-.item:hover {
-  color: #fff;
-}
+.item { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; min-height: 39px; padding: 6px 9px; border: none; border-radius: 10px; background: transparent; color: rgba(255, 255, 255, 0.76); font-size: 11px; font-weight: 650; text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; transition: background 110ms ease, color 110ms ease, transform 110ms ease; }
+.item svg { width: 17px; height: 17px; justify-self: center; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; opacity: 0.76; }
+.item:hover, .item:focus-visible { background: rgba(255, 255, 255, 0.085); color: #fff; }
+.item:active { transform: scale(0.985); }
+.item:disabled { opacity: 0.36; cursor: not-allowed; }
+.item:disabled:hover { background: transparent; color: rgba(255, 255, 255, 0.76); }
+.stateDot { width: 7px; height: 7px; border-radius: 50%; background: #b290ff; box-shadow: 0 0 0 4px rgba(178, 144, 255, 0.1); }
+.itemDanger { color: #ff8b94; }
+.itemDanger:hover, .itemDanger:focus-visible { background: rgba(255, 74, 88, 0.1); color: #ffadb4; }
+.separator { height: 1px; margin: 5px 4px; background: rgba(255, 255, 255, 0.085); }
 
-.item:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.item:disabled:hover {
-  color: var(--nebula-text);
-}
-
-.itemDanger {
-  color: #ff6b6b;
-}
-
-.itemDanger:hover {
-  color: #ff8585;
-}
-
-.separator {
-  height: 1px;
-  margin: 4px 8px;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-@keyframes menuIn {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
+@keyframes menuIn { from { opacity: 0; transform: translateY(-4px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .menu { animation: none; } .item { transition: none; } }

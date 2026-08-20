@@ -141,7 +141,15 @@ export async function showNativeNotification(
   tabLabel?: string | null,
   origin?: string | null,
   downloadId?: string | null,
+  iconUrl?: string | null,
 ): Promise<void> {
   if (!isTauri) return
-  await invoke('show_native_notification', { title, body, tabLabel, origin, downloadId })
+  await invoke('show_native_notification', {
+    title,
+    body,
+    tabLabel,
+    origin,
+    downloadId,
+    iconUrl,
+  })
 }

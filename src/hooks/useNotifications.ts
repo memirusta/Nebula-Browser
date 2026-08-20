@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DownloadItem } from '../core/download'
+import { faviconForUrl } from '../core/browserTab'
 import {
   loadNotifications,
   loadSiteNotificationPermissions,
@@ -106,6 +107,8 @@ export function useNotifications(
           nativeBody,
           payload.tabLabel,
           origin,
+          null,
+          faviconForUrl(origin),
         ).catch(() => undefined)
       }
     }).then((dispose) => {

@@ -128,6 +128,21 @@ test('clicking a native Windows toast foregrounds Nebula and routes to its live 
   assert.match(shell, /listenNativeNotificationActivations[\s\S]*?switchToExistingBrowseTab\(shortcutId\)[\s\S]*?openShortcutByUrl/)
 })
 
+test('native site toasts use a cached site favicon with a safe Nebula fallback', () => {
+  const core = read('src/core/notification.ts')
+  const hook = read('src/hooks/useNotifications.ts')
+  const native = read('src-tauri/src/native_notification.rs')
+  const lib = read('src-tauri/src/lib.rs')
+
+  assert.match(core, /showNativeNotification\([\s\S]*?iconUrl\?: string \| null[\s\S]*?iconUrl,/)
+  assert.match(hook, /showNativeNotification\([\s\S]*?faviconForUrl\(origin\)/)
+  assert.match(lib, /show_native_notification\([\s\S]*?icon_url: Option<String>[\s\S]*?native_notification::show[\s\S]*?\.await/)
+  assert.match(native, /validated_site_icon_url[\s\S]*?www\.google\.com[\s\S]*?\/s2\/favicons/)
+  assert.match(native, /MAX_SITE_ICON_BYTES[\s\S]*?content_length\(\)[\s\S]*?response\.bytes\(\)/)
+  assert.match(native, /cached_site_icon_uri[\s\S]*?fallback_notification_icon_uri/)
+  assert.match(native, /placement=\\"appLogoOverride\\"[\s\S]*?hint-crop=\\"circle\\"/)
+})
+
 test('clearing permissions resets both WebView2 and Nebula notification state', () => {
   const shell = read('src/components/BrowserShell/BrowserShell.tsx')
   const notifications = read('src/hooks/useNotifications.ts')

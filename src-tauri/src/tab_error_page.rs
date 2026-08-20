@@ -5,8 +5,8 @@ mod imp {
     use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, Instant};
 
-    use tauri::AppHandle;
-    use tauri::Manager;
+    use serde::Serialize;
+    use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2NavigationCompletedEventArgs2,
         ICoreWebView2NavigationCompletedEventHandler, COREWEBVIEW2_WEB_ERROR_STATUS,
@@ -45,6 +45,15 @@ mod imp {
     const MAX_VERIFICATION_RETRIES: u8 = 2;
     const DOWNLOAD_ABORT_GRACE: Duration = Duration::from_millis(900);
     const EXTERNAL_URI_NAVIGATION_WINDOW: Duration = Duration::from_secs(5);
+    const COMPATIBILITY_REQUEST_EVENT: &str = "nebula-site-compatibility-request";
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CompatibilityRequestPayload {
+        tab_label: String,
+        url: String,
+        error_status: String,
+    }
 
     pub fn set_ui_locale(locale: &str) {
         let normalized = if locale.eq_ignore_ascii_case("tr") {
@@ -158,6 +167,31 @@ mod imp {
             }
             url
         }
+    }
+
+    fn compatibility_request_url(value: &str) -> Option<String> {
+        let parsed = url::Url::parse(value).ok()?;
+        (matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some())
+            .then(|| parsed.to_string())
+    }
+
+    fn emit_compatibility_request(
+        app: &AppHandle,
+        label: &str,
+        failed_url: &str,
+        error_status: &str,
+    ) {
+        let Some(url) = compatibility_request_url(failed_url) else {
+            return;
+        };
+        let _ = app.emit(
+            COMPATIBILITY_REQUEST_EVENT,
+            CompatibilityRequestPayload {
+                tab_label: label.to_string(),
+                url,
+                error_status: error_status.to_string(),
+            },
+        );
     }
 
     fn build_error_page_url(retry_url: &str, error_status: &str, locale: &str) -> String {
@@ -344,6 +378,7 @@ mod imp {
                     let locale = current_ui_locale();
                     let error_url = build_error_page_url(&failed_url, &error_status, &locale);
                     navigate_webview(&core, &error_url);
+                    emit_compatibility_request(&app_for_main, &label, &failed_url, &error_status);
                 });
             });
         });
@@ -462,12 +497,15 @@ mod imp {
                         }
 
                         let locale = current_ui_locale();
-                        let error_url = build_error_page_url(
-                            &failed_url,
-                            &format!("{error_status:?}"),
-                            &locale,
-                        );
+                        let error_status = format!("{error_status:?}");
+                        let error_url = build_error_page_url(&failed_url, &error_status, &locale);
                         navigate_webview(&webview, &error_url);
+                        emit_compatibility_request(
+                            &app_for_handler,
+                            &label_for_handler,
+                            &failed_url,
+                            &error_status,
+                        );
                         Ok(())
                     }));
 
@@ -522,9 +560,20 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::{
-            build_error_page_url, claim_external_uri_navigation, note_external_uri_navigation,
-            retry_target_is_current, suppress_error_page,
+            build_error_page_url, claim_external_uri_navigation, compatibility_request_url,
+            note_external_uri_navigation, retry_target_is_current, suppress_error_page,
         };
+
+        #[test]
+        fn compatibility_requests_are_limited_to_http_sites() {
+            assert_eq!(
+                compatibility_request_url("https://example.com/path").as_deref(),
+                Some("https://example.com/path")
+            );
+            assert!(compatibility_request_url("data:text/html,blocked").is_none());
+            assert!(compatibility_request_url("file:///C:/secret.txt").is_none());
+            assert!(compatibility_request_url("javascript:alert(1)").is_none());
+        }
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
             COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
