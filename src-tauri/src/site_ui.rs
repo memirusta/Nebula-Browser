@@ -4,20 +4,21 @@ mod imp {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{LazyLock, Mutex};
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use serde::{Deserialize, Serialize};
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2BasicAuthenticationRequestedEventArgs,
+        ICoreWebView2, ICoreWebView2BasicAuthenticationRequestedEventArgs,
         ICoreWebView2BasicAuthenticationRequestedEventHandler, ICoreWebView2Deferral,
         ICoreWebView2LaunchingExternalUriSchemeEventArgs,
         ICoreWebView2LaunchingExternalUriSchemeEventHandler,
-        ICoreWebView2NewWindowRequestedEventHandler, ICoreWebView2PermissionRequestedEventArgs,
-        ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2PermissionRequestedEventHandler,
-        ICoreWebView2ScriptDialogOpeningEventArgs, ICoreWebView2ScriptDialogOpeningEventHandler,
+        ICoreWebView2NewWindowRequestedEventArgs, ICoreWebView2NewWindowRequestedEventHandler,
+        ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2PermissionRequestedEventArgs3,
+        ICoreWebView2PermissionRequestedEventHandler, ICoreWebView2ScriptDialogOpeningEventArgs,
+        ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WebMessageReceivedEventArgs,
         ICoreWebView2WebMessageReceivedEventHandler, ICoreWebView2WindowCloseRequestedEventHandler,
-        ICoreWebView2_10, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
+        ICoreWebView2_10, ICoreWebView2_13, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
         COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
         COREWEBVIEW2_SCRIPT_DIALOG_KIND,
     };
@@ -29,6 +30,8 @@ mod imp {
         WindowCloseRequestedEventHandler,
     };
     use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     use windows_core::{Interface, HSTRING, PWSTR};
 
     const SITE_UI_EVENT: &str = "nebula-site-ui-request";
@@ -36,9 +39,15 @@ mod imp {
     const SITE_NEW_WINDOW_EVENT: &str = "nebula-site-new-window";
     const SITE_CLOSE_WINDOW_EVENT: &str = "nebula-site-close-window";
     const SITE_POINTER_DOWN_EVENT: &str = "nebula-site-pointer-down";
+    const SENSITIVE_FEATURE_USAGE_EVENT: &str = "nebula-sensitive-feature-usage";
+    const SITE_PRINT_REQUEST_EVENT: &str = "nebula-site-print-request";
+    const SITE_ZOOM_REQUEST_EVENT: &str = "nebula-site-zoom-request";
+    const SITE_NOTIFICATION_EVENT: &str = "nebula-site-notification";
     const PASSWORD_STEP_EVENT: &str = "nebula-password-step";
     const SITE_UI_TIMEOUT: Duration = Duration::from_secs(60);
+    const POPUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
     const MAX_PENDING_SITE_UI_PER_TAB: usize = 8;
+    const MAX_PENDING_POPUPS_PER_TAB: usize = 4;
 
     static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -71,6 +80,12 @@ mod imp {
         _token: i64,
     }
 
+    struct PendingPopup {
+        opener_label: String,
+        args: ICoreWebView2NewWindowRequestedEventArgs,
+        deferral: ICoreWebView2Deferral,
+    }
+
     enum PendingRequest {
         ScriptDialog {
             tab_label: String,
@@ -93,6 +108,7 @@ mod imp {
         },
         ExternalUri {
             tab_label: String,
+            uri: String,
             args: ICoreWebView2LaunchingExternalUriSchemeEventArgs,
             deferral: ICoreWebView2Deferral,
         },
@@ -113,6 +129,7 @@ mod imp {
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, Handlers>> = RefCell::new(HashMap::new());
         static PENDING: RefCell<HashMap<String, PendingRequest>> = RefCell::new(HashMap::new());
+        static PENDING_POPUPS: RefCell<HashMap<String, PendingPopup>> = RefCell::new(HashMap::new());
         static MAIN_PERMISSION_UI_HANDLER: RefCell<Option<MainPermissionUiHandler>> =
             const { RefCell::new(None) };
     }
@@ -142,10 +159,25 @@ mod imp {
 
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
+    struct PopupWindowFeaturesPayload {
+        is_popup: bool,
+        has_position: bool,
+        has_size: bool,
+        left: u32,
+        top: u32,
+        width: u32,
+        height: u32,
+    }
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct NewWindowPayload {
+        request_id: String,
         tab_label: String,
         uri: String,
         user_initiated: bool,
+        private_mode: bool,
+        features: PopupWindowFeaturesPayload,
     }
 
     #[derive(Clone, Serialize)]
@@ -163,6 +195,29 @@ mod imp {
         url: String,
         username: String,
         password: String,
+    }
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SiteNotificationPayload {
+        id: String,
+        tab_label: String,
+        origin: String,
+        title: String,
+        body: String,
+        icon_url: String,
+        timestamp_ms: u64,
+        requires_native_toast: bool,
+    }
+
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SensitiveFeatureUsagePayload {
+        tab_label: String,
+        origin: String,
+        camera: bool,
+        microphone: bool,
+        location: bool,
     }
 
     #[derive(Debug, Deserialize)]
@@ -195,6 +250,43 @@ mod imp {
   const canReportSitePointerDown =
     window.location.protocol === 'http:' ||
     window.location.protocol === 'https:';
+
+  // WebView2 normally routes window.print() to Chromium's built-in print UI.
+  // Keep all print entry points inside Nebula by forwarding the request to the
+  // shell. The original function remains the fallback for internal/opaque
+  // documents where Wry cannot safely receive a WebMessage.
+  const nativeWindowPrint =
+    typeof window.print === 'function'
+      ? window.print.bind(window)
+      : null;
+
+  function requestNebulaPrint() {
+    if (!canReportSitePointerDown) {
+      if (nativeWindowPrint) nativeWindowPrint();
+      return;
+    }
+
+    try {
+      bridge.postMessage(JSON.stringify({
+        type: 'nebula-print-request',
+        title: String(document.title || '').slice(0, 1024),
+        url: String(window.location.href || '').slice(0, 8192)
+      }));
+    } catch (_) {
+      if (nativeWindowPrint) nativeWindowPrint();
+    }
+  }
+
+  try {
+    Object.defineProperty(window, 'print', {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: requestNebulaPrint
+    });
+  } catch (_) {
+    try { window.print = requestNebulaPrint; } catch (_) {}
+  }
 
   function isVisibleInput(input) {
     try {
@@ -374,6 +466,19 @@ mod imp {
   }
 
   if (canReportSitePointerDown) {
+    // WebView2's built-in zoom controller is disabled so Nebula can apply the
+    // same bounded zoom steps for keyboard shortcuts and Ctrl+mouse-wheel.
+    window.addEventListener('wheel', function (event) {
+      if (!event.isTrusted || !event.ctrlKey || event.deltaY === 0) return;
+      event.preventDefault();
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-zoom-request',
+          action: event.deltaY < 0 ? 'in' : 'out'
+        }));
+      } catch (_) {}
+    }, { capture: true, passive: false });
+
     window.addEventListener('pointerdown', function (event) {
       if (!event.isTrusted) return;
 
@@ -404,6 +509,390 @@ mod imp {
       capturePasswordStep(event);
     }, true);
   }
+
+  function installSensitiveFeatureUsageObserver() {
+    if (!canReportSitePointerDown || window.__nebulaSensitiveUsageObserverInstalled) return;
+    window.__nebulaSensitiveUsageObserverInstalled = true;
+
+    const liveCameraTracks = new Set();
+    const liveMicrophoneTracks = new Set();
+    const trackedKinds = new WeakMap();
+    const locationWatches = new Set();
+    let pendingLocationRequests = 0;
+    let lastUsageKey = '';
+
+    function currentUsage() {
+      for (const track of Array.from(liveCameraTracks)) {
+        if (!track || track.readyState === 'ended') liveCameraTracks.delete(track);
+      }
+      for (const track of Array.from(liveMicrophoneTracks)) {
+        if (!track || track.readyState === 'ended') liveMicrophoneTracks.delete(track);
+      }
+      return {
+        camera: liveCameraTracks.size > 0,
+        microphone: liveMicrophoneTracks.size > 0,
+        location: pendingLocationRequests > 0 || locationWatches.size > 0
+      };
+    }
+
+    function reportUsage(force) {
+      const usage = currentUsage();
+      const key = [usage.camera, usage.microphone, usage.location].join(':');
+      if (!force && key === lastUsageKey) return;
+      lastUsageKey = key;
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-sensitive-feature-usage',
+          origin: window.location.origin,
+          camera: usage.camera,
+          microphone: usage.microphone,
+          location: usage.location
+        }));
+      } catch (_) {}
+    }
+
+    function releaseTrack(track) {
+      liveCameraTracks.delete(track);
+      liveMicrophoneTracks.delete(track);
+      reportUsage(false);
+    }
+
+    function trackDevice(track) {
+      if (!track || track.readyState === 'ended' || trackedKinds.has(track)) return track;
+      const kind = track.kind === 'video' ? 'camera' : track.kind === 'audio' ? 'microphone' : '';
+      if (!kind) return track;
+      trackedKinds.set(track, kind);
+      (kind === 'camera' ? liveCameraTracks : liveMicrophoneTracks).add(track);
+      track.addEventListener('ended', function () { releaseTrack(track); }, { once: true });
+      if (typeof track.stop === 'function') {
+        const nativeStop = track.stop.bind(track);
+        try {
+          Object.defineProperty(track, 'stop', {
+            configurable: true,
+            value: function () {
+              releaseTrack(track);
+              return nativeStop();
+            }
+          });
+        } catch (_) {}
+      }
+      reportUsage(false);
+      return track;
+    }
+
+    const mediaDevices = navigator.mediaDevices;
+    if (mediaDevices && typeof mediaDevices.getUserMedia === 'function') {
+      const nativeGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+      try {
+        Object.defineProperty(mediaDevices, 'getUserMedia', {
+          configurable: true,
+          value: function (constraints) {
+            return nativeGetUserMedia(constraints).then(function (stream) {
+              if (stream && typeof stream.getTracks === 'function') {
+                stream.getTracks().forEach(trackDevice);
+              }
+              return stream;
+            });
+          }
+        });
+      } catch (_) {}
+    }
+
+    if (typeof MediaStreamTrack !== 'undefined' && MediaStreamTrack.prototype) {
+      const nativeClone = MediaStreamTrack.prototype.clone;
+      if (typeof nativeClone === 'function') {
+        try {
+          Object.defineProperty(MediaStreamTrack.prototype, 'clone', {
+            configurable: true,
+            value: function () {
+              const cloned = nativeClone.call(this);
+              return trackedKinds.has(this) ? trackDevice(cloned) : cloned;
+            }
+          });
+        } catch (_) {}
+      }
+    }
+
+    const geolocation = navigator.geolocation;
+    if (geolocation) {
+      const nativeGetCurrentPosition = typeof geolocation.getCurrentPosition === 'function'
+        ? geolocation.getCurrentPosition.bind(geolocation)
+        : null;
+      const nativeWatchPosition = typeof geolocation.watchPosition === 'function'
+        ? geolocation.watchPosition.bind(geolocation)
+        : null;
+      const nativeClearWatch = typeof geolocation.clearWatch === 'function'
+        ? geolocation.clearWatch.bind(geolocation)
+        : null;
+
+      if (nativeGetCurrentPosition) {
+        try {
+          Object.defineProperty(geolocation, 'getCurrentPosition', {
+            configurable: true,
+            value: function (success, failure, options) {
+              pendingLocationRequests += 1;
+              reportUsage(false);
+              let settled = false;
+              const finish = function (callback, value) {
+                if (!settled) {
+                  settled = true;
+                  pendingLocationRequests = Math.max(0, pendingLocationRequests - 1);
+                  reportUsage(false);
+                }
+                if (typeof callback === 'function') callback(value);
+              };
+              return nativeGetCurrentPosition(
+                function (position) { finish(success, position); },
+                function (error) { finish(failure, error); },
+                options
+              );
+            }
+          });
+        } catch (_) {}
+      }
+
+      if (nativeWatchPosition && nativeClearWatch) {
+        try {
+          Object.defineProperty(geolocation, 'watchPosition', {
+            configurable: true,
+            value: function (success, failure, options) {
+              const watchId = nativeWatchPosition(success, failure, options);
+              locationWatches.add(watchId);
+              reportUsage(false);
+              return watchId;
+            }
+          });
+          Object.defineProperty(geolocation, 'clearWatch', {
+            configurable: true,
+            value: function (watchId) {
+              locationWatches.delete(watchId);
+              reportUsage(false);
+              return nativeClearWatch(watchId);
+            }
+          });
+        } catch (_) {}
+      }
+    }
+
+    window.addEventListener('pagehide', function () {
+      liveCameraTracks.clear();
+      liveMicrophoneTracks.clear();
+      locationWatches.clear();
+      pendingLocationRequests = 0;
+      reportUsage(true);
+    }, true);
+    reportUsage(true);
+  }
+
+  installSensitiveFeatureUsageObserver();
+
+  function installInstagramMessageObserver() {
+    const hostname = String(window.location.hostname || '').toLowerCase();
+    if (hostname !== 'instagram.com' && !hostname.endsWith('.instagram.com')) return;
+    if (window.__nebulaInstagramMessageObserverInstalled) return;
+    window.__nebulaInstagramMessageObserverInstalled = true;
+
+    const seen = new WeakSet();
+    let observer = null;
+    let lastMessageKey = '';
+    let lastMessageAt = 0;
+
+    function visibleComposer() {
+      const candidates = document.querySelectorAll(
+        '[contenteditable]:not([contenteditable="false"]), textarea, input[type="text"]'
+      );
+      for (let index = candidates.length - 1; index >= 0; index -= 1) {
+        const rect = candidates[index].getBoundingClientRect();
+        if (
+          !candidates[index].closest('[aria-hidden="true"]') &&
+          rect.width > 120 &&
+          rect.height > 15 &&
+          rect.bottom > window.innerHeight * 0.55
+        ) {
+          return candidates[index];
+        }
+      }
+      return null;
+    }
+
+    function conversationName(composerRect) {
+      const headings = document.querySelectorAll('main h1, main h2, main [role="heading"]');
+      for (let index = 0; index < headings.length; index += 1) {
+        const heading = headings[index];
+        const rect = heading.getBoundingClientRect();
+        const text = String(heading.textContent || '').trim();
+        if (
+          text &&
+          text.length <= 80 &&
+          rect.width > 0 &&
+          rect.left >= composerRect.left - 48 &&
+          rect.bottom < composerRect.top
+        ) {
+          return text;
+        }
+      }
+      return 'Instagram';
+    }
+
+    function reportCandidate(candidate) {
+      if (!candidate || seen.has(candidate)) return;
+      if (candidate.closest('button, a, input, textarea')) return;
+
+      const composer = visibleComposer();
+      if (!composer || !window.location.pathname.startsWith('/direct/t/')) return;
+      const composerRect = composer.getBoundingClientRect();
+      const rect = candidate.getBoundingClientRect();
+      const text = String(candidate.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text || text.length > 500 || rect.width <= 0 || rect.height <= 0) return;
+      // Instagram can attach an empty message node and fill its text in a later
+      // mutation. Mark it seen only after it has become measurable and readable.
+      seen.add(candidate);
+      if (rect.bottom >= composerRect.top || rect.top < 64) return;
+      if (rect.left < composerRect.left - 48) return;
+      if (rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2) return;
+      if (/^(seen|new messages|just now|\d+[smhd])$/i.test(text)) return;
+
+      const now = Date.now();
+      const title = conversationName(composerRect);
+      const key = title + '\u0000' + text;
+      if (key === lastMessageKey && now - lastMessageAt < 5000) return;
+      lastMessageKey = key;
+      lastMessageAt = now;
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-site-notification-content',
+          origin: window.location.origin,
+          title: title,
+          body: text
+        }));
+      } catch (_) {}
+    }
+
+    function inspectNode(node) {
+      const element = node && node.nodeType === Node.ELEMENT_NODE
+        ? node
+        : node && node.parentElement;
+      if (!element) return;
+      if (element.matches && element.matches('[dir="auto"]')) reportCandidate(element);
+      if (element.querySelectorAll) {
+        const candidates = element.querySelectorAll('[dir="auto"]');
+        for (let index = 0; index < candidates.length; index += 1) {
+          reportCandidate(candidates[index]);
+        }
+      }
+    }
+
+    function arm() {
+      if (observer) return;
+      if (!document.body || !window.location.pathname.startsWith('/direct/t/')) {
+        window.setTimeout(arm, 750);
+        return;
+      }
+      const composer = visibleComposer();
+      if (!composer) {
+        window.setTimeout(arm, 500);
+        return;
+      }
+      const existing = document.querySelectorAll('[dir="auto"]');
+      for (let index = 0; index < existing.length; index += 1) seen.add(existing[index]);
+      observer = new MutationObserver(function (mutations) {
+        for (let index = 0; index < mutations.length; index += 1) {
+          const mutation = mutations[index];
+          if (mutation.type === 'characterData') inspectNode(mutation.target);
+          for (let addedIndex = 0; addedIndex < mutation.addedNodes.length; addedIndex += 1) {
+            inspectNode(mutation.addedNodes[addedIndex]);
+          }
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
+
+    window.setTimeout(arm, 300);
+  }
+
+  function installWhatsAppMessageObserver() {
+    if (String(window.location.hostname || '').toLowerCase() !== 'web.whatsapp.com') return;
+    if (window.__nebulaWhatsAppMessageObserverInstalled) return;
+    window.__nebulaWhatsAppMessageObserverInstalled = true;
+
+    const seen = new WeakSet();
+    let lastMessageKey = '';
+    let lastMessageAt = 0;
+
+    function conversationName(candidate) {
+      const copyable = candidate.querySelector('[data-pre-plain-text]');
+      const prefix = String(copyable?.getAttribute('data-pre-plain-text') || '');
+      const matched = prefix.match(/\]\s*([^:]{1,80}):\s*$/);
+      if (matched && matched[1]) return matched[1].trim();
+      const titled = document.querySelector(
+        'header [data-testid="conversation-info-header-chat-title"], header span[title]'
+      );
+      return String(titled?.getAttribute('title') || titled?.textContent || 'WhatsApp').trim();
+    }
+
+    function reportIncoming(candidate) {
+      if (!candidate || seen.has(candidate)) return;
+      const textNode = candidate.querySelector('.selectable-text');
+      const text = String(textNode?.innerText || textNode?.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!text || text.length > 500) return;
+      seen.add(candidate);
+      const title = conversationName(candidate).slice(0, 80) || 'WhatsApp';
+      const now = Date.now();
+      const key = title + '\u0000' + text;
+      if (key === lastMessageKey && now - lastMessageAt < 5000) return;
+      lastMessageKey = key;
+      lastMessageAt = now;
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-site-notification-content',
+          origin: window.location.origin,
+          title: title,
+          body: text
+        }));
+      } catch (_) {}
+    }
+
+    function inspectNode(node) {
+      const element = node && node.nodeType === Node.ELEMENT_NODE
+        ? node
+        : node && node.parentElement;
+      if (!element) return;
+      const incoming = element.matches?.('.message-in')
+        ? element
+        : element.closest?.('.message-in');
+      if (incoming) reportIncoming(incoming);
+      const descendants = element.querySelectorAll?.('.message-in') || [];
+      for (let index = 0; index < descendants.length; index += 1) {
+        reportIncoming(descendants[index]);
+      }
+    }
+
+    function arm() {
+      if (!document.body) {
+        window.setTimeout(arm, 500);
+        return;
+      }
+      const existing = document.querySelectorAll('.message-in');
+      for (let index = 0; index < existing.length; index += 1) seen.add(existing[index]);
+      const observer = new MutationObserver(function (mutations) {
+        for (let index = 0; index < mutations.length; index += 1) {
+          const mutation = mutations[index];
+          if (mutation.type === 'characterData') inspectNode(mutation.target);
+          for (let addedIndex = 0; addedIndex < mutation.addedNodes.length; addedIndex += 1) {
+            inspectNode(mutation.addedNodes[addedIndex]);
+          }
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }
+
+    window.setTimeout(arm, 300);
+  }
+
+  if (canReportSitePointerDown) installInstagramMessageObserver();
+  if (canReportSitePointerDown) installWhatsAppMessageObserver();
 
   if (typeof Navigator === 'undefined') return;
 
@@ -454,6 +943,53 @@ mod imp {
         format!("{kind}-{id}")
     }
 
+    fn is_safe_external_uri(uri: &str) -> bool {
+        if uri.is_empty() || uri.len() > 32_768 || uri.contains('\0') {
+            return false;
+        }
+        let Ok(parsed) = url::Url::parse(uri) else {
+            return false;
+        };
+        !matches!(
+            parsed.scheme().to_ascii_lowercase().as_str(),
+            "http"
+                | "https"
+                | "file"
+                | "data"
+                | "javascript"
+                | "vbscript"
+                | "about"
+                | "blob"
+                | "filesystem"
+        )
+    }
+
+    fn launch_external_uri(uri: &str) -> Result<(), String> {
+        if !is_safe_external_uri(uri) {
+            return Err("external URI scheme is not allowed".to_string());
+        }
+
+        let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+        let target: Vec<u16> = uri.encode_utf16().chain(Some(0)).collect();
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                PCWSTR(operation.as_ptr()),
+                PCWSTR(target.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize <= 32 {
+            return Err(format!(
+                "Windows could not open the external application (ShellExecuteW={})",
+                result.0 as isize
+            ));
+        }
+        Ok(())
+    }
+
     fn take_string<F>(read: F) -> String
     where
         F: FnOnce(*mut PWSTR) -> windows_core::Result<()>,
@@ -469,12 +1005,112 @@ mod imp {
         text
     }
 
+    fn validated_http_document_source_values(
+        message_source: &str,
+        top_level_source: &str,
+    ) -> Option<(url::Url, String)> {
+        let mut message_url = url::Url::parse(message_source).ok()?;
+        let mut top_level_url = url::Url::parse(top_level_source).ok()?;
+        if !matches!(message_url.scheme(), "http" | "https")
+            || !matches!(top_level_url.scheme(), "http" | "https")
+        {
+            return None;
+        }
+        message_url.set_fragment(None);
+        top_level_url.set_fragment(None);
+        if message_url != top_level_url {
+            return None;
+        }
+        let origin = message_url.origin().ascii_serialization();
+        Some((message_url, origin))
+    }
+
+    pub(crate) unsafe fn validated_web_message_source(
+        sender: &ICoreWebView2,
+        args: &ICoreWebView2WebMessageReceivedEventArgs,
+    ) -> Option<(url::Url, String)> {
+        let message_source = take_string(|value| args.Source(value));
+        let top_level_source = take_string(|value| sender.Source(value));
+        validated_http_document_source_values(&message_source, &top_level_source)
+    }
+
     fn host_label(uri: &str) -> String {
         url::Url::parse(uri)
             .ok()
             .and_then(|parsed| parsed.host_str().map(str::to_string))
             .filter(|host| !host.is_empty())
             .unwrap_or_else(|| "Website".to_string())
+    }
+
+    fn is_site_webview_label(label: &str) -> bool {
+        label.starts_with("nebula-tab-") || label.starts_with("nebula-popup-content-")
+    }
+
+    unsafe fn popup_window_features(
+        args: &ICoreWebView2NewWindowRequestedEventArgs,
+    ) -> PopupWindowFeaturesPayload {
+        let Ok(features) = args.WindowFeatures() else {
+            return PopupWindowFeaturesPayload {
+                is_popup: false,
+                has_position: false,
+                has_size: false,
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+            };
+        };
+
+        let mut has_position = windows_core::BOOL::default();
+        let mut has_size = windows_core::BOOL::default();
+        let mut should_display_toolbar = windows_core::BOOL::default();
+        let _ = features.HasPosition(&mut has_position);
+        let _ = features.HasSize(&mut has_size);
+        let has_popup_disposition = features
+            .ShouldDisplayToolbar(&mut should_display_toolbar)
+            .is_ok();
+
+        let mut left = 0u32;
+        let mut top = 0u32;
+        let mut width = 0u32;
+        let mut height = 0u32;
+
+        if has_position.as_bool() {
+            let _ = features.Left(&mut left);
+            let _ = features.Top(&mut top);
+        }
+        if has_size.as_bool() {
+            let _ = features.Width(&mut width);
+            let _ = features.Height(&mut height);
+        }
+
+        PopupWindowFeaturesPayload {
+            // WebView2 98+ reports all browser chrome flags as false when the
+            // requested surface is expected to be a popup, and true otherwise.
+            // Explicit geometry is the safe fallback for older runtimes.
+            is_popup: if has_popup_disposition {
+                !should_display_toolbar.as_bool()
+            } else {
+                has_position.as_bool() || has_size.as_bool()
+            },
+            has_position: has_position.as_bool(),
+            has_size: has_size.as_bool(),
+            left,
+            top,
+            width,
+            height,
+        }
+    }
+
+    unsafe fn webview_private_mode(core: &ICoreWebView2) -> bool {
+        let Ok(core13) = core.cast::<ICoreWebView2_13>() else {
+            return false;
+        };
+        let Ok(profile) = core13.Profile() else {
+            return false;
+        };
+        let mut private_mode = windows_core::BOOL::default();
+        profile.IsInPrivateModeEnabled(&mut private_mode).is_ok() && private_mode.as_bool()
     }
 
     fn script_dialog_kind(kind: COREWEBVIEW2_SCRIPT_DIALOG_KIND) -> &'static str {
@@ -501,6 +1137,7 @@ mod imp {
             10 => "local-fonts",
             11 => "midi-sysex",
             12 => "window-management",
+            13 => "persistent-storage",
             _ => "unknown",
         }
     }
@@ -593,6 +1230,68 @@ mod imp {
                 tab_label
             })
         })
+    }
+
+    fn cancel_popup_request(request: PendingPopup) {
+        unsafe {
+            let _ = request.args.SetHandled(true);
+            let _ = request.deferral.Complete();
+        }
+    }
+
+    fn remove_and_cancel_pending_popup(request_id: &str) -> Option<String> {
+        PENDING_POPUPS.with(|pending| {
+            pending.borrow_mut().remove(request_id).map(|request| {
+                let opener_label = request.opener_label.clone();
+                cancel_popup_request(request);
+                opener_label
+            })
+        })
+    }
+
+    fn expire_popup_request(request_id: &str) {
+        let _ = remove_and_cancel_pending_popup(request_id);
+    }
+
+    fn schedule_popup_timeout(app: &AppHandle, request_id: String) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(POPUP_REQUEST_TIMEOUT).await;
+            let _ = app.run_on_main_thread(move || {
+                expire_popup_request(&request_id);
+            });
+        });
+    }
+
+    fn enqueue_popup_request(app: &AppHandle, payload: NewWindowPayload, request: PendingPopup) {
+        let request_id = payload.request_id.clone();
+        let opener_label = request.opener_label.clone();
+        let inserted = PENDING_POPUPS.with(|pending| {
+            let mut pending = pending.borrow_mut();
+            if !has_pending_capacity(
+                pending
+                    .values()
+                    .map(|request| request.opener_label.as_str()),
+                &opener_label,
+                MAX_PENDING_POPUPS_PER_TAB,
+            ) {
+                return Err(request);
+            }
+            pending.insert(request_id.clone(), request);
+            Ok(())
+        });
+
+        if let Err(request) = inserted {
+            cancel_popup_request(request);
+            return;
+        }
+
+        if app.emit(SITE_NEW_WINDOW_EVENT, payload).is_err() {
+            let _ = remove_and_cancel_pending_popup(&request_id);
+            return;
+        }
+
+        schedule_popup_timeout(app, request_id);
     }
 
     fn expire_site_ui_request(app: &AppHandle, request_id: &str) {
@@ -748,9 +1447,9 @@ mod imp {
                             *configured = true;
                         }
                     }
-                    Err(error) => {
+                    Err(_error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!("[nebula site ui] main permission UI: {error}");
+                        eprintln!("[nebula site ui] main permission UI: {_error}");
                     }
                 }
             })
@@ -767,8 +1466,10 @@ mod imp {
     }
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
-        if !label.starts_with("nebula-tab-") {
-            return Err("site UI handlers are limited to browser tabs".to_string());
+        if !is_site_webview_label(label) {
+            return Err(
+                "site UI handlers are limited to browser tabs and popup content".to_string(),
+            );
         }
         if CONFIGURED
             .lock()
@@ -807,12 +1508,93 @@ mod imp {
                     let protocol_app = app_for_handlers.clone();
                     let protocol_label = label_for_handlers.clone();
                     let web_message =
-                        WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+                        WebMessageReceivedEventHandler::create(Box::new(move |sender, args| {
+                            let Some(sender) = sender else { return Ok(()) };
                             let Some(args) = args else { return Ok(()) };
+                            let Some((source_url, source_origin)) =
+                                validated_web_message_source(&sender, &args)
+                            else {
+                                return Ok(());
+                            };
                             let raw = take_string(|value| args.TryGetWebMessageAsString(value));
                             let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
                                 return Ok(());
                             };
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-site-notification-content")
+                            {
+                                let host = source_url.host_str().unwrap_or_default();
+                                let source_has_content_adapter = source_url.scheme() == "https"
+                                    && (host.eq_ignore_ascii_case("web.whatsapp.com")
+                                        || host.eq_ignore_ascii_case("instagram.com")
+                                        || host.to_ascii_lowercase().ends_with(".instagram.com"));
+                                let claimed_origin = value
+                                    .get("origin")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let title = value
+                                    .get("title")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .trim();
+                                let body = value
+                                    .get("body")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .trim();
+
+                                if source_has_content_adapter
+                                    && source_origin == claimed_origin
+                                    && !title.is_empty()
+                                    && title.chars().count() <= 80
+                                    && !body.is_empty()
+                                    && body.chars().count() <= 500
+                                    && crate::tab_metadata::app_is_backgrounded(&protocol_app)
+                                    && crate::webview_privacy::title_unread_notification_allowed(
+                                        &protocol_label,
+                                        &source_origin,
+                                    )
+                                {
+                                    crate::tab_metadata::record_content_notification(
+                                        &protocol_label,
+                                    );
+                                    let show_content =
+                                        crate::webview_privacy::notification_content_preview_allowed(
+                                            &protocol_label,
+                                        );
+                                    let timestamp_ms = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis()
+                                        as u64;
+                                    let _ = protocol_app.emit(
+                                        SITE_NOTIFICATION_EVENT,
+                                        SiteNotificationPayload {
+                                            id: format!(
+                                                "site-content-{timestamp_ms}-{}",
+                                                protocol_label
+                                            ),
+                                            tab_label: protocol_label.clone(),
+                                            origin: source_origin,
+                                            title: if show_content {
+                                                title.to_string()
+                                            } else {
+                                                String::new()
+                                            },
+                                            body: if show_content {
+                                                body.to_string()
+                                            } else {
+                                                String::new()
+                                            },
+                                            icon_url: String::new(),
+                                            timestamp_ms,
+                                            requires_native_toast: true,
+                                        },
+                                    );
+                                }
+                                return Ok(());
+                            }
 
                             if value.get("type").and_then(serde_json::Value::as_str)
                                 == Some("nebula-site-pointer-down")
@@ -823,6 +1605,87 @@ mod imp {
                                         "tabLabel": protocol_label.clone(),
                                     }),
                                 );
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-print-request")
+                            {
+                                let title = value
+                                    .get("title")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let url = value
+                                    .get("url")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let url_matches_source = url::Url::parse(url).ok().is_some_and(
+                                    |url| url.origin().ascii_serialization() == source_origin,
+                                );
+                                if title.len() <= 1024 && url.len() <= 8192 && url_matches_source {
+                                    let _ = protocol_app.emit(
+                                        SITE_PRINT_REQUEST_EVENT,
+                                        serde_json::json!({
+                                            "tabLabel": protocol_label.clone(),
+                                            "title": title,
+                                            "url": url,
+                                        }),
+                                    );
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-sensitive-feature-usage")
+                            {
+                                let claimed_origin = value
+                                    .get("origin")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let camera = value
+                                    .get("camera")
+                                    .and_then(serde_json::Value::as_bool);
+                                let microphone = value
+                                    .get("microphone")
+                                    .and_then(serde_json::Value::as_bool);
+                                let location = value
+                                    .get("location")
+                                    .and_then(serde_json::Value::as_bool);
+                                if claimed_origin == source_origin {
+                                    if let (Some(camera), Some(microphone), Some(location)) =
+                                        (camera, microphone, location)
+                                    {
+                                        let _ = protocol_app.emit(
+                                            SENSITIVE_FEATURE_USAGE_EVENT,
+                                            SensitiveFeatureUsagePayload {
+                                                tab_label: protocol_label.clone(),
+                                                origin: source_origin.clone(),
+                                                camera,
+                                                microphone,
+                                                location,
+                                            },
+                                        );
+                                    }
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-zoom-request")
+                            {
+                                let action = value
+                                    .get("action")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                if matches!(action, "in" | "out") {
+                                    let _ = protocol_app.emit(
+                                        SITE_ZOOM_REQUEST_EVENT,
+                                        serde_json::json!({
+                                            "tabLabel": protocol_label.clone(),
+                                            "action": action,
+                                        }),
+                                    );
+                                }
                                 return Ok(());
                             }
 
@@ -849,8 +1712,11 @@ mod imp {
                                     .get("password")
                                     .and_then(serde_json::Value::as_str)
                                     .unwrap_or_default();
-                                let is_http_origin =
-                                    origin.starts_with("https://") || origin.starts_with("http://");
+                                let claimed_url_matches_source = url::Url::parse(url)
+                                    .ok()
+                                    .is_some_and(|url| {
+                                        url.origin().ascii_serialization() == source_origin
+                                    });
                                 let lengths_ok = origin.len() <= 2048
                                     && url.len() <= 8192
                                     && username.len() <= 1024
@@ -863,7 +1729,11 @@ mod imp {
                                     _ => false,
                                 };
 
-                                if is_http_origin && lengths_ok && payload_ok {
+                                if origin == source_origin
+                                    && claimed_url_matches_source
+                                    && lengths_ok
+                                    && payload_ok
+                                {
                                     let _ = protocol_app.emit(
                                         PASSWORD_STEP_EVENT,
                                         PasswordStepPayload {
@@ -895,6 +1765,14 @@ mod imp {
                             else {
                                 return Ok(());
                             };
+                            if url::Url::parse(&origin)
+                                .ok()
+                                .map(|url| url.origin().ascii_serialization())
+                                .as_deref()
+                                != Some(source_origin.as_str())
+                            {
+                                return Ok(());
+                            }
                             let id = next_request_id("protocol-handler");
                             enqueue_request(
                                 &protocol_app,
@@ -939,6 +1817,13 @@ mod imp {
                                 let external_uri = take_string(|value| args.Uri(value));
                                 let initiating_origin =
                                     take_string(|value| args.InitiatingOrigin(value));
+                                crate::tab_error_page::note_external_uri_navigation(
+                                    &external_label,
+                                );
+                                if !is_safe_external_uri(&external_uri) {
+                                    deferral.Complete()?;
+                                    return Ok(());
+                                }
                                 let mut initiated = windows_core::BOOL::default();
                                 let _ = args.IsUserInitiated(&mut initiated);
 
@@ -961,7 +1846,7 @@ mod imp {
                                         request_type: "external-uri".to_string(),
                                         uri: initiating_origin.clone(),
                                         title: host_label(&initiating_origin),
-                                        message: external_uri,
+                                        message: external_uri.clone(),
                                         default_text: String::new(),
                                         dialog_kind: None,
                                         permission_kind: Some(scheme),
@@ -970,6 +1855,7 @@ mod imp {
                                     },
                                     PendingRequest::ExternalUri {
                                         tab_label: external_label.clone(),
+                                        uri: external_uri,
                                         args,
                                         deferral,
                                     },
@@ -1028,21 +1914,43 @@ mod imp {
 
                     let new_window_app = app_for_handlers.clone();
                     let new_window_label = label_for_handlers.clone();
+                    let new_window_private_mode = webview_private_mode(&core);
                     let new_window =
                         NewWindowRequestedEventHandler::create(Box::new(move |_, args| {
                             let Some(args) = args else { return Ok(()) };
+                            let deferral = args.GetDeferral()?;
                             let uri = take_string(|value| args.Uri(value));
                             let mut initiated = windows_core::BOOL::default();
                             let _ = args.IsUserInitiated(&mut initiated);
-                            args.SetHandled(true)?;
-                            let _ = new_window_app.emit(
-                                SITE_NEW_WINDOW_EVENT,
-                                NewWindowPayload {
-                                    tab_label: new_window_label.clone(),
-                                    uri,
-                                    user_initiated: initiated.as_bool(),
-                                },
-                            );
+                            let features = popup_window_features(&args);
+                            let request_id = next_request_id("popup");
+                            let payload = NewWindowPayload {
+                                request_id: request_id.clone(),
+                                tab_label: new_window_label.clone(),
+                                uri,
+                                user_initiated: initiated.as_bool(),
+                                private_mode: new_window_private_mode,
+                                features,
+                            };
+
+                            if payload.features.is_popup {
+                                enqueue_popup_request(
+                                    &new_window_app,
+                                    payload,
+                                    PendingPopup {
+                                        opener_label: new_window_label.clone(),
+                                        args,
+                                        deferral,
+                                    },
+                                );
+                            } else {
+                                // A normal target=_blank/new-window request belongs in
+                                // Nebula's tab strip. Cancel WebView2's unmanaged window
+                                // and let the shell create the tab from the requested URI.
+                                args.SetHandled(true)?;
+                                deferral.Complete()?;
+                                let _ = new_window_app.emit(SITE_NEW_WINDOW_EVENT, payload);
+                            }
                             Ok(())
                         }));
                     let mut new_window_token = 0i64;
@@ -1141,9 +2049,9 @@ mod imp {
                             }
                         }
                     }
-                    Err(error) => {
+                    Err(_error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!("[nebula site ui] {}: {}", label_for_handlers, error);
+                        eprintln!("[nebula site ui] {}: {}", label_for_handlers, _error);
                     }
                 }
             })
@@ -1160,6 +2068,91 @@ mod imp {
         }
     }
 
+    pub fn attach_popup(
+        app: AppHandle,
+        request_id: String,
+        popup_label: String,
+    ) -> Result<(), String> {
+        if !popup_label.starts_with("nebula-popup-content-") {
+            return Err("popup target label is not allowed".to_string());
+        }
+
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let app_for_main = app.clone();
+
+        app.run_on_main_thread(move || {
+            let Some(webview) = app_for_main.get_webview(&popup_label) else {
+                let _ = remove_and_cancel_pending_popup(&request_id);
+                let _ = tx.send(Err(format!("webview '{popup_label}' not found")));
+                return;
+            };
+
+            let callback_request_id = request_id.clone();
+            let callback_tx = tx.clone();
+            let queued = webview.with_webview(move |inner| {
+                let result = PENDING_POPUPS.with(|pending| {
+                    let request = pending
+                        .borrow_mut()
+                        .remove(&callback_request_id)
+                        .ok_or_else(|| {
+                            format!("popup request '{callback_request_id}' is no longer pending")
+                        })?;
+
+                    let attach_result = unsafe {
+                        (|| -> Result<(), String> {
+                            let core = inner
+                                .controller()
+                                .CoreWebView2()
+                                .map_err(|error| error.to_string())?;
+                            request
+                                .args
+                                .SetNewWindow(&core)
+                                .map_err(|error| error.to_string())?;
+                            request
+                                .args
+                                .SetHandled(true)
+                                .map_err(|error| error.to_string())?;
+                            request
+                                .deferral
+                                .Complete()
+                                .map_err(|error| error.to_string())?;
+                            Ok(())
+                        })()
+                    };
+
+                    if attach_result.is_err() {
+                        cancel_popup_request(request);
+                    }
+
+                    attach_result
+                });
+
+                let _ = callback_tx.send(result);
+            });
+
+            if let Err(error) = queued {
+                let _ = remove_and_cancel_pending_popup(&request_id);
+                let _ = tx.send(Err(error.to_string()));
+            }
+        })
+        .map_err(|error| error.to_string())?;
+
+        rx.recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "timed out attaching popup webview".to_string())?
+    }
+
+    pub fn cancel_popup(app: AppHandle, request_id: String) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let _ = remove_and_cancel_pending_popup(&request_id);
+            let _ = tx.send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "timed out cancelling popup request".to_string())?
+    }
+
     pub fn respond(
         app: AppHandle,
         request_id: String,
@@ -1172,6 +2165,7 @@ mod imp {
                     format!("site UI request '{request_id}' is no longer pending")
                 })?;
 
+                let mut external_uri_to_launch = None;
                 let native_result = unsafe {
                     (|| -> windows_core::Result<()> {
                         match request {
@@ -1217,15 +2211,31 @@ mod imp {
                                 deferral.Complete()?;
                             }
                             PendingRequest::ProtocolHandler { .. } => {}
-                            PendingRequest::ExternalUri { args, deferral, .. } => {
-                                args.SetCancel(!response.accepted)?;
+                            PendingRequest::ExternalUri {
+                                uri,
+                                args,
+                                deferral,
+                                ..
+                            } => {
+                                // Keep WebView2 cancelled so its Edge-branded
+                                // confirmation dialog never appears. After the
+                                // user accepts Nebula's prompt, launch the exact
+                                // URI captured from the native event ourselves.
+                                args.SetCancel(true)?;
                                 deferral.Complete()?;
+                                if response.accepted {
+                                    external_uri_to_launch = Some(uri);
+                                }
                             }
                         }
                         Ok(())
                     })()
                 };
-                native_result.map_err(|error| error.to_string())
+                native_result.map_err(|error| error.to_string())?;
+                if let Some(uri) = external_uri_to_launch {
+                    launch_external_uri(&uri)?;
+                }
+                Ok(())
             });
             let _ = tx.send(result);
         })
@@ -1288,6 +2298,18 @@ mod imp {
                     },
                 );
             }
+
+            let popup_ids = PENDING_POPUPS.with(|pending| {
+                pending
+                    .borrow()
+                    .iter()
+                    .filter(|(_, request)| request.opener_label == label)
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            });
+            for id in popup_ids {
+                let _ = remove_and_cancel_pending_popup(&id);
+            }
         });
     }
 
@@ -1349,12 +2371,53 @@ mod imp {
             assert_eq!(remove_and_cancel_pending(id).as_deref(), Some("tab-a"));
             PENDING.with(|pending| assert!(!pending.borrow().contains_key(id)));
         }
+
+        #[test]
+        fn web_messages_require_the_exact_top_level_http_document() {
+            let validated = validated_http_document_source_values(
+                "https://example.com/account#message",
+                "https://example.com/account#current",
+            )
+            .expect("same document should be accepted");
+            assert_eq!(validated.1, "https://example.com");
+
+            assert!(validated_http_document_source_values(
+                "https://example.com/embedded",
+                "https://example.com/account",
+            )
+            .is_none());
+            assert!(validated_http_document_source_values(
+                "https://attacker.example/account",
+                "https://example.com/account",
+            )
+            .is_none());
+            assert!(validated_http_document_source_values(
+                "data:text/html,opaque",
+                "data:text/html,opaque",
+            )
+            .is_none());
+        }
+
+        #[test]
+        fn external_uri_launcher_rejects_web_and_unsafe_schemes() {
+            assert!(is_safe_external_uri("whatsapp://send?phone=905551112233"));
+            assert!(is_safe_external_uri("mailto:hello@example.com"));
+            assert!(!is_safe_external_uri("https://example.com"));
+            assert!(!is_safe_external_uri(
+                "file:///C:/Windows/System32/calc.exe"
+            ));
+            assert!(!is_safe_external_uri("javascript:alert(1)"));
+            assert!(!is_safe_external_uri("not a URI"));
+        }
     }
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) use imp::validated_web_message_source;
+#[cfg(target_os = "windows")]
 pub use imp::{
-    request_permission, respond, setup, setup_main_permission_ui, teardown, SiteUiResponse,
+    attach_popup, cancel_popup, request_permission, respond, setup, setup_main_permission_ui,
+    teardown, SiteUiResponse,
 };
 
 #[cfg(not(target_os = "windows"))]
@@ -1384,6 +2447,20 @@ pub fn setup_main_permission_ui(_app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn attach_popup(
+    _app: tauri::AppHandle,
+    _request_id: String,
+    _popup_label: String,
+) -> Result<(), String> {
+    Err("popup windows are currently supported on Windows".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn cancel_popup(_app: tauri::AppHandle, _request_id: String) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn respond(

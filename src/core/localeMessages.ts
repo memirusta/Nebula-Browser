@@ -37,15 +37,15 @@ export const LOCALE_MESSAGES = {
   },
   profileTitle: { tr: 'Profilini ayarla', en: 'Set up your profile' },
   profileLead: {
-    tr: 'Google ile giriş yaparsan bir sonraki adımda şifreleri ve site oturumunu bağlarız. İstersen sadece ismini de yazabilirsin.',
-    en: 'Sign in with Google to link passwords and site sessions in the next step. Or enter a display name only.',
+    tr: 'Google ile giriş yaparak profilini ve Nebula Sync’i tek seferde ayarla. İstersen yalnızca bir görünen ad da kullanabilirsin.',
+    en: 'Sign in with Google to set up your profile and Nebula Sync in one step. Or use a display name only.',
   },
-  googleOpeningTauri: { tr: 'Tarayıcıda Google açılıyor…', en: 'Opening Google in your browser…' },
+  googleOpeningTauri: { tr: 'Google penceresi açılıyor…', en: 'Opening Google…' },
   googleRedirecting: { tr: "Google'a yönlendiriliyor…", en: 'Redirecting to Google…' },
   googleSignIn: { tr: 'Google ile giriş yap', en: 'Sign in with Google' },
   googleReturnHintTauri: {
-    tr: 'Sistem tarayıcında Google açılır; girişten sonra bu pencereye dön.',
-    en: 'Google opens in your system browser; return here after signing in.',
+    tr: 'Google, Nebula içinde ayrı bir pencerede açılır. Giriş tamamlanınca pencere otomatik kapanır.',
+    en: 'Google opens in a separate Nebula window. It closes automatically when sign-in finishes.',
   },
   googleRedirectUri: { tr: 'Google Console redirect URI:', en: 'Google Console redirect URI:' },
   googleConfigMissing: {
@@ -503,15 +503,20 @@ catShortcutsDesc: {
   },
 
   // ── Notifications ─────────────────────────────────────────────────────────
-  focusAlerts: { tr: 'Odak modu uyarıları', en: 'Focus mode alerts' },
-  focusAlertsHint: {
-    tr: 'Dikkat dağıtıcı bildirimleri filtrele',
-    en: 'Filter distracting notifications',
+  downloadNotifications: { tr: 'İndirme bildirimleri', en: 'Download notifications' },
+  downloadNotificationsHint: {
+    tr: 'İndirme tamamlandığında Windows bildirimi göster',
+    en: 'Show a Windows notification when a download completes',
   },
   siteNotifications: { tr: 'Site bildirimleri', en: 'Site notifications' },
   siteNotificationsHint: {
     tr: 'Web push bildirimlerine izin ver',
     en: 'Allow web push notifications',
+  },
+  showNotificationContent: { tr: 'Bildirim içeriğini göster', en: 'Show notification content' },
+  showNotificationContentHint: {
+    tr: 'Destekleyen sitelerde göndereni ve mesaj önizlemesini göster',
+    en: 'Show the sender and message preview on supported sites',
   },
   toolbarBadge: { tr: 'Toolbar rozeti', en: 'Toolbar badge' },
   toolbarBadgeHint: {
@@ -835,8 +840,22 @@ catShortcutsDesc: {
   downloadCompleted: { tr: 'Tamamlandı', en: 'Completed' },
   downloadCancelled: { tr: 'İptal edildi', en: 'Cancelled' },
   downloadFailed: { tr: 'İndirme başarısız', en: 'Download failed' },
+  downloadNeedsReview: { tr: 'Onay bekliyor', en: 'Needs review' },
+  downloadRiskyFileHint: {
+    tr: 'Bu dosya türü cihazınıza zarar verebilir.',
+    en: 'This file type can harm your device.',
+  },
   downloadPause: { tr: 'Duraklat', en: 'Pause' },
   downloadResume: { tr: 'Devam et', en: 'Resume' },
+  downloadRetry: { tr: 'Yeniden dene', en: 'Retry' },
+  downloadKeep: { tr: 'Sakla', en: 'Keep' },
+  downloadKeepAnyway: { tr: 'Yine de sakla', en: 'Keep anyway' },
+  downloadDelete: { tr: 'Sil', en: 'Delete' },
+  downloadKeepConfirmTitle: { tr: 'Dosya saklansın mı?', en: 'Keep this file?' },
+  downloadKeepConfirm: {
+    tr: 'Bu dosya türü uygulama veya komut çalıştırabilir. Yalnızca kaynağa güveniyorsanız saklayın.',
+    en: 'This file type can run an app or command. Keep it only if you trust the source.',
+  },
   downloadCancel: { tr: 'İptal et', en: 'Cancel' },
   downloadReveal: { tr: 'Klasörde göster', en: 'Show in folder' },
   downloadRemove: { tr: 'Listeden kaldır', en: 'Remove from list' },
@@ -966,6 +985,10 @@ catShortcutsDesc: {
   notificationDownloadCompleteBody: {
     tr: 'İndirme başarıyla tamamlandı.',
     en: 'Download completed successfully.',
+  },
+  notificationSocialActivityBody: {
+    tr: 'Yeni bir mesajın veya bildirimin var.',
+    en: 'You have a new message or notification.',
   },
   notificationDownloadSource: { tr: 'İndirme yöneticisi', en: 'Download manager' },
   notificationMarkRead: { tr: 'Okundu olarak işaretle', en: 'Mark as read' },

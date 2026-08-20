@@ -4,7 +4,26 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
   overscroll-behavior: contain;
+}
+
+.gridArea::-webkit-scrollbar {
+  width: 3px;
+}
+
+.gridArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gridArea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+.gridArea:hover::-webkit-scrollbar-thumb {
+  background: var(--nebula-accent-dim);
 }
 
 .gridAreaDragging {

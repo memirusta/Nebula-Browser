@@ -1251,7 +1251,7 @@ const members = memberIds
                     item={item}
                     x={pos.x}
                     y={pos.y}
-                    muted={isMuted(item.id)}
+                    muted={isMuted(openTabId ?? item.id)}
                     isDropHover={dropTargetId === dockId}
                     isDropTarget={shrinkTargetId === dockId}
                     merging={!!merging}
@@ -1361,7 +1361,9 @@ const members = memberIds
           x={contextMenu.x}
           y={contextMenu.y}
           shortcut={contextMenu.shortcut}
-          isMuted={isMuted(contextMenu.shortcut.id)}
+          isMuted={isMuted(
+            resolveCloseTabId(contextMenu.shortcut.id) ?? contextMenu.shortcut.id,
+          )}
           isPinned={isPinned(contextMenu.shortcut.id)}
           canPinMore={canPinMore}
           onClose={handleContextMenuClose}
@@ -1386,7 +1388,11 @@ const members = memberIds
 
   onRemoveShortcut?.(contextMenu.shortcut.id)
 }}
-          onToggleMute={() => onToggleMute?.(contextMenu.shortcut.id)}
+          onToggleMute={() =>
+            onToggleMute?.(
+              resolveCloseTabId(contextMenu.shortcut.id) ?? contextMenu.shortcut.id,
+            )
+          }
           onOpenNewTab={() =>
             handleNavigate(contextMenu.shortcut.url, contextMenu.shortcut.id)
           }

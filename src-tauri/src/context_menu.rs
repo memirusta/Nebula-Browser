@@ -245,8 +245,10 @@ mod imp {
     }
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
-        if !label.starts_with("nebula-tab-") {
-            return Err("context menu setup is limited to browser tabs".to_string());
+        if !label.starts_with("nebula-tab-") && !label.starts_with("nebula-popup-content-") {
+            return Err(
+                "context menu setup is limited to browser tabs and popup content".to_string(),
+            );
         }
         if CONFIGURED
             .lock()
@@ -357,9 +359,9 @@ mod imp {
                             }
                         }
                     }
-                    Err(error) => {
+                    Err(_error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!("[nebula context menu] {}: {}", event_label, error);
+                        eprintln!("[nebula context menu] {}: {}", event_label, _error);
                     }
                 }
             })

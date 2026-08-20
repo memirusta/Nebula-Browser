@@ -22,7 +22,7 @@ export type BrowserTabsAction =
   | {
       type: 'update-meta'
       shortcutId: string
-      patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading'>>
+      patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted'>>
     }
   | {
       type: 'apply-snapshot'

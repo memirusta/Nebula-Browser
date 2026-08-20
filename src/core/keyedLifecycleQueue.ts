@@ -12,6 +12,10 @@ interface LifecycleState {
 export class KeyedLifecycleQueue<K> {
   private readonly states = new Map<K, LifecycleState>()
 
+  get size(): number {
+    return this.states.size
+  }
+
   private stateFor(key: K): LifecycleState {
     const existing = this.states.get(key)
     if (existing) return existing
@@ -45,5 +49,25 @@ export class KeyedLifecycleQueue<K> {
       () => undefined,
     )
     return result
+  }
+
+  /**
+   * Drop an inactive key without racing work queued while the current tail is
+   * settling. This keeps repeated open/close cycles from retaining one state
+   * object per historical tab for the lifetime of the application.
+   */
+  async releaseWhenIdle(key: K): Promise<boolean> {
+    while (true) {
+      const state = this.states.get(key)
+      if (!state) return true
+
+      const observedTail = state.tail
+      await observedTail.catch(() => undefined)
+
+      if (this.states.get(key) !== state) return false
+      if (state.tail !== observedTail) continue
+
+      return this.states.delete(key)
+    }
   }
 }

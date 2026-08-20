@@ -6,8 +6,6 @@ export const ONBOARDING_STEPS = [
   'welcome',
   'bookmarks',
   'profile',
-  'googleLink',
-  'syncRestore',
   'defaultBrowser',
   'done',
 ] as const
@@ -32,6 +30,12 @@ export function saveOnboardingResumeStep(step: OnboardingStep): void {
 
 export function peekOnboardingResumeStep(): OnboardingStep | null {
   const value = sessionStorage.getItem(ONBOARDING_RESUME_STEP_KEY)
+
+  // v1.6.x had separate Google-link and Sync-restore pages. Resume those
+  // interrupted first-run flows on the new combined profile page.
+  if (value === 'googleLink' || value === 'syncRestore') {
+    return 'profile'
+  }
 
   return ONBOARDING_STEPS.includes(value as OnboardingStep)
     ? (value as OnboardingStep)
@@ -94,9 +98,5 @@ export function onboardingStepAfterOAuthReturn(): OnboardingStep | undefined {
     return resume ?? undefined
   }
 
-  if (resume === 'profile') {
-    return 'googleLink'
-  }
-
-  return resume ?? 'googleLink'
+  return resume ?? 'profile'
 }

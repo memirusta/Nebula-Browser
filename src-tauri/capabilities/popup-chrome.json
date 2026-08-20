@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "popup-chrome",
+  "description": "Minimal permissions for Nebula popup titlebar webviews",
+  "webviews": [
+    "nebula-popup-chrome-*"
+  ],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-close"
+  ]
+}

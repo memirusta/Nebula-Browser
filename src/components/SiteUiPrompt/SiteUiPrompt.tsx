@@ -25,6 +25,7 @@ const PERMISSION_LABELS = {
     'local-fonts': 'yerel yazı tipleri',
     'midi-sysex': 'MIDI cihazları',
     'window-management': 'pencere yönetimi',
+    'persistent-storage': 'kalıcı depolama',
   },
   en: {
     microphone: 'microphone',
@@ -39,6 +40,7 @@ const PERMISSION_LABELS = {
     'local-fonts': 'local fonts',
     'midi-sysex': 'MIDI devices',
     'window-management': 'window management',
+    'persistent-storage': 'persistent storage',
   },
 } as const
 
@@ -181,12 +183,15 @@ export function SiteUiPrompt({
     }
 
     if (request.requestType === 'permission') {
+      const permissionKind = request.permissionKind
       const permission =
-        PERMISSION_LABELS[locale][
-          request.permissionKind as keyof typeof PERMISSION_LABELS.tr
-        ] ??
-        request.permissionKind ??
-        copy.thisFeature
+        permissionKind === 'unknown'
+          ? copy.thisFeature
+          : PERMISSION_LABELS[locale][
+              permissionKind as keyof typeof PERMISSION_LABELS.tr
+            ] ??
+            permissionKind ??
+            copy.thisFeature
 
       return {
         eyebrow: copy.sitePermission,
@@ -289,6 +294,17 @@ export function SiteUiPrompt({
     })
   }
 
+  const reject = () => {
+    onRespond({
+      accepted: false,
+      remember:
+        request.requestType ===
+          'permission'
+          ? remember
+          : false,
+    })
+  }
+
   return createPortal(
     <div className={styles.backdrop} role="presentation">
       <section
@@ -301,7 +317,7 @@ export function SiteUiPrompt({
         onKeyDown={(event) => {
           if (event.key === 'Escape' && request.dialogKind !== 'alert') {
             event.preventDefault()
-            onRespond({ accepted: false })
+            reject()
           }
 
           if (event.key === 'Enter' && !event.shiftKey) {
@@ -388,7 +404,7 @@ export function SiteUiPrompt({
             <button
               type="button"
               className={styles.secondary}
-              onClick={() => onRespond({ accepted: false })}
+              onClick={reject}
             >
               {presentation.cancel}
             </button>

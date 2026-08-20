@@ -3,7 +3,7 @@ mod imp {
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::sync::{LazyLock, Mutex};
-    use std::time::Instant;
+    use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
     use serde::Serialize;
     use tauri::{AppHandle, Emitter, Manager};
@@ -18,6 +18,7 @@ mod imp {
     };
     use windows::core::PWSTR;
     use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
     use windows_core::BOOL;
 
     type HandlerTokens = (i64, i64, i64, i64);
@@ -37,6 +38,10 @@ mod imp {
         )>> = RefCell::new(HashMap::new());
     }
     static LAST_SNAPSHOTS: LazyLock<Mutex<HashMap<String, (String, String)>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static LAST_SOCIAL_UNREAD_COUNTS: LazyLock<Mutex<HashMap<String, u64>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static LAST_CONTENT_NOTIFICATIONS: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     #[derive(Clone, Serialize)]
@@ -62,6 +67,19 @@ mod imp {
         success: bool,
     }
 
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SiteNotificationPayload {
+        id: String,
+        tab_label: String,
+        origin: String,
+        title: String,
+        body: String,
+        icon_url: String,
+        timestamp_ms: u64,
+        requires_native_toast: bool,
+    }
+
     unsafe fn take_webview_string(
         read: impl FnOnce(*mut PWSTR) -> windows_core::Result<()>,
     ) -> String {
@@ -75,6 +93,122 @@ mod imp {
             CoTaskMemFree(Some(value.as_ptr().cast()));
         }
         text
+    }
+
+    fn social_site(url: &str) -> Option<(String, &'static str)> {
+        let parsed = url::Url::parse(url).ok()?;
+        let host = parsed.host_str()?.to_ascii_lowercase();
+        let name = [
+            ("facebook.com", "Facebook"),
+            ("instagram.com", "Instagram"),
+            ("web.whatsapp.com", "WhatsApp"),
+            ("linkedin.com", "LinkedIn"),
+            ("reddit.com", "Reddit"),
+            ("threads.net", "Threads"),
+            ("tiktok.com", "TikTok"),
+            ("twitter.com", "X"),
+            ("x.com", "X"),
+        ]
+        .into_iter()
+        .find_map(|(site, name)| {
+            (host == site || host.ends_with(&format!(".{site}"))).then_some(name)
+        })?;
+        Some((parsed.origin().ascii_serialization(), name))
+    }
+
+    fn unread_prefix(title: &str) -> u64 {
+        title
+            .strip_prefix('(')
+            .and_then(|rest| rest.split_once(')'))
+            .and_then(|(count, _)| count.trim().parse::<u64>().ok())
+            .unwrap_or(0)
+    }
+
+    pub fn app_is_backgrounded(app: &AppHandle) -> bool {
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_invalid() {
+            return false;
+        }
+        !app.windows().values().any(|window| {
+            window.hwnd().is_ok_and(|hwnd| {
+                hwnd == foreground || unsafe { GetAncestor(hwnd, GA_ROOT) } == foreground
+            })
+        })
+    }
+
+    pub fn record_content_notification(label: &str) {
+        if let Ok(mut notifications) = LAST_CONTENT_NOTIFICATIONS.lock() {
+            notifications.insert(label.to_string(), Instant::now());
+        }
+    }
+
+    fn content_notification_was_recent(label: &str) -> bool {
+        LAST_CONTENT_NOTIFICATIONS
+            .lock()
+            .ok()
+            .and_then(|notifications| notifications.get(label).copied())
+            .is_some_and(|sent_at| sent_at.elapsed() < std::time::Duration::from_secs(2))
+    }
+
+    fn emit_social_unread_notification(app: &AppHandle, label: &str, url: &str, title: &str) {
+        let Some((origin, site_name)) = social_site(url) else {
+            if let Ok(mut counts) = LAST_SOCIAL_UNREAD_COUNTS.lock() {
+                counts.remove(label);
+            }
+            return;
+        };
+        let count = unread_prefix(title);
+        let previous = LAST_SOCIAL_UNREAD_COUNTS
+            .lock()
+            .ok()
+            .and_then(|mut counts| counts.insert(label.to_string(), count));
+        if previous.map_or(true, |previous| count <= previous) {
+            return;
+        }
+        if !app_is_backgrounded(app)
+            || !crate::webview_privacy::title_unread_notification_allowed(label, &origin)
+        {
+            return;
+        }
+        let notification_app = app.clone();
+        let notification_label = label.to_string();
+        let notification_origin = origin;
+        let notification_title = site_name.to_string();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+            let count_is_current = LAST_SOCIAL_UNREAD_COUNTS
+                .lock()
+                .ok()
+                .and_then(|counts| counts.get(&notification_label).copied())
+                == Some(count);
+            if !count_is_current
+                || content_notification_was_recent(&notification_label)
+                || !app_is_backgrounded(&notification_app)
+                || !crate::webview_privacy::title_unread_notification_allowed(
+                    &notification_label,
+                    &notification_origin,
+                )
+            {
+                return;
+            }
+            let timestamp_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let _ = notification_app.emit(
+                "nebula-site-notification",
+                SiteNotificationPayload {
+                    id: format!("site-title-unread-{timestamp_ms}-{notification_label}-{count}"),
+                    tab_label: notification_label,
+                    origin: notification_origin,
+                    title: notification_title,
+                    body: String::new(),
+                    icon_url: String::new(),
+                    timestamp_ms,
+                    requires_native_toast: true,
+                },
+            );
+        });
     }
 
     fn emit_snapshot(app: &AppHandle, label: &str, webview: &ICoreWebView2) {
@@ -91,6 +225,7 @@ mod imp {
             }
             snapshots.insert(label.to_string(), next);
         }
+        emit_social_unread_notification(app, label, &url, &title);
         let _ = app.emit(
             "nebula-tab-snapshot",
             TabSnapshotPayload {
@@ -333,6 +468,12 @@ mod imp {
         if let Ok(mut snapshots) = LAST_SNAPSHOTS.lock() {
             snapshots.remove(label);
         }
+        if let Ok(mut counts) = LAST_SOCIAL_UNREAD_COUNTS.lock() {
+            counts.remove(label);
+        }
+        if let Ok(mut notifications) = LAST_CONTENT_NOTIFICATIONS.lock() {
+            notifications.remove(label);
+        }
         if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
             starts.remove(label);
         }
@@ -340,7 +481,9 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{setup_tab_metadata, teardown_tab_metadata};
+pub use imp::{
+    app_is_backgrounded, record_content_notification, setup_tab_metadata, teardown_tab_metadata,
+};
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_metadata(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
@@ -349,3 +492,11 @@ pub fn setup_tab_metadata(_app: &tauri::AppHandle, _label: &str) -> Result<(), S
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown_tab_metadata(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn app_is_backgrounded(_app: &tauri::AppHandle) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn record_content_notification(_label: &str) {}

@@ -4,18 +4,19 @@
   z-index: 54000;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 16px;
   background: rgba(5, 7, 10, 0.58);
   backdrop-filter: blur(15px) saturate(1.1);
   -webkit-backdrop-filter: blur(15px) saturate(1.1);
 }
 
 .dialog {
-  width: min(980px, calc(100vw - 40px));
-  height: min(720px, calc(100vh - 44px));
-  min-height: 540px;
+  width: min(1380px, calc(100vw - 32px));
+  height: calc(100dvh - 32px);
+  min-height: min(680px, calc(100dvh - 32px));
+  max-height: 980px;
   display: grid;
-  grid-template-columns: minmax(315px, 370px) 1fr;
+  grid-template-columns: minmax(410px, 470px) 1fr;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.13);
   border-radius: 22px;
@@ -32,9 +33,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   overflow-y: auto;
-  padding: 20px;
+  padding: 26px;
   border-right: 1px solid rgba(255,255,255,.08);
 }
 
@@ -45,9 +46,9 @@
 }
 
 .printMark {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
   display: grid;
   place-items: center;
   border: 1px solid rgba(255,255,255,.12);
@@ -56,8 +57,8 @@
 }
 
 .printMark svg {
-  width: 20px;
-  height: 20px;
+  width: 23px;
+  height: 23px;
   fill: currentColor;
   opacity: .9;
 }
@@ -71,13 +72,13 @@
   display: block;
   margin-bottom: 2px;
   color: rgba(255,255,255,.4);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .1em;
 }
 
 .heading h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 650;
 }
 
@@ -115,12 +116,12 @@
 }
 
 .document strong {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .document span {
   color: rgba(255,255,255,.4);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .field {
@@ -131,7 +132,7 @@
 .field > label,
 .labelRow label {
   color: rgba(255,255,255,.64);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -143,7 +144,7 @@
 
 .labelRow span {
   color: rgba(255,255,255,.45);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .destinationWrap {
@@ -155,7 +156,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 13px 14px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 11px;
   background: rgba(0,0,0,.17);
@@ -187,13 +188,13 @@
 }
 
 .destination strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .destinationText span {
   color: rgba(255,255,255,.38);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .destinationChevron {
@@ -286,15 +287,15 @@
 .input {
   width: 100%;
   box-sizing: border-box;
-  min-height: 38px;
-  padding: 9px 10px;
+  min-height: 44px;
+  padding: 10px 12px;
   border: 1px solid rgba(255,255,255,.11);
   border-radius: 10px;
   outline: none;
   background: rgba(0,0,0,.2);
   color: #fff;
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .input:focus {
@@ -317,12 +318,12 @@
 }
 
 .segmented button {
-  min-height: 31px;
+  min-height: 38px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: rgba(255,255,255,.5);
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -353,7 +354,7 @@
 
 .more summary {
   color: rgba(255,255,255,.65);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   user-select: none;
@@ -373,13 +374,13 @@
 }
 
 .toggleRow strong {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .toggleRow small {
   color: rgba(255,255,255,.37);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .toggleRow input {
@@ -407,13 +408,13 @@
 
 .primary,
 .secondary {
-  min-width: 86px;
-  min-height: 36px;
-  padding: 8px 14px;
+  min-width: 104px;
+  min-height: 42px;
+  padding: 10px 18px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 10px;
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -445,7 +446,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 24px 16px;
+  padding: 28px 34px 22px;
   background:
     radial-gradient(circle at 70% 10%, rgba(103,130,255,.08), transparent 38%),
     rgba(255,255,255,.012);
@@ -455,8 +456,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: rgba(255,255,255,.55);
-  font-size: 10px;
+  color: rgba(255,255,255,.78);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .previewTop small {
@@ -466,15 +468,28 @@
 .previewStage {
   min-height: 0;
   flex: 1;
-  display: grid;
-  place-items: center;
-  padding: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 18px 14px 14px;
+}
+
+.previewDocument {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  background: #e5e7eb;
+  box-shadow: 0 22px 64px rgba(0,0,0,.34);
 }
 
 .paper {
   position: relative;
-  transform: scale(var(--preview-scale));
-  transform-origin: center;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
   overflow: hidden;
   border-radius: 3px;
   background: #f7f7f5;
@@ -484,24 +499,34 @@
   color: #23272d;
   transition:
     width 160ms ease,
-    height 160ms ease,
-    transform 160ms ease;
+    height 160ms ease;
 }
 
 .paperPortrait {
-  width: min(330px, 50vw);
+  width: min(
+    100%,
+    calc((min(100dvh, 1012px) - 176px) * .707)
+  );
+  height: auto;
+  max-height: 820px;
   aspect-ratio: 0.707;
 }
 
 .paperLandscape {
-  width: min(455px, 58vw);
+  width: min(
+    100%,
+    calc((min(100dvh, 1012px) - 176px) * 1.414)
+  );
+  height: auto;
+  max-width: 980px;
+  max-height: 100%;
   aspect-ratio: 1.414;
 }
 
 .paperHeader {
   display: grid;
   gap: 2px;
-  margin: 8% 9% 6%;
+  margin: 5.5% 7% 4%;
 }
 
 .paperHeader strong {
@@ -514,6 +539,51 @@
 .paperHeader span {
   color: #858b92;
   font-size: 6px;
+}
+
+.paperContent {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  margin: 0 7% 7%;
+  border: 1px solid #e2e5e9;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.previewImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: top center;
+  transform: scale(var(--content-scale));
+  transform-origin: top center;
+  transition: transform 160ms ease;
+}
+
+.previewFallback {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding-top: 7%;
+  box-sizing: border-box;
+}
+
+.previewStatus {
+  position: absolute;
+  left: 50%;
+  bottom: 5%;
+  transform: translateX(-50%);
+  max-width: 84%;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(31, 36, 43, .78);
+  color: #fff;
+  font-size: 8px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .previewHero {
@@ -567,14 +637,14 @@
 .previewNote {
   margin: 0;
   text-align: center;
-  color: rgba(255,255,255,.27);
-  font-size: 9px;
+  color: rgba(255,255,255,.42);
+  font-size: 11px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .dialog {
     width: min(500px, calc(100vw - 24px));
-    height: min(760px, calc(100vh - 24px));
+    height: calc(100dvh - 24px);
     grid-template-columns: 1fr;
   }
 

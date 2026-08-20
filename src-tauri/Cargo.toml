@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.6.7"
+version = "1.7.0"
 description = "Nebula Browser"
 authors = ["Nebula"]
 license = ""
@@ -20,11 +20,12 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+base64 = "0.22"
 log = "0.4"
 tauri = { version = "2.11.3", features = ["unstable", "protocol-asset"] }
 tauri-plugin-log = "2"
 url = "2.5"
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",] }
+windows = { version = "0.61", features = ["Data_Xml_Dom", "UI_Notifications", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_Security_WinTrust", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Registry", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging",] }
 windows-core = "0.61"
 sysinfo = "0.33"
 webview2-com = "0.38"
@@ -48,4 +49,3 @@ lto = "thin"
 opt-level = "s"
 panic = "abort"
 strip = "symbols"
-

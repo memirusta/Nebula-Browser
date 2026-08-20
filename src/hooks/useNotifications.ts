@@ -8,6 +8,7 @@ import {
   NOTIFICATION_STORE_KEY,
   normalizeNotificationOrigin,
   notificationHost,
+  showNativeNotification,
   listenSiteNotifications,
   type NebulaNotification,
   type SiteNotificationPermission,
@@ -18,15 +19,24 @@ import { useLocale } from './useLocale'
 export function useNotifications(
   downloads: DownloadItem[],
   siteNotificationsEnabled: boolean,
+  showNotificationContent: boolean,
+  downloadNotificationsEnabled: boolean,
 ) {
   const { t } = useLocale()
   const [items, setItems] = useState<NebulaNotification[]>(loadNotifications)
   const [sitePermissions, setSitePermissions] = useState(loadSiteNotificationPermissions)
   const siteNotificationsEnabledRef = useRef(siteNotificationsEnabled)
+  const showNotificationContentRef = useRef(showNotificationContent)
+  const recentSiteNotificationsRef = useRef(new Map<string, number>())
+  const nativeDownloadToastIdsRef = useRef(new Set<string>())
 
   useEffect(() => {
     siteNotificationsEnabledRef.current = siteNotificationsEnabled
   }, [siteNotificationsEnabled])
+
+  useEffect(() => {
+    showNotificationContentRef.current = showNotificationContent
+  }, [showNotificationContent])
 
   const reloadItems = useCallback(() => setItems(loadNotifications()), [])
   const reloadPermissions = useCallback(
@@ -58,18 +68,46 @@ export function useNotifications(
       if (disposed || !siteNotificationsEnabledRef.current) return
       const origin = normalizeNotificationOrigin(payload.origin)
       if (!origin) return
+      if (sitePermissions[origin] === 'block') return
+      const timestampMs = payload.timestampMs || Date.now()
+      const fingerprint = [origin, payload.title.trim(), payload.body.trim()].join('\u0000')
+      const previousTimestamp = recentSiteNotificationsRef.current.get(fingerprint)
+      if (previousTimestamp !== undefined && timestampMs - previousTimestamp < 2_500) return
+      recentSiteNotificationsRef.current.set(fingerprint, timestampMs)
+      for (const [key, seenAt] of recentSiteNotificationsRef.current) {
+        if (timestampMs - seenAt > 10_000) recentSiteNotificationsRef.current.delete(key)
+      }
+      const title = showNotificationContentRef.current
+        ? payload.title || notificationHost(origin)
+        : notificationHost(origin)
+      const body = showNotificationContentRef.current
+        ? payload.body || t('notificationSocialActivityBody')
+        : t('notificationSocialActivityBody')
       add({
         id: payload.id,
         kind: 'site',
-        title: payload.title || notificationHost(origin),
-        body: payload.body,
+        title,
+        body,
         origin,
         iconUrl: payload.iconUrl || null,
         tabLabel: payload.tabLabel || null,
         downloadId: null,
-        createdAtMs: payload.timestampMs || Date.now(),
+        createdAtMs: timestampMs,
         read: false,
       })
+      if (payload.requiresNativeToast) {
+        const isWhatsApp = new URL(origin).hostname.toLowerCase() === 'web.whatsapp.com'
+        const nativeTitle = isWhatsApp ? 'WhatsApp' : title
+        const nativeBody = isWhatsApp && showNotificationContentRef.current
+          ? [title, body].filter(Boolean).join('\n')
+          : body
+        void showNativeNotification(
+          nativeTitle,
+          nativeBody,
+          payload.tabLabel,
+          origin,
+        ).catch(() => undefined)
+      }
     }).then((dispose) => {
       if (disposed) dispose()
       else unlisten = dispose
@@ -78,13 +116,14 @@ export function useNotifications(
       disposed = true
       unlisten?.()
     }
-  }, [add])
+  }, [add, sitePermissions, t])
 
   useEffect(() => {
     for (const download of downloads) {
-      if (download.state !== 'completed') continue
+      if (download.state !== 'completed' || download.requiresConfirmation) continue
+      const notificationId = `download-${download.id}`
       add({
-        id: `download-${download.id}`,
+        id: notificationId,
         kind: 'download',
         title: download.fileName,
         body: t('notificationDownloadCompleteBody'),
@@ -95,8 +134,21 @@ export function useNotifications(
         createdAtMs: Date.now(),
         read: false,
       })
+      if (
+        downloadNotificationsEnabled &&
+        !nativeDownloadToastIdsRef.current.has(download.id)
+      ) {
+        nativeDownloadToastIdsRef.current.add(download.id)
+        void showNativeNotification(
+          download.fileName,
+          t('notificationDownloadCompleteBody'),
+          download.tabLabel,
+          null,
+          download.id,
+        ).catch(() => undefined)
+      }
     }
-  }, [add, downloads, t])
+  }, [add, downloadNotificationsEnabled, downloads, t])
 
   const unreadCount = useMemo(() => items.filter((item) => !item.read).length, [items])
 
@@ -129,6 +181,10 @@ export function useNotifications(
     },
     [],
   )
+
+  const clearSitePermissions = useCallback(() => {
+    setSitePermissions({})
+  }, [])
 
   const sites = useMemo(() => {
     const origins = new Set(Object.keys(sitePermissions))
@@ -165,5 +221,6 @@ export function useNotifications(
     remove,
     clear,
     setSitePermission,
+    clearSitePermissions,
   }
 }

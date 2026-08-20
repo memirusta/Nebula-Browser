@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tauri::Manager;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::time::{timeout, Duration};
@@ -267,6 +268,45 @@ fn parse_query_params(query: &str) -> HashMap<String, String> {
     params
 }
 
+fn open_google_oauth_popup(
+    app: &tauri::AppHandle,
+    auth_url: &str,
+) -> Result<tauri::WebviewWindow, String> {
+    let parsed_url = auth_url
+        .parse()
+        .map_err(|error: url::ParseError| error.to_string())?;
+    let label = format!(
+        "nebula-google-oauth-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_millis()
+    );
+
+    let mut builder =
+        tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::External(parsed_url))
+            .title("")
+            .inner_size(520.0, 680.0)
+            .center()
+            .prevent_overflow()
+            .decorations(true)
+            .resizable(true)
+            .maximizable(false)
+            .minimizable(false)
+            .closable(true)
+            .focused(true)
+            .visible(true)
+            .theme(Some(tauri::Theme::Dark))
+            .incognito(false)
+            .browser_extensions_enabled(true);
+
+    if let Some(main) = app.get_webview_window("main") {
+        builder = builder.parent(&main).map_err(|error| error.to_string())?;
+    }
+
+    builder.build().map_err(|error| error.to_string())
+}
+
 fn open_in_system_browser(url: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -449,13 +489,16 @@ pub async fn google_sync_enable_loopback(
         urlencoding::encode(expected_email.trim()),
     );
 
-    open_in_system_browser(&auth_url)?;
-    let code = timeout(
+    let popup = open_google_oauth_popup(&app, &auth_url)?;
+    let code_result = timeout(
         Duration::from_secs(180),
         wait_for_loopback_code(listener, &state),
     )
     .await
-    .map_err(|_| "Google sync authorization timed out. Try again.".to_string())??;
+    .map_err(|_| "Google sync authorization timed out. Try again.".to_string());
+
+    let _ = popup.close();
+    let code = code_result??;
 
     let exchange = exchange_code(&client_id, &code, &code_verifier, &redirect_uri).await?;
     let email = exchange

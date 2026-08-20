@@ -276,6 +276,110 @@
   max-width: 330px;
 }
 
+.settingsSearch {
+  display: flex;
+  min-height: 40px;
+  margin: 0 2px 12px;
+  padding: 0 10px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.settingsSearch:focus-within {
+  border-color: color-mix(in srgb, var(--nebula-accent) 68%, white 12%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nebula-accent) 17%, transparent);
+}
+
+.settingsSearch svg { width: 17px; height: 17px; flex: 0 0 auto; stroke: var(--nebula-text-muted); stroke-width: 1.8; }
+.settingsSearch input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--nebula-text); background: transparent; font: inherit; font-size: 12px; }
+.settingsSearch input::placeholder { color: var(--nebula-text-muted); }
+.settingsSearchResults { min-height: 0; overflow-y: auto; }
+.settingsSearchResult { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 10px; color: var(--nebula-text); background: transparent; text-align: left; cursor: pointer; }
+.settingsSearchResult:hover { background: rgba(255,255,255,.07); }
+.settingsSearchResult span, .settingsSearchResult small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settingsSearchResult span { font-size: 12px; font-weight: 600; }
+.settingsSearchResult small { margin-top: 3px; color: var(--nebula-text-muted); font-size: 10px; }
+.settingsSearchEmpty { margin: 12px 8px; color: var(--nebula-text-muted); font-size: 11px; line-height: 1.45; }
+
+.notificationPermissions {
+  padding: 16px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.notificationNoSites {
+  margin: 12px 0 0;
+  color: var(--nebula-text-muted);
+  font-size: 12px;
+}
+
+.notificationSiteList {
+  display: flex;
+  margin-top: 14px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notificationSiteRow {
+  display: flex;
+  min-height: 42px;
+  padding: 6px 7px 6px 12px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 11px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.notificationSiteRow > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notificationPermissionButtons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.notificationPermissionButtons button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--nebula-text-muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notificationPermissionButtons button:hover:not(:disabled) {
+  color: var(--nebula-text);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.notificationPermissionButtons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.notificationPermissionButtons .notificationAllowActive {
+  color: #8ce8b5;
+  background: rgba(49, 167, 101, 0.18);
+}
+
+.notificationPermissionButtons .notificationBlockActive {
+  color: #ff9b9b;
+  background: rgba(194, 68, 68, 0.18);
+}
+
 .statusActive,
 .statusInactive {
   flex-shrink: 0;

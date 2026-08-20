@@ -48,10 +48,20 @@ const TAB_RESTORE_RETRY_MS = 350
 const TAB_RESTORE_ATTEMPTS = 12
 
 const BACKGROUND_ACTIVE_HOSTS = [
+  'bsky.app',
   'discord.com',
   'discordapp.com',
+  'facebook.com',
+  'instagram.com',
+  'linkedin.com',
   'slack.com',
+  'snapchat.com',
   'teams.microsoft.com',
+  'threads.net',
+  'tiktok.com',
+  'twitter.com',
+  'x.com',
+  'reddit.com',
   'web.whatsapp.com',
   'messenger.com',
   'web.telegram.org',
@@ -188,6 +198,7 @@ export interface BrowserPrivacyOptions {
   permissionExceptions: string
   cookieBannerBlocking: boolean
   siteNotifications: boolean
+  showNotificationContent: boolean
   notificationAllowedSites: string[]
   notificationBlockedSites: string[]
 }
@@ -205,11 +216,13 @@ let privacyOptions: BrowserPrivacyOptions = {
   permissionExceptions: '',
   cookieBannerBlocking: true,
   siteNotifications: true,
+  showNotificationContent: true,
   notificationAllowedSites: [],
   notificationBlockedSites: [],
 }
 
 let privacyRevision = 0
+const popupPrivacyModes = new Map<string, boolean>()
 
 function nativePrivacyOptions(options: BrowserPrivacyOptions) {
   return {
@@ -243,6 +256,45 @@ async function applyPrivacyToLabel(label: string): Promise<void> {
   await privacyApplyRunner.run(label)
 }
 
+async function applyPrivacyToPopupLabel(
+  label: string,
+  privateMode: boolean,
+): Promise<void> {
+  await invoke('webview_apply_privacy', {
+    label,
+    options: nativePrivacyOptions({
+      ...privacyOptions,
+      privateMode,
+    }),
+  })
+}
+
+/**
+ * Configure a newly-created, still-unnavigated popup target. The target's
+ * private-mode bit comes from the opener's actual WebView2 profile, not from
+ * the latest Settings value, so an already-open tab cannot accidentally spawn
+ * a popup into a different profile.
+ */
+export async function configurePopupBrowseWebview(
+  label: string,
+  privateMode: boolean,
+): Promise<void> {
+  if (!isTauri) return
+
+  await invoke('webview_setup_popup_target', { label })
+  await invoke('webview_apply_browser_identity', { label })
+  await applyPrivacyToPopupLabel(label, privateMode)
+  popupPrivacyModes.set(label, privateMode)
+}
+
+export async function teardownPopupBrowseWebview(
+  label: string,
+): Promise<void> {
+  popupPrivacyModes.delete(label)
+  if (!isTauri) return
+  await invoke('webview_teardown_popup_target', { label })
+}
+
 export async function setBrowsePrivacyOptions(
   options: BrowserPrivacyOptions,
   shortcutIds: string[],
@@ -261,12 +313,22 @@ export async function setBrowsePrivacyOptions(
   }
 
   await allSettledOrThrow(
-    shortcutIds.map((shortcutId) =>
-      applyPrivacyToLabel(
-        tabWebviewLabel(shortcutId),
+    [
+      ...shortcutIds.map((shortcutId) =>
+        applyPrivacyToLabel(
+          tabWebviewLabel(shortcutId),
+        ),
       ),
-    ),
-    'Failed to apply privacy settings to browser tabs',
+      ...Array.from(
+        popupPrivacyModes.entries(),
+        ([label, privateMode]) =>
+          applyPrivacyToPopupLabel(
+            label,
+            privateMode,
+          ),
+      ),
+    ],
+    'Failed to apply privacy settings to browser tabs or popup windows',
   )
 }
 
@@ -473,6 +535,7 @@ let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
 let lastBrowserBoundsKey: string | null = null
 let siteFullscreenBounds = false
+let windowMinimizedWebviewLabel: string | null = null
 
 export function setSiteFullscreenBoundsMode(
   active: boolean,
@@ -576,6 +639,105 @@ function unbindResizeListeners(): void {
   scaleUnlisten = null
 }
 
+async function currentWindowIsMinimized(): Promise<boolean> {
+  try {
+    return await getCurrentWindow().isMinimized()
+  } catch {
+    return false
+  }
+}
+
+async function showWebviewForCurrentWindowState(
+  webview: Webview,
+  traceId: string,
+): Promise<void> {
+  if (
+    await currentWindowIsMinimized()
+  ) {
+    await webview.hide()
+    windowMinimizedWebviewLabel =
+      webview.label
+
+    await writeTransitionLog(
+      'browser.window-visibility',
+      'info',
+      {
+        traceId,
+        label: webview.label,
+        minimized: true,
+      },
+    )
+    return
+  }
+
+  if (
+    windowMinimizedWebviewLabel ===
+    webview.label
+  ) {
+    windowMinimizedWebviewLabel =
+      null
+  }
+
+  await webview.show()
+}
+
+async function syncWebviewWindowVisibilityAfterResize(
+  webview: Webview,
+  traceId: string,
+): Promise<boolean> {
+  if (
+    activeWebview?.label !==
+    webview.label
+  ) {
+    return false
+  }
+
+  if (
+    await currentWindowIsMinimized()
+  ) {
+    if (
+      windowMinimizedWebviewLabel !==
+      webview.label
+    ) {
+      await webview.hide()
+      windowMinimizedWebviewLabel =
+        webview.label
+
+      await writeTransitionLog(
+        'browser.window-visibility',
+        'info',
+        {
+          traceId,
+          label: webview.label,
+          minimized: true,
+        },
+      )
+    }
+    return false
+  }
+
+  if (
+    windowMinimizedWebviewLabel ===
+    webview.label
+  ) {
+    windowMinimizedWebviewLabel =
+      null
+    await webview.show()
+
+    await writeTransitionLog(
+      'browser.window-visibility',
+      'ok',
+      {
+        traceId,
+        label: webview.label,
+        minimized: false,
+      },
+    )
+  }
+
+  return true
+}
+
 async function bindBrowserResize(
   webview: Webview,
   traceId: string,
@@ -586,17 +748,29 @@ async function bindBrowserResize(
   lastBrowserBoundsKey = null
 
   const onLayoutChange = debounce(() => {
-    void syncBrowserBounds(
-      webview,
-      `${traceId}:resize`,
-    )
-      .then((changed) => {
-        if (!changed || siteFullscreenBounds) return
-
-        scheduleStackBrowsingChromeAboveBrowser(
-          activeTabId,
+    void (async () => {
+      const resizeTraceId =
+        `${traceId}:resize`
+      const visible =
+        await syncWebviewWindowVisibilityAfterResize(
+          webview,
+          resizeTraceId,
         )
-      })
+
+      if (!visible) return
+
+      const changed =
+        await syncBrowserBounds(
+          webview,
+          resizeTraceId,
+        )
+
+      if (!changed || siteFullscreenBounds) return
+
+      scheduleStackBrowsingChromeAboveBrowser(
+        activeTabId,
+      )
+    })()
       .catch((error) => {
         void writeTransitionLog(
           'browser.bounds.resize-callback',
@@ -699,6 +873,17 @@ async function configureTabWebview(
       () =>
         invoke(
           'webview_setup_tab_error_pages',
+          { label },
+        ),
+    )
+
+    await traceTransitionCall(
+      traceId,
+      'browser.webview.apply-browser-identity',
+      { label },
+      () =>
+        invoke(
+          'webview_apply_browser_identity',
           { label },
         ),
     )
@@ -1103,6 +1288,21 @@ function ensureMemoryPressureMonitor(): void {
       },
       MEMORY_PRESSURE_POLL_MS,
     )
+}
+
+function stopMemoryPressureMonitorIfIdle(): void {
+  if (
+    tabSleepTimers.size > 0 ||
+    tabUnloadTimers.size > 0 ||
+    tabUnloadInFlight.size > 0
+  ) {
+    return
+  }
+
+  if (memoryPressurePollTimer !== null) {
+    window.clearInterval(memoryPressurePollTimer)
+    memoryPressurePollTimer = null
+  }
 }
 
 function parseExecutedJson<T>(
@@ -2065,6 +2265,8 @@ function scheduleTabUnload(
                   shortcutId,
                 )
               }
+
+              stopMemoryPressureMonitorIfIdle()
             })
 
         tabUnloadInFlight.set(
@@ -2135,6 +2337,8 @@ async function restoreWebviewMemory(
       shortcutId,
     )
   }
+
+  stopMemoryPressureMonitorIfIdle()
 
   try {
     await invoke(
@@ -3011,7 +3215,10 @@ async function activateBrowseTabQueued(
             webview.label,
         },
         () =>
-          webview.show(),
+          showWebviewForCurrentWindowState(
+            webview,
+            `${traceId}:show`,
+          ),
       )
 
       /*
@@ -3203,7 +3410,10 @@ async function activateBrowseTabQueued(
           webview.label,
       },
       () =>
-        webview.show(),
+        showWebviewForCurrentWindowState(
+          webview,
+          `${traceId}:show`,
+        ),
     )
 
     /*
@@ -3574,10 +3784,50 @@ export interface BrowsePrintOptions {
   backgrounds: boolean
   headersAndFooters: boolean
   selectionOnly: boolean
+  paperSize: 'a4' | 'letter'
+  margins: 'default' | 'minimum' | 'none'
+}
+
+export async function renderBrowsePrintPreview(
+  label: string,
+  options: BrowsePrintOptions,
+): Promise<string | null> {
+  if (!isTauri) return null
+
+  try {
+    return await invoke<string>(
+      'webview_print_preview',
+      {
+        label,
+        options,
+      },
+    )
+  } catch (error) {
+    if (
+      import.meta.env.DEV
+    ) {
+      console.warn(
+        '[nebula] print preview capture failed',
+        error,
+      )
+    }
+
+    return null
+  }
 }
 
 export async function printBrowseTab(
   shortcutId: string,
+  options: BrowsePrintOptions,
+): Promise<void> {
+  return printBrowseWebview(
+    tabWebviewLabel(shortcutId),
+    options,
+  )
+}
+
+export async function printBrowseWebview(
+  label: string,
   options: BrowsePrintOptions,
 ): Promise<void> {
   if (!isTauri) return
@@ -3586,10 +3836,7 @@ export async function printBrowseTab(
     await invoke(
       'webview_print',
       {
-        label:
-          tabWebviewLabel(
-            shortcutId,
-          ),
+        label,
         options,
       },
     )
@@ -3613,11 +3860,11 @@ export async function zoomBrowseTab(
     | 'in'
     | 'out'
     | 'reset',
-): Promise<void> {
-  if (!isTauri) return
+): Promise<number> {
+  if (!isTauri) return 1
 
   try {
-    await invoke(
+    return await invoke<number>(
       'webview_zoom',
       {
         label:
@@ -3636,6 +3883,30 @@ export async function zoomBrowseTab(
         error,
       )
     }
+
+    return 1
+  }
+}
+
+export async function setBrowseTabZoom(
+  shortcutId: string,
+  factor: number,
+): Promise<number> {
+  if (!isTauri) return factor
+
+  try {
+    return await invoke<number>(
+      'webview_set_zoom',
+      {
+        label: tabWebviewLabel(shortcutId),
+        factor,
+      },
+    )
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[nebula] webview_set_zoom failed', error)
+    }
+    throw error
   }
 }
 
@@ -3664,6 +3935,18 @@ export async function openBrowseTabDevTools(
       )
     }
   }
+}
+
+export async function setBrowseTabMuted(
+  shortcutId: string,
+  muted: boolean,
+): Promise<void> {
+  if (!isTauri) return
+
+  await invoke('webview_set_muted', {
+    label: tabWebviewLabel(shortcutId),
+    muted,
+  })
 }
 
 export async function hideAllBrowseTabs(): Promise<void> {
@@ -3852,6 +4135,7 @@ export async function closeBrowseTab(
   await tabLifecycleQueue.run(shortcutId, async () => {
     await closeBrowseTabQueued(shortcutId)
   })
+  await tabLifecycleQueue.releaseWhenIdle(shortcutId)
 }
 
 async function closeBrowseTabQueued(
@@ -3957,6 +4241,8 @@ async function closeBrowseTabQueued(
   } catch {
     // ignore sweep errors
   }
+
+  stopMemoryPressureMonitorIfIdle()
 }
 
 export async function syncTabWebviewFullscreenBounds(
@@ -4003,7 +4289,10 @@ export async function syncTabWebviewFullscreenBounds(
     false,
   )
 
-  await webview.show()
+  await showWebviewForCurrentWindowState(
+    webview,
+    'browser.fullscreen.show',
+  )
 
   await invoke(
     'webview_raise_tab_fullscreen',

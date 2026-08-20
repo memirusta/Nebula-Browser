@@ -41,6 +41,8 @@ export async function factoryResetNebulaApp(): Promise<void> {
       isTauri ? invoke('webview_factory_reset_profiles') : Promise.resolve(),
     clearPasswordVault: () =>
       isTauri ? invoke('password_vault_clear') : Promise.resolve(),
+    clearGoogleSyncCredential: () =>
+      isTauri ? invoke('google_sync_forget') : Promise.resolve(),
     clearShellStorage: resetNebulaAppData,
     reloadShell: reloadNebulaApp,
   })

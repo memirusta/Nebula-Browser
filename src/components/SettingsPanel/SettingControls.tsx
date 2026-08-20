@@ -6,11 +6,13 @@ export function SettingToggleRow({
   label,
   hint,
   checked,
+  disabled = false,
   onChange,
 }: {
   label: string
   hint: string
   checked: boolean
+  disabled?: boolean
   onChange: () => void
 }) {
   return (
@@ -24,6 +26,7 @@ export function SettingToggleRow({
         role="switch"
         aria-checked={checked}
         aria-label={label}
+        disabled={disabled}
         className={`${styles.toggle} ${checked ? styles.toggleOn : ''}`}
         onClick={onChange}
       >

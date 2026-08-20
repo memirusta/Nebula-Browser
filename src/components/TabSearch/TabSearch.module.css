@@ -1,0 +1,74 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  border: 0;
+  background: rgba(3, 6, 10, 0.58);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.panel {
+  position: fixed;
+  z-index: 1101;
+  top: 76px;
+  left: 50%;
+  width: min(680px, calc(100vw - 36px));
+  max-height: min(560px, calc(100vh - 104px));
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  background: rgba(14, 18, 25, 0.97);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 26px 78px rgba(0, 0, 0, 0.58);
+  animation: panelIn 160ms ease-out;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+}
+
+.header h2 { margin: 2px 0 0; font-size: 21px; }
+.header kbd { padding: 5px 8px; border: 1px solid rgba(255,255,255,.13); border-radius: 7px; color: rgba(255,255,255,.56); background: rgba(255,255,255,.06); font: 600 10px/1 system-ui; }
+.eyebrow { color: rgba(255,255,255,.4); font-size: 9px; font-weight: 800; letter-spacing: .15em; }
+
+.search {
+  display: flex;
+  height: 48px;
+  margin: 0 16px 12px;
+  padding: 0 14px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 14px;
+  background: rgba(255,255,255,.065);
+}
+
+.search:focus-within { border-color: rgba(139, 112, 255, .72); box-shadow: 0 0 0 3px rgba(115, 86, 230, .17); }
+.search svg { width: 20px; height: 20px; stroke: rgba(255,255,255,.55); stroke-width: 1.8; }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; color: inherit; background: transparent; font: 500 14px/1.2 system-ui; }
+.search input::placeholder { color: rgba(255,255,255,.38); }
+
+.results { max-height: 402px; padding: 0 10px 12px; overflow-y: auto; }
+.result { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 13px; }
+.resultSelected { background: rgba(255,255,255,.075); }
+.resultActive { box-shadow: inset 3px 0 0 #8869f2; }
+.resultMain { display: grid; min-width: 0; padding: 9px 10px; border: 0; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 11px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.favicon { display: grid; width: 36px; height: 36px; overflow: hidden; place-items: center; border-radius: 10px; background: rgba(255,255,255,.08); font-weight: 700; }
+.favicon img { width: 23px; height: 23px; object-fit: contain; }
+.resultText { min-width: 0; }
+.resultText strong, .resultText span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resultText strong { font-size: 13px; }
+.resultText span { margin-top: 4px; color: rgba(255,255,255,.43); font-size: 10px; }
+.activeBadge { padding: 4px 7px; border-radius: 999px; color: #cbbcff; background: rgba(133,94,235,.17); font-size: 9px; font-weight: 700; }
+.actions { display: flex; padding-right: 8px; gap: 3px; }
+.actions button { width: 32px; height: 32px; border: 0; border-radius: 9px; color: rgba(255,255,255,.62); background: transparent; cursor: pointer; }
+.actions button:hover, .actions .muted { color: #fff; background: rgba(255,255,255,.1); }
+.empty { padding: 54px 18px; color: rgba(255,255,255,.45); text-align: center; font-size: 13px; }
+
+@keyframes panelIn { from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .panel { animation: none; } }

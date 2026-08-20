@@ -23,6 +23,8 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static VERIFICATION_STATES: LazyLock<Mutex<HashMap<String, VerificationState>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static EXTERNAL_URI_NAVIGATIONS: LazyLock<Mutex<HashMap<String, ExternalUriNavigationState>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
     static UI_LOCALE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("en".to_string()));
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, ICoreWebView2NavigationCompletedEventHandler>> =
@@ -34,9 +36,15 @@ mod imp {
         retry_count: u8,
     }
 
+    struct ExternalUriNavigationState {
+        last_seen: Instant,
+        pending_completions: u8,
+    }
+
     const VERIFICATION_WINDOW: Duration = Duration::from_secs(45);
     const MAX_VERIFICATION_RETRIES: u8 = 2;
     const DOWNLOAD_ABORT_GRACE: Duration = Duration::from_millis(900);
+    const EXTERNAL_URI_NAVIGATION_WINDOW: Duration = Duration::from_secs(5);
 
     pub fn set_ui_locale(locale: &str) {
         let normalized = if locale.eq_ignore_ascii_case("tr") {
@@ -70,6 +78,45 @@ mod imp {
             }
             state.last_seen = now;
         }
+    }
+
+    pub(crate) fn note_external_uri_navigation(label: &str) {
+        let now = Instant::now();
+        if let Ok(mut navigations) = EXTERNAL_URI_NAVIGATIONS.lock() {
+            let state =
+                navigations
+                    .entry(label.to_string())
+                    .or_insert(ExternalUriNavigationState {
+                        last_seen: now,
+                        pending_completions: 0,
+                    });
+            if now.duration_since(state.last_seen) > EXTERNAL_URI_NAVIGATION_WINDOW {
+                state.pending_completions = 0;
+            }
+            state.last_seen = now;
+            state.pending_completions = state.pending_completions.saturating_add(1);
+        }
+    }
+
+    fn claim_external_uri_navigation(label: &str) -> bool {
+        let now = Instant::now();
+        let Ok(mut navigations) = EXTERNAL_URI_NAVIGATIONS.lock() else {
+            return false;
+        };
+        let Some(state) = navigations.get_mut(label) else {
+            return false;
+        };
+        if now.duration_since(state.last_seen) > EXTERNAL_URI_NAVIGATION_WINDOW
+            || state.pending_completions == 0
+        {
+            navigations.remove(label);
+            return false;
+        }
+        state.pending_completions -= 1;
+        if state.pending_completions == 0 {
+            navigations.remove(label);
+        }
+        true
     }
 
     fn claim_browser_verification_retry(label: &str) -> Option<Duration> {
@@ -362,6 +409,17 @@ mod imp {
                             return Ok(());
                         }
 
+                        // WebView2 deliberately reports every external protocol
+                        // launch as ConnectionAborted. Consume only the failure
+                        // paired with our preceding external-URI event so genuine
+                        // connection aborts still receive Nebula's error page.
+                        if error_status == COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+                            && http_status == 0
+                            && claim_external_uri_navigation(&label_for_handler)
+                        {
+                            return Ok(());
+                        }
+
                         let Some(webview) = sender else {
                             return Ok(());
                         };
@@ -456,11 +514,17 @@ mod imp {
         if let Ok(mut states) = VERIFICATION_STATES.lock() {
             states.remove(label);
         }
+        if let Ok(mut navigations) = EXTERNAL_URI_NAVIGATIONS.lock() {
+            navigations.remove(label);
+        }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::{build_error_page_url, retry_target_is_current, suppress_error_page};
+        use super::{
+            build_error_page_url, claim_external_uri_navigation, note_external_uri_navigation,
+            retry_target_is_current, suppress_error_page,
+        };
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
             COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
@@ -494,6 +558,15 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 0,
             ));
+        }
+
+        #[test]
+        fn external_uri_abort_is_claimed_once_for_its_tab() {
+            let label = "external-uri-abort-test";
+            note_external_uri_navigation(label);
+            assert!(claim_external_uri_navigation(label));
+            assert!(!claim_external_uri_navigation(label));
+            assert!(!claim_external_uri_navigation("another-tab"));
         }
 
         #[test]
@@ -534,7 +607,7 @@ mod imp {
 pub use imp::{set_ui_locale, setup_tab_error_page, teardown_tab_error_page};
 
 #[cfg(target_os = "windows")]
-pub(crate) use imp::note_browser_verification_request;
+pub(crate) use imp::{note_browser_verification_request, note_external_uri_navigation};
 
 #[cfg(not(target_os = "windows"))]
 pub fn set_ui_locale(_locale: &str) {}
@@ -549,3 +622,6 @@ pub fn teardown_tab_error_page(_app: &tauri::AppHandle, _label: &str) {}
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn note_browser_verification_request(_label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn note_external_uri_navigation(_label: &str) {}

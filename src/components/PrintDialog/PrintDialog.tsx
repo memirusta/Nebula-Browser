@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  renderBrowsePrintPreview,
   listBrowsePrinters,
   type BrowsePrinterInfo,
   type BrowsePrintOptions,
@@ -10,6 +11,7 @@ import { useLocale } from '../../hooks/useLocale'
 import styles from './PrintDialog.module.css'
 
 interface PrintDialogProps {
+  webviewLabel: string
   title: string
   url: string
   onCancel: () => void
@@ -39,6 +41,13 @@ const COPY = {
     layout: 'Yönlendirme',
     portrait: 'Dikey',
     landscape: 'Yatay',
+    paperSize: 'Kağıt boyutu',
+    a4: 'A4',
+    letter: 'Letter',
+    margins: 'Kenar boşlukları',
+    defaultMargins: 'Normal',
+    minimumMargins: 'Dar',
+    noMargins: 'Yok',
     pages: 'Sayfalar',
     all: 'Tümü',
     custom: 'Özel',
@@ -55,8 +64,10 @@ const COPY = {
     printingFailed: 'Yazdırma başarısız.',
     cancel: 'İptal',
     sending: 'Gönderiliyor…',
-    preview: 'Yerleşim önizlemesi',
-    previewNote: 'Bu yalnızca yerleşim önizlemesidir. Sayfanın kendisini WebView2 yazdırma için oluşturur.',
+    preview: 'Baskı önizlemesi',
+    previewLoading: 'Önizleme hazırlanıyor…',
+    previewUnavailable: 'Canlı önizleme alınamadı.',
+    previewNote: 'WebView2 tarafından oluşturulan gerçek baskı sayfaları. Sayfa aralığı ve baskı ayarları önizlemeye uygulanır.',
   },
   en: {
     brand: 'NEBULA PRINT',
@@ -77,6 +88,13 @@ const COPY = {
     layout: 'Layout',
     portrait: 'Portrait',
     landscape: 'Landscape',
+    paperSize: 'Paper size',
+    a4: 'A4',
+    letter: 'Letter',
+    margins: 'Margins',
+    defaultMargins: 'Default',
+    minimumMargins: 'Narrow',
+    noMargins: 'None',
     pages: 'Pages',
     all: 'All',
     custom: 'Custom',
@@ -93,8 +111,10 @@ const COPY = {
     printingFailed: 'Printing failed.',
     cancel: 'Cancel',
     sending: 'Sending…',
-    preview: 'Layout preview',
-    previewNote: 'Layout preview only. The page itself is rendered for print by WebView2.',
+    preview: 'Print preview',
+    previewLoading: 'Preparing preview…',
+    previewUnavailable: 'Live preview is unavailable.',
+    previewNote: 'Real print pages rendered by WebView2. Page ranges and print settings are applied to the preview.',
   },
 } as const
 
@@ -107,6 +127,7 @@ function displayHost(url: string): string {
 }
 
 export function PrintDialog({
+  webviewLabel,
   title,
   url,
   onCancel,
@@ -129,6 +150,10 @@ export function PrintDialog({
     useState('')
   const [orientation, setOrientation] =
     useState<'portrait' | 'landscape'>('portrait')
+  const [paperSize, setPaperSize] =
+    useState<'a4' | 'letter'>('a4')
+  const [margins, setMargins] =
+    useState<'default' | 'minimum' | 'none'>('default')
   const [copies, setCopies] =
     useState(1)
   const [scale, setScale] =
@@ -143,6 +168,11 @@ export function PrintDialog({
     useState(false)
   const [error, setError] =
     useState<string | null>(null)
+  const [previewPdf, setPreviewPdf] =
+    useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] =
+    useState(true)
+  const previewEpochRef = useRef(0)
   const dialogRef = useRef<HTMLElement>(null)
   useModalFocusTrap(dialogRef)
 
@@ -208,6 +238,64 @@ export function PrintDialog({
     [orientation],
   )
 
+  useEffect(() => {
+    const epoch = previewEpochRef.current + 1
+    previewEpochRef.current = epoch
+    if (customRangeInvalid) {
+      setPreviewPdf(null)
+      setPreviewLoading(false)
+      return
+    }
+
+    setPreviewLoading(true)
+    const timer = window.setTimeout(() => {
+      void renderBrowsePrintPreview(
+        webviewLabel,
+        {
+          printerName,
+          pageRanges:
+            pageMode === 'custom'
+              ? pageRanges.trim()
+              : '',
+          landscape: orientation === 'landscape',
+          copies,
+          scale: scale / 100,
+          backgrounds,
+          headersAndFooters,
+          selectionOnly,
+          paperSize,
+          margins,
+        },
+      )
+        .then((pdf) => {
+          if (previewEpochRef.current !== epoch) return
+          setPreviewPdf(pdf)
+        })
+        .finally(() => {
+          if (previewEpochRef.current !== epoch) return
+          setPreviewLoading(false)
+        })
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [
+    backgrounds,
+    copies,
+    customRangeInvalid,
+    headersAndFooters,
+    margins,
+    orientation,
+    pageMode,
+    pageRanges,
+    paperSize,
+    printerName,
+    scale,
+    selectionOnly,
+    webviewLabel,
+  ])
+
   const submit = async () => {
     if (
       busy ||
@@ -247,6 +335,8 @@ export function PrintDialog({
         backgrounds,
         headersAndFooters,
         selectionOnly,
+        paperSize,
+        margins,
       })
     } catch (printError) {
       console.error('[nebula print] print failed', printError)
@@ -507,6 +597,52 @@ export function PrintDialog({
             </div>
           </div>
 
+          <div className={styles.twoColumn}>
+            <div className={styles.field}>
+              <label htmlFor="nebula-print-paper-size">
+                {copy.paperSize}
+              </label>
+              <select
+                id="nebula-print-paper-size"
+                className={styles.input}
+                value={paperSize}
+                onChange={(event) =>
+                  setPaperSize(
+                    event.target.value as
+                      | 'a4'
+                      | 'letter',
+                  )
+                }
+              >
+                <option value="a4">{copy.a4}</option>
+                <option value="letter">{copy.letter}</option>
+              </select>
+            </div>
+
+            <div className={styles.field}>
+              <label htmlFor="nebula-print-margins">
+                {copy.margins}
+              </label>
+              <select
+                id="nebula-print-margins"
+                className={styles.input}
+                value={margins}
+                onChange={(event) =>
+                  setMargins(
+                    event.target.value as
+                      | 'default'
+                      | 'minimum'
+                      | 'none',
+                  )
+                }
+              >
+                <option value="default">{copy.defaultMargins}</option>
+                <option value="minimum">{copy.minimumMargins}</option>
+                <option value="none">{copy.noMargins}</option>
+              </select>
+            </div>
+          </div>
+
           <div className={styles.field}>
             <label>{copy.pages}</label>
             <div className={styles.segmented}>
@@ -689,56 +825,53 @@ export function PrintDialog({
             <small>
               {orientation === 'landscape'
                 ? copy.landscape
-                : copy.portrait} · {scale}%
+                : copy.portrait} · {paperSize === 'a4' ? copy.a4 : copy.letter} · {scale}%
             </small>
           </div>
 
           <div className={styles.previewStage}>
-            <div
-              className={[
-                styles.paper,
-                paperClass,
-              ].join(' ')}
-              style={{
-                '--preview-scale':
-                  String(
-                    Math.min(
-                      1,
-                      Math.max(
-                        0.52,
-                        scale / 100,
-                      ),
-                    ),
-                  ),
-              } as React.CSSProperties}
-            >
-              <div className={styles.paperHeader}>
-                <strong>
-                  {title || copy.untitled}
-                </strong>
-                <span>
-                  {displayHost(url)}
-                </span>
-              </div>
-
-              <div className={styles.previewHero} />
-              <div className={styles.previewLineLong} />
-              <div className={styles.previewLine} />
-              <div className={styles.previewLine} />
-              <div className={styles.previewGrid}>
-                <span />
-                <span />
-              </div>
-              <div className={styles.previewLineLong} />
-              <div className={styles.previewLine} />
-
-              {headersAndFooters && (
-                <div className={styles.paperFooter}>
+            {previewPdf ? (
+              <iframe
+                className={styles.previewDocument}
+                src={`${previewPdf}#toolbar=0&navpanes=0&view=FitH`}
+                title={copy.preview}
+              />
+            ) : (
+              <div
+                className={[
+                  styles.paper,
+                  paperClass,
+                ].join(' ')}
+              >
+                <div className={styles.paperHeader}>
+                  <strong>{title || copy.untitled}</strong>
                   <span>{displayHost(url)}</span>
-                  <span>1</span>
                 </div>
-              )}
-            </div>
+
+                <div className={styles.paperContent}>
+                  <div
+                    className={styles.previewFallback}
+                    aria-busy={previewLoading}
+                  >
+                    <div className={styles.previewHero} />
+                    <div className={styles.previewLineLong} />
+                    <div className={styles.previewLine} />
+                    <div className={styles.previewLine} />
+                    <div className={styles.previewGrid}>
+                      <span />
+                      <span />
+                    </div>
+                    <div className={styles.previewLineLong} />
+                    <div className={styles.previewLine} />
+                    <span className={styles.previewStatus}>
+                      {previewLoading
+                        ? copy.previewLoading
+                        : copy.previewUnavailable}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <p className={styles.previewNote}>

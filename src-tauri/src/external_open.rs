@@ -56,7 +56,7 @@ pub fn capture_startup_args() {
     let _ = queue_external_urls(urls);
 }
 
-fn activate_main_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
+pub(crate) fn activate_main_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
     let was_minimized = window.is_minimized().unwrap_or(false);
 
     let _ = window.show();

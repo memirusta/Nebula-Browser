@@ -22,6 +22,7 @@ export type BrowserShortcutId =
   | 'go-forward'
   | 'go-home'
   | 'open-history'
+  | 'open-tab-search'
   | 'zoom-in'
   | 'zoom-out'
   | 'zoom-reset'
@@ -60,6 +61,7 @@ export const CONFIGURABLE_BROWSER_SHORTCUT_IDS: ConfigurableBrowserShortcutId[] 
   'go-forward',
   'go-home',
   'open-history',
+  'open-tab-search',
   'zoom-in',
   'zoom-out',
   'zoom-reset',
@@ -88,6 +90,7 @@ export const DEFAULT_BROWSER_SHORTCUT_BINDINGS: BrowserShortcutBindings = {
   'go-forward': ['Alt+ArrowRight'],
   'go-home': ['Ctrl+T'],
   'open-history': ['Ctrl+H'],
+  'open-tab-search': ['Ctrl+Shift+A'],
   'zoom-in': ['Ctrl++', 'Ctrl+='],
   'zoom-out': ['Ctrl+-'],
   'zoom-reset': ['Ctrl+0'],
