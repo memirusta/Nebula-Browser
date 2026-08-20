@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -10,6 +11,7 @@ import {
   getSettingsCategories,
   type SettingsCategoryId,
 } from '../../core/settingsCategories'
+import { LOCALE_MESSAGES, type LocaleMessageKey } from '../../core/locale'
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { showAppConfirmation } from '../../core/appDialog'
@@ -30,6 +32,11 @@ import { AccountSettingsSection } from './AccountSettingsSection'
 import styles from './SettingsPanel.module.css'
 import type { NebulaAccount } from '../../core/nebulaAccount'
 import type { BrowsingDataKind } from '../../platform/tauriBrowser'
+import {
+  notificationHost,
+  type SiteNotificationPermission,
+  type SiteNotificationPermissions,
+} from '../../core/notification'
 import {
   browserShortcutBindingFromEvent,
   findBrowserShortcutConflict,
@@ -67,6 +74,7 @@ const SHORTCUT_REFERENCE: ShortcutReferenceGroup[] = [
       { id: 'reopen-tab', tr: 'Son kapatılan sekmeyi yeniden aç', en: 'Reopen the last closed tab' },
       { id: 'next-tab', tr: 'Sonraki sekmeye geç', en: 'Switch to the next tab' },
       { id: 'prev-tab', tr: 'Önceki sekmeye geç', en: 'Switch to the previous tab' },
+      { id: 'open-tab-search', tr: 'Sekmelerde ara', en: 'Search open tabs' },
       { id: 'switch-tab-1', tr: '1. sekmeye geç', en: 'Switch to tab 1' },
       { id: 'switch-tab-2', tr: '2. sekmeye geç', en: 'Switch to tab 2' },
       { id: 'switch-tab-3', tr: '3. sekmeye geç', en: 'Switch to tab 3' },
@@ -109,6 +117,194 @@ const SHORTCUT_LABELS = new Map(
     group.items.map((item) => [item.id, item] as const),
   ),
 )
+
+interface SettingsSearchEntry {
+  categoryId: SettingsCategoryId
+  tr: string
+  en: string
+  keywords: string
+}
+
+const SETTINGS_SEARCH_KEYS: Record<SettingsCategoryId, readonly LocaleMessageKey[]> = {
+  appearance: [
+    'settingsLanguage',
+    'theme',
+    'glassBlur',
+    'glassOpacity',
+    'glassSaturate',
+    'glassContrast',
+    'accentColor',
+    'goldColor',
+    'lunarGlassBlur',
+    'lunarGlassOpacity',
+    'appearanceReset',
+  ],
+  home: [
+    'editUi',
+    'toolbar',
+    'systemWidgets',
+    'ramWidget',
+    'cpuWidget',
+    'clock',
+    'clockFontSize',
+    'clockFontWeight',
+    'clockFontFamily',
+    'clockShowDate',
+    'pinnedSites',
+    'greeting',
+    'profileAvatar',
+    'username',
+    'searchEngine',
+    'resetShortcuts',
+    'homeReset',
+  ],
+  'semi-lunar': [
+    'slHomeAlwaysOpen',
+    'slBrowsingHover',
+    'slBrowsingDelay',
+    'slPreviewHover',
+    'slReducedMotion',
+    'slPreviewDelay',
+    'slCloseDelay',
+    'slOpenDuration',
+    'slCloseDuration',
+    'slScaleX',
+    'slScaleY',
+    'slCloseBtnDelay',
+    'slFolderMerge',
+    'slMergeAnim',
+    'slIconSize',
+    'slLunarWidth',
+    'slLunarHeight',
+    'overlayBlur',
+    'overlayBrightness',
+    'slReset',
+  ],
+  shortcuts: [],
+  account: [
+    'accountDisplayName',
+    'accountSiteSession',
+    'accountSignOutTitle',
+    'accountReopenSetup',
+    'accountPasswords',
+    'accountImportCsv',
+    'accountAddPassword',
+  ],
+  privacy: [
+    'trackingLevel',
+    'blockTrackers',
+    'strictCookies',
+    'httpsOnly',
+    'globalPrivacyControl',
+    'permissionPolicy',
+    'currentSitePermissions',
+    'cookieBannerBlocking',
+    'permissionExceptions',
+    'privateMode',
+    'privacyExceptions',
+    'siteShield',
+    'customBlockList',
+    'clearBrowsingData',
+    'privacyReset',
+  ],
+  notifications: [
+    'downloadNotifications',
+    'siteNotifications',
+    'showNotificationContent',
+    'toolbarBadge',
+    'notificationSitePermissions',
+    'notificationsReset',
+  ],
+  about: ['updateProduct', 'updateSection', 'factoryReset'],
+}
+
+function localizedSettingsSearchEntry(
+  categoryId: SettingsCategoryId,
+  labelKey: LocaleMessageKey,
+): SettingsSearchEntry {
+  const label = LOCALE_MESSAGES[labelKey]
+  const possibleHintKey = `${labelKey}Hint`
+  const hint = possibleHintKey in LOCALE_MESSAGES
+    ? LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey]
+    : undefined
+
+  return {
+    categoryId,
+    tr: label.tr,
+    en: label.en,
+    keywords: `${labelKey} ${hint?.tr ?? ''} ${hint?.en ?? ''}`,
+  }
+}
+
+const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
+  ...Object.entries(SETTINGS_SEARCH_KEYS).flatMap(([categoryId, keys]) =>
+    keys.map((key) => localizedSettingsSearchEntry(categoryId as SettingsCategoryId, key)),
+  ),
+  {
+    categoryId: 'appearance',
+    tr: 'Duvar kağıdı',
+    en: 'Wallpaper',
+    keywords: 'görsel image hareketli animated video ambient arka plan background yerleşim fit konum position yoğunluk intensity hız speed',
+  },
+  {
+    categoryId: 'home',
+    tr: 'Son oturumu geri yükle',
+    en: 'Restore the last session',
+    keywords: 'sekme tab session oturum restore başlangıç startup klasör folder ikon layout',
+  },
+  {
+    categoryId: 'home',
+    tr: 'Kaydedilmiş sekme oturumunu temizle',
+    en: 'Clear saved tab session',
+    keywords: 'sekme tab snapshot oturum session temizle clear',
+  },
+  {
+    categoryId: 'semi-lunar',
+    tr: 'Semi-Lunar yerleşimini sıfırla',
+    en: 'Reset Semi-Lunar layout',
+    keywords: 'ikon icon konum position varsayılan default',
+  },
+  {
+    categoryId: 'semi-lunar',
+    tr: 'Klasörleri sıfırla',
+    en: 'Reset folders',
+    keywords: 'semi lunar folder dissolve çöz dağıt',
+  },
+  {
+    categoryId: 'account',
+    tr: 'Nebula hesabı ve Google Sync',
+    en: 'Nebula account and Google Sync',
+    keywords: 'hesap account google sync eşitleme profil oturum parola password csv içe aktar import',
+  },
+  {
+    categoryId: 'privacy',
+    tr: 'uBlock Origin Lite',
+    en: 'uBlock Origin Lite',
+    keywords: 'reklam ad blocker engelleme tracker izleyici',
+  },
+  {
+    categoryId: 'about',
+    tr: 'Sürüm ve güncellemeler',
+    en: 'Version and updates',
+    keywords: 'hakkında about version sürüm update güncelleme check install yükle',
+  },
+  ...SHORTCUT_REFERENCE.flatMap((group) =>
+    group.items.map((item) => ({
+      categoryId: 'shortcuts' as const,
+      tr: item.tr,
+      en: item.en,
+      keywords: `${item.id} ${group.tr} ${group.en} klavye keyboard shortcut kısayol`,
+    })),
+  ),
+]
+
+function normalizeSettingsSearchText(value: string, locale: NebulaLocale): string {
+  return value
+    .toLocaleLowerCase(locale)
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/ı/g, 'i')
+}
 
 function ShortcutReference({
   locale,
@@ -353,6 +549,12 @@ interface SettingsPanelProps {
   onAccountSignOut: () => void
   onReopenOnboarding: () => void
   onOpenBrowseUrl?: (url: string) => void
+  notificationSites: string[]
+  notificationSitePermissions: SiteNotificationPermissions
+  onSetNotificationSitePermission: (
+    origin: string,
+    permission: SiteNotificationPermission | null,
+  ) => void
 }
 
 function CategoryContent({
@@ -385,6 +587,9 @@ function CategoryContent({
   onAccountSignOut,
   onReopenOnboarding,
   onOpenBrowseUrl,
+  notificationSites,
+  notificationSitePermissions,
+  onSetNotificationSitePermission,
 }: {
   categoryId: SettingsCategoryId
   wallpaperConfig: WallpaperConfig
@@ -415,6 +620,9 @@ function CategoryContent({
   onAccountSignOut: () => void
   onReopenOnboarding: () => void
   onOpenBrowseUrl?: (url: string) => void
+  notificationSites: string[]
+  notificationSitePermissions: SiteNotificationPermissions
+  onSetNotificationSitePermission: SettingsPanelProps['onSetNotificationSitePermission']
 }) {
   const { t, locale, setLocale } = useLocale()
   const clearingBrowsingDataRef = useRef(false)
@@ -1124,11 +1332,15 @@ function CategoryContent({
       return (
         <>
           <SettingToggleRow
-            label={t('focusAlerts')}
-            hint={t('focusAlertsHint')}
-            checked={notifications.focusModeAlerts}
+            label={t('downloadNotifications')}
+            hint={t('downloadNotificationsHint')}
+            checked={notifications.downloadNotifications}
             onChange={() =>
-              onUpdate('notifications', 'focusModeAlerts', !notifications.focusModeAlerts)
+              onUpdate(
+                'notifications',
+                'downloadNotifications',
+                !notifications.downloadNotifications,
+              )
             }
           />
           <SettingToggleRow
@@ -1140,6 +1352,19 @@ function CategoryContent({
             }
           />
           <SettingToggleRow
+            label={t('showNotificationContent')}
+            hint={t('showNotificationContentHint')}
+            checked={notifications.showNotificationContent}
+            disabled={!notifications.siteNotifications}
+            onChange={() =>
+              onUpdate(
+                'notifications',
+                'showNotificationContent',
+                !notifications.showNotificationContent,
+              )
+            }
+          />
+          <SettingToggleRow
             label={t('toolbarBadge')}
             hint={t('toolbarBadgeHint')}
             checked={notifications.showToolbarBadge}
@@ -1147,6 +1372,55 @@ function CategoryContent({
               onUpdate('notifications', 'showToolbarBadge', !notifications.showToolbarBadge)
             }
           />
+          <div className={styles.notificationPermissions}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>{t('notificationSitePermissions')}</div>
+              <div className={styles.rowHint}>
+                {notifications.siteNotifications
+                  ? t('notificationSitePermissionsHint')
+                  : t('notificationSitesDisabled')}
+              </div>
+            </div>
+            {notificationSites.length === 0 ? (
+              <p className={styles.notificationNoSites}>{t('notificationNoSites')}</p>
+            ) : (
+              <div className={styles.notificationSiteList}>
+                {notificationSites.map((origin) => {
+                  const permission = notificationSitePermissions[origin]
+                  return (
+                    <div key={origin} className={styles.notificationSiteRow}>
+                      <span title={origin}>{notificationHost(origin)}</span>
+                      <div className={styles.notificationPermissionButtons}>
+                        <button
+                          type="button"
+                          className={permission === 'allow' ? styles.notificationAllowActive : ''}
+                          disabled={!notifications.siteNotifications}
+                          onClick={() => onSetNotificationSitePermission(origin, 'allow')}
+                        >
+                          {t('notificationAllow')}
+                        </button>
+                        <button
+                          type="button"
+                          className={permission === 'block' ? styles.notificationBlockActive : ''}
+                          disabled={!notifications.siteNotifications}
+                          onClick={() => onSetNotificationSitePermission(origin, 'block')}
+                        >
+                          {t('notificationBlock')}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!permission || !notifications.siteNotifications}
+                          onClick={() => onSetNotificationSitePermission(origin, null)}
+                        >
+                          {t('notificationDefault')}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           <SettingResetRow
             label={t('notificationsReset')}
             hint={t('notificationsResetHint')}
@@ -1204,12 +1478,16 @@ export function SettingsPanel({
   onAccountSignOut,
   onReopenOnboarding,
   onOpenBrowseUrl,
+  notificationSites,
+  notificationSitePermissions,
+  onSetNotificationSitePermission,
 }: SettingsPanelProps) {
   const { t, locale } = useLocale()
   const [activeId, setActiveId] = useState<SettingsCategoryId>('appearance')
   const [visible, setVisible] = useState(false)
   const [closing, setClosing] = useState(false)
   const [entering, setEntering] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasOpenRef = useRef(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -1217,6 +1495,41 @@ export function SettingsPanel({
 
   const settingsCategories = getSettingsCategories(locale)
   const activeCategory = settingsCategories.find((c) => c.id === activeId)!
+  const settingsSearchResults = useMemo(() => {
+    const tokens = normalizeSettingsSearchText(searchQuery.trim(), locale)
+      .split(/\s+/)
+      .filter(Boolean)
+    if (tokens.length === 0) return []
+
+    return SETTINGS_SEARCH_INDEX.map((entry, order) => {
+      const category = settingsCategories.find((item) => item.id === entry.categoryId)
+      const localizedLabel = normalizeSettingsSearchText(
+        locale === 'tr' ? entry.tr : entry.en,
+        locale,
+      )
+      const searchable = normalizeSettingsSearchText([
+        entry.tr,
+        entry.en,
+        entry.keywords,
+        category?.label,
+        category?.description,
+      ].filter(Boolean).join(' '), locale)
+
+      if (!tokens.every((token) => searchable.includes(token))) return null
+
+      const labelMatches = tokens.every((token) => localizedLabel.includes(token))
+      const score = localizedLabel.startsWith(tokens.join(' '))
+        ? 0
+        : labelMatches
+          ? 1
+          : 2
+      return { entry, order, score }
+    })
+      .filter((result): result is { entry: SettingsSearchEntry; order: number; score: number } => result !== null)
+      .sort((left, right) => left.score - right.score || left.order - right.order)
+      .slice(0, 12)
+      .map(({ entry }) => entry)
+  }, [locale, searchQuery, settingsCategories])
 
   const requestClose = useCallback(() => {
     if (closing) return
@@ -1307,7 +1620,40 @@ export function SettingsPanel({
 
         <nav className={styles.nav} aria-label={t('settingsNavAria')}>
           <p className={styles.navTitle}>{t('settingsTitle')}</p>
-          {settingsCategories.map((cat) => (
+          <label className={styles.settingsSearch}>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m15.5 15.5 5 5" />
+            </svg>
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={locale === 'tr' ? 'Ayarlarda ara…' : 'Search settings…'}
+              aria-label={locale === 'tr' ? 'Ayarlarda ara' : 'Search settings'}
+            />
+          </label>
+          {searchQuery.trim() ? (
+            <div className={styles.settingsSearchResults}>
+              {settingsSearchResults.length === 0 ? (
+                <p className={styles.settingsSearchEmpty}>
+                  {locale === 'tr' ? 'Eşleşen ayar bulunamadı.' : 'No matching setting.'}
+                </p>
+              ) : settingsSearchResults.map((entry) => {
+                const category = settingsCategories.find((item) => item.id === entry.categoryId)!
+                return (
+                  <button
+                    key={`${entry.categoryId}-${entry.en}`}
+                    type="button"
+                    className={styles.settingsSearchResult}
+                    onClick={() => setActiveId(entry.categoryId)}
+                  >
+                    <span>{locale === 'tr' ? entry.tr : entry.en}</span>
+                    <small>{category.label}</small>
+                  </button>
+                )
+              })}
+            </div>
+          ) : settingsCategories.map((cat) => (
             <button
               key={cat.id}
               ref={activeId === cat.id ? activeNavRef : undefined}
@@ -1360,6 +1706,9 @@ export function SettingsPanel({
               onAccountSignOut={onAccountSignOut}
               onReopenOnboarding={onReopenOnboarding}
               onOpenBrowseUrl={onOpenBrowseUrl}
+              notificationSites={notificationSites}
+              notificationSitePermissions={notificationSitePermissions}
+              onSetNotificationSitePermission={onSetNotificationSitePermission}
             />
           </div>
         </div>

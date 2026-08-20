@@ -7,6 +7,7 @@ mod download_manager;
 mod external_open;
 mod google_oauth;
 mod google_sync;
+mod native_notification;
 mod password_webview;
 mod secure_password_vault;
 mod site_fullscreen_window;
@@ -24,6 +25,138 @@ mod webview_controls;
 mod webview_privacy;
 
 static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn sensitive_log_key(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    [
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "authorization",
+        "cookie",
+        "credential",
+        "codeverifier",
+        "clientsecret",
+        "apikey",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
+fn redact_inline_log_secrets(input: &str) -> String {
+    const MAX_LOG_STRING_CHARS: usize = 4096;
+    const MARKERS: &[&str] = &[
+        "authorization:bearer ",
+        "authorization: bearer ",
+        "bearer ",
+        "access_token=",
+        "refresh_token=",
+        "id_token=",
+        "password=",
+        "passwd=",
+        "client_secret=",
+        "api_key=",
+        "authorization:",
+        "cookie:",
+        "\"access_token\":\"",
+        "\"refresh_token\":\"",
+        "\"id_token\":\"",
+        "\"password\":\"",
+    ];
+
+    let truncated = input.chars().take(MAX_LOG_STRING_CHARS).collect::<String>();
+    let mut output = truncated;
+    let mut search_from = 0usize;
+    loop {
+        let lowercase = output.to_ascii_lowercase();
+        let next = MARKERS
+            .iter()
+            .filter_map(|marker| {
+                lowercase[search_from..]
+                    .find(marker)
+                    .map(|position| (search_from + position, *marker))
+            })
+            .min_by_key(|(position, _)| *position);
+        let Some((marker_start, marker)) = next else {
+            break;
+        };
+        let value_start = marker_start + marker.len();
+        let value_end = output[value_start..]
+            .find(|character: char| {
+                character.is_whitespace()
+                    || matches!(character, '&' | ',' | ';' | '}' | ']' | '"' | '\'')
+            })
+            .map(|offset| value_start + offset)
+            .unwrap_or(output.len());
+        output.replace_range(value_start..value_end, "[redacted]");
+        search_from = value_start + "[redacted]".len();
+        if search_from >= output.len() {
+            break;
+        }
+    }
+    output
+}
+
+fn sanitize_transition_log_value(value: serde_json::Value, key: Option<&str>) -> serde_json::Value {
+    if key.is_some_and(sensitive_log_key) {
+        return serde_json::Value::String("[redacted]".to_string());
+    }
+    match value {
+        serde_json::Value::String(value) => {
+            serde_json::Value::String(redact_inline_log_secrets(&value))
+        }
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .into_iter()
+                .take(128)
+                .map(|value| sanitize_transition_log_value(value, None))
+                .collect(),
+        ),
+        serde_json::Value::Object(values) => serde_json::Value::Object(
+            values
+                .into_iter()
+                .take(128)
+                .map(|(key, value)| {
+                    let sanitized = sanitize_transition_log_value(value, Some(&key));
+                    (key, sanitized)
+                })
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
+#[tauri::command]
+fn show_native_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    tab_label: Option<String>,
+    origin: Option<String>,
+    download_id: Option<String>,
+) -> Result<(), String> {
+    let title = title.trim().chars().take(180).collect::<String>();
+    let body = body.trim().chars().take(500).collect::<String>();
+    if title.is_empty() {
+        return Err("notification title is empty".to_string());
+    }
+    let tab_label =
+        tab_label.filter(|value| value.starts_with("nebula-tab-") && value.chars().count() <= 180);
+    let origin = origin.filter(|value| {
+        value.chars().count() <= 2048
+            && url::Url::parse(value).is_ok_and(|url| {
+                matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+            })
+    });
+    let download_id =
+        download_id.filter(|value| value.starts_with("download-") && value.chars().count() <= 180);
+    native_notification::show(&app, &title, &body, tab_label, origin, download_id)
+}
 
 #[tauri::command]
 async fn search_suggestions(query: String, engine: String) -> Result<Vec<String>, String> {
@@ -67,6 +200,8 @@ async fn search_suggestions(query: String, engine: String) -> Result<Vec<String>
     let mut data: Option<serde_json::Value> = None;
 
     for (attempt, delay) in retry_delays.iter().enumerate() {
+        #[cfg(not(debug_assertions))]
+        let _ = attempt;
         if !delay.is_zero() {
             tokio::time::sleep(*delay).await;
         }
@@ -82,12 +217,12 @@ async fn search_suggestions(query: String, engine: String) -> Result<Vec<String>
                             break;
                         }
 
-                        Err(error) => {
+                        Err(_error) => {
                             #[cfg(debug_assertions)]
                             eprintln!(
                                 "[nebula suggestions] attempt {} JSON error: {}",
                                 attempt + 1,
-                                error
+                                _error
                             );
                         }
                     }
@@ -108,12 +243,12 @@ async fn search_suggestions(query: String, engine: String) -> Result<Vec<String>
                 }
             }
 
-            Err(error) => {
+            Err(_error) => {
                 #[cfg(debug_assertions)]
                 eprintln!(
                     "[nebula suggestions] attempt {} network error: {}",
                     attempt + 1,
-                    error
+                    _error
                 );
             }
         }
@@ -200,7 +335,7 @@ fn write_transition_log(app: tauri::AppHandle, entry: serde_json::Value) -> Resu
         std::fs::rename(&path, &rotated).map_err(|error| error.to_string())?;
     }
 
-    let mut record = match entry {
+    let mut record = match sanitize_transition_log_value(entry, None) {
         serde_json::Value::Object(map) => map,
 
         value => {
@@ -235,6 +370,41 @@ fn write_transition_log(app: tauri::AppHandle, entry: serde_json::Value) -> Resu
     file.flush().map_err(|error| error.to_string())?;
 
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod transition_log_tests {
+    use super::{redact_inline_log_secrets, sanitize_transition_log_value};
+
+    #[test]
+    fn transition_logs_redact_sensitive_keys_recursively() {
+        let sanitized = sanitize_transition_log_value(
+            serde_json::json!({
+                "stage": "browser.create",
+                "password": "never-log-me",
+                "nested": {
+                    "accessToken": "token-value",
+                    "safe": "kept"
+                }
+            }),
+            None,
+        );
+        assert_eq!(sanitized["password"], "[redacted]");
+        assert_eq!(sanitized["nested"]["accessToken"], "[redacted]");
+        assert_eq!(sanitized["nested"]["safe"], "kept");
+        assert!(!sanitized.to_string().contains("never-log-me"));
+        assert!(!sanitized.to_string().contains("token-value"));
+    }
+
+    #[test]
+    fn transition_logs_redact_inline_bearer_and_query_secrets() {
+        let redacted = redact_inline_log_secrets(
+            "request failed Authorization:Bearer abc.def access_token=query-secret&next=1",
+        );
+        assert!(!redacted.contains("abc.def"));
+        assert!(!redacted.contains("query-secret"));
+        assert!(redacted.contains("[redacted]"));
+    }
 }
 
 #[cfg(all(not(debug_assertions), dev))]
@@ -307,9 +477,9 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
     // Context-menu interception requires a newer WebView2 interface. Keep tab
     // creation resilient on an unexpectedly old runtime; in that case the
     // branding layer still leaves the native Edge menu disabled.
-    if let Err(error) = context_menu::setup(&app, &label) {
+    if let Err(_error) = context_menu::setup(&app, &label) {
         #[cfg(debug_assertions)]
-        eprintln!("[nebula context menu] {label}: {error}");
+        eprintln!("[nebula context menu] {label}: {_error}");
     }
     download_manager::setup_tab_downloads(&app, &label)?;
     tab_error_page::setup_tab_error_page(&app, &label)?;
@@ -340,9 +510,9 @@ fn webview_setup_popup_target(app: tauri::AppHandle, label: String) -> Result<()
     // navigation are installed here.
     webview_branding::setup_webview_branding(&app, &label)?;
     site_ui::setup(&app, &label)?;
-    if let Err(error) = context_menu::setup(&app, &label) {
+    if let Err(_error) = context_menu::setup(&app, &label) {
         #[cfg(debug_assertions)]
-        eprintln!("[nebula context menu] {label}: {error}");
+        eprintln!("[nebula context menu] {label}: {_error}");
     }
     download_manager::setup_tab_downloads(&app, &label)?;
     tab_error_page::setup_tab_error_page(&app, &label)
@@ -1114,6 +1284,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             default_browser::open_default_browser_settings,
             external_open::take_pending_open_urls,
+            show_native_notification,
             write_transition_log,
             search_suggestions,
             webview_set_shortcut_bindings,
@@ -1124,11 +1295,14 @@ pub fn run() {
             webview_controls::webview_go_forward,
             webview_controls::webview_reload,
             webview_controls::webview_zoom,
+            webview_controls::webview_set_zoom,
             webview_controls::webview_list_printers,
             webview_controls::webview_print,
+            webview_controls::webview_print_preview,
             webview_controls::webview_open_devtools,
             webview_controls::webview_set_memory_usage,
             webview_controls::webview_is_playing_audio,
+            webview_controls::webview_set_muted,
             webview_controls::webview_set_suspended,
             webview_raise_overlay,
             webview_raise_chrome,

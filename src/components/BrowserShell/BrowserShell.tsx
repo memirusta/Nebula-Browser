@@ -26,6 +26,7 @@ import {
   emitActiveUrl,
   emitDownloadUiState,
   emitTabCatalog,
+  emitTabSearchRequest,
   emitViewMode,
   emitZoomIndicator,
 } from '../../core/nebulaBridge'
@@ -96,6 +97,8 @@ import {
   listenTabWebviewSnapshots,
   listenTabWebviewLoadingStates,
   printBrowseWebview,
+  setBrowseTabMuted,
+  setBrowseTabZoom,
   zoomBrowseTab,
   setBrowsePrivacyOptions,
   clearBrowseData,
@@ -113,6 +116,11 @@ import {
   titleFromUrl,
   type BrowserTab,
 } from '../../core/browserTab'
+import {
+  rememberSiteZoom,
+  siteZoomFactor,
+  siteZoomOrigin,
+} from '../../core/siteZoom'
 import { computeAdaptiveLunarSize } from '../../core/lunarSizing'
 import {
   homeLayoutFromSettings,
@@ -165,6 +173,7 @@ import { usePasswordVault } from '../../hooks/usePasswordVault'
 import { usePasswordBridge } from '../../hooks/usePasswordBridge'
 import { useDownloads } from '../../hooks/useDownloads'
 import { useNotifications } from '../../hooks/useNotifications'
+import { listenNativeNotificationActivations } from '../../core/notification'
 import { DownloadManager } from '../DownloadManager/DownloadManager'
 import { NotificationPanel } from '../NotificationPanel/NotificationPanel'
 import { HistoryPanel } from '../HistoryPanel/HistoryPanel'
@@ -235,6 +244,9 @@ export function BrowserShell() {
 
   const viewModeRef =
     useRef<ViewMode>('home')
+
+  const overlayDismissGuardRef =
+    useRef(0)
 
   const {
     wallpaper,
@@ -412,6 +424,7 @@ export function BrowserShell() {
 
   const downloads =
     useDownloads()
+  const actDownload = downloads.act
   const removeDownload = downloads.remove
   const clearFinishedDownloads = downloads.clearFinished
 
@@ -420,7 +433,13 @@ export function BrowserShell() {
       downloads.items,
       settings.notifications
         .siteNotifications,
+      settings.notifications.showNotificationContent,
+      settings.notifications.downloadNotifications,
     )
+  const setSiteNotificationPermission =
+    notificationCenter.setSitePermission
+  const clearSiteNotificationPermissions =
+    notificationCenter.clearSitePermissions
 
   const [
     downloadPanelOpen,
@@ -446,6 +465,8 @@ export function BrowserShell() {
 
   const [, setTabZoomPercent] =
     useState<Record<string, number>>({})
+  const appliedSiteZoomRef =
+    useRef(new Map<string, string>())
 
   const openPrintDialogForTab =
     useCallback(
@@ -485,6 +506,13 @@ export function BrowserShell() {
 
         if (!tabId || !isTauri) return
 
+        const tabBeforeZoom =
+          tabsRef.current.find(
+            (tab) => tab.shortcutId === tabId,
+          )
+        const originBeforeZoom =
+          siteZoomOrigin(tabBeforeZoom?.url ?? '')
+
         const factor =
           await zoomBrowseTab(
             tabId,
@@ -506,9 +534,64 @@ export function BrowserShell() {
         void emitZoomIndicator(
           percent,
         )
+
+        const tabAfterZoom =
+          tabsRef.current.find(
+            (tab) => tab.shortcutId === tabId,
+          )
+        if (
+          !settings.privacy.privateMode &&
+          originBeforeZoom &&
+          siteZoomOrigin(tabAfterZoom?.url ?? '') === originBeforeZoom
+        ) {
+          rememberSiteZoom(tabAfterZoom?.url ?? '', factor)
+          appliedSiteZoomRef.current.set(
+            tabId,
+            `${originBeforeZoom}|${factor.toFixed(3)}`,
+          )
+        }
       },
-      [activeTabIdRef],
+      [activeTabIdRef, settings.privacy.privateMode, tabsRef],
     )
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    const openIds = new Set(tabs.map((tab) => tab.shortcutId))
+    for (const shortcutId of appliedSiteZoomRef.current.keys()) {
+      if (!openIds.has(shortcutId)) {
+        appliedSiteZoomRef.current.delete(shortcutId)
+      }
+    }
+
+    for (const tab of tabs) {
+      const origin = siteZoomOrigin(tab.url)
+      if (!origin) continue
+      const factor = settings.privacy.privateMode
+        ? 1
+        : siteZoomFactor(tab.url)
+      const signature = `${origin}|${factor.toFixed(3)}`
+      if (appliedSiteZoomRef.current.get(tab.shortcutId) === signature) continue
+
+      appliedSiteZoomRef.current.set(tab.shortcutId, `pending:${signature}`)
+      void setBrowseTabZoom(tab.shortcutId, factor)
+        .then((appliedFactor) => {
+          appliedSiteZoomRef.current.set(
+            tab.shortcutId,
+            `${origin}|${appliedFactor.toFixed(3)}`,
+          )
+          setTabZoomPercent((current) => ({
+            ...current,
+            [tab.shortcutId]: Math.round(appliedFactor * 100),
+          }))
+        })
+        .catch(() => {
+          if (appliedSiteZoomRef.current.get(tab.shortcutId) === `pending:${signature}`) {
+            appliedSiteZoomRef.current.delete(tab.shortcutId)
+          }
+        })
+    }
+  }, [settings.privacy.privateMode, tabs])
 
   const downloadUiStateRef =
     useRef<DownloadUiStatePayload>({
@@ -769,6 +852,33 @@ export function BrowserShell() {
         false,
       )
 
+      if (
+        viewModeRef.current ===
+        'browsing'
+      ) {
+        overlayDismissGuardRef.current =
+          performance.now() +
+          450
+
+        if (
+          isTauri
+        ) {
+          setOverlayModeActive(
+            true,
+          )
+        }
+
+        setViewMode(
+          'overlay',
+        )
+
+        setHistoryPanelOpen(
+          true,
+        )
+
+        return
+      }
+
       setHistoryPanelOpen(
         (open) =>
           !open,
@@ -981,9 +1091,6 @@ export function BrowserShell() {
     } | null>(
       null,
     )
-
-  const overlayDismissGuardRef =
-    useRef(0)
 
   const [
     tauriBrowseSyncToken,
@@ -1960,6 +2067,15 @@ export function BrowserShell() {
           kind ===
             'all' ||
           kind ===
+            'permissions'
+        ) {
+          clearSiteNotificationPermissions()
+        }
+
+        if (
+          kind ===
+            'all' ||
+          kind ===
             'history'
         ) {
           clearAllHistory()
@@ -1967,6 +2083,7 @@ export function BrowserShell() {
       },
       [
         activeTabIdRef,
+        clearSiteNotificationPermissions,
         clearAllHistory,
         openTabIds,
       ],
@@ -2294,6 +2411,41 @@ export function BrowserShell() {
         switchToExistingBrowseTab,
       ],
     )
+
+  useEffect(() => {
+    if (!isTauri) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+
+    void listenNativeNotificationActivations(({ tabLabel, origin, downloadId }) => {
+      if (disposed) return
+      if (downloadId) {
+        void actDownload(downloadId, 'reveal').catch(() => undefined)
+        return
+      }
+      const shortcutId = tabLabel
+        ? shortcutIdForTabWebviewLabel(tabLabel)
+        : null
+      if (
+        shortcutId &&
+        tabsRef.current.some((tab) => tab.shortcutId === shortcutId)
+      ) {
+        switchToExistingBrowseTab(shortcutId)
+        return
+      }
+      if (origin) {
+        openShortcutByUrl(origin, { forceTargetUrl: true, activate: true })
+      }
+    }).then((dispose) => {
+      if (disposed) dispose()
+      else unlisten = dispose
+    })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [actDownload, openShortcutByUrl, switchToExistingBrowseTab, tabsRef])
 
   const openFromSearchBar =
     useCallback(
@@ -3369,6 +3521,16 @@ export function BrowserShell() {
             ),
             () => listenSiteNewWindows(
               (payload) => {
+                if (
+                  !payload.features
+                    .isPopup
+                ) {
+                  openUrlInNewTab(
+                    payload.uri,
+                  )
+                  return
+                }
+
                 void openSitePopup(
                   payload,
                 ).catch((error) => {
@@ -3605,6 +3767,21 @@ export function BrowserShell() {
             request.id,
             response,
           )
+
+          if (
+            request.requestType ===
+              'permission' &&
+            request.permissionKind ===
+              'notifications' &&
+            response.remember
+          ) {
+            setSiteNotificationPermission(
+              request.uri,
+              response.accepted
+                ? 'allow'
+                : 'block',
+            )
+          }
         } catch (error) {
           if (
             import.meta.env.DEV
@@ -3625,7 +3802,10 @@ export function BrowserShell() {
           )
         }
       },
-      [siteUiQueue],
+      [
+        setSiteNotificationPermission,
+        siteUiQueue,
+      ],
     )
 
   const reopenLastClosedTab =
@@ -4317,6 +4497,10 @@ export function BrowserShell() {
             toggleHistoryPanel()
             break
 
+          case 'open-tab-search':
+            void emitTabSearchRequest()
+            break
+
           case 'print':
             if (
               activeTabIdRef.current &&
@@ -4562,6 +4746,24 @@ export function BrowserShell() {
             )
             break
 
+          case 'set-tab-muted': {
+            const tab = tabsRef.current.find(
+              (entry) => entry.shortcutId === action.shortcutId,
+            )
+            if (!tab) break
+
+            void setBrowseTabMuted(action.shortcutId, action.muted)
+              .then(() => {
+                updateTabMeta(action.shortcutId, { isMuted: action.muted })
+              })
+              .catch((error) => {
+                if (import.meta.env.DEV) {
+                  console.warn('[nebula] tab mute failed', error)
+                }
+              })
+            break
+          }
+
           case 'open-overlay':
             openOverlay()
             break
@@ -4617,6 +4819,7 @@ export function BrowserShell() {
     openShortcutByUrl,
     handleCloseTab,
     setActiveTabId,
+    updateTabMeta,
     openOverlay,
     goBackInPage,
     goHome,
@@ -4777,6 +4980,8 @@ export function BrowserShell() {
         ...privacy,
         siteNotifications:
           notifications.siteNotifications,
+        showNotificationContent:
+          notifications.showNotificationContent,
         notificationAllowedSites:
           notificationCenter.allowedSites,
         notificationBlockedSites:
@@ -4791,6 +4996,7 @@ export function BrowserShell() {
     openTabIds,
     privacy,
     notifications.siteNotifications,
+    notifications.showNotificationContent,
     notificationCenter.allowedSites,
     notificationCenter.blockedSites,
   ])
@@ -5392,7 +5598,8 @@ export function BrowserShell() {
                   }
                 >
                   {effectiveHome
-                    .showSystemWidgets && (
+                    .showSystemWidgets &&
+                    isHome && (
                     <Suspense
                       fallback={
                         null
@@ -5653,15 +5860,6 @@ export function BrowserShell() {
             items={
               notificationCenter.items
             }
-            sites={
-              notificationCenter.sites
-            }
-            sitePermissions={
-              notificationCenter.sitePermissions
-            }
-            siteNotificationsEnabled={
-              notifications.siteNotifications
-            }
             variant={
               isBrowsing
                 ? 'browsing'
@@ -5683,13 +5881,24 @@ export function BrowserShell() {
             onClear={
               notificationCenter.clear
             }
-            onSetSitePermission={
-              notificationCenter.setSitePermission
-            }
             onOpenOrigin={(
               origin,
+              tabLabel,
             ) => {
               closeNotificationPanel()
+
+              const shortcutId = tabLabel
+                ? shortcutIdForTabWebviewLabel(tabLabel)
+                : null
+              if (
+                shortcutId &&
+                tabsRef.current.some(
+                  (tab) => tab.shortcutId === shortcutId,
+                )
+              ) {
+                switchToExistingBrowseTab(shortcutId)
+                return
+              }
 
               openShortcutByUrl(
                 origin,
@@ -5701,6 +5910,10 @@ export function BrowserShell() {
                     true,
                 },
               )
+            }}
+            onOpenDownload={(downloadId) => {
+              closeNotificationPanel()
+              void actDownload(downloadId, 'reveal').catch(() => undefined)
             }}
             onClose={
               closeNotificationPanel
@@ -6058,6 +6271,15 @@ export function BrowserShell() {
             }
             settings={
               settings
+            }
+            notificationSites={
+              notificationCenter.sites
+            }
+            notificationSitePermissions={
+              notificationCenter.sitePermissions
+            }
+            onSetNotificationSitePermission={
+              notificationCenter.setSitePermission
             }
             onUpdate={
               updateCategory

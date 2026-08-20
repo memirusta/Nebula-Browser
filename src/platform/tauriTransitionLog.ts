@@ -25,18 +25,15 @@ export function transitionErrorDetails(error: unknown): Record<string, unknown> 
   if (error instanceof Error) {
     return {
       errorName: error.name,
-      errorMessage: error.message,
-      errorStack: error.stack,
+      errorMessage: error.message.slice(0, 1000),
     }
   }
   if (typeof error === 'object' && error !== null) {
-    try {
-      return { errorValue: JSON.parse(JSON.stringify(error)) }
-    } catch {
-      return { errorValue: String(error) }
+    return {
+      errorType: error.constructor?.name ?? 'Object',
     }
   }
-  return { errorValue: String(error) }
+  return { errorValue: String(error).slice(0, 1000) }
 }
 
 export async function writeTransitionLog(

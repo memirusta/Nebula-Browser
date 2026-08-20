@@ -23,6 +23,65 @@
   animation: zoomIndicatorIn 150ms ease-out;
 }
 
+.zoomIndicatorShifted {
+  top: 78px;
+}
+
+.privacyIndicator {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 50px;
+  max-width: min(560px, calc(100vw - 36px));
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 25px;
+  background: rgba(18, 23, 32, 0.94);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  pointer-events: auto;
+  font-size: 13px;
+  animation: zoomIndicatorIn 150ms ease-out;
+}
+
+.privacyIndicatorPulse {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #67e8a5;
+  box-shadow: 0 0 0 5px rgba(103, 232, 165, 0.14);
+}
+
+.privacyIndicatorSite {
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.privacyIndicatorFeatures {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.privacyIndicatorFeatures span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .zoomIndicatorIcon {
   width: 19px;
   height: 19px;
@@ -80,7 +139,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .zoomIndicator {
+  .zoomIndicator,
+  .privacyIndicator {
     animation: none;
   }
 }

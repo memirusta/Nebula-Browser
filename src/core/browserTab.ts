@@ -13,6 +13,7 @@ export interface BrowserTab {
   title: string
   favicon: string
   isLoading?: boolean
+  isMuted?: boolean
 }
 
 export function shortcutFromTab(tab: BrowserTab): Shortcut {
@@ -76,6 +77,7 @@ export function createBrowserTab(shortcut: Shortcut): BrowserTab {
     title: shortcut.label,
     favicon,
     isLoading: true,
+    isMuted: false,
   }
 }
 

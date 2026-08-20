@@ -1,4 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '../platform/runtime'
 
 export const NOTIFICATION_STORE_KEY = 'nebula-notifications-v1'
@@ -29,6 +30,13 @@ export interface NativeSiteNotification {
   body: string
   iconUrl: string
   timestampMs: number
+  requiresNativeToast?: boolean
+}
+
+export interface NativeNotificationActivation {
+  tabLabel?: string | null
+  origin?: string | null
+  downloadId?: string | null
 }
 
 export type SiteNotificationPermissions = Record<string, SiteNotificationPermission>
@@ -115,4 +123,25 @@ export function listenSiteNotifications(
   return listen<NativeSiteNotification>('nebula-site-notification', ({ payload }) => {
     onNotification(payload)
   })
+}
+
+export function listenNativeNotificationActivations(
+  onActivation: (activation: NativeNotificationActivation) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<NativeNotificationActivation>(
+    'nebula-native-notification-activated',
+    ({ payload }) => onActivation(payload),
+  )
+}
+
+export async function showNativeNotification(
+  title: string,
+  body: string,
+  tabLabel?: string | null,
+  origin?: string | null,
+  downloadId?: string | null,
+): Promise<void> {
+  if (!isTauri) return
+  await invoke('show_native_notification', { title, body, tabLabel, origin, downloadId })
 }

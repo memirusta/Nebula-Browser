@@ -38,6 +38,7 @@ export interface SiteUiCancelledPayload {
 }
 
 export interface PopupWindowFeatures {
+  isPopup: boolean
   hasPosition: boolean
   hasSize: boolean
   left: number

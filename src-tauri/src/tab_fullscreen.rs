@@ -8,7 +8,7 @@ mod imp {
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2ContainsFullScreenElementChangedEventHandler,
-        ICoreWebView2WebMessageReceivedEventHandler,
+        ICoreWebView2WebMessageReceivedEventArgs, ICoreWebView2WebMessageReceivedEventHandler,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
@@ -16,7 +16,7 @@ mod imp {
         WebMessageReceivedEventHandler,
     };
     use windows::core::PCWSTR;
-    use windows_core::{BOOL, HSTRING};
+    use windows_core::{BOOL, HSTRING, PWSTR};
 
     static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -57,6 +57,16 @@ mod imp {
   document.addEventListener('webkitfullscreenchange', notifyHost, true);
 })();
 "#;
+
+    unsafe fn web_message_string(args: &ICoreWebView2WebMessageReceivedEventArgs) -> String {
+        let mut value = PWSTR::null();
+        if args.TryGetWebMessageAsString(&mut value).is_err() || value.is_null() {
+            return String::new();
+        }
+        let message = value.to_string().unwrap_or_default();
+        windows::Win32::System::Com::CoTaskMemFree(Some(value.as_ptr().cast()));
+        message
+    }
 
     #[derive(Clone, Serialize)]
     struct TabFullscreenPayload {
@@ -178,10 +188,19 @@ mod imp {
                 let fallback_app = app_handle.clone();
                 let fallback_label = tab_label.clone();
                 let webmessage_handler =
-                    WebMessageReceivedEventHandler::create(Box::new(move |sender, _args| {
+                    WebMessageReceivedEventHandler::create(Box::new(move |sender, args| {
                         let Some(webview) = sender else {
                             return Ok(());
                         };
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        if web_message_string(&args) != "nebula-fullscreen-state-changed"
+                            || crate::site_ui::validated_web_message_source(&webview, &args)
+                                .is_none()
+                        {
+                            return Ok(());
+                        }
                         let mut contains_fullscreen = BOOL::default();
                         if webview
                             .ContainsFullScreenElement(&mut contains_fullscreen)

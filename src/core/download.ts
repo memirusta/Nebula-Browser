@@ -22,10 +22,20 @@ export interface DownloadItem {
   interruptReason: number
   canResume: boolean
   paused: boolean
+  dangerReason: 'dangerous_file_type' | null
+  requiresConfirmation: boolean
   startedAtMs: number
 }
 
-export type DownloadAction = 'pause' | 'resume' | 'cancel' | 'open' | 'reveal'
+export type DownloadAction =
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'retry'
+  | 'keep'
+  | 'delete'
+  | 'open'
+  | 'reveal'
 
 export function listenDownloads(
   onUpdate: (download: DownloadItem) => void,

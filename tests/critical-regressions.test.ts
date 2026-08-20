@@ -184,6 +184,49 @@ test('working state always clears when an async task rejects', async () => {
   assert.deepEqual(states, [true, false])
 })
 
+test('crash-recovery chrome suppression ignores stale async visibility work', () => {
+  const chromeSource = readFileSync(
+    new URL('../src/platform/tauriChromeWebview.ts', import.meta.url),
+    'utf8',
+  )
+  const shellSource = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(chromeSource, /chromeVisibilityRequestSequence/)
+  assert.match(
+    chromeSource,
+    /requestSequence !== chromeVisibilityRequestSequence/,
+  )
+  assert.match(chromeSource, /if \(chromeVisibilitySuppressed\)/)
+  assert.match(
+    chromeSource,
+    /if \(!webview\) \{[\s\S]{0,180}await showChromeWebview\(SEMI_LUNAR_HIT_ZONE_HEIGHT\)/,
+  )
+  assert.match(
+    chromeSource,
+    /await stackBrowsingChromeAboveBrowser\(getActiveBrowseTabId\(\)\)/,
+  )
+  assert.match(shellSource, /setChromeWebviewSuppressed\([\s\S]*crashRecoveryOpen/)
+  assert.match(shellSource, /setCrashRecoveryOpen\([\s\r\n]*false/)
+})
+
+test('WebView2 persistent storage permission has a readable Nebula label', () => {
+  const nativeSource = readFileSync(
+    new URL('../src-tauri/src/site_ui.rs', import.meta.url),
+    'utf8',
+  )
+  const promptSource = readFileSync(
+    new URL('../src/components/SiteUiPrompt/SiteUiPrompt.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(nativeSource, /13 => \"persistent-storage\"/)
+  assert.match(promptSource, /'persistent-storage': 'kalıcı depolama'/)
+  assert.match(promptSource, /'persistent-storage': 'persistent storage'/)
+  assert.match(promptSource, /permissionKind === 'unknown'/)
+})
 test('native shortcut and chrome-bounds commands remain in the Tauri ACL', () => {
   const permissionSource = readFileSync(
     new URL('../src-tauri/permissions/webview-commands.toml', import.meta.url),
@@ -367,6 +410,46 @@ test('tab lifecycle close invalidates older work and runs after it', async () =>
   assert.deepEqual(events, ['prepare:start', 'prepare:stale', 'close:current'])
 })
 
+test('tab lifecycle state is released only after queued work becomes idle', async () => {
+  const queue = new KeyedLifecycleQueue<string>()
+  const firstStarted = deferred()
+  const releaseFirst = deferred()
+  const events: string[] = []
+
+  const first = queue.run('tab-a', async () => {
+    events.push('first:start')
+    firstStarted.resolve()
+    await releaseFirst.promise
+    events.push('first:end')
+  })
+  await firstStarted.promise
+
+  const second = queue.run('tab-a', async () => {
+    events.push('second')
+  })
+  const releasing = queue.releaseWhenIdle('tab-a')
+
+  assert.equal(queue.size, 1)
+  releaseFirst.resolve()
+  assert.equal(await releasing, true)
+  await Promise.all([first, second])
+
+  assert.deepEqual(events, ['first:start', 'first:end', 'second'])
+  assert.equal(queue.size, 0)
+})
+
+test('long tab sessions do not retain lifecycle state for closed tab ids', async () => {
+  const queue = new KeyedLifecycleQueue<string>()
+
+  for (let index = 0; index < 2_000; index += 1) {
+    const key = `closed-tab-${index}`
+    await queue.run(key, async () => undefined)
+    assert.equal(await queue.releaseWhenIdle(key), true)
+  }
+
+  assert.equal(queue.size, 0)
+})
+
 test('two rapid tab closes reduce from current state without resurrecting a tab', () => {
   const open = (id: string) => ({
     type: 'open-or-switch' as const,
@@ -444,7 +527,7 @@ test('password vault preserves long secrets and rejects corrupt payloads', () =>
   )
 })
 
-test('factory reset waits for browser profiles and vault before storage reload', async () => {
+test('factory reset waits for browser profiles, vault, and Google Sync credential before storage reload', async () => {
   const events: string[] = []
   await runFactoryReset({
     clearBrowserProfiles: async () => {
@@ -457,6 +540,11 @@ test('factory reset waits for browser profiles and vault before storage reload',
       await Promise.resolve()
       events.push('vault:done')
     },
+    clearGoogleSyncCredential: async () => {
+      events.push('google-sync:start')
+      await Promise.resolve()
+      events.push('google-sync:done')
+    },
     clearShellStorage: () => events.push('storage:clear'),
     reloadShell: () => events.push('shell:reload'),
   })
@@ -466,6 +554,8 @@ test('factory reset waits for browser profiles and vault before storage reload',
     'profiles:done',
     'vault:start',
     'vault:done',
+    'google-sync:start',
+    'google-sync:done',
     'storage:clear',
     'shell:reload',
   ])
@@ -628,13 +718,20 @@ test('window.print routes to the Nebula print surface and keeps native print set
   assert.match(nativeSiteUi, /SITE_PRINT_REQUEST_EVENT/)
   assert.match(browserShell, /listenSitePrintRequests/)
   assert.match(browserShell, /printBrowseWebview/)
-  assert.match(browserPlatform, /Page\.captureScreenshot/)
-  assert.match(printDialog, /captureBrowseWebviewPreview/)
-  assert.match(printDialog, /className=\{styles\.previewImage\}/)
+  assert.match(browserPlatform, /webview_print_preview/)
+  assert.match(printDialog, /renderBrowsePrintPreview/)
+  assert.match(printDialog, /className=\{styles\.previewDocument\}/)
+  assert.match(printDialog, /pageRanges:[\s\S]*?pageRanges\.trim\(\)/)
+  assert.match(printDialog, /backgrounds,[\s\S]*?headersAndFooters/)
   assert.match(printStyles, /height:\s*calc\(100dvh - 32px\)/)
-  assert.match(printStyles, /\.paperPortrait[\s\S]*min\(100dvh, 1012px\)/)
+  assert.match(printStyles, /\.previewDocument[\s\S]*height:\s*100%/)
+  assert.match(nativeControls, /PrintToPdfStream/)
+  assert.match(nativeControls, /read_pdf_stream/)
+  assert.match(nativeControls, /disable_pdf_link_annotations\(&mut bytes\)/)
   assert.match(nativeControls, /SetPageWidth/)
   assert.match(nativeControls, /SetMarginTop/)
+  assert.match(nativeControls, /SetPageRanges/)
+  assert.match(nativeControls, /SetShouldPrintBackgrounds/)
 })
 
 test('browser zoom is shortcut-only and Ctrl+wheel uses the native zoom path', () => {
@@ -670,6 +767,14 @@ test('browser zoom is shortcut-only and Ctrl+wheel uses the native zoom path', (
     new URL('../src-tauri/src/webview_controls.rs', import.meta.url),
     'utf8',
   )
+  const browserShell = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+  const siteZoom = readFileSync(
+    new URL('../src/core/siteZoom.ts', import.meta.url),
+    'utf8',
+  )
 
   assert.doesNotMatch(toolbar, /zoomPercent/)
   assert.doesNotMatch(lunarMenu, /lunarZoomControl/)
@@ -689,6 +794,13 @@ test('browser zoom is shortcut-only and Ctrl+wheel uses the native zoom path', (
   assert.match(chromeWebview, /chromeOverlayMinimumLogicalHeight/)
   assert.match(nativeControls, /Result<f64, String>/)
   assert.match(nativeControls, /Ok\(factor\)/)
+  assert.match(nativeControls, /webview_set_zoom/)
+  assert.match(siteZoom, /nebula-site-zoom-v1/)
+  assert.match(siteZoom, /parsed\.origin/)
+  assert.match(siteZoom, /Math\.abs\(factor - 1\)/)
+  assert.match(browserShell, /siteZoomFactor\(tab\.url\)/)
+  assert.match(browserShell, /rememberSiteZoom/)
+  assert.match(browserShell, /settings\.privacy\.privateMode/)
 })
 
 test('selected app locale drives clock formatting and native error-page copy', () => {
@@ -1039,3 +1151,58 @@ test('Nebula owns password UX and WebView2 native password stores stay disabled'
   assert.doesNotMatch(bridgeSource, /renderPrompt/)
 })
 
+test('sensitive device usage is source-validated and visible in browsing chrome', () => {
+  const siteUi = readFileSync(
+    new URL('../src-tauri/src/site_ui.rs', import.meta.url),
+    'utf8',
+  )
+  const fullscreen = readFileSync(
+    new URL('../src-tauri/src/tab_fullscreen.rs', import.meta.url),
+    'utf8',
+  )
+  const chrome = readFileSync(
+    new URL('../src/ChromeApp.tsx', import.meta.url),
+    'utf8',
+  )
+  const usage = readFileSync(
+    new URL('../src/core/sensitiveFeatureUsage.ts', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(siteUi, /validated_web_message_source\(&sender, &args\)/)
+  assert.match(siteUi, /message_url != top_level_url/)
+  assert.match(siteUi, /nebula-sensitive-feature-usage/)
+  assert.match(siteUi, /mediaDevices\.getUserMedia/)
+  assert.match(siteUi, /track\.addEventListener\('ended'/)
+  assert.match(siteUi, /Object\.defineProperty\(geolocation, 'watchPosition'/)
+  assert.match(fullscreen, /validated_web_message_source\(&webview, &args\)/)
+  assert.match(fullscreen, /nebula-fullscreen-state-changed/)
+  assert.match(usage, /startsWith\('nebula-tab-'\)/)
+  assert.match(chrome, /listenSensitiveFeatureUsage/)
+  assert.match(chrome, /privacyIndicator/)
+})
+
+test('transition logs redact secrets and Store updater absence is automated', () => {
+  const native = readFileSync(
+    new URL('../src-tauri/src/lib.rs', import.meta.url),
+    'utf8',
+  )
+  const transitionLog = readFileSync(
+    new URL('../src/platform/tauriTransitionLog.ts', import.meta.url),
+    'utf8',
+  )
+  const storeAudit = readFileSync(
+    new URL('../scripts/store-updater-audit.mjs', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(native, /sanitize_transition_log_value\(entry, None\)/)
+  assert.match(native, /"password"[\s\S]*"token"[\s\S]*"authorization"/)
+  assert.match(native, /"\[redacted\]"/)
+  assert.doesNotMatch(transitionLog, /errorStack:/)
+  assert.doesNotMatch(transitionLog, /JSON\.stringify\(error\)/)
+  assert.match(storeAudit, /@tauri-apps\/plugin-updater/)
+  assert.match(storeAudit, /tauri-plugin-updater/)
+  assert.match(storeAudit, /createUpdaterArtifacts/)
+  assert.match(storeAudit, /AppUpdatePrompt/)
+})

@@ -47,6 +47,7 @@ mod imp {
             ("go-forward".into(), vec!["Alt+ArrowRight".into()]),
             ("go-home".into(), vec!["Ctrl+T".into()]),
             ("open-history".into(), vec!["Ctrl+H".into()]),
+            ("open-tab-search".into(), vec!["Ctrl+Shift+A".into()]),
             ("zoom-in".into(), vec!["Ctrl++".into(), "Ctrl+=".into()]),
             ("zoom-out".into(), vec!["Ctrl+-".into()]),
             ("zoom-reset".into(), vec!["Ctrl+0".into()]),

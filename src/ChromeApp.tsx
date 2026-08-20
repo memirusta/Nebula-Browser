@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { emit } from '@tauri-apps/api/event'
 import { DownloadManager } from './components/DownloadManager/DownloadManager'
+import { TabSearch } from './components/TabSearch/TabSearch'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
-import { matchBrowserShortcut, shouldIgnoreShellShortcut } from './core/browserShortcuts'
+import {
+  matchBrowserShortcut,
+  shouldIgnoreShellShortcut,
+} from './core/browserShortcuts'
 import { DEFAULT_SHORTCUTS } from './core/constants'
 import { controlDownload } from './core/download'
 import { registerListenerGroup } from './core/listenerGroup'
@@ -11,18 +15,28 @@ import {
   listenActiveUrl,
   listenDownloadUiState,
   listenTabCatalog,
+  listenTabSearchRequests,
   listenViewMode,
   listenZoomIndicator,
   type DownloadUiStatePayload,
   type ShellViewMode,
   type TabCatalogPayload,
 } from './core/nebulaBridge'
-import { shortcutFromTab, type BrowserTab } from './core/browserTab'
+import {
+  shortcutFromTab,
+  shortcutIdForTabWebviewLabel,
+  type BrowserTab,
+} from './core/browserTab'
+import {
+  listenSensitiveFeatureUsage,
+  type SensitiveFeatureUsage,
+} from './core/sensitiveFeatureUsage'
 import { computeAdaptiveLunarSize } from './core/lunarSizing'
 import type { Shortcut } from './core/types'
 import { useBrowseSessions } from './hooks/useBrowseSessions'
 import { useBrowserShortcutBindings } from './hooks/useBrowserShortcutBindings'
 import { useNebulaSettings } from './hooks/useNebulaSettings'
+import { useLocale } from './hooks/useLocale'
 import { usePinnedShortcuts } from './hooks/usePinnedShortcuts'
 import { useShortcutFolders } from './hooks/useShortcutFolders'
 import { useShortcutPreferences } from './hooks/useShortcutPreferences'
@@ -39,15 +53,16 @@ import styles from './ChromeApp.module.css'
  */
 export function ChromeApp() {
   const { settings } = useNebulaSettings()
+  const { locale } = useLocale()
   const semiLunar = settings.semiLunar
   const { bindings: browserShortcutBindings } = useBrowserShortcutBindings({ syncNative: false })
 
   const {
     visibleShortcuts,
     allShortcuts,
-    toggleMute,
+    toggleMute: toggleShortcutMute,
     removeShortcut,
-    isMuted,
+    isMuted: isShortcutMuted,
   } = useShortcutPreferences(DEFAULT_SHORTCUTS)
 
   const {
@@ -81,6 +96,10 @@ export function ChromeApp() {
     panelOpen: false,
   })
   const [zoomIndicatorPercent, setZoomIndicatorPercent] = useState<number | null>(null)
+  const [tabSearchOpen, setTabSearchOpen] = useState(false)
+  const [sensitiveUsageByTab, setSensitiveUsageByTab] = useState(
+    () => new Map<string, SensitiveFeatureUsage>(),
+  )
   const zoomIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showZoomIndicator = useCallback((percent: number) => {
@@ -103,12 +122,6 @@ export function ChromeApp() {
     },
     [],
   )
-
-  useEffect(() => {
-    void setChromeOverlayMinimumLogicalHeight(
-      viewMode === 'browsing' && zoomIndicatorPercent !== null ? 78 : 0,
-    )
-  }, [viewMode, zoomIndicatorPercent])
 
   useEffect(() => {
     document.documentElement.dataset.nebulaChrome = 'true'
@@ -135,6 +148,18 @@ export function ChromeApp() {
       () => listenViewMode(setViewMode),
       () => listenDownloadUiState(setDownloadUi),
       () => listenZoomIndicator(showZoomIndicator),
+      () => listenTabSearchRequests(() => setTabSearchOpen(true)),
+      () => listenSensitiveFeatureUsage((usage) => {
+        setSensitiveUsageByTab((current) => {
+          const next = new Map(current)
+          if (usage.camera || usage.microphone || usage.location) {
+            next.set(usage.tabLabel, usage)
+          } else {
+            next.delete(usage.tabLabel)
+          }
+          return next
+        })
+      }),
     ])
       .then((dispose) => {
         if (disposed) {
@@ -180,6 +205,67 @@ export function ChromeApp() {
     () => new Map(catalog.tabs.map((tab) => [tab.shortcutId, tab])),
     [catalog.tabs],
   )
+
+  useEffect(() => {
+    setSensitiveUsageByTab((current) => {
+      let changed = false
+      const next = new Map(current)
+      for (const [tabLabel, usage] of next) {
+        const shortcutId = shortcutIdForTabWebviewLabel(tabLabel)
+        const tab = shortcutId ? tabById.get(shortcutId) : null
+        let tabOrigin = ''
+        try {
+          tabOrigin = tab ? new URL(tab.url).origin : ''
+        } catch {
+          tabOrigin = ''
+        }
+        if (!tab || tabOrigin !== usage.origin) {
+          next.delete(tabLabel)
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [tabById])
+
+  const sensitiveUsageSummary = useMemo(() => {
+    const active = [...sensitiveUsageByTab.values()].filter(
+      (usage) => usage.camera || usage.microphone || usage.location,
+    )
+    if (active.length === 0) return null
+    let camera = false
+    let microphone = false
+    let location = false
+    for (const usage of active) {
+      camera ||= usage.camera
+      microphone ||= usage.microphone
+      location ||= usage.location
+    }
+    let host = ''
+    if (active.length === 1) {
+      try {
+        host = new URL(active[0].origin).host
+      } catch {
+        host = active[0].origin
+      }
+    }
+    return { camera, microphone, location, host, siteCount: active.length }
+  }, [sensitiveUsageByTab])
+
+  useEffect(() => {
+    const hasZoom = zoomIndicatorPercent !== null
+    const hasSensitiveUsage = sensitiveUsageSummary !== null
+    const minimumHeight = tabSearchOpen
+      ? 650
+      : viewMode !== 'browsing'
+      ? 0
+      : hasZoom && hasSensitiveUsage
+        ? 138
+        : hasZoom || hasSensitiveUsage
+          ? 78
+          : 0
+    void setChromeOverlayMinimumLogicalHeight(minimumHeight)
+  }, [sensitiveUsageSummary, tabSearchOpen, viewMode, zoomIndicatorPercent])
 
   const getTab = useCallback(
     (shortcutId: string): BrowserTab | null => tabById.get(shortcutId) ?? null,
@@ -244,6 +330,31 @@ export function ChromeApp() {
     [removeShortcut, removeShortcutFromFolders],
   )
 
+  const isMuted = useCallback(
+    (shortcutId: string) => {
+      const tab = tabById.get(shortcutId)
+      return tab ? tab.isMuted === true : isShortcutMuted(shortcutId)
+    },
+    [isShortcutMuted, tabById],
+  )
+
+  const toggleMute = useCallback(
+    (shortcutId: string) => {
+      const tab = tabById.get(shortcutId)
+      if (!tab) {
+        toggleShortcutMute(shortcutId)
+        return
+      }
+
+      void emitChromeAction({
+        type: 'set-tab-muted',
+        shortcutId,
+        muted: tab.isMuted !== true,
+      })
+    },
+    [tabById, toggleShortcutMute],
+  )
+
   const toggleDownloads = useCallback(() => {
     void emitChromeAction({ type: 'toggle-download-panel' })
   }, [])
@@ -293,9 +404,45 @@ export function ChromeApp() {
   ])
   return (
     <>
+      {viewMode === 'browsing' && sensitiveUsageSummary && (
+        <div
+          className={styles.privacyIndicator}
+          role="status"
+          aria-live="polite"
+        >
+          <span className={styles.privacyIndicatorPulse} aria-hidden="true" />
+          <span className={styles.privacyIndicatorSite}>
+            {sensitiveUsageSummary.host ||
+              (locale === 'tr'
+                ? `${sensitiveUsageSummary.siteCount} site`
+                : `${sensitiveUsageSummary.siteCount} sites`)}
+          </span>
+          <span className={styles.privacyIndicatorFeatures}>
+            {sensitiveUsageSummary.camera && (
+              <span title={locale === 'tr' ? 'Kamera kullanılıyor' : 'Camera in use'}>
+                {locale === 'tr' ? 'Kamera' : 'Camera'}
+              </span>
+            )}
+            {sensitiveUsageSummary.microphone && (
+              <span title={locale === 'tr' ? 'Mikrofon kullanılıyor' : 'Microphone in use'}>
+                {locale === 'tr' ? 'Mikrofon' : 'Microphone'}
+              </span>
+            )}
+            {sensitiveUsageSummary.location && (
+              <span title={locale === 'tr' ? 'Konum kullanılıyor' : 'Location in use'}>
+                {locale === 'tr' ? 'Konum' : 'Location'}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+
       {viewMode === 'browsing' && zoomIndicatorPercent !== null && (
         <div
-          className={styles.zoomIndicator}
+          className={[
+            styles.zoomIndicator,
+            sensitiveUsageSummary ? styles.zoomIndicatorShifted : '',
+          ].filter(Boolean).join(' ')}
           role="status"
           aria-live="polite"
           onPointerEnter={() => {
@@ -343,6 +490,21 @@ export function ChromeApp() {
             +
           </button>
         </div>
+      )}
+
+      {tabSearchOpen && (
+        <TabSearch
+          tabs={catalog.tabs}
+          activeTabId={catalog.activeTabId}
+          onSelect={(shortcutId) => {
+            void emitChromeAction({ type: 'switch-tab', shortcutId })
+          }}
+          onCloseTab={(shortcutId) => {
+            void emitChromeAction({ type: 'close-tab', shortcutId })
+          }}
+          onToggleMute={toggleMute}
+          onClose={() => setTabSearchOpen(false)}
+        />
       )}
 
       <SemiLunarMenu

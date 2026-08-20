@@ -52,6 +52,8 @@ mod imp {
         pub cookie_banner_blocking: bool,
         #[serde(default)]
         pub site_notifications: bool,
+        #[serde(default = "default_true")]
+        pub show_notification_content: bool,
         #[serde(default)]
         pub notification_allowed_sites: Vec<String>,
         #[serde(default)]
@@ -63,6 +65,9 @@ mod imp {
     }
     fn default_permission_policy() -> String {
         "ask".to_string()
+    }
+    fn default_true() -> bool {
+        true
     }
 
     struct HandlerTokens {
@@ -123,6 +128,7 @@ mod imp {
         body: String,
         icon_url: String,
         timestamp_ms: u64,
+        requires_native_toast: bool,
     }
 
     static OPTIONS: LazyLock<Mutex<HashMap<String, PrivacyOptions>>> =
@@ -169,6 +175,17 @@ mod imp {
             .ok()
             .and_then(|options| options.get(label).cloned())
             .unwrap_or_default()
+    }
+
+    pub fn title_unread_notification_allowed(label: &str, origin: &str) -> bool {
+        let current = options(label);
+        current.site_notifications
+            && !is_excepted(origin, &current.notification_blocked_sites)
+            && is_excepted(origin, &current.notification_allowed_sites)
+    }
+
+    pub fn notification_content_preview_allowed(label: &str) -> bool {
+        options(label).show_notification_content
     }
 
     unsafe fn take_string(read: impl FnOnce(*mut PWSTR) -> windows_core::Result<()>) -> String {
@@ -1217,14 +1234,12 @@ mod imp {
                                 let Some(args) = args else { return Ok(()) };
                                 let origin = take_string(|value| args.SenderOrigin(value));
                                 let current = options(&handler_label);
-
-                                // Nebula owns presentation for captured notifications. This avoids a
-                                // duplicate WebView2/Windows toast while keeping push/service-worker
-                                // notifications in the browser's unified notification center.
-                                args.SetHandled(true)?;
                                 if !current.site_notifications
                                     || is_excepted(&origin, &current.notification_blocked_sites)
                                 {
+                                    // Suppressed sites must be handled by Nebula so WebView2 does not
+                                    // show a Windows toast for a blocked notification.
+                                    args.SetHandled(true)?;
                                     if let Ok(notification) = args.Notification() {
                                         let _ = notification.ReportClosed();
                                     }
@@ -1232,19 +1247,42 @@ mod imp {
                                 }
 
                                 let notification = args.Notification()?;
+                                // A real Web Notification arrived. Record it before emitting so the
+                                // delayed unread-title fallback does not create a second generic toast.
+                                crate::tab_metadata::record_content_notification(&handler_label);
+                                let show_content = current.show_notification_content;
+                                // Nebula owns the Windows toast so activation can foreground the app
+                                // and route back to the exact source tab. WebView2's default toast does
+                                // not expose that routing to the shell.
+                                args.SetHandled(true)?;
+                                let _ = notification.ReportShown();
                                 let timestamp = timestamp_ms();
                                 let sequence = NEXT_NOTIFICATION_ID.fetch_add(1, Ordering::Relaxed);
                                 let payload = SiteNotificationPayload {
                                     id: format!("site-{timestamp}-{sequence}"),
                                     tab_label: handler_label.clone(),
                                     origin,
-                                    title: take_string(|value| notification.Title(value)),
-                                    body: take_string(|value| notification.Body(value)),
-                                    icon_url: take_string(|value| notification.IconUri(value)),
+                                    title: if show_content {
+                                        take_string(|value| notification.Title(value))
+                                    } else {
+                                        String::new()
+                                    },
+                                    body: if show_content {
+                                        take_string(|value| notification.Body(value))
+                                    } else {
+                                        String::new()
+                                    },
+                                    icon_url: if show_content {
+                                        take_string(|value| notification.IconUri(value))
+                                    } else {
+                                        String::new()
+                                    },
                                     timestamp_ms: timestamp,
+                                    requires_native_toast: true,
                                 };
-                                let _ = notification.ReportShown();
                                 let _ = notification_app.emit(SITE_NOTIFICATION_EVENT, payload);
+                                // The frontend presents one native toast, redacted when previews are
+                                // disabled, and attaches Nebula's activation routing.
                                 Ok(())
                             }));
                         let mut notification_token = 0i64;
@@ -1449,7 +1487,10 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{apply, teardown, PrivacyOptions};
+pub use imp::{
+    apply, notification_content_preview_allowed, teardown, title_unread_notification_allowed,
+    PrivacyOptions,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BrowsingDataKind {
@@ -1487,7 +1528,8 @@ pub async fn clear_browsing_data(
         COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES, COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
         COREWEBVIEW2_BROWSING_DATA_KINDS_SETTINGS,
     };
-    let data_kind = match BrowsingDataKind::try_from(kind)? {
+    let kind = BrowsingDataKind::try_from(kind)?;
+    let data_kind = match kind {
         BrowsingDataKind::Cookies => COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES,
         BrowsingDataKind::Cache => COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE,
         BrowsingDataKind::History => COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
@@ -1495,7 +1537,198 @@ pub async fn clear_browsing_data(
         BrowsingDataKind::All => COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
     };
 
-    clear_profile_data_and_wait(app, label, data_kind).await
+    clear_profile_data_and_wait(app, label, data_kind).await?;
+
+    if matches!(kind, BrowsingDataKind::Permissions | BrowsingDataKind::All) {
+        clear_non_default_permissions_and_wait(app, label).await?;
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+async fn non_default_permission_settings(
+    app: &tauri::AppHandle,
+    label: &str,
+) -> Result<
+    Vec<(
+        webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
+        String,
+    )>,
+    String,
+> {
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use tauri::Manager;
+    use webview2_com::GetNonDefaultPermissionSettingsCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Profile4, ICoreWebView2_13, COREWEBVIEW2_PERMISSION_KIND,
+    };
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows_core::{Interface, PWSTR};
+
+    let webview = app
+        .get_webview(label)
+        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let (sender, receiver) = tokio::sync::oneshot::channel::<
+        Result<Vec<(COREWEBVIEW2_PERMISSION_KIND, String)>, String>,
+    >();
+    let sender = Arc::new(Mutex::new(Some(sender)));
+    let callback_sender = Arc::clone(&sender);
+
+    webview
+        .with_webview(move |inner| unsafe {
+            let result = (|| -> windows_core::Result<()> {
+                let core = inner.controller().CoreWebView2()?;
+                let core13 = core.cast::<ICoreWebView2_13>()?;
+                let profile = core13.Profile()?;
+                let profile4 = profile.cast::<ICoreWebView2Profile4>()?;
+                let handler = GetNonDefaultPermissionSettingsCompletedHandler::create(Box::new(
+                    move |result, settings| {
+                        let collected =
+                            (|| -> Result<Vec<(COREWEBVIEW2_PERMISSION_KIND, String)>, String> {
+                                result.map_err(|error| error.to_string())?;
+                                let settings = settings.ok_or_else(|| {
+                                    "WebView2 returned no permission settings collection"
+                                        .to_string()
+                                })?;
+                                let mut count = 0u32;
+                                settings
+                                    .Count(&mut count)
+                                    .map_err(|error| error.to_string())?;
+                                let mut entries = Vec::with_capacity(count as usize);
+
+                                for index in 0..count {
+                                    let setting = settings
+                                        .GetValueAtIndex(index)
+                                        .map_err(|error| error.to_string())?;
+                                    let mut permission_kind =
+                                        COREWEBVIEW2_PERMISSION_KIND::default();
+                                    setting
+                                        .PermissionKind(&mut permission_kind)
+                                        .map_err(|error| error.to_string())?;
+                                    let mut permission_origin = PWSTR::null();
+                                    setting
+                                        .PermissionOrigin(&mut permission_origin)
+                                        .map_err(|error| error.to_string())?;
+                                    let origin = if permission_origin.is_null() {
+                                        String::new()
+                                    } else {
+                                        let origin =
+                                            permission_origin.to_string().unwrap_or_default();
+                                        CoTaskMemFree(Some(permission_origin.as_ptr().cast()));
+                                        origin
+                                    };
+
+                                    if !origin.is_empty() {
+                                        entries.push((permission_kind, origin));
+                                    }
+                                }
+
+                                Ok(entries)
+                            })();
+
+                        if let Ok(mut sender) = callback_sender.lock() {
+                            if let Some(sender) = sender.take() {
+                                let _ = sender.send(collected);
+                            }
+                        }
+                        Ok(())
+                    },
+                ));
+                profile4.GetNonDefaultPermissionSettings(&handler)
+            })();
+
+            if let Err(error) = result {
+                if let Ok(mut sender) = sender.lock() {
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(Err(error.to_string()));
+                    }
+                }
+            }
+        })
+        .map_err(|error| error.to_string())?;
+
+    tokio::time::timeout(Duration::from_secs(30), receiver)
+        .await
+        .map_err(|_| format!("timed out reading WebView permissions for '{label}'"))?
+        .map_err(|_| format!("permission settings callback was dropped for '{label}'"))?
+}
+
+#[cfg(target_os = "windows")]
+async fn set_permission_default_and_wait(
+    app: &tauri::AppHandle,
+    label: &str,
+    permission_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
+    origin: String,
+) -> Result<(), String> {
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use tauri::Manager;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Profile4, ICoreWebView2_13, COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+    };
+    use webview2_com::SetPermissionStateCompletedHandler;
+    use windows_core::{Interface, HSTRING, PCWSTR};
+
+    let webview = app
+        .get_webview(label)
+        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let sender = Arc::new(Mutex::new(Some(sender)));
+    let callback_sender = Arc::clone(&sender);
+
+    webview
+        .with_webview(move |inner| unsafe {
+            let result = (|| -> windows_core::Result<()> {
+                let core = inner.controller().CoreWebView2()?;
+                let core13 = core.cast::<ICoreWebView2_13>()?;
+                let profile = core13.Profile()?;
+                let profile4 = profile.cast::<ICoreWebView2Profile4>()?;
+                let origin = HSTRING::from(origin);
+                let handler = SetPermissionStateCompletedHandler::create(Box::new(move |result| {
+                    if let Ok(mut sender) = callback_sender.lock() {
+                        if let Some(sender) = sender.take() {
+                            let _ = sender.send(result.map_err(|error| error.to_string()));
+                        }
+                    }
+                    Ok(())
+                }));
+                profile4.SetPermissionState(
+                    permission_kind,
+                    PCWSTR(origin.as_ptr()),
+                    COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                    &handler,
+                )
+            })();
+
+            if let Err(error) = result {
+                if let Ok(mut sender) = sender.lock() {
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(Err(error.to_string()));
+                    }
+                }
+            }
+        })
+        .map_err(|error| error.to_string())?;
+
+    tokio::time::timeout(Duration::from_secs(30), receiver)
+        .await
+        .map_err(|_| format!("timed out resetting WebView permission for '{label}'"))?
+        .map_err(|_| format!("permission reset callback was dropped for '{label}'"))?
+}
+
+#[cfg(target_os = "windows")]
+async fn clear_non_default_permissions_and_wait(
+    app: &tauri::AppHandle,
+    label: &str,
+) -> Result<(), String> {
+    for (permission_kind, origin) in non_default_permission_settings(app, label).await? {
+        set_permission_default_and_wait(app, label, permission_kind, origin).await?;
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -1593,6 +1826,7 @@ pub struct PrivacyOptions {
     pub permission_exceptions: Vec<String>,
     pub cookie_banner_blocking: bool,
     pub site_notifications: bool,
+    pub show_notification_content: bool,
     pub notification_allowed_sites: Vec<String>,
     pub notification_blocked_sites: Vec<String>,
 }
@@ -1608,6 +1842,16 @@ pub fn apply(
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn title_unread_notification_allowed(_label: &str, _origin: &str) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn notification_content_preview_allowed(_label: &str) -> bool {
+    true
+}
 
 #[cfg(not(target_os = "windows"))]
 pub async fn clear_browsing_data(

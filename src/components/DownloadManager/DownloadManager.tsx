@@ -97,6 +97,9 @@ function ActionIcon({ action }: { action: DownloadAction | 'remove' }) {
     cancel: 'M6.5 6.5l11 11m0-11-11 11',
     open: 'M7 4h7l4 4v12H7V4zm7 0v5h5M10 14h5m-5 3h5',
     reveal: 'M3.5 7.5h6l2-2h9v13h-17v-11z',
+    retry: 'M18.5 8A7 7 0 1 0 19 15m-.5-7V3m0 5h-5',
+    keep: 'm6.5 12.5 3.2 3.2 7.8-8',
+    delete: 'M6.5 6.5l11 11m0-11-11 11',
     remove: 'M6.5 6.5l11 11m0-11-11 11',
   }
   return (
@@ -117,6 +120,7 @@ export function DownloadManager({
 }: DownloadManagerProps) {
   const { t, tf } = useLocale()
   const [actionError, setActionError] = useState<string | null>(null)
+  const [keepConfirmationId, setKeepConfirmationId] = useState<string | null>(null)
   const [telemetryById, setTelemetryById] = useState<Record<string, DownloadTelemetry>>({})
   const telemetrySamplesRef = useRef<Map<string, DownloadSample>>(new Map())
   const hasFinished = items.some((item) => !isDownloadActive(item))
@@ -206,6 +210,15 @@ export function DownloadManager({
     }
   }
 
+  const keepDangerousDownload = async (item: DownloadItem) => {
+    if (keepConfirmationId !== item.id) {
+      setKeepConfirmationId(item.id)
+      return
+    }
+    setKeepConfirmationId(null)
+    await runAction(item.id, 'keep')
+  }
+
   const beginNativeDrag = (event: DragEvent<HTMLElement>, item: DownloadItem) => {
     if (item.state !== 'completed') {
       event.preventDefault()
@@ -265,7 +278,9 @@ export function DownloadManager({
             const progress = downloadProgress(item)
             const active = isDownloadActive(item)
             const completed = item.state === 'completed'
-            const status = item.state === 'paused'
+            const status = item.requiresConfirmation
+              ? t('downloadNeedsReview')
+              : item.state === 'paused'
               ? t('downloadPaused')
               : completed
                 ? t('downloadCompleted')
@@ -319,6 +334,9 @@ export function DownloadManager({
                       </>
                     )}
                   </div>
+                  {item.requiresConfirmation && (
+                    <p className={styles.riskMessage}>{t('downloadRiskyFileHint')}</p>
+                  )}
                   {telemetry && (
                     <div
                       className={[
@@ -346,19 +364,47 @@ export function DownloadManager({
                   )}
                 </div>
                 <div className={styles.itemActions}>
-                  {item.state === 'in_progress' && (
+                  {item.requiresConfirmation ? (
+                    <>
+                      <button
+                        type="button"
+                        className={styles.actionText}
+                        onClick={() => void keepDangerousDownload(item)}
+                      >
+                        {keepConfirmationId === item.id
+                          ? t('downloadKeepAnyway')
+                          : t('downloadKeep')}
+                      </button>
+                      <button
+                        type="button"
+                        className={[styles.actionText, styles.actionDanger].join(' ')}
+                        onClick={() => void runAction(item.id, 'delete')}
+                      >
+                        {t('downloadDelete')}
+                      </button>
+                    </>
+                  ) : item.state === 'in_progress' && (
                     <button type="button" onClick={() => void runAction(item.id, 'pause')} title={t('downloadPause')} aria-label={t('downloadPause')}>
                       <ActionIcon action="pause" />
                     </button>
                   )}
-                  {item.state === 'paused' && (
+                  {!item.requiresConfirmation && item.state === 'paused' && (
                     <button type="button" onClick={() => void runAction(item.id, 'resume')} title={t('downloadResume')} aria-label={t('downloadResume')}>
                       <ActionIcon action="resume" />
                     </button>
                   )}
-                  {active && (
+                  {!item.requiresConfirmation && active && (
                     <button type="button" onClick={() => void runAction(item.id, 'cancel')} title={t('downloadCancel')} aria-label={t('downloadCancel')}>
                       <ActionIcon action="cancel" />
+                    </button>
+                  )}
+                  {item.state === 'interrupted' && (
+                    <button
+                      type="button"
+                      className={styles.actionText}
+                      onClick={() => void runAction(item.id, 'retry')}
+                    >
+                      {t('downloadRetry')}
                     </button>
                   )}
                   {completed && (

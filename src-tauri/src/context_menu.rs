@@ -359,9 +359,9 @@ mod imp {
                             }
                         }
                     }
-                    Err(error) => {
+                    Err(_error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!("[nebula context menu] {}: {}", event_label, error);
+                        eprintln!("[nebula context menu] {}: {}", event_label, _error);
                     }
                 }
             })

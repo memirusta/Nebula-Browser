@@ -41,6 +41,7 @@ let chromeOverlayMinimumLogicalHeight = 0
 // nudged the Semi-Lunar sideways.
 let chromeOverlayFullHeight = false
 let chromeVisibilitySuppressed = false
+let chromeVisibilityRequestSequence = 0
 let chromeBoundsSyncQueue: Promise<void> = Promise.resolve()
 
 // Semi-Lunar uses max-width: 98vw. Give its dedicated WebView a tiny logical
@@ -413,16 +414,30 @@ export async function showChromeWebview(
 export async function setChromeWebviewSuppressed(suppressed: boolean): Promise<void> {
   if (!isTauri) return
 
+  const requestSequence = ++chromeVisibilityRequestSequence
   chromeVisibilitySuppressed = suppressed
   const webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
-  if (!webview) return
+  if (requestSequence !== chromeVisibilityRequestSequence) return
 
-  if (suppressed) {
-    await webview.hide()
+  if (chromeVisibilitySuppressed) {
+    if (webview) await webview.hide()
+    return
+  }
+
+  if (!webview) {
+    await showChromeWebview(SEMI_LUNAR_HIT_ZONE_HEIGHT)
+    if (
+      requestSequence !== chromeVisibilityRequestSequence ||
+      chromeVisibilitySuppressed
+    ) {
+      const createdWebview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+      if (createdWebview && chromeVisibilitySuppressed) await createdWebview.hide()
+    }
     return
   }
 
   await webview.show()
+  if (requestSequence !== chromeVisibilityRequestSequence) return
   await stackBrowsingChromeAboveBrowser(getActiveBrowseTabId())
 }
 

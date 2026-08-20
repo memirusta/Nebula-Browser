@@ -38,14 +38,19 @@
 .eyebrow { display: block; margin-bottom: 2px; color: rgba(255, 255, 255, 0.45); font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .header h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
 .headerActions { display: flex; align-items: center; gap: 5px; }
-.textButton, .closeButton, .itemActions button, .permissionButtons button { border: 0; color: rgba(255, 255, 255, 0.68); background: transparent; cursor: pointer; }
+.textButton, .closeButton, .itemActions button { border: 0; color: rgba(255, 255, 255, 0.68); background: transparent; cursor: pointer; }
 .textButton { padding: 7px 8px; border-radius: 9px; font-size: 11px; }
 .closeButton { display: grid; width: 32px; height: 32px; padding: 7px; border-radius: 50%; place-items: center; }
-.textButton:hover, .closeButton:hover, .itemActions button:hover, .permissionButtons button:hover { color: #fff; background: rgba(255, 255, 255, 0.09); }
+.textButton:hover, .closeButton:hover, .itemActions button:hover { color: #fff; background: rgba(255, 255, 255, 0.09); }
 .closeButton svg, .itemActions svg, .glyph svg, .emptyGlyph svg { width: 100%; height: 100%; }
 
 .content { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .2) transparent; }
 .list { padding: 8px; }
+.group { padding: 2px; border: 1px solid rgba(255,255,255,.06); border-radius: 16px; background: rgba(255,255,255,.018); }
+.group + .group { margin-top: 7px; }
+.groupHeader { display: flex; min-height: 30px; padding: 6px 10px 4px; align-items: center; justify-content: space-between; gap: 10px; color: rgba(255,255,255,.46); font-size: 10px; font-weight: 750; letter-spacing: .04em; }
+.groupHeader span:first-child { overflow: hidden; color: rgba(255,255,255,.72); text-overflow: ellipsis; white-space: nowrap; }
+.groupHeader span:last-child { flex: 0 0 auto; font-weight: 600; letter-spacing: 0; }
 .item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 76px; border-radius: 14px; }
 .item:hover { background: rgba(255, 255, 255, .055); }
 .itemUnread { background: rgba(139, 81, 215, .08); }
@@ -69,18 +74,8 @@
 .empty { display: flex; min-height: 180px; padding: 28px; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .emptyGlyph { display: grid; width: 46px; height: 46px; margin-bottom: 12px; padding: 11px; border: 1px solid rgba(255,255,255,.1); border-radius: 15px; color: #c9a5ff; background: rgba(255,255,255,.05); place-items: center; }
 .empty strong { font-size: 14px; }
-.empty p, .noSites, .permissionsHeader p { margin: 6px 0 0; color: rgba(255,255,255,.45); font-size: 11px; line-height: 1.45; }
-
-.permissions { padding: 15px 16px 17px; border-top: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.1); }
-.permissionsHeader h3 { margin: 0; font-size: 13px; }
-.siteList { display: flex; margin-top: 11px; flex-direction: column; gap: 7px; }
-.siteRow { display: flex; min-height: 34px; padding: 5px 5px 5px 10px; border: 1px solid rgba(255,255,255,.07); border-radius: 11px; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,.025); }
-.siteRow > span { min-width: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.permissionButtons { display: flex; flex: 0 0 auto; gap: 3px; }
-.permissionButtons button { padding: 5px 7px; border-radius: 7px; font-size: 10px; }
-.permissionButtons .allowActive { color: #8ce8b5; background: rgba(49,167,101,.18); }
-.permissionButtons .blockActive { color: #ff9b9b; background: rgba(194,68,68,.18); }
+.empty p { margin: 6px 0 0; color: rgba(255,255,255,.45); font-size: 11px; line-height: 1.45; }
 
 @keyframes panelIn { from { opacity: 0; scale: .97; translate: 0 -5px; } }
-@media (max-width: 640px) { .panelHome { top: 78px; right: 16px; } .siteRow { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 640px) { .panelHome { top: 78px; right: 16px; } }
 @media (prefers-reduced-motion: reduce) { .panel { animation: none; } }

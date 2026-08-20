@@ -8,6 +8,7 @@ export type ChromeShellAction =
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
   | { type: 'switch-tab'; shortcutId: string }
+  | { type: 'set-tab-muted'; shortcutId: string; muted: boolean }
   | { type: 'open-overlay' }
   | { type: 'go-back' }
   | { type: 'go-home' }
@@ -36,6 +37,7 @@ const TAB_CATALOG_EVENT = 'nebula-tab-catalog'
 const VIEW_MODE_EVENT = 'nebula-view-mode'
 const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
 const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
+const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
@@ -143,4 +145,14 @@ export function listenZoomIndicator(
   return listen<{ percent: number }>(ZOOM_INDICATOR_EVENT, (event) => {
     handler(event.payload.percent)
   })
+}
+
+export async function emitTabSearchRequest(): Promise<void> {
+  if (!isTauri) return
+  await emit(TAB_SEARCH_REQUEST_EVENT)
+}
+
+export function listenTabSearchRequests(handler: () => void): Promise<() => void> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen(TAB_SEARCH_REQUEST_EVENT, handler)
 }

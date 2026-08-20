@@ -124,9 +124,10 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "app"
-version = "1.6.9"
+version = "1.7.0"
 dependencies = [
  "aes-gcm",
+ "base64 0.22.1",
  "dotenvy",
  "log",
  "psl",

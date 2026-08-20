@@ -17,6 +17,9 @@ test('site popups keep WebView2 opener semantics in a dedicated Nebula window', 
   assert.match(siteUiNative, /GetDeferral\(\)\?/)
   assert.match(siteUiNative, /SetNewWindow\(&core\)/)
   assert.match(siteUiNative, /WindowFeatures\(\)/)
+  assert.match(siteUiNative, /ShouldDisplayToolbar\(&mut should_display_toolbar\)/)
+  assert.match(siteUiNative, /is_popup:\s*if has_popup_disposition/)
+  assert.match(siteUiNative, /if payload\.features\.is_popup/)
   assert.match(siteUiNative, /private_mode:/)
 
   assert.match(popup, /new Window\(windowLabel/)
@@ -37,11 +40,20 @@ test('site popups keep WebView2 opener semantics in a dedicated Nebula window', 
   assert.match(popup, /site_popup_attach/)
   assert.equal((popup.match(/new Webview\(/g) ?? []).length, 1)
 
-  assert.match(shell, /listenSiteNewWindows\([\s\S]*?openSitePopup/)
-  assert.doesNotMatch(
-    shell.match(/listenSiteNewWindows\([\s\S]*?\),\n\s*\(\) => listenSiteCloseWindows/)?.[0] ?? '',
-    /openUrlInNewTab/,
+  const newWindowListenerStart = shell.indexOf('listenSiteNewWindows(')
+  const newWindowListenerEnd = shell.indexOf(
+    'listenSiteCloseWindows(',
+    newWindowListenerStart,
   )
+  assert.ok(newWindowListenerStart >= 0)
+  assert.ok(newWindowListenerEnd > newWindowListenerStart)
+  const newWindowListener = shell.slice(
+    newWindowListenerStart,
+    newWindowListenerEnd,
+  )
+  assert.match(newWindowListener, /payload\.features[\s\S]*?\.isPopup/)
+  assert.match(newWindowListener, /openUrlInNewTab\([\s\S]*?payload\.uri/)
+  assert.match(newWindowListener, /openSitePopup\([\s\S]*?payload/)
 
   assert.match(defaultCapability, /core:window:allow-create/)
 

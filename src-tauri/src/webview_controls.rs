@@ -1,6 +1,10 @@
 use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "windows")]
+static PRINT_PREVIEW_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+#[cfg(target_os = "windows")]
 fn with_webview_result<F, R>(app: &AppHandle, label: &str, f: F) -> Result<R, String>
 where
     F: FnOnce(tauri::webview::PlatformWebview) -> Result<R, String> + Send + 'static,
@@ -325,6 +329,118 @@ fn default_print_margins() -> String {
 }
 
 #[tauri::command]
+pub fn webview_set_zoom(app: AppHandle, label: String, factor: f64) -> Result<f64, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let factor = factor.clamp(0.25, 5.0);
+        with_webview_result(&app, &label, move |inner| unsafe {
+            inner
+                .controller()
+                .SetZoomFactor(factor)
+                .map_err(|error| error.to_string())?;
+            Ok(factor)
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label);
+        Ok(factor.clamp(0.25, 5.0))
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn create_webview_print_settings(
+    core: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    options: &WebviewPrintOptions,
+) -> Result<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2PrintSettings, String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Environment6, ICoreWebView2PrintSettings2, ICoreWebView2_2,
+        COREWEBVIEW2_PRINT_ORIENTATION_LANDSCAPE, COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT,
+    };
+    use windows_core::{Interface, HSTRING};
+
+    let core2: ICoreWebView2_2 = core.cast().map_err(|error| error.to_string())?;
+    let environment = core2.Environment().map_err(|error| error.to_string())?;
+    let print_environment: ICoreWebView2Environment6 =
+        environment.cast().map_err(|error| error.to_string())?;
+    let settings = print_environment
+        .CreatePrintSettings()
+        .map_err(|error| error.to_string())?;
+
+    settings
+        .SetOrientation(if options.landscape {
+            COREWEBVIEW2_PRINT_ORIENTATION_LANDSCAPE
+        } else {
+            COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT
+        })
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetScaleFactor(options.scale.clamp(0.1, 2.0))
+        .map_err(|error| error.to_string())?;
+
+    let (page_width, page_height) = match options.paper_size.as_str() {
+        "letter" => (8.5, 11.0),
+        _ => (8.267_716_535_4, 11.692_913_385_8),
+    };
+    let (page_width, page_height) = if options.landscape {
+        (page_height, page_width)
+    } else {
+        (page_width, page_height)
+    };
+    settings
+        .SetPageWidth(page_width)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetPageHeight(page_height)
+        .map_err(|error| error.to_string())?;
+
+    let margin = match options.margins.as_str() {
+        "none" => 0.0,
+        "minimum" => 0.25,
+        _ => 0.4,
+    };
+    settings
+        .SetMarginTop(margin)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetMarginBottom(margin)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetMarginLeft(margin)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetMarginRight(margin)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetShouldPrintBackgrounds(options.backgrounds)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetShouldPrintHeaderAndFooter(options.headers_and_footers)
+        .map_err(|error| error.to_string())?;
+    settings
+        .SetShouldPrintSelectionOnly(options.selection_only)
+        .map_err(|error| error.to_string())?;
+
+    let settings2: ICoreWebView2PrintSettings2 =
+        settings.cast().map_err(|error| error.to_string())?;
+    settings2
+        .SetPrinterName(&HSTRING::from(options.printer_name.trim()))
+        .map_err(|error| error.to_string())?;
+    let ranges = options.page_ranges.trim();
+    if !ranges.is_empty() {
+        settings2
+            .SetPageRanges(&HSTRING::from(ranges))
+            .map_err(|error| error.to_string())?;
+    }
+    settings2
+        .SetCopies(options.copies.clamp(1, 99))
+        .map_err(|error| error.to_string())?;
+
+    Ok(settings)
+}
+
+#[tauri::command]
 pub fn webview_print(
     app: AppHandle,
     label: String,
@@ -340,7 +456,7 @@ pub fn webview_print(
         use webview2_com::PrintCompletedHandler;
         use windows_core::{Interface, HSTRING};
 
-        let callback_label = label.clone();
+        let _callback_label = label.clone();
 
         with_webview_result(&app, &label, move |inner| unsafe {
             let core = inner
@@ -435,9 +551,9 @@ pub fn webview_print(
             let print: ICoreWebView2_16 = core.cast().map_err(|error| error.to_string())?;
 
             let handler = PrintCompletedHandler::create(Box::new(move |result, _status| {
-                if let Err(error) = result {
+                if let Err(_error) = result {
                     #[cfg(debug_assertions)]
-                    eprintln!("[nebula print] {callback_label}: {error}");
+                    eprintln!("[nebula print] {_callback_label}: {_error}");
                 }
                 Ok(())
             }));
@@ -452,6 +568,207 @@ pub fn webview_print(
     {
         let _ = (app, label, options);
         Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn read_pdf_stream(
+    stream: &windows::Win32::System::Com::IStream,
+) -> Result<Vec<u8>, String> {
+    use windows::Win32::System::Com::{STATFLAG_NONAME, STATSTG, STREAM_SEEK_SET};
+
+    const MAX_PREVIEW_BYTES: usize = 64 * 1024 * 1024;
+    let mut stat = STATSTG::default();
+    stream
+        .Stat(&mut stat, STATFLAG_NONAME)
+        .map_err(|error| error.to_string())?;
+    let size =
+        usize::try_from(stat.cbSize).map_err(|_| "print preview is too large".to_string())?;
+    if size == 0 || size > MAX_PREVIEW_BYTES {
+        return Err("print preview is empty or exceeds 64 MB".to_string());
+    }
+
+    stream
+        .Seek(0, STREAM_SEEK_SET, None)
+        .map_err(|error| error.to_string())?;
+    let mut bytes = vec![0u8; size];
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        let chunk_size = (bytes.len() - offset).min(u32::MAX as usize) as u32;
+        let mut read = 0u32;
+        stream
+            .Read(
+                bytes[offset..].as_mut_ptr().cast(),
+                chunk_size,
+                Some(&mut read),
+            )
+            .ok()
+            .map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        offset += read as usize;
+    }
+    bytes.truncate(offset);
+    if bytes.starts_with(b"%PDF-") {
+        Ok(bytes)
+    } else {
+        Err("WebView2 returned invalid PDF preview data".to_string())
+    }
+}
+
+fn disable_pdf_link_annotations(bytes: &mut [u8]) -> usize {
+    const SUBTYPE: &[u8] = b"/Subtype";
+    const LINK: &[u8] = b"/Link";
+    const INERT_SUBTYPE: &[u8] = b"Null";
+
+    fn is_pdf_whitespace(byte: u8) -> bool {
+        matches!(byte, 0 | b'\t' | b'\n' | 0x0c | b'\r' | b' ')
+    }
+
+    fn is_pdf_delimiter(byte: u8) -> bool {
+        is_pdf_whitespace(byte)
+            || matches!(
+                byte,
+                b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
+            )
+    }
+
+    let mut replacements = 0usize;
+    let mut cursor = 0usize;
+    while cursor + SUBTYPE.len() <= bytes.len() {
+        let Some(relative) = bytes[cursor..]
+            .windows(SUBTYPE.len())
+            .position(|window| window == SUBTYPE)
+        else {
+            break;
+        };
+        let subtype_start = cursor + relative;
+        let mut value_start = subtype_start + SUBTYPE.len();
+        while value_start < bytes.len() && is_pdf_whitespace(bytes[value_start]) {
+            value_start += 1;
+        }
+
+        let value_end = value_start + LINK.len();
+        let is_link = value_end <= bytes.len()
+            && &bytes[value_start..value_end] == LINK
+            && (value_end == bytes.len() || is_pdf_delimiter(bytes[value_end]));
+        if is_link {
+            bytes[value_start + 1..value_end].copy_from_slice(INERT_SUBTYPE);
+            replacements += 1;
+        }
+        cursor = subtype_start + SUBTYPE.len();
+    }
+    replacements
+}
+
+#[tauri::command]
+pub async fn webview_print_preview(
+    app: AppHandle,
+    label: String,
+    options: WebviewPrintOptions,
+) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use base64::Engine;
+        use std::sync::{Arc, Mutex};
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_16;
+        use webview2_com::PrintToPdfStreamCompletedHandler;
+        use windows_core::Interface;
+
+        if !label.starts_with("nebula-tab-") {
+            return Err("print preview is limited to browser tabs".to_string());
+        }
+        let _preview_guard = PRINT_PREVIEW_LOCK.lock().await;
+        let webview = app
+            .get_webview(&label)
+            .ok_or_else(|| format!("webview '{label}' not found"))?;
+        let (sender, receiver) = tokio::sync::oneshot::channel::<Result<String, String>>();
+        let sender = Arc::new(Mutex::new(Some(sender)));
+        let callback_sender = Arc::clone(&sender);
+
+        webview
+            .with_webview(move |inner| unsafe {
+                let start = (|| -> Result<(), String> {
+                    let core = inner
+                        .controller()
+                        .CoreWebView2()
+                        .map_err(|error| error.to_string())?;
+                    let settings = create_webview_print_settings(&core, &options)?;
+                    let print: ICoreWebView2_16 = core.cast().map_err(|error| error.to_string())?;
+                    let handler = PrintToPdfStreamCompletedHandler::create(Box::new(
+                        move |result, stream| {
+                            let preview = result
+                                .map_err(|error| error.to_string())
+                                .and_then(|_| {
+                                    stream.ok_or_else(|| {
+                                        "WebView2 returned no PDF preview stream".to_string()
+                                    })
+                                })
+                                .and_then(|stream| read_pdf_stream(&stream))
+                                .map(|mut bytes| {
+                                    disable_pdf_link_annotations(&mut bytes);
+                                    format!(
+                                        "data:application/pdf;base64,{}",
+                                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                                    )
+                                });
+                            if let Ok(mut sender) = callback_sender.lock() {
+                                if let Some(sender) = sender.take() {
+                                    let _ = sender.send(preview);
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    print
+                        .PrintToPdfStream(&settings, &handler)
+                        .map_err(|error| error.to_string())
+                })();
+
+                if let Err(error) = start {
+                    if let Ok(mut sender) = sender.lock() {
+                        if let Some(sender) = sender.take() {
+                            let _ = sender.send(Err(error));
+                        }
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+
+        tokio::time::timeout(std::time::Duration::from_secs(30), receiver)
+            .await
+            .map_err(|_| format!("timed out rendering print preview for '{label}'"))?
+            .map_err(|_| format!("print preview callback was dropped for '{label}'"))?
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label, options);
+        Ok(String::new())
+    }
+}
+
+#[cfg(test)]
+mod print_preview_tests {
+    use super::disable_pdf_link_annotations;
+
+    #[test]
+    fn preview_pdf_link_annotations_are_made_inert_without_changing_offsets() {
+        let mut pdf = b"%PDF-1.7\n<< /Subtype /Link /A << /S /URI >> >>\n<< /Subtype/Link/Rect [] >>\n<< /Subtype /Widget >>".to_vec();
+        let original_len = pdf.len();
+
+        assert_eq!(disable_pdf_link_annotations(&mut pdf), 2);
+        assert_eq!(pdf.len(), original_len);
+        assert!(!pdf
+            .windows(b"/Subtype /Link".len())
+            .any(|part| part == b"/Subtype /Link"));
+        assert!(pdf
+            .windows(b"/Subtype /Null".len())
+            .any(|part| part == b"/Subtype /Null"));
+        assert!(pdf
+            .windows(b"/Subtype /Widget".len())
+            .any(|part| part == b"/Subtype /Widget"));
     }
 }
 
@@ -533,6 +850,30 @@ pub fn webview_is_playing_audio(app: AppHandle, label: String) -> Result<bool, S
     {
         let _ = (app, label);
         Ok(false)
+    }
+}
+
+#[tauri::command]
+pub fn webview_set_muted(app: AppHandle, label: String, muted: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
+        use windows_core::Interface;
+
+        with_webview_result(&app, &label, move |inner| unsafe {
+            let core = inner
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
+            let media: ICoreWebView2_8 = core.cast().map_err(|error| error.to_string())?;
+            media.SetIsMuted(muted).map_err(|error| error.to_string())
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label, muted);
+        Ok(())
     }
 }
 

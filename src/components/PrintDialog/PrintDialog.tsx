@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  captureBrowseWebviewPreview,
+  renderBrowsePrintPreview,
   listBrowsePrinters,
   type BrowsePrinterInfo,
   type BrowsePrintOptions,
@@ -64,10 +64,10 @@ const COPY = {
     printingFailed: 'Yazdırma başarısız.',
     cancel: 'İptal',
     sending: 'Gönderiliyor…',
-    preview: 'Yerleşim önizlemesi',
+    preview: 'Baskı önizlemesi',
     previewLoading: 'Önizleme hazırlanıyor…',
     previewUnavailable: 'Canlı önizleme alınamadı.',
-    previewNote: 'Önizleme açık sekmenin görünümünü gösterir. Nihai baskı çıktısını WebView2 oluşturur.',
+    previewNote: 'WebView2 tarafından oluşturulan gerçek baskı sayfaları. Sayfa aralığı ve baskı ayarları önizlemeye uygulanır.',
   },
   en: {
     brand: 'NEBULA PRINT',
@@ -111,10 +111,10 @@ const COPY = {
     printingFailed: 'Printing failed.',
     cancel: 'Cancel',
     sending: 'Sending…',
-    preview: 'Layout preview',
+    preview: 'Print preview',
     previewLoading: 'Preparing preview…',
     previewUnavailable: 'Live preview is unavailable.',
-    previewNote: 'The preview shows the open tab. WebView2 renders the final print output.',
+    previewNote: 'Real print pages rendered by WebView2. Page ranges and print settings are applied to the preview.',
   },
 } as const
 
@@ -168,10 +168,11 @@ export function PrintDialog({
     useState(false)
   const [error, setError] =
     useState<string | null>(null)
-  const [previewImage, setPreviewImage] =
+  const [previewPdf, setPreviewPdf] =
     useState<string | null>(null)
   const [previewLoading, setPreviewLoading] =
     useState(true)
+  const previewEpochRef = useRef(0)
   const dialogRef = useRef<HTMLElement>(null)
   useModalFocusTrap(dialogRef)
 
@@ -192,27 +193,6 @@ export function PrintDialog({
       disposed = true
     }
   }, [])
-
-  useEffect(() => {
-    let disposed = false
-
-    setPreviewLoading(true)
-    void captureBrowseWebviewPreview(
-      webviewLabel,
-    )
-      .then((image) => {
-        if (disposed) return
-        setPreviewImage(image)
-      })
-      .finally(() => {
-        if (disposed) return
-        setPreviewLoading(false)
-      })
-
-    return () => {
-      disposed = true
-    }
-  }, [webviewLabel])
 
   const defaultPrinter =
     printers.find(
@@ -257,6 +237,64 @@ export function PrintDialog({
         : styles.paperPortrait,
     [orientation],
   )
+
+  useEffect(() => {
+    const epoch = previewEpochRef.current + 1
+    previewEpochRef.current = epoch
+    if (customRangeInvalid) {
+      setPreviewPdf(null)
+      setPreviewLoading(false)
+      return
+    }
+
+    setPreviewLoading(true)
+    const timer = window.setTimeout(() => {
+      void renderBrowsePrintPreview(
+        webviewLabel,
+        {
+          printerName,
+          pageRanges:
+            pageMode === 'custom'
+              ? pageRanges.trim()
+              : '',
+          landscape: orientation === 'landscape',
+          copies,
+          scale: scale / 100,
+          backgrounds,
+          headersAndFooters,
+          selectionOnly,
+          paperSize,
+          margins,
+        },
+      )
+        .then((pdf) => {
+          if (previewEpochRef.current !== epoch) return
+          setPreviewPdf(pdf)
+        })
+        .finally(() => {
+          if (previewEpochRef.current !== epoch) return
+          setPreviewLoading(false)
+        })
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [
+    backgrounds,
+    copies,
+    customRangeInvalid,
+    headersAndFooters,
+    margins,
+    orientation,
+    pageMode,
+    pageRanges,
+    paperSize,
+    printerName,
+    scale,
+    selectionOnly,
+    webviewLabel,
+  ])
 
   const submit = async () => {
     if (
@@ -792,32 +830,25 @@ export function PrintDialog({
           </div>
 
           <div className={styles.previewStage}>
-            <div
-              className={[
-                styles.paper,
-                paperClass,
-              ].join(' ')}
-              style={{
-                '--content-scale': String(scale / 100),
-              } as React.CSSProperties}
-            >
-              <div className={styles.paperHeader}>
-                <strong>
-                  {title || copy.untitled}
-                </strong>
-                <span>
-                  {displayHost(url)}
-                </span>
-              </div>
+            {previewPdf ? (
+              <iframe
+                className={styles.previewDocument}
+                src={`${previewPdf}#toolbar=0&navpanes=0&view=FitH`}
+                title={copy.preview}
+              />
+            ) : (
+              <div
+                className={[
+                  styles.paper,
+                  paperClass,
+                ].join(' ')}
+              >
+                <div className={styles.paperHeader}>
+                  <strong>{title || copy.untitled}</strong>
+                  <span>{displayHost(url)}</span>
+                </div>
 
-              <div className={styles.paperContent}>
-                {previewImage ? (
-                  <img
-                    className={styles.previewImage}
-                    src={previewImage}
-                    alt=""
-                  />
-                ) : (
+                <div className={styles.paperContent}>
                   <div
                     className={styles.previewFallback}
                     aria-busy={previewLoading}
@@ -838,16 +869,9 @@ export function PrintDialog({
                         : copy.previewUnavailable}
                     </span>
                   </div>
-                )}
-              </div>
-
-              {headersAndFooters && (
-                <div className={styles.paperFooter}>
-                  <span>{displayHost(url)}</span>
-                  <span>1</span>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           <p className={styles.previewNote}>

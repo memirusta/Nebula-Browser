@@ -3,6 +3,7 @@ identifier = "allow-nebula-webview-commands"
 description = "Allow Nebula custom webview commands"
 commands.allow = [
   "write_transition_log",
+  "show_native_notification",
   "webview_set_shortcut_bindings",
   "webview_navigate",
   "webview_close_tab",
@@ -11,11 +12,14 @@ commands.allow = [
   "webview_go_forward",
   "webview_reload",
   "webview_zoom",
+  "webview_set_zoom",
   "webview_list_printers",
   "webview_print",
+  "webview_print_preview",
   "webview_open_devtools",
   "webview_set_memory_usage",
   "webview_is_playing_audio",
+  "webview_set_muted",
   "webview_set_suspended",
   "webview_raise_overlay",
   "webview_raise_chrome",

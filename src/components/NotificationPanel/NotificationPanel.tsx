@@ -1,9 +1,7 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import {
   notificationHost,
   type NebulaNotification,
-  type SiteNotificationPermission,
-  type SiteNotificationPermissions,
 } from '../../core/notification'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
@@ -11,20 +9,14 @@ import styles from './NotificationPanel.module.css'
 
 interface NotificationPanelProps {
   items: NebulaNotification[]
-  sites: string[]
-  sitePermissions: SiteNotificationPermissions
   variant: 'home' | 'browsing'
   browsingTop?: number
-  siteNotificationsEnabled: boolean
   onMarkRead: (id: string, read?: boolean) => void
   onMarkAllRead: () => void
   onRemove: (id: string) => void
   onClear: () => void
-  onSetSitePermission: (
-    origin: string,
-    permission: SiteNotificationPermission | null,
-  ) => void
-  onOpenOrigin: (origin: string) => void
+  onOpenOrigin: (origin: string, tabLabel: string | null) => void
+  onOpenDownload: (downloadId: string) => void
   onClose: () => void
 }
 
@@ -46,17 +38,14 @@ function DownloadGlyph() {
 
 export function NotificationPanel({
   items,
-  sites,
-  sitePermissions,
   variant,
   browsingTop = 220,
-  siteNotificationsEnabled,
   onMarkRead,
   onMarkAllRead,
   onRemove,
   onClear,
-  onSetSitePermission,
   onOpenOrigin,
+  onOpenDownload,
   onClose,
 }: NotificationPanelProps) {
   const { t, locale } = useLocale()
@@ -67,6 +56,25 @@ export function NotificationPanel({
     day: '2-digit',
     month: 'short',
   })
+  const notificationGroups = useMemo(() => {
+    const groups = new Map<string, {
+      key: string
+      title: string
+      items: NebulaNotification[]
+      unreadCount: number
+    }>()
+    for (const item of items) {
+      const key = item.origin ?? `kind:${item.kind}`
+      const title = item.origin
+        ? notificationHost(item.origin)
+        : locale === 'tr' ? 'İndirmeler' : 'Downloads'
+      const group = groups.get(key) ?? { key, title, items: [], unreadCount: 0 }
+      group.items.push(item)
+      if (!item.read) group.unreadCount += 1
+      groups.set(key, group)
+    }
+    return [...groups.values()]
+  }, [items, locale])
 
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -117,7 +125,18 @@ export function NotificationPanel({
               <p>{t('notificationEmptyHint')}</p>
             </div>
           ) : (
-            items.map((item) => (
+            notificationGroups.map((group) => (
+              <section key={group.key} className={styles.group}>
+                <header className={styles.groupHeader}>
+                  <span>{group.title}</span>
+                  <span>
+                    {group.items.length}
+                    {group.unreadCount > 0 && (
+                      <> · {locale === 'tr' ? `${group.unreadCount} okunmamış` : `${group.unreadCount} unread`}</>
+                    )}
+                  </span>
+                </header>
+                {group.items.map((item) => (
               <article
                 key={item.id}
                 className={[styles.item, item.read ? styles.itemRead : styles.itemUnread].join(' ')}
@@ -125,10 +144,11 @@ export function NotificationPanel({
                 <button
                   type="button"
                   className={styles.itemMain}
-                  disabled={!item.origin}
+                  disabled={!item.origin && !item.downloadId}
                   onClick={() => {
                     onMarkRead(item.id)
-                    if (item.origin) onOpenOrigin(item.origin)
+                    if (item.origin) onOpenOrigin(item.origin, item.tabLabel)
+                    else if (item.downloadId) onOpenDownload(item.downloadId)
                   }}
                 >
                   <span className={[styles.glyph, item.kind === 'download' ? styles.downloadGlyph : ''].filter(Boolean).join(' ')}>
@@ -160,53 +180,12 @@ export function NotificationPanel({
                   </button>
                 </div>
               </article>
+                ))}
+              </section>
             ))
           )}
         </div>
 
-        <section className={styles.permissions} aria-label={t('notificationSitePermissions')}>
-          <div className={styles.permissionsHeader}>
-            <div>
-              <h3>{t('notificationSitePermissions')}</h3>
-              <p>{siteNotificationsEnabled ? t('notificationSitePermissionsHint') : t('notificationSitesDisabled')}</p>
-            </div>
-          </div>
-          {sites.length === 0 ? (
-            <p className={styles.noSites}>{t('notificationNoSites')}</p>
-          ) : (
-            <div className={styles.siteList}>
-              {sites.map((origin) => {
-                const permission = sitePermissions[origin]
-                return (
-                  <div key={origin} className={styles.siteRow}>
-                    <span title={origin}>{notificationHost(origin)}</span>
-                    <div className={styles.permissionButtons}>
-                      <button
-                        type="button"
-                        className={permission === 'allow' ? styles.allowActive : ''}
-                        onClick={() => onSetSitePermission(origin, 'allow')}
-                      >
-                        {t('notificationAllow')}
-                      </button>
-                      <button
-                        type="button"
-                        className={permission === 'block' ? styles.blockActive : ''}
-                        onClick={() => onSetSitePermission(origin, 'block')}
-                      >
-                        {t('notificationBlock')}
-                      </button>
-                      {permission && (
-                        <button type="button" onClick={() => onSetSitePermission(origin, null)}>
-                          {t('notificationDefault')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>
       </div>
       </section>
     </>

@@ -25,6 +25,11 @@ mod imp {
         IsDefaultDownloadDialogOpenChangedEventHandler, StateChangedEventHandler,
     };
     use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::Security::WinTrust::{
+        WinVerifyTrust, WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0,
+        WINTRUST_FILE_INFO, WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE,
+        WTD_REVOCATION_CHECK_NONE, WTD_REVOKE_NONE, WTD_STATEACTION_IGNORE, WTD_UI_NONE,
+    };
     use windows::Win32::System::Com::{CoTaskMemFree, IBindCtx, IDataObject};
     use windows::Win32::System::Ole::{IDropSource, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::{
@@ -48,9 +53,17 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static PAUSED_DOWNLOADS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
+    static DOWNLOAD_WARNINGS: LazyLock<Mutex<HashMap<String, String>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static RISKY_DOWNLOADS: LazyLock<Mutex<HashMap<String, String>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static SIGNATURE_CHECKS: LazyLock<Mutex<HashSet<String>>> =
+        LazyLock::new(|| Mutex::new(HashSet::new()));
     static LAST_PROGRESS_EMITS: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static COMPLETION_FALLBACKS: LazyLock<Mutex<HashSet<String>>> =
+        LazyLock::new(|| Mutex::new(HashSet::new()));
+    static SYNTHETIC_COMPLETIONS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
     static RECENT_DOWNLOADS: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -61,6 +74,8 @@ mod imp {
         static DOWNLOADS: RefCell<HashMap<String, DownloadRegistration>> =
             RefCell::new(HashMap::new());
         static FINISHED_DOWNLOADS: RefCell<HashMap<String, FinishedDownload>> =
+            RefCell::new(HashMap::new());
+        static FAILED_DOWNLOADS: RefCell<HashMap<String, FailedDownload>> =
             RefCell::new(HashMap::new());
     }
 
@@ -80,6 +95,13 @@ mod imp {
         completed_at_ms: u64,
     }
 
+    #[derive(Clone)]
+    struct FailedDownload {
+        source_url: String,
+        label: String,
+        failed_at_ms: u64,
+    }
+
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
     struct DownloadPayload {
@@ -95,6 +117,8 @@ mod imp {
         interrupt_reason: i32,
         can_resume: bool,
         paused: bool,
+        danger_reason: Option<String>,
+        requires_confirmation: bool,
         started_at_ms: u64,
     }
 
@@ -136,6 +160,57 @@ mod imp {
             .unwrap_or_else(|| "download".to_string())
     }
 
+    fn dangerous_file_reason(file_name: &str) -> Option<&'static str> {
+        const DANGEROUS_EXTENSIONS: &[&str] = &[
+            "appref-ms",
+            "appx",
+            "appxbundle",
+            "application",
+            "bat",
+            "chm",
+            "cmd",
+            "com",
+            "cpl",
+            "dll",
+            "exe",
+            "hta",
+            "inf",
+            "ins",
+            "iso",
+            "jar",
+            "js",
+            "jse",
+            "lnk",
+            "msi",
+            "msix",
+            "msixbundle",
+            "msp",
+            "pif",
+            "ps1",
+            "ps1xml",
+            "reg",
+            "scr",
+            "sct",
+            "sys",
+            "vbe",
+            "vbs",
+            "wsf",
+            "wsh",
+        ];
+        let extension = Path::new(file_name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase);
+        if extension
+            .as_deref()
+            .is_some_and(|extension| DANGEROUS_EXTENSIONS.contains(&extension))
+        {
+            Some("dangerous_file_type")
+        } else {
+            None
+        }
+    }
+
     fn read_payload(
         id: &str,
         label: &str,
@@ -161,16 +236,26 @@ mod imp {
                 .lock()
                 .map(|paused| paused.contains(id))
                 .unwrap_or(false);
-            let state = if download_state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED {
+            let danger_reason = DOWNLOAD_WARNINGS
+                .lock()
+                .ok()
+                .and_then(|warnings| warnings.get(id).cloned());
+            let synthetic_completion = SYNTHETIC_COMPLETIONS
+                .lock()
+                .map(|completed| completed.contains(id))
+                .unwrap_or(false);
+            let state = if download_state == COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED
+                || synthetic_completion
+            {
                 "completed"
+            } else if paused {
+                "paused"
             } else if download_state == COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED {
                 if interrupt_reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED {
                     "cancelled"
                 } else {
                     "interrupted"
                 }
-            } else if paused {
-                "paused"
             } else {
                 "in_progress"
             };
@@ -188,6 +273,8 @@ mod imp {
                 interrupt_reason: interrupt_reason.0,
                 can_resume: can_resume.as_bool(),
                 paused,
+                requires_confirmation: danger_reason.is_some(),
+                danger_reason,
                 started_at_ms,
             }
         }
@@ -201,10 +288,12 @@ mod imp {
         started_at_ms: u64,
     ) -> DownloadPayload {
         let payload = read_payload(id, label, operation, started_at_ms);
-        if matches!(
-            payload.state.as_str(),
-            "completed" | "interrupted" | "cancelled"
-        ) {
+        if !payload.requires_confirmation
+            && matches!(
+                payload.state.as_str(),
+                "completed" | "interrupted" | "cancelled"
+            )
+        {
             if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
                 paused.remove(id);
             }
@@ -214,10 +303,9 @@ mod imp {
     }
 
     fn is_terminal(payload: &DownloadPayload) -> bool {
-        matches!(
-            payload.state.as_str(),
-            "completed" | "interrupted" | "cancelled"
-        )
+        !payload.requires_confirmation
+            && (matches!(payload.state.as_str(), "completed" | "cancelled")
+                || (payload.state == "interrupted" && !payload.can_resume))
     }
 
     fn remember_finished_download(id: &str, payload: &DownloadPayload) {
@@ -246,8 +334,36 @@ mod imp {
         });
     }
 
+    fn remember_failed_download(id: &str, payload: &DownloadPayload) {
+        if payload.state != "interrupted" || payload.source_url.is_empty() {
+            return;
+        }
+
+        FAILED_DOWNLOADS.with(|failed| {
+            let mut failed = failed.borrow_mut();
+            failed.insert(
+                id.to_string(),
+                FailedDownload {
+                    source_url: payload.source_url.clone(),
+                    label: payload.tab_label.clone(),
+                    failed_at_ms: started_at_ms(),
+                },
+            );
+
+            while failed.len() > MAX_FINISHED_DOWNLOADS {
+                let oldest = failed
+                    .iter()
+                    .min_by_key(|(_, item)| item.failed_at_ms)
+                    .map(|(id, _)| id.clone());
+                let Some(oldest) = oldest else { break };
+                failed.remove(&oldest);
+            }
+        });
+    }
+
     fn finalize_download(id: &str, payload: &DownloadPayload) {
         remember_finished_download(id, payload);
+        remember_failed_download(id, payload);
 
         let registration = DOWNLOADS.with(|downloads| downloads.borrow_mut().remove(id));
         if let Some(registration) = registration {
@@ -264,12 +380,145 @@ mod imp {
         if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
             paused.remove(id);
         }
+        if let Ok(mut warnings) = DOWNLOAD_WARNINGS.lock() {
+            warnings.remove(id);
+        }
+        if let Ok(mut risky) = RISKY_DOWNLOADS.lock() {
+            risky.remove(id);
+        }
+        if let Ok(mut checks) = SIGNATURE_CHECKS.lock() {
+            checks.remove(id);
+        }
         if let Ok(mut emits) = LAST_PROGRESS_EMITS.lock() {
             emits.remove(id);
         }
         if let Ok(mut fallbacks) = COMPLETION_FALLBACKS.lock() {
             fallbacks.remove(id);
         }
+        if let Ok(mut completions) = SYNTHETIC_COMPLETIONS.lock() {
+            completions.remove(id);
+        }
+    }
+
+    fn has_trusted_authenticode_signature(file_path: &str) -> bool {
+        let file_path = wide(file_path);
+        let mut file_info = WINTRUST_FILE_INFO {
+            cbStruct: std::mem::size_of::<WINTRUST_FILE_INFO>() as u32,
+            pcwszFilePath: PCWSTR(file_path.as_ptr()),
+            ..Default::default()
+        };
+        let mut trust_data = WINTRUST_DATA {
+            cbStruct: std::mem::size_of::<WINTRUST_DATA>() as u32,
+            dwUIChoice: WTD_UI_NONE,
+            fdwRevocationChecks: WTD_REVOKE_NONE,
+            dwUnionChoice: WTD_CHOICE_FILE,
+            Anonymous: WINTRUST_DATA_0 {
+                pFile: &mut file_info,
+            },
+            dwStateAction: WTD_STATEACTION_IGNORE,
+            dwProvFlags: WTD_CACHE_ONLY_URL_RETRIEVAL | WTD_REVOCATION_CHECK_NONE,
+            ..Default::default()
+        };
+        let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+
+        unsafe {
+            WinVerifyTrust(
+                windows::Win32::Foundation::HWND::default(),
+                &mut action,
+                (&mut trust_data as *mut WINTRUST_DATA).cast(),
+            ) == 0
+        }
+    }
+
+    fn maybe_schedule_signature_check(
+        app: &AppHandle,
+        id: &str,
+        operation: &ICoreWebView2DownloadOperation,
+    ) -> bool {
+        if DOWNLOAD_WARNINGS
+            .lock()
+            .map(|warnings| warnings.contains_key(id))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+
+        let reason = RISKY_DOWNLOADS
+            .lock()
+            .ok()
+            .and_then(|risky| risky.get(id).cloned());
+        let Some(reason) = reason else {
+            return false;
+        };
+
+        let synthetic_completion = SYNTHETIC_COMPLETIONS
+            .lock()
+            .map(|completed| completed.contains(id))
+            .unwrap_or(false);
+        let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+        if unsafe { operation.State(&mut state) }.is_err()
+            || (state != COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED && !synthetic_completion)
+        {
+            return false;
+        }
+
+        let should_start = SIGNATURE_CHECKS
+            .lock()
+            .map(|mut checks| checks.insert(id.to_string()))
+            .unwrap_or(false);
+        if !should_start {
+            return true;
+        }
+
+        let file_path = unsafe { take_webview_string(|value| operation.ResultFilePath(value)) };
+        let app = app.clone();
+        let id = id.to_string();
+        std::thread::spawn(move || {
+            let trusted = has_trusted_authenticode_signature(&file_path);
+            let app_for_main = app.clone();
+            let id_for_main = id.clone();
+            if app
+                .run_on_main_thread(move || {
+                    if let Ok(mut checks) = SIGNATURE_CHECKS.lock() {
+                        checks.remove(&id_for_main);
+                    }
+                    if !trusted {
+                        if let Ok(mut warnings) = DOWNLOAD_WARNINGS.lock() {
+                            warnings.insert(id_for_main.clone(), reason);
+                        }
+                    }
+
+                    let active = DOWNLOADS.with(|downloads| {
+                        downloads.borrow().get(&id_for_main).map(|registration| {
+                            (
+                                registration.operation.clone(),
+                                registration.label.clone(),
+                                registration.started_at_ms,
+                            )
+                        })
+                    });
+                    let Some((operation, label, download_started_at)) = active else {
+                        return;
+                    };
+                    let payload = emit_download(
+                        &app_for_main,
+                        &id_for_main,
+                        &label,
+                        &operation,
+                        download_started_at,
+                    );
+                    if is_terminal(&payload) {
+                        finalize_download(&id_for_main, &payload);
+                    }
+                })
+                .is_err()
+            {
+                if let Ok(mut checks) = SIGNATURE_CHECKS.lock() {
+                    checks.remove(&id);
+                }
+            }
+        });
+        true
     }
 
     pub(crate) fn has_recent_or_active_download_for_label(label: &str) -> bool {
@@ -362,6 +611,10 @@ mod imp {
                     let mut payload =
                         read_payload(&id_for_main, &label, &operation, download_started_at);
 
+                    if maybe_schedule_signature_check(&app_for_main, &id_for_main, &operation) {
+                        return;
+                    }
+
                     if is_terminal(&payload) {
                         let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
                         finalize_download(&id_for_main, &payload);
@@ -382,6 +635,13 @@ mod imp {
                         // delivering the final StateChanged/Completed event.
                         // Only fall back when both WebView2's byte counters and
                         // the final on-disk file agree that the transfer is done.
+                        if let Ok(mut completions) = SYNTHETIC_COMPLETIONS.lock() {
+                            completions.insert(id_for_main.clone());
+                        }
+                        if maybe_schedule_signature_check(&app_for_main, &id_for_main, &operation) {
+                            return;
+                        }
+
                         payload.state = "completed".to_string();
                         payload.can_resume = false;
 
@@ -413,6 +673,22 @@ mod imp {
         }
         last_emits.insert(id.to_string(), now);
         true
+    }
+
+    fn remove_partial_download_when_released(file_path: String) {
+        if file_path.is_empty() {
+            return;
+        }
+
+        std::thread::spawn(move || {
+            for _ in 0..20 {
+                match std::fs::remove_file(&file_path) {
+                    Ok(()) => return,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                    Err(_) => std::thread::sleep(Duration::from_millis(100)),
+                }
+            }
+        });
     }
 
     pub fn setup_tab_downloads(app: &AppHandle, label: &str) -> Result<(), String> {
@@ -544,6 +820,11 @@ mod imp {
                         let state_handler =
                             StateChangedEventHandler::create(Box::new(move |sender, _args| {
                                 if let Some(operation) = sender {
+                                    if maybe_schedule_signature_check(
+                                        &state_app, &state_id, &operation,
+                                    ) {
+                                        return Ok(());
+                                    }
                                     let payload = emit_download(
                                         &state_app,
                                         &state_id,
@@ -575,6 +856,17 @@ mod imp {
                         }
 
                         let operation_for_emit = operation.clone();
+                        let initial_payload = read_payload(
+                            &id,
+                            &download_label,
+                            &operation_for_emit,
+                            download_started_at,
+                        );
+                        if let Some(reason) = dangerous_file_reason(&initial_payload.file_name) {
+                            if let Ok(mut risky) = RISKY_DOWNLOADS.lock() {
+                                risky.insert(id.clone(), reason.to_string());
+                            }
+                        }
                         DOWNLOADS.with(|downloads| {
                             downloads.borrow_mut().insert(
                                 id.clone(),
@@ -589,6 +881,10 @@ mod imp {
                                 },
                             );
                         });
+
+                        if maybe_schedule_signature_check(&app_handle, &id, &operation_for_emit) {
+                            return Ok(());
+                        }
 
                         let payload = emit_download(
                             &app_handle,
@@ -767,7 +1063,7 @@ mod imp {
     pub fn control_download(app: AppHandle, id: String, action: String) -> Result<(), String> {
         if !matches!(
             action.as_str(),
-            "pause" | "resume" | "cancel" | "open" | "reveal"
+            "pause" | "resume" | "cancel" | "retry" | "keep" | "delete" | "open" | "reveal"
         ) {
             return Err(format!("unsupported download action '{action}'"));
         }
@@ -787,24 +1083,48 @@ mod imp {
                 });
 
                 match action.as_str() {
-                    "pause" | "resume" | "cancel" => {
+                    "pause" | "resume" | "cancel" | "keep" | "delete" => {
                         let (operation, label, download_started_at) =
                             active.ok_or_else(|| format!("active download '{id}' not found"))?;
 
-                        match action.as_str() {
+                        let should_emit_immediately = match action.as_str() {
                             "pause" => unsafe {
-                                operation.Pause().map_err(|error| error.to_string())?;
                                 PAUSED_DOWNLOADS
                                     .lock()
                                     .map_err(|error| error.to_string())?
                                     .insert(id.clone());
+
+                                if let Err(error) = operation.Pause() {
+                                    if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
+                                        paused.remove(&id);
+                                    }
+
+                                    return Err(error.to_string());
+                                }
+                                true
                             },
                             "resume" => unsafe {
-                                operation.Resume().map_err(|error| error.to_string())?;
+                                if DOWNLOAD_WARNINGS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .contains_key(&id)
+                                {
+                                    return Err(
+                                        "confirm this potentially unsafe download before resuming"
+                                            .to_string(),
+                                    );
+                                }
                                 PAUSED_DOWNLOADS
                                     .lock()
                                     .map_err(|error| error.to_string())?
                                     .remove(&id);
+                                if let Err(error) = operation.Resume() {
+                                    if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
+                                        paused.insert(id.clone());
+                                    }
+                                    return Err(error.to_string());
+                                }
+                                false
                             },
                             "cancel" => unsafe {
                                 operation.Cancel().map_err(|error| error.to_string())?;
@@ -812,20 +1132,123 @@ mod imp {
                                     .lock()
                                     .map_err(|error| error.to_string())?
                                     .remove(&id);
+                                DOWNLOAD_WARNINGS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id);
+
+                                // WebView2 may stop the transfer before its
+                                // StateChanged notification becomes observable.
+                                // Publish the user's successful cancellation as
+                                // the authoritative state so the shell cannot
+                                // retain a stale in-progress percentage.
+                                let mut payload =
+                                    read_payload(&id, &label, &operation, download_started_at);
+                                payload.state = "cancelled".to_string();
+                                payload.can_resume = false;
+                                payload.paused = false;
+                                payload.requires_confirmation = false;
+                                payload.danger_reason = None;
+                                let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
+                                finalize_download(&id, &payload);
+                                return Ok(());
+                            },
+                            "keep" => {
+                                DOWNLOAD_WARNINGS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id)
+                                    .ok_or_else(|| {
+                                        format!("download '{id}' is not waiting for confirmation")
+                                    })?;
+                                PAUSED_DOWNLOADS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id);
+                                true
+                            }
+                            "delete" => unsafe {
+                                let downloaded_file =
+                                    take_webview_string(|value| operation.ResultFilePath(value));
+                                DOWNLOAD_WARNINGS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id)
+                                    .ok_or_else(|| {
+                                        format!("download '{id}' is not waiting for confirmation")
+                                    })?;
+                                PAUSED_DOWNLOADS
+                                    .lock()
+                                    .map_err(|error| error.to_string())?
+                                    .remove(&id);
+                                remove_partial_download_when_released(downloaded_file);
+
+                                let mut payload =
+                                    read_payload(&id, &label, &operation, download_started_at);
+                                payload.state = "cancelled".to_string();
+                                payload.can_resume = false;
+                                payload.paused = false;
+                                payload.requires_confirmation = false;
+                                payload.danger_reason = None;
+                                let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
+                                finalize_download(&id, &payload);
+                                return Ok(());
                             },
                             _ => unreachable!(),
+                        };
+
+                        // Resume can synchronously expose WebView2's old
+                        // Interrupted/UserCanceled state. Let StateChanged publish
+                        // the authoritative post-resume state instead of finalizing
+                        // a healthy transfer as cancelled. Keep only clears a
+                        // completed file after the signature decision is visible.
+                        if should_emit_immediately {
+                            let payload = emit_download(
+                                &app_for_main,
+                                &id,
+                                &label,
+                                &operation,
+                                download_started_at,
+                            );
+                            if is_terminal(&payload) {
+                                finalize_download(&id, &payload);
+                            }
+                        }
+                    }
+                    "retry" => {
+                        if let Some((operation, _, _)) = active {
+                            let mut can_resume = BOOL::default();
+                            unsafe {
+                                operation
+                                    .CanResume(&mut can_resume)
+                                    .map_err(|error| error.to_string())?;
+                                if can_resume.as_bool() {
+                                    operation.Resume().map_err(|error| error.to_string())?;
+                                    return Ok(());
+                                }
+                            }
                         }
 
-                        let payload = emit_download(
-                            &app_for_main,
-                            &id,
-                            &label,
-                            &operation,
-                            download_started_at,
-                        );
-                        if is_terminal(&payload) {
-                            finalize_download(&id, &payload);
+                        let failed = FAILED_DOWNLOADS
+                            .with(|downloads| downloads.borrow().get(&id).cloned())
+                            .ok_or_else(|| format!("failed download '{id}' cannot be retried"))?;
+                        let parsed = url::Url::parse(&failed.source_url).map_err(|_| {
+                            "the original download URL is no longer valid".to_string()
+                        })?;
+                        if !matches!(parsed.scheme(), "http" | "https") {
+                            return Err(
+                                "this download source cannot be restarted safely".to_string()
+                            );
                         }
+                        let webview = app_for_main.get_webview(&failed.label).ok_or_else(|| {
+                            "the original download tab is no longer open".to_string()
+                        })?;
+                        webview
+                            .navigate(parsed)
+                            .map_err(|error| error.to_string())?;
+                        FAILED_DOWNLOADS.with(|downloads| {
+                            downloads.borrow_mut().remove(&id);
+                        });
                     }
                     "open" | "reveal" => {
                         let path = if let Some((operation, _, _)) = active {
@@ -855,8 +1278,36 @@ mod imp {
         })
         .map_err(|error| error.to_string())?;
 
-        rx.recv_timeout(Duration::from_secs(2))
+        rx.recv_timeout(Duration::from_secs(10))
             .map_err(|_| "timed out controlling download".to_string())?
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{dangerous_file_reason, has_trusted_authenticode_signature};
+
+        #[test]
+        fn executable_and_script_downloads_require_confirmation() {
+            assert_eq!(
+                dangerous_file_reason("Nebula-Setup.EXE"),
+                Some("dangerous_file_type")
+            );
+            assert_eq!(
+                dangerous_file_reason("cleanup.ps1"),
+                Some("dangerous_file_type")
+            );
+            assert_eq!(dangerous_file_reason("manual.pdf"), None);
+            assert_eq!(dangerous_file_reason("archive.zip"), None);
+            assert_eq!(dangerous_file_reason("photo.png"), None);
+        }
+
+        #[test]
+        fn unsigned_test_binary_is_not_trusted() {
+            let current_exe = std::env::current_exe().expect("test binary path");
+            assert!(!has_trusted_authenticode_signature(
+                current_exe.to_string_lossy().as_ref()
+            ));
+        }
     }
 }
 

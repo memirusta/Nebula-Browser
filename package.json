@@ -1,7 +1,7 @@
 {
   "name": "nebula",
   "private": true,
-  "version": "1.6.9",
+  "version": "1.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,7 +23,8 @@
     "test:clean-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-install-smoke.ps1",
     "test:upgrade-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/upgrade-install-smoke.ps1",
     "test:clean-sandbox": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-sandbox-smoke.ps1",
-    "test:updater-remote": "node scripts/updater-remote-smoke.mjs"
+    "test:updater-remote": "node scripts/updater-remote-smoke.mjs",
+    "audit:store-updater-free": "node scripts/store-updater-audit.mjs ../nebula-store"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

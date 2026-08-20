@@ -95,8 +95,9 @@ export interface PrivacySettings {
 }
 
 export interface NotificationSettings {
-  focusModeAlerts: boolean
+  downloadNotifications: boolean
   siteNotifications: boolean
+  showNotificationContent: boolean
   showToolbarBadge: boolean
 }
 
@@ -182,8 +183,9 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     cookieBannerBlocking: true,
   },
   notifications: {
-    focusModeAlerts: true,
+    downloadNotifications: true,
     siteNotifications: true,
+    showNotificationContent: true,
     showToolbarBadge: true,
   },
 }
@@ -398,14 +400,18 @@ export function normalizeNebulaSettings(
         : d.privacy.cookieBannerBlocking,
     },
     notifications: {
-      focusModeAlerts:
-        typeof n?.focusModeAlerts === 'boolean'
-          ? n.focusModeAlerts
-          : d.notifications.focusModeAlerts,
+      downloadNotifications:
+        typeof n?.downloadNotifications === 'boolean'
+          ? n.downloadNotifications
+          : d.notifications.downloadNotifications,
       siteNotifications:
         typeof n?.siteNotifications === 'boolean'
           ? n.siteNotifications
           : d.notifications.siteNotifications,
+      showNotificationContent:
+        typeof n?.showNotificationContent === 'boolean'
+          ? n.showNotificationContent
+          : d.notifications.showNotificationContent,
       showToolbarBadge:
         typeof n?.showToolbarBadge === 'boolean'
           ? n.showToolbarBadge

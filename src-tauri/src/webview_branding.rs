@@ -53,25 +53,15 @@ mod imp {
         // Preserve WebView2's real Chromium/runtime compatibility tokens and
         // remove only the Microsoft Edge product token. This avoids pinning a
         // fake Chrome version that can drift away from the installed runtime.
-        let base = current
+        let rewritten = current
             .split_ascii_whitespace()
-            .filter(|token| !token.starts_with("Edg/"))
+            .filter(|token| !token.starts_with("Edg/") && !token.starts_with("Nebula/"))
             .collect::<Vec<_>>()
             .join(" ");
 
-        if base.is_empty() {
+        if rewritten.is_empty() {
             return None;
         }
-
-        let nebula_token = format!("Nebula/{}", nebula_full_version());
-        let rewritten = if base
-            .split_ascii_whitespace()
-            .any(|token| token == nebula_token)
-        {
-            base
-        } else {
-            format!("{base} {nebula_token}")
-        };
 
         if rewritten == current {
             None
@@ -258,9 +248,9 @@ mod imp {
                             configured.insert(label_for_setup.clone());
                         }
                     }
-                    Err(error) => {
+                    Err(_error) => {
                         #[cfg(debug_assertions)]
-                        eprintln!("[nebula branding] {}: {}", label_for_setup, error);
+                        eprintln!("[nebula branding] {}: {}", label_for_setup, _error);
                     }
                 }
             })
@@ -363,34 +353,34 @@ AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.
                 Some(concat!(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
                     "AppleWebKit/537.36 (KHTML, like Gecko) ",
-                    "Chrome/151.0.0.0 Safari/537.36 ",
-                    "Nebula/",
-                    env!("CARGO_PKG_VERSION")
+                    "Chrome/151.0.0.0 Safari/537.36"
                 ))
             );
         }
 
         #[test]
         fn leaves_non_edge_user_agent_untouched() {
-            let current = concat!(
-                "Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36 ",
-                "Nebula/",
-                env!("CARGO_PKG_VERSION")
-            );
+            let current = "Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36";
             assert_eq!(generic_chromium_user_agent(current), None);
         }
 
         #[test]
         fn preserves_real_runtime_version_tokens() {
             let current = "Mozilla/5.0 Chrome/152.7.1234.5 Safari/537.36 Edg/152.7.1234.5";
-            let expected = format!(
-                "Mozilla/5.0 Chrome/152.7.1234.5 Safari/537.36 Nebula/{}",
-                env!("CARGO_PKG_VERSION")
-            );
+            let expected = "Mozilla/5.0 Chrome/152.7.1234.5 Safari/537.36";
 
             assert_eq!(
                 generic_chromium_user_agent(current).as_deref(),
-                Some(expected.as_str())
+                Some(expected)
+            );
+        }
+
+        #[test]
+        fn removes_legacy_nebula_product_token_that_confuses_browser_version_parsers() {
+            let current = "Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36 Nebula/1.6.9";
+            assert_eq!(
+                generic_chromium_user_agent(current).as_deref(),
+                Some("Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36")
             );
         }
 
