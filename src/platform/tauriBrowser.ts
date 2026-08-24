@@ -457,6 +457,18 @@ export function listenTabWebviewSnapshots(
   )
 }
 
+/** Read WebView2's source at the moment a user action needs the live page URL. */
+export async function readBrowseTabCurrentUrl(shortcutId: string): Promise<string> {
+  const url = await invoke<string>('webview_current_url', {
+    label: tabWebviewLabel(shortcutId),
+  })
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('The browser tab does not have a pinnable URL.')
+  }
+  return parsed.href
+}
+
 export function listenTabWebviewLoadingStates(
   onLoadingState: (state: TabWebviewLoadingState) => void,
 ): Promise<UnlistenFn> {

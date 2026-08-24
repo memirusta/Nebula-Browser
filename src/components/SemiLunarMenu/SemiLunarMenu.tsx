@@ -19,7 +19,7 @@ import type { BrowseSession } from '../../core/browseSession'
 import type { BrowserTab } from '../../core/browserTab'
 import type { RemoveMemberResult } from '../../hooks/useShortcutFolders'
 import { useShortcutPositions } from '../../hooks/useShortcutPositions'
-import { truncateTabTitle } from '../../core/browserTab'
+import { shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
 import { isChromeShell } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
@@ -58,7 +58,7 @@ interface SemiLunarMenuProps {
   onToggleMute?: (id: string) => void
   isMuted?: (id: string) => boolean
   isPinned?: (id: string) => boolean
-  onTogglePin?: (id: string) => void
+  onTogglePin?: (shortcut: Shortcut) => void
   canPinMore?: boolean
   previewOnHover?: boolean
   homeAlwaysOpen?: boolean
@@ -1447,7 +1447,15 @@ const members = memberIds
             handleNavigate(contextMenu.shortcut.url, contextMenu.shortcut.id)
           }
           onTogglePin={
-            onTogglePin ? () => onTogglePin(contextMenu.shortcut.id) : undefined
+            onTogglePin
+              ? () => {
+                  const tabId = resolveCloseTabId(contextMenu.shortcut.id)
+                  const currentTab = tabId ? getTab?.(tabId) : null
+                  onTogglePin(
+                    currentTab ? shortcutFromTab(currentTab) : contextMenu.shortcut,
+                  )
+                }
+              : undefined
           }
           onMouseEnter={handleContextMenuEnter}
           onMouseLeave={handleContextMenuLeave}

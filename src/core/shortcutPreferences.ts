@@ -93,6 +93,7 @@ export function importShortcutsToPreferences(
   prev: ShortcutPreferences,
   defaultShortcuts: Shortcut[],
   incoming: Shortcut[],
+  pinnedIds: ReadonlySet<string> = new Set(),
 ): ShortcutPreferences {
   let custom = [...prev.custom]
   let removed = [...prev.removed]
@@ -107,7 +108,10 @@ export function importShortcutsToPreferences(
       continue
     }
 
-    custom = trimCustomShortcuts([...custom.filter((c) => c.id !== shortcut.id), shortcut])
+    custom = trimCustomShortcuts(
+      [...custom.filter((c) => c.id !== shortcut.id), shortcut],
+      pinnedIds,
+    )
     removed = removed.filter((id) => id !== shortcut.id)
   }
 

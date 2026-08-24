@@ -72,8 +72,7 @@ export function ChromeApp() {
   const {
     isPinned,
     canPinMore,
-    togglePin,
-  } = usePinnedShortcuts(allShortcuts, visibleShortcuts)
+  } = usePinnedShortcuts(allShortcuts)
 
   const {
     dockItemIds,
@@ -612,7 +611,9 @@ export function ChromeApp() {
       onToggleMute={toggleMute}
       isMuted={isMuted}
       isPinned={isPinned}
-      onTogglePin={togglePin}
+      onTogglePin={(shortcut) => {
+        void emitChromeAction({ type: 'toggle-pin', shortcut })
+      }}
       canPinMore={canPinMore}
       onRemoveMemberFromFolder={removeMemberFromFolder}
       activeUrl={activeUrl}

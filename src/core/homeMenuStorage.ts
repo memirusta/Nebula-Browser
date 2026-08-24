@@ -1,11 +1,5 @@
 const HOME_MENU_RESET_KEY = 'nebula-home-menu-reset-v1'
 
-const LEGACY_PIN_KEYS = [
-  'nebula-pinned-shortcuts-v1',
-  'nebula-pinned-shortcuts-v2',
-  'nebula-pinned-shortcuts-v3',
-] as const
-
 const LEGACY_SESSION_KEYS = ['nebula-browse-sessions-v1'] as const
 
 interface HomeMenuStorage {
@@ -23,10 +17,6 @@ export function resetHomeMenuStorageOnce(
   storage: HomeMenuStorage = localStorage,
 ): void {
   if (storage.getItem(HOME_MENU_RESET_KEY)) return
-
-  for (const key of LEGACY_PIN_KEYS) {
-    storage.removeItem(key)
-  }
 
   for (const key of LEGACY_SESSION_KEYS) {
     storage.removeItem(key)

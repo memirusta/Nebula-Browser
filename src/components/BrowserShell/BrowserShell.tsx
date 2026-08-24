@@ -105,6 +105,7 @@ import {
   navigateBrowseTabBack,
   navigateBrowseTabForward,
   prepareBrowseTabInBackground,
+  readBrowseTabCurrentUrl,
   reloadBrowseTab,
   listenTabWebviewSnapshots,
   listenTabWebviewLoadingStates,
@@ -132,6 +133,7 @@ import { useBrowserTabs } from '../../hooks/useBrowserTabs'
 import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
 import { useBrowserShortcutBindings } from '../../hooks/useBrowserShortcutBindings'
 import {
+  faviconForUrl,
   shortcutFromTab,
   shortcutIdForTabWebviewLabel,
   tabWebviewLabel,
@@ -339,7 +341,6 @@ export function BrowserShell() {
     reloadPinnedIds,
   } = usePinnedShortcuts(
     allShortcuts,
-    visibleShortcuts,
   )
 
   const {
@@ -423,6 +424,73 @@ export function BrowserShell() {
     getTab,
     setActiveTabId,
   } = useBrowserTabs()
+
+  const handleTogglePinCurrentPage =
+    useCallback(
+      async (
+        fallback:
+          Shortcut,
+      ) => {
+        const tabBeforeRead =
+          tabsRef.current.find(
+            (tab) =>
+              tab.shortcutId ===
+              fallback.id,
+          )
+
+        let currentUrl =
+          tabBeforeRead?.url ??
+          fallback.url
+
+        if (
+          isTauri &&
+          tabBeforeRead
+        ) {
+          try {
+            currentUrl =
+              await readBrowseTabCurrentUrl(
+                tabBeforeRead.shortcutId,
+              )
+          } catch {
+            // A tab can be closing or temporarily unloaded; its latest
+            // observed snapshot remains the safe fallback.
+          }
+        }
+
+        const latestTab =
+          tabsRef.current.find(
+            (tab) =>
+              tab.shortcutId ===
+              fallback.id,
+          )
+        const metadataMatchesUrl =
+          latestTab?.url ===
+          currentUrl
+
+        togglePin({
+          id:
+            fallback.id,
+          url:
+            currentUrl,
+          label:
+            metadataMatchesUrl
+              ? latestTab.title
+              : titleFromUrl(
+                  currentUrl,
+                ),
+          favicon:
+            metadataMatchesUrl
+              ? latestTab.favicon
+              : faviconForUrl(
+                  currentUrl,
+                ),
+        })
+      },
+      [
+        tabsRef,
+        togglePin,
+      ],
+    )
 
   /*
    * Synchronous cursor for rapid Ctrl+Tab switching.
@@ -959,6 +1027,10 @@ export function BrowserShell() {
           id,
         )
 
+        unpinShortcut(
+          id,
+        )
+
         removeShortcutFromFolders(
           id,
         )
@@ -966,6 +1038,7 @@ export function BrowserShell() {
       [
         removeShortcut,
         removeShortcutFromFolders,
+        unpinShortcut,
       ],
     )
 
@@ -4946,6 +5019,12 @@ export function BrowserShell() {
             break
           }
 
+          case 'toggle-pin':
+            void handleTogglePinCurrentPage(
+              action.shortcut,
+            )
+            break
+
           case 'set-site-protection': {
             const site = activeSiteInfoStateRef.current
             if (!site.hostname || site.hostname !== action.hostname) break
@@ -5061,6 +5140,7 @@ export function BrowserShell() {
   }, [
     openShortcutByUrl,
     handleCloseTab,
+    handleTogglePinCurrentPage,
     setActiveTabId,
     updateTabMeta,
     openOverlay,
@@ -5650,7 +5730,7 @@ export function BrowserShell() {
     isPinned,
 
     onTogglePin:
-      togglePin,
+      handleTogglePinCurrentPage,
 
     canPinMore,
 

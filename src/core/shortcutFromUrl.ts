@@ -1,7 +1,7 @@
 import type { Shortcut } from './types'
-import { searchShortcutIdentity } from './searchShortcutIdentity'
+import { searchShortcutIdentity } from './searchShortcutIdentity.ts'
 
-const MAX_CUSTOM_SHORTCUTS = 32
+export const MAX_CUSTOM_SHORTCUTS = 32
 
 function hostKey(url: string): string {
   try {
@@ -139,8 +139,18 @@ export function hostKeyForShortcut(url: string): string {
   return hostKey(url)
 }
 
-export function trimCustomShortcuts(custom: Shortcut[]): Shortcut[] {
-  return custom.slice(-MAX_CUSTOM_SHORTCUTS)
+export function trimCustomShortcuts(
+  custom: Shortcut[],
+  pinnedIds: ReadonlySet<string> = new Set(),
+): Shortcut[] {
+  const keptTransient = new Set(
+    custom
+      .filter((shortcut) => !pinnedIds.has(shortcut.id))
+      .slice(-MAX_CUSTOM_SHORTCUTS),
+  )
+  return custom.filter(
+    (shortcut) => pinnedIds.has(shortcut.id) || keptTransient.has(shortcut),
+  )
 }
 
 export function findShortcutByHost(shortcuts: Shortcut[], visitHost: string): Shortcut | undefined {

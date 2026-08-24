@@ -1,6 +1,7 @@
 import { emit, listen } from '@tauri-apps/api/event'
 import type { BrowserTab } from './browserTab'
 import type { DownloadItem } from './download'
+import type { Shortcut } from './types'
 import { isTauri } from '../platform/runtime'
 
 export type ChromeShellAction =
@@ -10,6 +11,7 @@ export type ChromeShellAction =
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
   | { type: 'switch-tab'; shortcutId: string }
+  | { type: 'toggle-pin'; shortcut: Shortcut }
   | { type: 'set-tab-muted'; shortcutId: string; muted: boolean }
   | { type: 'open-overlay' }
   | { type: 'go-back' }

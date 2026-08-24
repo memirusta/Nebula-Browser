@@ -11,9 +11,11 @@ import {
   SHORTCUT_PREFERENCES_KEY,
 } from './shortcutPreferences'
 import {
-  loadPinnedShortcutIds,
+  addPinnedShortcut,
+  loadPinnedShortcuts,
   MAX_PINNED_SHORTCUTS,
   PINNED_SHORTCUTS_KEY,
+  serializePinnedShortcuts,
 } from './pinnedShortcuts'
 
 export function applyImportedShortcutsSync(
@@ -26,7 +28,19 @@ export function applyImportedShortcutsSync(
   }
 
   const prev = loadShortcutPreferences(defaultShortcuts)
-  const prefs = importShortcutsToPreferences(prev, defaultShortcuts, incoming)
+  const previousPins = loadPinnedShortcuts(
+    mergeShortcutLists(defaultShortcuts, prev.custom),
+  )
+  const protectedIds = new Set([
+    ...previousPins.pins.map((pin) => pin.id),
+    ...previousPins.unresolvedLegacyIds,
+  ])
+  const prefs = importShortcutsToPreferences(
+    prev,
+    defaultShortcuts,
+    incoming,
+    protectedIds,
+  )
   persistLocalStorage(SHORTCUT_PREFERENCES_KEY, JSON.stringify(prefs))
 
   const merged = mergeShortcutLists(defaultShortcuts, prefs.custom)
@@ -44,15 +58,16 @@ export function applyImportedShortcutsSync(
   }
 
   if (pinFirst > 0 && importedIds.length > 0) {
-    const currentPins = loadPinnedShortcutIds()
-    const nextPins = [...currentPins]
+    let pins = loadPinnedShortcuts(merged)
     for (const id of importedIds.slice(0, pinFirst)) {
       if (!visibleIds.has(id)) continue
-      if (nextPins.includes(id)) continue
-      if (nextPins.length >= MAX_PINNED_SHORTCUTS) break
-      nextPins.push(id)
+      const shortcut = merged.find((candidate) => candidate.id === id)
+      if (!shortcut) continue
+      const result = addPinnedShortcut(pins.pins, shortcut)
+      if (!result.accepted && pins.pins.length >= MAX_PINNED_SHORTCUTS) break
+      pins = { ...pins, pins: result.pins }
     }
-    persistLocalStorage(PINNED_SHORTCUTS_KEY, JSON.stringify(nextPins))
+    persistLocalStorage(PINNED_SHORTCUTS_KEY, serializePinnedShortcuts(pins))
   }
 
   return { importedIds }

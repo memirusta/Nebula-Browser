@@ -22,6 +22,8 @@ import { persistLocalStorage, useStorageSync } from '../core/storageSync'
 
 import { applyImportedShortcutsSync } from '../core/shortcutImport'
 
+import { loadPinnedShortcutIds } from '../core/pinnedShortcuts'
+
 import {
 
   importShortcutsToPreferences,
@@ -159,7 +161,7 @@ export function useShortcutPreferences(defaultShortcuts: Shortcut[]) {
 
             shortcut,
 
-          ])
+          ], new Set(loadPinnedShortcutIds()))
 
           return { ...prev, removed, custom }
 
@@ -203,7 +205,7 @@ export function useShortcutPreferences(defaultShortcuts: Shortcut[]) {
 
           shortcut,
 
-        ])
+        ], new Set(loadPinnedShortcutIds()))
 
         return { ...prev, removed, custom }
 
@@ -265,7 +267,14 @@ export function useShortcutPreferences(defaultShortcuts: Shortcut[]) {
 
       if (incoming.length === 0) return []
 
-      setPrefs((prev) => importShortcutsToPreferences(prev, defaultShortcuts, incoming))
+      setPrefs((prev) =>
+        importShortcutsToPreferences(
+          prev,
+          defaultShortcuts,
+          incoming,
+          new Set(loadPinnedShortcutIds()),
+        ),
+      )
 
       const merged = mergeShortcutLists(defaultShortcuts, incoming)
 
@@ -330,5 +339,4 @@ export function useShortcutPreferences(defaultShortcuts: Shortcut[]) {
   }
 
 }
-
 

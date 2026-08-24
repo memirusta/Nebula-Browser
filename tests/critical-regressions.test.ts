@@ -585,9 +585,10 @@ test('password CSV parser preserves quoted multiline fields and escaped quotes',
   )
 })
 
-test('home-menu migration never wipes current pins or browse sessions', () => {
+test('home-menu migration preserves migratable pins and current browse sessions', () => {
   const values = new Map<string, string>([
-    ['nebula-pinned-shortcuts-v4', '["keep-pin"]'],
+    ['nebula-pinned-shortcuts-v5', '{"schemaVersion":2,"pins":[]}'],
+    ['nebula-pinned-shortcuts-v4', '["migrate-pin"]'],
     ['nebula-browse-sessions-v2', '{"keep":"session"}'],
     ['nebula-pinned-shortcuts-v3', '["legacy"]'],
     ['nebula-browse-sessions-v1', '{"legacy":true}'],
@@ -600,9 +601,10 @@ test('home-menu migration never wipes current pins or browse sessions', () => {
 
   resetHomeMenuStorageOnce(storage)
 
-  assert.equal(values.get('nebula-pinned-shortcuts-v4'), '["keep-pin"]')
+  assert.equal(values.get('nebula-pinned-shortcuts-v5'), '{"schemaVersion":2,"pins":[]}')
+  assert.equal(values.get('nebula-pinned-shortcuts-v4'), '["migrate-pin"]')
   assert.equal(values.get('nebula-browse-sessions-v2'), '{"keep":"session"}')
-  assert.equal(values.has('nebula-pinned-shortcuts-v3'), false)
+  assert.equal(values.get('nebula-pinned-shortcuts-v3'), '["legacy"]')
   assert.equal(values.has('nebula-browse-sessions-v1'), false)
   assert.equal(values.get('nebula-home-menu-reset-v1'), '1')
 })
