@@ -1,4 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import type {
   SiteContextMenuItem,
@@ -54,34 +59,189 @@ function MenuItems({
   )
 }
 
-export function SiteContextMenu({ request, onSelect }: SiteContextMenuProps) {
+export function SiteContextMenu({
+  request,
+  onSelect,
+}: SiteContextMenuProps) {
   const { t } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState({ x: request.x, y: request.y })
 
-  useEffect(() => {
-    setPosition({ x: request.x, y: request.y })
-  }, [request.id, request.x, request.y])
+  const [position, setPosition] = useState({
+    x: 0,
+    y: 0,
+  })
 
-  useLayoutEffect(() => {
+  const [positioned, setPositioned] =
+    useState(false)
+
+  const positionMenu = useCallback(() => {
     const menu = menuRef.current
     if (!menu) return
-    const bounds = menu.getBoundingClientRect()
-    const margin = 8
-    const x = Math.max(margin, Math.min(request.x, window.innerWidth - bounds.width - margin))
-    const y = Math.max(margin, Math.min(request.y, window.innerHeight - bounds.height - margin))
-    setPosition({ x, y })
-  }, [request])
 
+    const bounds =
+      menu.getBoundingClientRect()
+
+    const margin = 8
+
+    const viewportWidth =
+      window.visualViewport?.width ??
+      window.innerWidth
+
+    const viewportHeight =
+      window.visualViewport?.height ??
+      window.innerHeight
+
+    let x = request.x
+    let y = request.y
+
+    // Flip horizontally if the menu would
+    // cross the right edge.
+    if (
+      x + bounds.width + margin >
+      viewportWidth
+    ) {
+      x =
+        request.x -
+        bounds.width
+    }
+
+    // Flip vertically if the menu would
+    // cross the bottom edge.
+    if (
+      y + bounds.height + margin >
+      viewportHeight
+    ) {
+      y =
+        request.y -
+        bounds.height
+    }
+
+    // Final safety clamp.
+    x = Math.max(
+      margin,
+      Math.min(
+        x,
+        viewportWidth -
+          bounds.width -
+          margin,
+      ),
+    )
+
+    y = Math.max(
+      margin,
+      Math.min(
+        y,
+        viewportHeight -
+          bounds.height -
+          margin,
+      ),
+    )
+
+    setPosition({
+      x,
+      y,
+    })
+
+    setPositioned(true)
+  }, [
+    request.x,
+    request.y,
+  ])
+
+  // Wait until the overlay has had time to
+  // obtain its final bounds before measuring.
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
+    setPositioned(false)
+
+    let frame1 = 0
+    let frame2 = 0
+
+    frame1 =
+      requestAnimationFrame(() => {
+        frame2 =
+          requestAnimationFrame(() => {
+            positionMenu()
+          })
+      })
+
+    return () => {
+      cancelAnimationFrame(frame1)
+      cancelAnimationFrame(frame2)
+    }
+  }, [
+    request.id,
+    positionMenu,
+  ])
+
+  // Reposition after the initial measurement
+  // if viewport/menu dimensions later change.
+  useEffect(() => {
+    if (!positioned) return
+
+    const menu = menuRef.current
+    if (!menu) return
+
+    const observer =
+      new ResizeObserver(() => {
+        positionMenu()
+      })
+
+    observer.observe(menu)
+
+    const visualViewport =
+      window.visualViewport
+
+    window.addEventListener(
+      'resize',
+      positionMenu,
+    )
+
+    visualViewport?.addEventListener(
+      'resize',
+      positionMenu,
+    )
+
+    return () => {
+      observer.disconnect()
+
+      window.removeEventListener(
+        'resize',
+        positionMenu,
+      )
+
+      visualViewport?.removeEventListener(
+        'resize',
+        positionMenu,
+      )
+    }
+  }, [
+    positioned,
+    positionMenu,
+  ])
+
+  // Keep the original Escape behaviour.
+  useEffect(() => {
+    const onKeyDown = (
+      event: KeyboardEvent,
+    ) => {
       if (event.key === 'Escape') {
         event.preventDefault()
         onSelect(null)
       }
     }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
+
+    window.addEventListener(
+      'keydown',
+      onKeyDown,
+      true,
+    )
+
+    return () =>
+      window.removeEventListener(
+        'keydown',
+        onKeyDown,
+        true,
+      )
   }, [onSelect])
 
   return createPortal(
@@ -89,26 +249,50 @@ export function SiteContextMenu({ request, onSelect }: SiteContextMenuProps) {
       className={styles.layer}
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onSelect(null)
+        if (
+          event.target ===
+          event.currentTarget
+        ) {
+          onSelect(null)
+        }
       }}
       onContextMenu={(event) => {
         event.preventDefault()
-        if (event.target === event.currentTarget) onSelect(null)
+
+        if (
+          event.target ===
+          event.currentTarget
+        ) {
+          onSelect(null)
+        }
       }}
     >
       <div
         ref={menuRef}
         className={styles.menu}
         role="menu"
-        style={{ left: position.x, top: position.y }}
+        style={{
+          left: position.x,
+          top: position.y,
+          visibility:
+            positioned
+              ? 'visible'
+              : 'hidden',
+        }}
       >
         {request.items.length > 0 ? (
           <MenuItems
             items={request.items}
-            onSelect={(commandId) => onSelect(commandId)}
+            onSelect={(commandId) =>
+              onSelect(commandId)
+            }
           />
         ) : (
-          <div className={styles.empty}>{t('contextNoActions')}</div>
+          <div
+            className={styles.empty}
+          >
+            {t('contextNoActions')}
+          </div>
         )}
       </div>
     </div>,
