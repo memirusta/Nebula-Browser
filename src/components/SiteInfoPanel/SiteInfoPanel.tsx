@@ -66,10 +66,60 @@ export function SiteInfoPanel({
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [resolvedTop, setResolvedTop] = useState(top)
   const tr = locale === 'tr'
   const secure = state.url?.startsWith('https://') === true
   useModalFocusTrap(panelRef, true)
+  
+  useEffect(() => {
+  const panel =
+    panelRef.current
 
+  if (!panel) {
+    return
+  }
+
+  const updatePosition = () => {
+    const height =
+      panel.getBoundingClientRect().height
+
+    const maxTop =
+      window.innerHeight -
+      height -
+      12
+
+    setResolvedTop(
+      Math.max(
+        12,
+        Math.min(top, maxTop),
+      ),
+    )
+  }
+
+  updatePosition()
+
+  const observer =
+    new ResizeObserver(
+      updatePosition,
+    )
+
+  observer.observe(panel)
+
+  window.addEventListener(
+    'resize',
+    updatePosition,
+  )
+
+  return () => {
+    observer.disconnect()
+
+    window.removeEventListener(
+      'resize',
+      updatePosition,
+    )
+  }
+}, [top])
+  
   useEffect(() => {
     closeRef.current?.focus()
     const onPointerDown = (event: PointerEvent) => {
@@ -107,7 +157,7 @@ export function SiteInfoPanel({
     <section
       ref={panelRef}
       className={styles.panel}
-      style={{ top }}
+      style={{ top: resolvedTop }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="nebula-site-info-title"
