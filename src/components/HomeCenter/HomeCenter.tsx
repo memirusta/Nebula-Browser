@@ -119,6 +119,8 @@ export function HomeCenter({
 
   const searchInputRef =
     useRef<HTMLInputElement>(null)
+  const selectAllOnNextClickRef =
+    useRef(true)
 
   /*
    * ---------------------------------------------------------
@@ -227,21 +229,27 @@ useEffect(() => {
    * ---------------------------------------------------------
    */
 
-  useEffect(() => {
-    if (!focusSearchRequest) {
-      return
-    }
+ useEffect(() => {
+  if (!focusSearchRequest) {
+    return
+  }
 
-    const input =
-      searchInputRef.current
+  const input =
+    searchInputRef.current
 
-    if (!input) {
-      return
-    }
+  if (!input) {
+    return
+  }
 
-    input.focus()
-    input.select()
-  }, [focusSearchRequest])
+  input.focus({
+    preventScroll: true,
+  })
+
+  input.select()
+
+  selectAllOnNextClickRef.current =
+    false
+}, [focusSearchRequest])
 
   useEffect(() => {
     if (isEditing) {
@@ -657,22 +665,36 @@ useEffect(() => {
               -1,
             )
           }}
-          onFocus={(event) => {
-            setIsEditing(true)
+onMouseDown={(event) => {
+  if (!selectAllOnNextClickRef.current) {
+    return
+  }
 
-            setActiveSuggestion(
-              -1,
-            )
+  // Prevent the native text caret placement from
+  // immediately destroying the full selection.
+  event.preventDefault()
 
-            event.currentTarget.select()
-          }}
-          onBlur={() => {
-            setIsEditing(false)
+  selectAllOnNextClickRef.current = false
 
-            setActiveSuggestion(
-              -1,
-            )
-          }}
+  const input = event.currentTarget
+
+  input.focus()
+  input.select()
+}}
+
+onFocus={(event) => {
+  setIsEditing(true)
+  setActiveSuggestion(-1)
+
+  event.currentTarget.select()
+}}
+
+onBlur={() => {
+  selectAllOnNextClickRef.current = true
+
+  setIsEditing(false)
+  setActiveSuggestion(-1)
+}}
           onKeyDown={
             handleSearchKeyDown
           }

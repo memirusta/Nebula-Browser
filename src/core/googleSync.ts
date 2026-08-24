@@ -1,7 +1,10 @@
 import { BROWSER_SHORTCUT_BINDINGS_KEY } from './browserShortcuts'
 import { LOCALE_STORAGE_KEY } from './locale'
 import { NEBULA_SETTINGS_KEY } from './nebulaSettings'
-import { PINNED_SHORTCUTS_KEY } from './pinnedShortcuts'
+import {
+  LEGACY_PINNED_SHORTCUT_KEYS,
+  PINNED_SHORTCUTS_KEY,
+} from './pinnedShortcuts'
 import { SHORTCUT_POSITIONS_KEY } from './shortcutLayout'
 import { SHORTCUT_PREFERENCES_KEY } from './shortcutPreferences'
 import { persistLocalStorage, removeLocalStorage } from './storageSync'
@@ -35,6 +38,7 @@ const SETTINGS_KEYS = [
 const BOOKMARK_KEYS = [
   SHORTCUT_PREFERENCES_KEY,
   PINNED_SHORTCUTS_KEY,
+  ...LEGACY_PINNED_SHORTCUT_KEYS,
   SHORTCUT_POSITIONS_KEY,
   SHORTCUT_FOLDERS_KEY,
 ] as const

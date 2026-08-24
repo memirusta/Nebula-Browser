@@ -129,6 +129,7 @@ const SETTINGS_SEARCH_KEYS: Record<SettingsCategoryId, readonly LocaleMessageKey
   appearance: [
     'settingsLanguage',
     'theme',
+    'darkenWebpages',
     'glassBlur',
     'glassOpacity',
     'glassSaturate',
@@ -714,6 +715,23 @@ function CategoryContent({
             ]}
             onChange={(v) =>
               onUpdate('appearance', 'theme', v as NebulaSettings['appearance']['theme'])
+            }
+          />
+          <SettingSelectRow
+            label={t('darkenWebpages')}
+            hint={t('darkenWebpagesHint')}
+            value={appearance.darkenWebpages}
+            options={[
+              { value: 'off', label: t('darkenWebpagesOff') },
+              { value: 'auto', label: t('darkenWebpagesAuto') },
+              { value: 'always', label: t('darkenWebpagesAlways') },
+            ]}
+            onChange={(value) =>
+              onUpdate(
+                'appearance',
+                'darkenWebpages',
+                value as NebulaSettings['appearance']['darkenWebpages'],
+              )
             }
           />
           <SettingRangeRow

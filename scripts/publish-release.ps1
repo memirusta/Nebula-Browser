@@ -96,7 +96,7 @@ if (-not $SkipBuild) {
   Push-Location $root
   try {
     Write-Host "Building Nebula v$Version (x64)..."
-    npm run tauri:build:x64
+    npm.cmd run tauri:build:x64
     if ($LASTEXITCODE -ne 0) {
       throw "Tauri release build failed with exit code $LASTEXITCODE"
     }

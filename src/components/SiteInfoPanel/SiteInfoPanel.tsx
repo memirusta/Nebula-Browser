@@ -15,9 +15,11 @@ interface SiteInfoPanelProps {
     camera: boolean
     microphone: boolean
     location: boolean
+    screen: boolean
   }
   onClose: () => void
   onToggleProtection: () => void
+  onSetDarkening: (mode: 'default' | 'off' | 'always') => void
   onSetNotificationPermission: (
     permission: 'allow' | 'block' | null,
   ) => void
@@ -25,7 +27,7 @@ interface SiteInfoPanelProps {
   onClearSiteData: () => void
 }
 
-type PermissionName = 'camera' | 'microphone' | 'location'
+type PermissionName = 'camera' | 'microphone' | 'location' | 'screen'
 
 function PermissionIcon({ name }: { name: PermissionName }) {
   if (name === 'camera') {
@@ -40,6 +42,14 @@ function PermissionIcon({ name }: { name: PermissionName }) {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="8" y="3" width="8" height="12" rx="4" />
         <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
+      </svg>
+    )
+  }
+  if (name === 'screen') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="13" rx="2" />
+        <path d="M8 21h8M12 17v4M9 10l3-3 3 3M12 7v7" />
       </svg>
     )
   }
@@ -58,6 +68,7 @@ export function SiteInfoPanel({
   usage,
   onClose,
   onToggleProtection,
+  onSetDarkening,
   onSetNotificationPermission,
   onResetPermissions,
   onClearSiteData,
@@ -66,10 +77,60 @@ export function SiteInfoPanel({
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [resolvedTop, setResolvedTop] = useState(top)
   const tr = locale === 'tr'
   const secure = state.url?.startsWith('https://') === true
   useModalFocusTrap(panelRef, true)
+  
+  useEffect(() => {
+  const panel =
+    panelRef.current
 
+  if (!panel) {
+    return
+  }
+
+  const updatePosition = () => {
+    const height =
+      panel.getBoundingClientRect().height
+
+    const maxTop =
+      window.innerHeight -
+      height -
+      12
+
+    setResolvedTop(
+      Math.max(
+        12,
+        Math.min(top, maxTop),
+      ),
+    )
+  }
+
+  updatePosition()
+
+  const observer =
+    new ResizeObserver(
+      updatePosition,
+    )
+
+  observer.observe(panel)
+
+  window.addEventListener(
+    'resize',
+    updatePosition,
+  )
+
+  return () => {
+    observer.disconnect()
+
+    window.removeEventListener(
+      'resize',
+      updatePosition,
+    )
+  }
+}, [top])
+  
   useEffect(() => {
     closeRef.current?.focus()
     const onPointerDown = (event: PointerEvent) => {
@@ -101,13 +162,14 @@ export function SiteInfoPanel({
     ['camera', tr ? 'Kamera' : 'Camera', state.permissions.camera],
     ['microphone', tr ? 'Mikrofon' : 'Microphone', state.permissions.microphone],
     ['location', tr ? 'Konum' : 'Location', state.permissions.location],
+    ['screen', tr ? 'Ekran paylaşımı' : 'Screen sharing', 'prompt'],
   ]
 
   return (
     <section
       ref={panelRef}
       className={styles.panel}
-      style={{ top }}
+      style={{ top: resolvedTop }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="nebula-site-info-title"
@@ -176,6 +238,26 @@ export function SiteInfoPanel({
           </small>
         </span>
       </button>
+
+      <div className={styles.notificationRow}>
+        <span>{tr ? 'Sayfa koyulaştırma' : 'Page darkening'}</span>
+        <div className={styles.segmented}>
+          {([
+            ['default', tr ? 'Varsayılan' : 'Default'],
+            ['off', tr ? 'Kapalı' : 'Off'],
+            ['always', tr ? 'Her zaman' : 'Always'],
+          ] as const).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={state.darkenWebpagesOverride === value ? styles.segmentActive : ''}
+              onClick={() => onSetDarkening(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className={styles.sectionHeader}>
         <span>{tr ? 'İzinler' : 'Permissions'}</span>

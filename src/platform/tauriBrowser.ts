@@ -17,6 +17,10 @@ import {
 import { debounce } from './debounce'
 import { isTauri } from './runtime'
 import {
+  currentBrowserWindowId,
+  currentBrowserWindowLabel,
+} from './browserWindowScope'
+import {
   traceTransitionCall,
   transitionErrorDetails,
   writeTransitionLog,
@@ -198,7 +202,7 @@ async function ensureUblockProfile(label: string): Promise<void> {
 /** Install/verify uBO while the home screen is visible so first navigation stays fast. */
 export async function prewarmUblockProfile(): Promise<void> {
   if (!isTauri) return
-  await ensureUblockProfile('main')
+  await ensureUblockProfile(currentBrowserWindowLabel())
 }
 
 export interface BrowserPrivacyOptions {
@@ -217,6 +221,39 @@ export interface BrowserPrivacyOptions {
   showNotificationContent: boolean
   notificationAllowedSites: string[]
   notificationBlockedSites: string[]
+}
+
+export interface BrowserForceDarkOptions {
+  mode: 'off' | 'auto' | 'always'
+  theme: 'forest' | 'dark' | 'light'
+  systemDark: boolean
+  siteOverrides: Record<string, 'off' | 'always'>
+}
+
+let forceDarkOptions: BrowserForceDarkOptions = {
+  mode: 'off',
+  theme: 'forest',
+  systemDark: false,
+  siteOverrides: {},
+}
+
+let forceDarkRevision = 0
+
+const forceDarkApplyRunner = new LatestPerKeyRunner(
+  () => ({
+    revision: forceDarkRevision,
+    value: {
+      ...forceDarkOptions,
+      siteOverrides: { ...forceDarkOptions.siteOverrides },
+    },
+  }),
+  async (label: string, options) => {
+    await invoke('webview_apply_force_dark_pages', { label, options })
+  },
+)
+
+async function applyForceDarkToLabel(label: string): Promise<void> {
+  await forceDarkApplyRunner.run(label)
 }
 
 let privacyOptions: BrowserPrivacyOptions = {
@@ -300,6 +337,7 @@ export async function configurePopupBrowseWebview(
   await invoke('webview_setup_popup_target', { label })
   await invoke('webview_apply_browser_identity', { label })
   await applyPrivacyToPopupLabel(label, privateMode)
+  await applyForceDarkToLabel(label)
   popupPrivacyModes.set(label, privateMode)
 }
 
@@ -307,8 +345,36 @@ export async function teardownPopupBrowseWebview(
   label: string,
 ): Promise<void> {
   popupPrivacyModes.delete(label)
+  forceDarkApplyRunner.invalidate(label)
   if (!isTauri) return
   await invoke('webview_teardown_popup_target', { label })
+}
+
+export async function setBrowseForceDarkOptions(
+  options: BrowserForceDarkOptions,
+  shortcutIds: string[],
+): Promise<void> {
+  if (JSON.stringify(forceDarkOptions) !== JSON.stringify(options)) {
+    forceDarkRevision += 1
+  }
+  forceDarkOptions = {
+    ...options,
+    siteOverrides: { ...options.siteOverrides },
+  }
+
+  if (!isTauri) return
+
+  await allSettledOrThrow(
+    [
+      ...shortcutIds.map((shortcutId) =>
+        applyForceDarkToLabel(tabWebviewLabel(shortcutId)),
+      ),
+      ...Array.from(popupPrivacyModes.keys(), (label) =>
+        applyForceDarkToLabel(label),
+      ),
+    ],
+    'Failed to apply webpage darkening to browser tabs or popup windows',
+  )
 }
 
 export async function setBrowsePrivacyOptions(
@@ -457,6 +523,18 @@ export function listenTabWebviewSnapshots(
   )
 }
 
+/** Read WebView2's source at the moment a user action needs the live page URL. */
+export async function readBrowseTabCurrentUrl(shortcutId: string): Promise<string> {
+  const url = await invoke<string>('webview_current_url', {
+    label: tabWebviewLabel(shortcutId),
+  })
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('The browser tab does not have a pinnable URL.')
+  }
+  return parsed.href
+}
+
 export function listenTabWebviewLoadingStates(
   onLoadingState: (state: TabWebviewLoadingState) => void,
 ): Promise<UnlistenFn> {
@@ -537,6 +615,7 @@ async function resetPrewarmedWebviewForPrivateModeChange(): Promise<void> {
   if (ready) {
     configuredWebviews.delete(ready.label)
     privacyApplyRunner.invalidate(ready.label)
+    forceDarkApplyRunner.invalidate(ready.label)
     await destroyTabWebview(ready.label)
   }
 
@@ -917,6 +996,13 @@ async function configureTabWebview(
     () =>
       applyPrivacyToLabel(label),
   )
+
+  await traceTransitionCall(
+    traceId,
+    'browser.webview.apply-force-dark',
+    { label, forceDarkRevision },
+    () => applyForceDarkToLabel(label),
+  )
 }
 
 function scheduleNextBrowseWebviewPrewarm(): void {
@@ -961,15 +1047,15 @@ export async function prewarmBrowseWebview(): Promise<void> {
     await traceTransitionCall(
       traceId,
       'browser.prewarm.ensure-ublock',
-      { label: 'main' },
+      { label: currentBrowserWindowLabel() },
       () =>
         ensureUblockProfile(
-          'main',
+          currentBrowserWindowLabel(),
         ),
     )
 
     const label =
-      `${PREWARMED_TAB_PREFIX}${++prewarmSequence}`
+      `${PREWARMED_TAB_PREFIX}${currentBrowserWindowId()}-${++prewarmSequence}`
 
     const appWindow =
       getCurrentWindow()
@@ -1037,6 +1123,7 @@ export async function prewarmBrowseWebview(): Promise<void> {
       ) {
         configuredWebviews.delete(label)
         privacyApplyRunner.invalidate(label)
+        forceDarkApplyRunner.invalidate(label)
         await traceTransitionCall(
           traceId,
           'browser.prewarm.discard-stale-profile',
@@ -1072,6 +1159,7 @@ export async function prewarmBrowseWebview(): Promise<void> {
       )
 
       privacyApplyRunner.invalidate(label)
+      forceDarkApplyRunner.invalidate(label)
 
       try {
         await traceTransitionCall(
@@ -2152,6 +2240,7 @@ async function unloadTabIfInactive(
   )
 
   privacyApplyRunner.invalidate(webview.label)
+  forceDarkApplyRunner.invalidate(webview.label)
 
   releaseTabWebviewLabel(
     shortcutId,
@@ -2518,6 +2607,13 @@ async function getOrCreateTabWebview(
             ),
         )
 
+        await traceTransitionCall(
+          traceId,
+          'browser.webview.adopt.apply-force-dark',
+          { shortcutId, label },
+          () => applyForceDarkToLabel(label),
+        )
+
         if (
           !prewarmProfileMatches(
             adoptedPrivateMode,
@@ -2622,6 +2718,7 @@ async function getOrCreateTabWebview(
         )
 
         privacyApplyRunner.invalidate(label)
+        forceDarkApplyRunner.invalidate(label)
 
         releaseTabWebviewLabel(
           shortcutId,
@@ -2663,7 +2760,7 @@ async function getOrCreateTabWebview(
       },
       () =>
         ensureUblockProfile(
-          'main',
+          currentBrowserWindowLabel(),
         ),
     )
 
@@ -4027,6 +4124,8 @@ export async function hideAllBrowseTabs(): Promise<void> {
           (webview) =>
             webview.label !==
               spareLabel &&
+            webview.window.label ===
+              currentBrowserWindowLabel() &&
             webview.label.startsWith(
               'nebula-tab-',
             ),
@@ -4040,6 +4139,43 @@ export async function hideAllBrowseTabs(): Promise<void> {
     )
   } catch {
     // ignore
+  }
+}
+
+export async function adoptReparentedBrowseTab(
+  shortcutId: string,
+  label: string,
+): Promise<void> {
+  if (!isTauri) return
+  const webview = await Webview.getByLabel(label)
+  if (!webview) throw new Error(`Transferred webview '${label}' was not found.`)
+  assignTabWebviewLabel(shortcutId, label)
+  webviewCache.set(shortcutId, webview)
+  createdTabs.add(shortcutId)
+  await configureTabWebview(
+    label,
+    `transfer-adopt-${Date.now()}`,
+  )
+}
+
+export function relinquishBrowseTabOwnership(shortcutId: string): void {
+  const label = tabWebviewLabel(shortcutId)
+  cancelTabUnload(shortcutId)
+  cancelTabSleep(label)
+  webviewCache.delete(shortcutId)
+  createdTabs.delete(shortcutId)
+  lowMemoryWebviews.delete(label)
+  suspendedWebviews.delete(label)
+  tabLastActiveAt.delete(shortcutId)
+  unloadedTabStates.delete(shortcutId)
+  privacyApplyRunner.invalidate(label)
+  forceDarkApplyRunner.invalidate(label)
+  releaseTabWebviewLabel(shortcutId)
+  if (activeTabId === shortcutId) {
+    activeTabId = null
+    activeWebview = null
+    unbindResizeListeners()
+    lastBrowserBoundsKey = null
   }
 }
 
@@ -4239,6 +4375,7 @@ async function closeBrowseTabQueued(
   )
 
   privacyApplyRunner.invalidate(label)
+  forceDarkApplyRunner.invalidate(label)
 
   releaseTabWebviewLabel(
     shortcutId,

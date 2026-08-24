@@ -9,6 +9,7 @@ export interface SensitiveFeatureUsage {
   camera: boolean
   microphone: boolean
   location: boolean
+  screen: boolean
 }
 
 function isUsagePayload(value: unknown): value is SensitiveFeatureUsage {
@@ -20,7 +21,8 @@ function isUsagePayload(value: unknown): value is SensitiveFeatureUsage {
     typeof candidate.origin !== 'string' ||
     typeof candidate.camera !== 'boolean' ||
     typeof candidate.microphone !== 'boolean' ||
-    typeof candidate.location !== 'boolean'
+    typeof candidate.location !== 'boolean' ||
+    typeof candidate.screen !== 'boolean'
   ) {
     return false
   }

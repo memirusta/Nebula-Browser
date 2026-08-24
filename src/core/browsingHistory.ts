@@ -1,9 +1,24 @@
 import { persistLocalStorage } from './storageSync'
 import type { BrowserTab } from './browserTab'
+import {
+  createBrowserWindowSessionSnapshot,
+  CURRENT_SESSION_KEY,
+  LEGACY_CURRENT_SESSION_KEYS,
+  loadBrowserSessionSnapshot,
+  removeBrowserSessionWindow,
+  serializeBrowserSessionSnapshot,
+  upsertBrowserSessionWindow,
+  type BrowserSessionSnapshot,
+} from './browserSessionSnapshot'
+
+export {
+  CURRENT_SESSION_KEY,
+  LEGACY_CURRENT_SESSION_KEYS,
+} from './browserSessionSnapshot'
+export type { BrowserSessionSnapshot } from './browserSessionSnapshot'
 
 export const BROWSING_HISTORY_KEY = 'nebula-browsing-history-v1'
 export const CLOSED_TABS_KEY = 'nebula-closed-tabs-v1'
-export const CURRENT_SESSION_KEY = 'nebula-current-browser-session-v1'
 export const BROWSER_RUN_STATE_KEY = 'nebula-browser-run-state-v1'
 
 const MAX_HISTORY_ENTRIES = 5_000
@@ -26,13 +41,6 @@ export interface ClosedTabEntry {
   title: string
   favicon?: string
   closedAt: number
-}
-
-export interface BrowserSessionSnapshot {
-  id: string
-  savedAt: number
-  activeTabId: string | null
-  tabs: Array<Pick<BrowserTab, 'id' | 'url' | 'title' | 'favicon'>>
 }
 
 interface StoredHistory {
@@ -278,59 +286,43 @@ export function closedTabFromBrowserTab(tab: BrowserTab): ClosedTabEntry | null 
 }
 
 export function loadCurrentSessionSnapshot(): BrowserSessionSnapshot | null {
-  try {
-    const raw = localStorage.getItem(CURRENT_SESSION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<BrowserSessionSnapshot>
-    if (!Array.isArray(parsed.tabs) || parsed.tabs.length === 0) return null
-    const tabs = parsed.tabs.flatMap((tab) => {
-      if (!tab || typeof tab !== 'object') return []
-      const candidate = tab as Partial<BrowserSessionSnapshot['tabs'][number]>
-      if (typeof candidate.url !== 'string') return []
-      const url = normalizeHttpUrl(candidate.url)
-      if (!url) return []
-      const id = typeof candidate.id === 'string' && candidate.id ? candidate.id : `history-${crypto.randomUUID()}`
-      return [{
-        id,
-        url,
-        title: sanitizeTitle(candidate.title, url),
-        favicon: typeof candidate.favicon === 'string' ? candidate.favicon : '',
-      }]
-    })
-    if (tabs.length === 0) return null
-    return {
-      id: typeof parsed.id === 'string' && parsed.id ? parsed.id : crypto.randomUUID(),
-      savedAt: typeof parsed.savedAt === 'number' && Number.isFinite(parsed.savedAt) ? parsed.savedAt : Date.now(),
-      activeTabId: typeof parsed.activeTabId === 'string' ? parsed.activeTabId : null,
-      tabs,
-    }
-  } catch {
-    return null
-  }
+  return loadBrowserSessionSnapshot()
 }
 
 export function clearCurrentSessionSnapshot(): void {
   try {
     localStorage.removeItem(CURRENT_SESSION_KEY)
+    for (const key of LEGACY_CURRENT_SESSION_KEYS) localStorage.removeItem(key)
   } catch {
     // Storage can be unavailable in restricted web contexts.
   }
 }
 
-export function persistCurrentSessionSnapshot(tabs: BrowserTab[], activeTabId: string | null): void {
-  const serializableTabs = tabs.flatMap((tab) => {
-    const url = normalizeHttpUrl(tab.url)
-    if (!url) return []
-    return [{ id: tab.id, url, title: sanitizeTitle(tab.title, url), favicon: tab.favicon }]
-  })
-
-  const snapshot: BrowserSessionSnapshot = {
-    id: crypto.randomUUID(),
-    savedAt: Date.now(),
+export function persistCurrentSessionSnapshot(
+  windowId: string,
+  tabs: BrowserTab[],
+  activeTabId: string | null,
+): void {
+  const current = loadBrowserSessionSnapshot()
+  const window = createBrowserWindowSessionSnapshot(
+    windowId,
+    tabs,
     activeTabId,
-    tabs: serializableTabs,
+  )
+  const snapshot = upsertBrowserSessionWindow(current, window)
+  persistLocalStorage(CURRENT_SESSION_KEY, serializeBrowserSessionSnapshot(snapshot))
+}
+
+export function removeCurrentSessionWindow(windowId: string): void {
+  const snapshot = removeBrowserSessionWindow(
+    loadBrowserSessionSnapshot(),
+    windowId,
+  )
+  if (!snapshot) {
+    localStorage.removeItem(CURRENT_SESSION_KEY)
+    return
   }
-  persistLocalStorage(CURRENT_SESSION_KEY, JSON.stringify(snapshot))
+  persistLocalStorage(CURRENT_SESSION_KEY, serializeBrowserSessionSnapshot(snapshot))
 }
 
 export type HistoryTimeFilter = 'all' | 'today' | '7d' | '30d'
@@ -346,15 +338,127 @@ export function historyTimeCutoff(filter: HistoryTimeFilter, now = Date.now()): 
   return now - days * 24 * 60 * 60 * 1_000
 }
 
+function normalizeHistorySearchText(value: string): string {
+  return value.toLocaleLowerCase()
+}
+
+function startsAtWordBoundary(
+  value: string,
+  query: string,
+): boolean {
+  const normalized =
+    normalizeHistorySearchText(value)
+
+  if (normalized.startsWith(query)) {
+    return true
+  }
+
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous =
+      normalized[index - 1]
+
+    const current =
+      normalized[index]
+
+    if (
+      !/[a-z0-9ğüşöçıİ]/i.test(previous) &&
+      current === query[0] &&
+      normalized.startsWith(query, index)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function historyEntryMatchesQuery(
+  entry: HistoryEntry,
+  rawQuery: string,
+): boolean {
+  const query =
+    normalizeHistorySearchText(
+      rawQuery.trim(),
+    )
+
+  if (!query) {
+    return true
+  }
+
+  const title =
+    normalizeHistorySearchText(
+      entry.title,
+    )
+
+  const host =
+    normalizeHistorySearchText(
+      entry.host,
+    )
+
+  const url =
+    normalizeHistorySearchText(
+      entry.url,
+    )
+
+  if (
+    startsAtWordBoundary(title, query) ||
+    startsAtWordBoundary(host, query)
+  ) {
+    return true
+  }
+
+  try {
+    const parsed =
+      new URL(entry.url)
+
+    const segments = [
+      parsed.hostname,
+      ...parsed.pathname
+        .split('/')
+        .filter(Boolean),
+    ]
+
+    if (
+      segments.some((segment) =>
+        normalizeHistorySearchText(
+          segment,
+        ).startsWith(query),
+      )
+    ) {
+      return true
+    }
+  } catch {
+    // Fall through to generic matching.
+  }
+
+  if (query.length <= 2) {
+    return false
+  }
+
+  return (
+    title.includes(query) ||
+    host.includes(query) ||
+    url.includes(query)
+  )
+}
+
+
 export function entryMatchesHistoryFilters(
   entry: HistoryEntry,
   options: { query?: string; host?: string; time?: HistoryTimeFilter },
 ): boolean {
-  const query = options.query?.trim().toLocaleLowerCase() ?? ''
-  if (query) {
-    const haystack = `${entry.title}\n${entry.url}\n${entry.host}`.toLocaleLowerCase()
-    if (!haystack.includes(query)) return false
-  }
+  const query =
+  options.query?.trim() ?? ''
+
+if (
+  query &&
+  !historyEntryMatchesQuery(
+    entry,
+    query,
+  )
+) {
+  return false
+}
   if (options.host && options.host !== 'all' && entry.host !== options.host) return false
   const cutoff = historyTimeCutoff(options.time ?? 'all')
   return cutoff === null || entry.visitedAt >= cutoff

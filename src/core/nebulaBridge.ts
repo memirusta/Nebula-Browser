@@ -1,7 +1,9 @@
 import { emit, listen } from '@tauri-apps/api/event'
 import type { BrowserTab } from './browserTab'
 import type { DownloadItem } from './download'
+import type { Shortcut } from './types'
 import { isTauri } from '../platform/runtime'
+import { scopedBrowserEvent } from '../platform/browserWindowScope'
 
 export type ChromeShellAction =
   | { type: 'request-state' }
@@ -10,7 +12,14 @@ export type ChromeShellAction =
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
   | { type: 'switch-tab'; shortcutId: string }
+  | { type: 'toggle-pin'; shortcut: Shortcut }
   | { type: 'set-tab-muted'; shortcutId: string; muted: boolean }
+  | {
+      type: 'move-tab'
+      shortcutId: string
+      screenX: number
+      screenY: number
+    }
   | { type: 'open-overlay' }
   | { type: 'go-back' }
   | { type: 'go-home' }
@@ -19,6 +28,11 @@ export type ChromeShellAction =
   | { type: 'remove-download'; id: string }
   | { type: 'clear-finished-downloads' }
   | { type: 'set-site-protection'; hostname: string; disabled: boolean }
+  | {
+      type: 'set-site-darkening'
+      hostname: string
+      mode: 'default' | 'off' | 'always'
+    }
   | {
       type: 'set-site-notification-permission'
       origin: string
@@ -51,6 +65,7 @@ export interface SiteInfoStatePayload {
   origin: string | null
   hostname: string | null
   protectionDisabled: boolean
+  darkenWebpagesOverride: 'default' | 'off' | 'always'
   permissionPromptsAllowed: boolean
   notificationPermission: 'allow' | 'block' | null
   permissions: {
@@ -71,13 +86,17 @@ const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
 const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
 
+function scoped(event: string): string {
+  return scopedBrowserEvent(event)
+}
+
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
 }
 
 export async function emitChromeAction(action: ChromeShellAction): Promise<void> {
   if (!isTauri) return
-  await emit(CHROME_ACTION_EVENT, action)
+  await emit(scoped(CHROME_ACTION_EVENT), action)
 }
 
 export function listenChromeActions(
@@ -87,14 +106,14 @@ export function listenChromeActions(
     return Promise.resolve(() => {})
   }
 
-  return listen<ChromeShellAction>(CHROME_ACTION_EVENT, (event) => {
+  return listen<ChromeShellAction>(scoped(CHROME_ACTION_EVENT), (event) => {
     handler(event.payload)
   })
 }
 
 export async function emitActiveUrl(url: string | null): Promise<void> {
   if (!isTauri) return
-  await emit(ACTIVE_URL_EVENT, { url })
+  await emit(scoped(ACTIVE_URL_EVENT), { url })
 }
 
 export function listenActiveUrl(
@@ -104,14 +123,14 @@ export function listenActiveUrl(
     return Promise.resolve(() => {})
   }
 
-  return listen<{ url: string | null }>(ACTIVE_URL_EVENT, (event) => {
+  return listen<{ url: string | null }>(scoped(ACTIVE_URL_EVENT), (event) => {
     handler(event.payload.url)
   })
 }
 
 export async function emitTabCatalog(catalog: TabCatalogPayload): Promise<void> {
   if (!isTauri) return
-  await emit(TAB_CATALOG_EVENT, catalog)
+  await emit(scoped(TAB_CATALOG_EVENT), catalog)
 }
 
 export function listenTabCatalog(
@@ -121,14 +140,14 @@ export function listenTabCatalog(
     return Promise.resolve(() => {})
   }
 
-  return listen<TabCatalogPayload>(TAB_CATALOG_EVENT, (event) => {
+  return listen<TabCatalogPayload>(scoped(TAB_CATALOG_EVENT), (event) => {
     handler(event.payload)
   })
 }
 
 export async function emitViewMode(mode: ShellViewMode): Promise<void> {
   if (!isTauri) return
-  await emit(VIEW_MODE_EVENT, { mode })
+  await emit(scoped(VIEW_MODE_EVENT), { mode })
 }
 
 export function listenViewMode(
@@ -138,7 +157,7 @@ export function listenViewMode(
     return Promise.resolve(() => {})
   }
 
-  return listen<{ mode: ShellViewMode }>(VIEW_MODE_EVENT, (event) => {
+  return listen<{ mode: ShellViewMode }>(scoped(VIEW_MODE_EVENT), (event) => {
     handler(event.payload.mode)
   })
 }
@@ -147,7 +166,7 @@ export async function emitDownloadUiState(
   state: DownloadUiStatePayload,
 ): Promise<void> {
   if (!isTauri) return
-  await emit(DOWNLOAD_UI_STATE_EVENT, state)
+  await emit(scoped(DOWNLOAD_UI_STATE_EVENT), state)
 }
 
 export function listenDownloadUiState(
@@ -157,14 +176,14 @@ export function listenDownloadUiState(
     return Promise.resolve(() => {})
   }
 
-  return listen<DownloadUiStatePayload>(DOWNLOAD_UI_STATE_EVENT, (event) => {
+  return listen<DownloadUiStatePayload>(scoped(DOWNLOAD_UI_STATE_EVENT), (event) => {
     handler(event.payload)
   })
 }
 
 export async function emitZoomIndicator(percent: number): Promise<void> {
   if (!isTauri) return
-  await emit(ZOOM_INDICATOR_EVENT, { percent })
+  await emit(scoped(ZOOM_INDICATOR_EVENT), { percent })
 }
 
 export function listenZoomIndicator(
@@ -174,33 +193,33 @@ export function listenZoomIndicator(
     return Promise.resolve(() => {})
   }
 
-  return listen<{ percent: number }>(ZOOM_INDICATOR_EVENT, (event) => {
+  return listen<{ percent: number }>(scoped(ZOOM_INDICATOR_EVENT), (event) => {
     handler(event.payload.percent)
   })
 }
 
 export async function emitTabSearchRequest(): Promise<void> {
   if (!isTauri) return
-  await emit(TAB_SEARCH_REQUEST_EVENT)
+  await emit(scoped(TAB_SEARCH_REQUEST_EVENT))
 }
 
 export function listenTabSearchRequests(handler: () => void): Promise<() => void> {
   if (!isTauri) return Promise.resolve(() => {})
-  return listen(TAB_SEARCH_REQUEST_EVENT, handler)
+  return listen(scoped(TAB_SEARCH_REQUEST_EVENT), handler)
 }
 
 export async function emitSiteInfoState(
   state: SiteInfoStatePayload,
 ): Promise<void> {
   if (!isTauri) return
-  await emit(SITE_INFO_STATE_EVENT, state)
+  await emit(scoped(SITE_INFO_STATE_EVENT), state)
 }
 
 export function listenSiteInfoState(
   handler: (state: SiteInfoStatePayload) => void,
 ): Promise<() => void> {
   if (!isTauri) return Promise.resolve(() => {})
-  return listen<SiteInfoStatePayload>(SITE_INFO_STATE_EVENT, (event) => {
+  return listen<SiteInfoStatePayload>(scoped(SITE_INFO_STATE_EVENT), (event) => {
     handler(event.payload)
   })
 }

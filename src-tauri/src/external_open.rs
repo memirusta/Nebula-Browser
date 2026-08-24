@@ -92,17 +92,21 @@ pub fn handle_second_instance<R: tauri::Runtime>(app: &tauri::AppHandle<R>, args
 
     let queued = queue_external_urls(urls);
 
-    if let Some(window) = app.get_window("main") {
+    let target_label = crate::browser_workspace::most_recent_window_label();
+    if let Some(window) = app.get_window(&target_label) {
         activate_main_window(&window);
     }
 
     if queued {
-        let _ = app.emit(EXTERNAL_URL_PENDING_EVENT, ());
+        let _ = app.emit_to(target_label, EXTERNAL_URL_PENDING_EVENT, ());
     }
 }
 
 #[tauri::command]
-pub fn take_pending_open_urls() -> Result<Vec<String>, String> {
+pub fn take_pending_open_urls(window_label: String) -> Result<Vec<String>, String> {
+    if window_label != crate::browser_workspace::most_recent_window_label() {
+        return Ok(Vec::new());
+    }
     let mut pending = PENDING_EXTERNAL_URLS
         .lock()
         .map_err(|_| "external URL queue is unavailable".to_string())?;

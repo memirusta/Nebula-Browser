@@ -225,22 +225,73 @@ mod imp {
     ) -> windows_core::Result<Vec<ContextMenuItemPayload>> {
         let mut count = 0u32;
         collection.Count(&mut count)?;
+
         let mut items = Vec::with_capacity(count as usize);
+
         for index in 0..count {
             let item = collection.GetValueAtIndex(index)?;
+
             let mut payload = item_payload(&item, depth)?;
-            // The native "Inspect" command opens Edge DevTools. Nebula has its own
-            // inspector, so never expose that Edge-branded entry in our menu.
+
+            // Nebula has its own inspector.
             if payload.name == "inspect" {
                 continue;
             }
-            // Keep the visible Print entry, but route it through Nebula so the
-            // system print dialog is used instead of Edge's browser preview.
+
+            // Route Print through Nebula's native
+            // system print flow.
             if payload.name == "print" {
                 payload.command_id = NEBULA_PRINT_COMMAND_ID;
             }
+
             items.push(payload);
         }
+
+        if depth == 0 {
+            // This feature has no real device-sync
+            // implementation in Nebula.
+            items.retain(|item| item.name != "sendTabToSelf");
+
+            // WebView2 currently puts Share inside
+            // More tools. Move the same native command
+            // to Nebula's top-level menu instead.
+            let share = items
+                .iter_mut()
+                .find(|item| item.name == "moreTools")
+                .and_then(|more_tools| {
+                    more_tools
+                        .children
+                        .iter()
+                        .position(|child| child.name == "share")
+                        .map(|index| more_tools.children.remove(index))
+                });
+
+            if let Some(share) = share {
+                let insert_at = items
+                    .iter()
+                    .position(|item| item.name == "print")
+                    .map(|index| index + 1)
+                    .unwrap_or(items.len());
+
+                items.insert(insert_at, share);
+            }
+
+            // Share was the only current child of
+            // More tools, so don't expose an empty
+            // submenu.
+            items.retain(|item| !(item.name == "moreTools" && item.children.is_empty()));
+
+            // Removing items can leave separators at
+            // the end of the menu.
+            while matches!(
+                items.last(),
+                Some(item)
+                    if item.kind == "separator"
+            ) {
+                items.pop();
+            }
+        }
+
         Ok(items)
     }
 
@@ -292,7 +343,9 @@ mod imp {
                                 let mut location = POINT::default();
                                 let _ = args.Location(&mut location);
                                 let scale = handler_app
-                                    .get_window("main")
+                                    .get_webview(&handler_label)
+                                    .map(|webview| webview.window().label().to_string())
+                                    .and_then(|window_label| handler_app.get_window(&window_label))
                                     .and_then(|window| window.scale_factor().ok())
                                     .filter(|value| *value > 0.0)
                                     .unwrap_or(1.0);

@@ -1,13 +1,19 @@
+#[derive(Clone, Copy, Debug)]
+pub struct NotificationDeliveryPolicy {
+    pub enabled: bool,
+    pub explicitly_allowed: bool,
+    pub explicitly_blocked: bool,
+    pub show_content: bool,
+}
+
 #[cfg(target_os = "windows")]
 mod imp {
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, LazyLock, Mutex};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    use serde::{Deserialize, Serialize};
-    use tauri::{AppHandle, Emitter, Manager};
+    use serde::Deserialize;
+    use tauri::{AppHandle, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2NavigationCompletedEventHandler,
         ICoreWebView2NavigationStartingEventHandler, ICoreWebView2NotificationReceivedEventHandler,
@@ -118,19 +124,6 @@ mod imp {
         _notification: Option<ICoreWebView2NotificationReceivedEventHandler>,
     }
 
-    #[derive(Clone, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct SiteNotificationPayload {
-        id: String,
-        tab_label: String,
-        origin: String,
-        title: String,
-        body: String,
-        icon_url: String,
-        timestamp_ms: u64,
-        requires_native_toast: bool,
-    }
-
     static OPTIONS: LazyLock<Mutex<HashMap<String, PrivacyOptions>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
@@ -139,10 +132,6 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static TOP_LEVEL_URIS: LazyLock<Mutex<HashMap<String, String>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
-    static NEXT_NOTIFICATION_ID: AtomicU64 = AtomicU64::new(1);
-
-    const SITE_NOTIFICATION_EVENT: &str = "nebula-site-notification";
-
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, Handlers>> = RefCell::new(HashMap::new());
     }
@@ -177,15 +166,17 @@ mod imp {
             .unwrap_or_default()
     }
 
-    pub fn title_unread_notification_allowed(label: &str, origin: &str) -> bool {
+    pub fn notification_delivery_policy(
+        label: &str,
+        origin: &str,
+    ) -> super::NotificationDeliveryPolicy {
         let current = options(label);
-        current.site_notifications
-            && !is_excepted(origin, &current.notification_blocked_sites)
-            && is_excepted(origin, &current.notification_allowed_sites)
-    }
-
-    pub fn notification_content_preview_allowed(label: &str) -> bool {
-        options(label).show_notification_content
+        super::NotificationDeliveryPolicy {
+            enabled: current.site_notifications,
+            explicitly_allowed: is_excepted(origin, &current.notification_allowed_sites),
+            explicitly_blocked: is_excepted(origin, &current.notification_blocked_sites),
+            show_content: current.show_notification_content,
+        }
     }
 
     unsafe fn take_string(read: impl FnOnce(*mut PWSTR) -> windows_core::Result<()>) -> String {
@@ -264,13 +255,6 @@ mod imp {
                 .unwrap_or_else(|| item.trim().trim_start_matches("*.").to_ascii_lowercase());
             !item.is_empty() && (host == item || host.ends_with(&format!(".{item}")))
         })
-    }
-
-    fn timestamp_ms() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64
     }
 
     fn schemeful_site(uri: &str) -> Option<(String, String)> {
@@ -1233,56 +1217,32 @@ mod imp {
                             NotificationReceivedEventHandler::create(Box::new(move |_, args| {
                                 let Some(args) = args else { return Ok(()) };
                                 let origin = take_string(|value| args.SenderOrigin(value));
-                                let current = options(&handler_label);
-                                if !current.site_notifications
-                                    || is_excepted(&origin, &current.notification_blocked_sites)
-                                {
-                                    // Suppressed sites must be handled by Nebula so WebView2 does not
-                                    // show a Windows toast for a blocked notification.
-                                    args.SetHandled(true)?;
-                                    if let Ok(notification) = args.Notification() {
-                                        let _ = notification.ReportClosed();
-                                    }
-                                    return Ok(());
-                                }
-
                                 let notification = args.Notification()?;
-                                // A real Web Notification arrived. Record it before emitting so the
-                                // delayed unread-title fallback does not create a second generic toast.
-                                crate::tab_metadata::record_content_notification(&handler_label);
-                                let show_content = current.show_notification_content;
                                 // Nebula owns the Windows toast so activation can foreground the app
                                 // and route back to the exact source tab. WebView2's default toast does
                                 // not expose that routing to the shell.
                                 args.SetHandled(true)?;
-                                let _ = notification.ReportShown();
-                                let timestamp = timestamp_ms();
-                                let sequence = NEXT_NOTIFICATION_ID.fetch_add(1, Ordering::Relaxed);
-                                let payload = SiteNotificationPayload {
-                                    id: format!("site-{timestamp}-{sequence}"),
-                                    tab_label: handler_label.clone(),
-                                    origin,
-                                    title: if show_content {
-                                        take_string(|value| notification.Title(value))
-                                    } else {
-                                        String::new()
+                                let allowed = crate::notification_broker::permission_allows(
+                                    crate::notification_broker::NotificationSource::Webview2,
+                                    &handler_label,
+                                    &origin,
+                                );
+                                if allowed {
+                                    let _ = notification.ReportShown();
+                                } else {
+                                    let _ = notification.ReportClosed();
+                                }
+                                crate::notification_broker::submit(
+                                    &notification_app,
+                                    crate::notification_broker::NotificationSource::Webview2,
+                                    crate::notification_broker::NotificationCandidate {
+                                        tab_label: handler_label.clone(),
+                                        origin,
+                                        title: take_string(|value| notification.Title(value)),
+                                        body: take_string(|value| notification.Body(value)),
+                                        icon_url: take_string(|value| notification.IconUri(value)),
                                     },
-                                    body: if show_content {
-                                        take_string(|value| notification.Body(value))
-                                    } else {
-                                        String::new()
-                                    },
-                                    icon_url: if show_content {
-                                        take_string(|value| notification.IconUri(value))
-                                    } else {
-                                        String::new()
-                                    },
-                                    timestamp_ms: timestamp,
-                                    requires_native_toast: true,
-                                };
-                                let _ = notification_app.emit(SITE_NOTIFICATION_EVENT, payload);
-                                // The frontend presents one native toast, redacted when previews are
-                                // disabled, and attaches Nebula's activation routing.
+                                );
                                 Ok(())
                             }));
                         let mut notification_token = 0i64;
@@ -1487,10 +1447,7 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{
-    apply, notification_content_preview_allowed, teardown, title_unread_notification_allowed,
-    PrivacyOptions,
-};
+pub use imp::{apply, notification_delivery_policy, teardown, PrivacyOptions};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BrowsingDataKind {
@@ -1866,13 +1823,13 @@ pub fn apply(
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
 
 #[cfg(not(target_os = "windows"))]
-pub fn title_unread_notification_allowed(_label: &str, _origin: &str) -> bool {
-    false
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn notification_content_preview_allowed(_label: &str) -> bool {
-    true
+pub fn notification_delivery_policy(_label: &str, _origin: &str) -> NotificationDeliveryPolicy {
+    NotificationDeliveryPolicy {
+        enabled: false,
+        explicitly_allowed: false,
+        explicitly_blocked: false,
+        show_content: true,
+    }
 }
 
 #[cfg(not(target_os = "windows"))]

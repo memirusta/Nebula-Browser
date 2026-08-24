@@ -73,6 +73,14 @@ mod imp {
             .unwrap_or_else(|_| "en".to_string())
     }
 
+    pub fn notification_activity_body() -> String {
+        if current_ui_locale() == "tr" {
+            "Yeni bir mesajın veya bildirimin var.".to_string()
+        } else {
+            "You have a new message or notification.".to_string()
+        }
+    }
+
     pub(crate) fn note_browser_verification_request(label: &str) {
         let now = Instant::now();
         if let Ok(mut states) = VERIFICATION_STATES.lock() {
@@ -195,6 +203,7 @@ mod imp {
     }
 
     fn build_error_page_url(retry_url: &str, error_status: &str, locale: &str) -> String {
+        let nebula_mark = include_str!("../resources/branding/nebula-app-logo-128.base64").trim();
         let retry_js = retry_url
             .replace('\\', "\\\\")
             .replace('\'', "\\'")
@@ -248,13 +257,12 @@ mod imp {
     height: 56px;
     margin-bottom: 20px;
     border-radius: 16px;
-    background: linear-gradient(135deg, #863bff, #5b21b6);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
-    font-weight: 700;
+    overflow: hidden;
   }}
+  .glyph img {{ width: 100%; height: 100%; display: block; }}
   h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 8px; }}
   p {{ color: #a89bc4; max-width: 420px; margin-bottom: 24px; }}
   .url {{
@@ -279,7 +287,7 @@ mod imp {
 </style>
 </head>
 <body>
-  <div class="glyph">N</div>
+  <div class="glyph"><img src="data:image/png;base64,{nebula_mark}" alt=""></div>
   <h1>{title}</h1>
   <p>{description}</p>
   <div class="url">{display_url}</div>
@@ -653,13 +661,20 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{set_ui_locale, setup_tab_error_page, teardown_tab_error_page};
+pub use imp::{
+    notification_activity_body, set_ui_locale, setup_tab_error_page, teardown_tab_error_page,
+};
 
 #[cfg(target_os = "windows")]
 pub(crate) use imp::{note_browser_verification_request, note_external_uri_navigation};
 
 #[cfg(not(target_os = "windows"))]
 pub fn set_ui_locale(_locale: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn notification_activity_body() -> String {
+    "You have a new message or notification.".to_string()
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_error_page(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {

@@ -18,7 +18,6 @@ import {
   type WeatherSubdivision,
 } from '../../platform/weatherLocationSearch'
 import { ensureMainPermissionUi } from '../../platform/mainPermissionUi'
-import nebulaLogo from '../../../src-tauri/icons/icon.png'
 import styles from './OnboardingWizard.module.css'
 
 interface Props {
@@ -629,9 +628,10 @@ export function OnboardingWelcomeStep({
       <div className={styles.welcomeHero}>
         <img
           className={styles.nebulaLogo}
-          src={nebulaLogo}
+          src="/nebula-app-logo.png"
           alt=""
           aria-hidden="true"
+          draggable={false}
         />
 
         <div>

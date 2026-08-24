@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DownloadItem } from '../core/download'
-import { faviconForUrl } from '../core/browserTab'
 import {
   loadNotifications,
   loadSiteNotificationPermissions,
@@ -11,6 +10,8 @@ import {
   notificationHost,
   showNativeNotification,
   listenSiteNotifications,
+  replaySiteNotifications,
+  type NativeSiteNotification,
   type NebulaNotification,
   type SiteNotificationPermission,
 } from '../core/notification'
@@ -20,15 +21,14 @@ import { useLocale } from './useLocale'
 export function useNotifications(
   downloads: DownloadItem[],
   siteNotificationsEnabled: boolean,
-  showNotificationContent: boolean,
   downloadNotificationsEnabled: boolean,
 ) {
   const { t } = useLocale()
   const [items, setItems] = useState<NebulaNotification[]>(loadNotifications)
   const [sitePermissions, setSitePermissions] = useState(loadSiteNotificationPermissions)
   const siteNotificationsEnabledRef = useRef(siteNotificationsEnabled)
-  const showNotificationContentRef = useRef(showNotificationContent)
-  const recentSiteNotificationsRef = useRef(new Map<string, number>())
+  const translateRef = useRef(t)
+  const latestBrokerSequenceRef = useRef(0)
   const nativeDownloadToastIdsRef = useRef(new Set<string>())
 
   useEffect(() => {
@@ -36,8 +36,8 @@ export function useNotifications(
   }, [siteNotificationsEnabled])
 
   useEffect(() => {
-    showNotificationContentRef.current = showNotificationContent
-  }, [showNotificationContent])
+    translateRef.current = t
+  }, [t])
 
   const reloadItems = useCallback(() => setItems(loadNotifications()), [])
   const reloadPermissions = useCallback(
@@ -65,25 +65,19 @@ export function useNotifications(
   useEffect(() => {
     let disposed = false
     let unlisten: (() => void) | undefined
-    void listenSiteNotifications((payload) => {
+    const receive = (payload: NativeSiteNotification) => {
       if (disposed || !siteNotificationsEnabledRef.current) return
       const origin = normalizeNotificationOrigin(payload.origin)
       if (!origin) return
-      if (sitePermissions[origin] === 'block') return
       const timestampMs = payload.timestampMs || Date.now()
-      const fingerprint = [origin, payload.title.trim(), payload.body.trim()].join('\u0000')
-      const previousTimestamp = recentSiteNotificationsRef.current.get(fingerprint)
-      if (previousTimestamp !== undefined && timestampMs - previousTimestamp < 2_500) return
-      recentSiteNotificationsRef.current.set(fingerprint, timestampMs)
-      for (const [key, seenAt] of recentSiteNotificationsRef.current) {
-        if (timestampMs - seenAt > 10_000) recentSiteNotificationsRef.current.delete(key)
+      if (Number.isFinite(payload.sequence)) {
+        latestBrokerSequenceRef.current = Math.max(
+          latestBrokerSequenceRef.current,
+          payload.sequence,
+        )
       }
-      const title = showNotificationContentRef.current
-        ? payload.title || notificationHost(origin)
-        : notificationHost(origin)
-      const body = showNotificationContentRef.current
-        ? payload.body || t('notificationSocialActivityBody')
-        : t('notificationSocialActivityBody')
+      const title = payload.title || notificationHost(origin)
+      const body = payload.body || translateRef.current('notificationSocialActivityBody')
       add({
         id: payload.id,
         kind: 'site',
@@ -96,30 +90,25 @@ export function useNotifications(
         createdAtMs: timestampMs,
         read: false,
       })
-      if (payload.requiresNativeToast) {
-        const isWhatsApp = new URL(origin).hostname.toLowerCase() === 'web.whatsapp.com'
-        const nativeTitle = isWhatsApp ? 'WhatsApp' : title
-        const nativeBody = isWhatsApp && showNotificationContentRef.current
-          ? [title, body].filter(Boolean).join('\n')
-          : body
-        void showNativeNotification(
-          nativeTitle,
-          nativeBody,
-          payload.tabLabel,
-          origin,
-          null,
-          faviconForUrl(origin),
-        ).catch(() => undefined)
+    }
+    void (async () => {
+      const dispose = await listenSiteNotifications(receive)
+      if (disposed) {
+        dispose()
+        return
       }
-    }).then((dispose) => {
-      if (disposed) dispose()
-      else unlisten = dispose
-    })
+      unlisten = dispose
+      const replay = await replaySiteNotifications(
+        latestBrokerSequenceRef.current || null,
+      )
+      if (disposed) return
+      replay.forEach(receive)
+    })()
     return () => {
       disposed = true
       unlisten?.()
     }
-  }, [add, sitePermissions, t])
+  }, [add])
 
   useEffect(() => {
     for (const download of downloads) {

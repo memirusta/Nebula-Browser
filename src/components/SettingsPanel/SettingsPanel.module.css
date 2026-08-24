@@ -422,6 +422,27 @@
   line-height: 1.6;
 }
 
+.aboutBrand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.aboutBrandCopy {
+  min-width: 0;
+}
+
+.aboutLogo {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
 .badgeSoon {
   display: inline-block;
   margin-left: 8px;
@@ -437,6 +458,10 @@
   font-size: 13px;
   color: var(--nebula-gold);
   margin-top: 8px;
+}
+
+.aboutBrand .version {
+  margin-top: 3px;
 }
 
 .accountCard {

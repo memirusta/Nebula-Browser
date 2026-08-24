@@ -1,290 +1,151 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { Shortcut } from '../core/types'
-
 import { persistLocalStorage, useStorageSync } from '../core/storageSync'
-
 import {
-
+  addPinnedShortcut,
+  LEGACY_PINNED_SHORTCUT_KEYS,
   loadPinnedShortcutIds,
-
+  loadPinnedShortcuts,
   MAX_PINNED_SHORTCUTS,
-
   PINNED_SHORTCUTS_KEY,
-
+  PINNED_SHORTCUTS_SCHEMA_VERSION,
+  reconcilePinnedShortcuts,
+  removePinnedShortcut,
+  serializePinnedShortcuts,
+  shortcutFromPinnedShortcut,
+  type PinnedShortcutsSnapshot,
 } from '../core/pinnedShortcuts'
 
-
-
 export {
-
   PINNED_SHORTCUTS_KEY,
-
   MAX_PINNED_SHORTCUTS,
-
   loadPinnedShortcutIds,
-
 }
-
-
 
 /** Home pinned strip starts empty; user pins shortcuts manually. */
+export function usePinnedShortcuts(allShortcuts: Shortcut[]) {
+  const [snapshot, setSnapshot] = useState<PinnedShortcutsSnapshot>(() =>
+    loadPinnedShortcuts(allShortcuts),
+  )
 
-
-
-
-export function usePinnedShortcuts(
-
-  allShortcuts: Shortcut[],
-
-  visibleShortcuts: Shortcut[],
-
-) {
-
-  const [pinnedIds, setPinnedIds] = useState(loadPinnedShortcutIds)
-
-
-
-  const reloadPinnedIds = useCallback(() => {
-
-    const next = loadPinnedShortcutIds()
-    setPinnedIds((prev) =>
-      prev.length === next.length && prev.every((id, index) => id === next[index])
-        ? prev
-        : next,
+  const reloadPinnedShortcuts = useCallback(() => {
+    const next = loadPinnedShortcuts(allShortcuts)
+    setSnapshot((prev) =>
+      JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
     )
+  }, [allShortcuts])
 
-  }, [])
-
-
-
-  useStorageSync(PINNED_SHORTCUTS_KEY, reloadPinnedIds)
-
-
-
-  const catalogIds = useMemo(
-
-    () => new Set(allShortcuts.map((s) => s.id)),
-
-    [allShortcuts],
-
-  )
-
-
-
-  const visibleIds = useMemo(
-
-    () => new Set(visibleShortcuts.map((s) => s.id)),
-
-    [visibleShortcuts],
-
-  )
-
-
+  useStorageSync(PINNED_SHORTCUTS_KEY, reloadPinnedShortcuts)
+  useStorageSync(LEGACY_PINNED_SHORTCUT_KEYS[0], reloadPinnedShortcuts)
+  useStorageSync(LEGACY_PINNED_SHORTCUT_KEYS[1], reloadPinnedShortcuts)
+  useStorageSync(LEGACY_PINNED_SHORTCUT_KEYS[2], reloadPinnedShortcuts)
+  useStorageSync(LEGACY_PINNED_SHORTCUT_KEYS[3], reloadPinnedShortcuts)
 
   useEffect(() => {
-
-    persistLocalStorage(PINNED_SHORTCUTS_KEY, JSON.stringify(pinnedIds))
-
-  }, [pinnedIds])
-
-
+    setSnapshot((prev) => reconcilePinnedShortcuts(prev, allShortcuts))
+  }, [allShortcuts])
 
   useEffect(() => {
+    persistLocalStorage(PINNED_SHORTCUTS_KEY, serializePinnedShortcuts(snapshot))
+  }, [snapshot])
 
-    setPinnedIds((prev) => {
-
-      const filtered = prev.filter((id) => catalogIds.has(id))
-
-      return filtered.length === prev.length ? prev : filtered
-
-    })
-
-  }, [catalogIds])
-
-
-
-  const pinnedShortcuts = useMemo(() => {
-
-    const byId = new Map(allShortcuts.map((s) => [s.id, s]))
-
-    return pinnedIds
-
-      .filter((id) => byId.has(id))
-
-      .map((id) => byId.get(id)!)
-
-  }, [pinnedIds, allShortcuts])
-
-
-
-  const isPinned = useCallback((id: string) => pinnedIds.includes(id), [pinnedIds])
-
-
-
-  const canPinMore = pinnedIds.length < MAX_PINNED_SHORTCUTS
-
-
+  const pinnedShortcuts = useMemo(
+    () => snapshot.pins.map(shortcutFromPinnedShortcut),
+    [snapshot.pins],
+  )
+  const pinnedIds = useMemo(
+    () => snapshot.pins.map((pin) => pin.id),
+    [snapshot.pins],
+  )
+  const isPinned = useCallback(
+    (id: string) => snapshot.pins.some((pin) => pin.id === id),
+    [snapshot.pins],
+  )
+  const canPinMore = snapshot.pins.length < MAX_PINNED_SHORTCUTS
 
   const pinShortcut = useCallback(
-
-    (id: string) => {
-
-      if (!visibleIds.has(id)) return false
-
-      setPinnedIds((prev) => {
-
-        if (prev.includes(id)) return prev
-
-        if (prev.length >= MAX_PINNED_SHORTCUTS) return prev
-
-        return [...prev, id]
-
-      })
-
+    (shortcut: Shortcut) => {
+      const result = addPinnedShortcut(snapshot.pins, shortcut)
+      if (!result.accepted) return false
+      setSnapshot((prev) => ({
+        ...prev,
+        pins: addPinnedShortcut(prev.pins, shortcut).pins,
+      }))
       return true
-
     },
-
-    [visibleIds],
-
+    [snapshot.pins],
   )
-
-
 
   const unpinShortcut = useCallback((id: string) => {
-
-    setPinnedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev))
-
+    setSnapshot((prev) => ({
+      ...prev,
+      pins: removePinnedShortcut(prev.pins, id),
+      unresolvedLegacyIds: prev.unresolvedLegacyIds.filter((legacyId) => legacyId !== id),
+    }))
   }, [])
-
-
 
   const togglePin = useCallback(
-
-    (id: string) => {
-
-      if (isPinned(id)) {
-
-        unpinShortcut(id)
-
+    (shortcut: Shortcut) => {
+      if (isPinned(shortcut.id)) {
+        unpinShortcut(shortcut.id)
         return true
-
       }
-
-      return pinShortcut(id)
-
+      return pinShortcut(shortcut)
     },
-
     [isPinned, pinShortcut, unpinShortcut],
-
   )
-
-
 
   const reorderPins = useCallback((fromIndex: number, toIndex: number) => {
-
-    setPinnedIds((prev) => {
-
+    setSnapshot((prev) => {
       if (
-
         fromIndex < 0 ||
-
         toIndex < 0 ||
-
-        fromIndex >= prev.length ||
-
-        toIndex >= prev.length ||
-
+        fromIndex >= prev.pins.length ||
+        toIndex >= prev.pins.length ||
         fromIndex === toIndex
-
       ) {
-
         return prev
-
       }
-
-      const next = [...prev]
-
-      const [moved] = next.splice(fromIndex, 1)
-
-      next.splice(toIndex, 0, moved)
-
-      return next
-
+      const pins = [...prev.pins]
+      const [moved] = pins.splice(fromIndex, 1)
+      if (!moved) return prev
+      pins.splice(toIndex, 0, moved)
+      return { ...prev, pins }
     })
-
   }, [])
-
-
 
   const resetPins = useCallback(() => {
-
-    setPinnedIds([])
-
+    setSnapshot({
+      schemaVersion: PINNED_SHORTCUTS_SCHEMA_VERSION,
+      pins: [],
+      unresolvedLegacyIds: [],
+    })
   }, [])
 
-
-
-  const pinShortcuts = useCallback(
-
-    (ids: string[]) => {
-
-      if (ids.length === 0) return
-
-      setPinnedIds((prev) => {
-
-        const next = [...prev]
-
-        for (const id of ids) {
-
-          if (!visibleIds.has(id)) continue
-
-          if (next.includes(id)) continue
-
-          if (next.length >= MAX_PINNED_SHORTCUTS) break
-
-          next.push(id)
-
-        }
-
-        return next
-
-      })
-
-    },
-
-    [visibleIds],
-
-  )
-
-
+  const pinShortcuts = useCallback((shortcuts: Shortcut[]) => {
+    if (shortcuts.length === 0) return
+    setSnapshot((prev) => {
+      let pins = prev.pins
+      for (const shortcut of shortcuts) {
+        pins = addPinnedShortcut(pins, shortcut).pins
+      }
+      return pins === prev.pins ? prev : { ...prev, pins }
+    })
+  }, [])
 
   return {
-
     pinnedShortcuts,
-
     pinnedIds,
-
     isPinned,
-
     canPinMore,
-
     pinShortcut,
-
     unpinShortcut,
-
     togglePin,
-
     reorderPins,
-
     resetPins,
-
     pinShortcuts,
-
-    reloadPinnedIds,
-
+    reloadPinnedIds: reloadPinnedShortcuts,
+    reloadPinnedShortcuts,
   }
-
 }
-

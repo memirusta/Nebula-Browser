@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { tabWebviewLabel } from '../core/browserTab'
 import { isTauri } from './runtime'
+import { currentBrowserWindowLabel } from './browserWindowScope'
 
 let stackTimer: ReturnType<typeof setTimeout> | null = null
 let browsingChromeExpected = false
@@ -45,11 +46,14 @@ export async function stackBrowsingChromeAboveBrowser(
 
   try {
     if (overlayModeActive) {
-      await invoke('webview_raise_overlay')
+      await invoke('webview_raise_overlay', {
+        windowLabel: currentBrowserWindowLabel(),
+      })
       return
     }
 
     await invoke('webview_raise_chrome', {
+      windowLabel: currentBrowserWindowLabel(),
       activeTabLabel: activeTabId ? tabWebviewLabel(activeTabId) : null,
     })
   } catch (error) {

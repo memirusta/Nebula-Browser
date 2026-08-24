@@ -1,4 +1,12 @@
 import type { Shortcut } from './types'
+import {
+  createTabNavigationState,
+  type TabNavigationState,
+} from './tabNavigation.ts'
+import {
+  browserTabWebviewLabel,
+  browserWindowIdFromRuntime,
+} from './browserWorkspace.ts'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
@@ -12,6 +20,7 @@ export interface BrowserTab {
   url: string
   title: string
   favicon: string
+  navigation: TabNavigationState
   isLoading?: boolean
   isMuted?: boolean
 }
@@ -26,7 +35,8 @@ export function shortcutFromTab(tab: BrowserTab): Shortcut {
 }
 
 export function tabWebviewLabel(shortcutId: string): string {
-  return assignedWebviewLabels.get(shortcutId) ?? `${TAB_WEBVIEW_PREFIX}${shortcutId}`
+  return assignedWebviewLabels.get(shortcutId) ??
+    browserTabWebviewLabel(browserWindowIdFromRuntime(), shortcutId)
 }
 
 export function assignTabWebviewLabel(shortcutId: string, label: string): void {
@@ -45,8 +55,9 @@ export function releaseTabWebviewLabel(shortcutId: string): void {
 export function shortcutIdForTabWebviewLabel(label: string): string | null {
   const assigned = assignedShortcutIds.get(label)
   if (assigned) return assigned
-  if (!label.startsWith(TAB_WEBVIEW_PREFIX)) return null
-  return label.slice(TAB_WEBVIEW_PREFIX.length)
+  const currentPrefix = `${TAB_WEBVIEW_PREFIX}${browserWindowIdFromRuntime()}-`
+  if (!label.startsWith(currentPrefix)) return null
+  return label.slice(currentPrefix.length)
 }
 
 export function faviconForUrl(url: string): string {
@@ -67,15 +78,24 @@ export function titleFromUrl(url: string): string {
   }
 }
 
-export function createBrowserTab(shortcut: Shortcut): BrowserTab {
+export function createBrowserTab(
+  shortcut: Shortcut,
+  options?: {
+    tabId?: string
+    navigation?: TabNavigationState
+  },
+): BrowserTab {
   const favicon = shortcut.favicon ?? faviconForUrl(shortcut.url)
   return {
-    id: shortcut.id,
+    id: options?.tabId ?? shortcut.id,
     shortcutId: shortcut.id,
     initialUrl: shortcut.url,
     url: shortcut.url,
     title: shortcut.label,
     favicon,
+    navigation:
+      options?.navigation ??
+      createTabNavigationState(shortcut.url, shortcut.label, favicon),
     isLoading: true,
     isMuted: false,
   }

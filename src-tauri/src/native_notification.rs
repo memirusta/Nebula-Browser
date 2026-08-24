@@ -140,16 +140,32 @@ mod imp {
 
         let activation_app = app.clone();
         let activated = TypedEventHandler::<ToastNotification, IInspectable>::new(move |_, _| {
-            if let Some(window) = activation_app.get_window("main") {
+            let target_label = tab_label
+                .as_deref()
+                .and_then(|label| activation_app.get_webview(label))
+                .map(|webview| webview.window().label().to_string())
+                .unwrap_or_else(crate::browser_workspace::most_recent_window_label);
+            if let Some(window) = activation_app.get_window(&target_label) {
                 crate::external_open::activate_main_window(&window);
             }
-            let _ = activation_app.emit(
+            let result = activation_app.emit_to(
+                target_label.clone(),
                 ACTIVATED_EVENT,
                 ActivatedPayload {
                     tab_label: tab_label.clone(),
                     origin: origin.clone(),
                     download_id: download_id.clone(),
                 },
+            );
+            crate::notification_broker::record_click_routing(
+                tab_label.as_deref(),
+                origin.as_deref(),
+                &target_label,
+                result.is_ok(),
+                &result
+                    .err()
+                    .map(|error| error.to_string())
+                    .unwrap_or_default(),
             );
             Ok(())
         });

@@ -1,5 +1,6 @@
 #[cfg(target_os = "windows")]
 mod imp {
+    use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
 
     use tauri::{AppHandle, Manager};
@@ -26,21 +27,21 @@ mod imp {
         [0x95, 0x8A, 0x00, 0x60, 0x97, 0xC9, 0xA0, 0x90],
     );
 
-    static SITE_SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
-        LazyLock::new(|| Mutex::new(None));
+    static SITE_SAVED_PLACEMENT: LazyLock<Mutex<HashMap<String, WINDOWPLACEMENT>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
     // F11 browser fullscreen has its own saved placement. It must not share
     // state with HTML5/document fullscreen.
-    static BROWSER_SAVED_PLACEMENT: LazyLock<Mutex<Option<WINDOWPLACEMENT>>> =
-        LazyLock::new(|| Mutex::new(None));
+    static BROWSER_SAVED_PLACEMENT: LazyLock<Mutex<HashMap<String, WINDOWPLACEMENT>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    static BROWSER_SAVED_RESIZABLE: LazyLock<Mutex<Option<bool>>> =
-        LazyLock::new(|| Mutex::new(None));
+    static BROWSER_SAVED_RESIZABLE: LazyLock<Mutex<HashMap<String, bool>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    fn main_window_hwnd(app: &AppHandle) -> Result<HWND, String> {
+    fn window_hwnd(app: &AppHandle, window_label: &str) -> Result<HWND, String> {
         let window = app
-            .get_window("main")
-            .ok_or_else(|| "main window not found".to_string())?;
+            .get_window(window_label)
+            .ok_or_else(|| format!("window '{window_label}' not found"))?;
         window.hwnd().map_err(|error| error.to_string())
     }
 
@@ -59,19 +60,27 @@ mod imp {
 
     fn cover_monitor(
         hwnd: HWND,
-        saved: &Mutex<Option<WINDOWPLACEMENT>>,
+        saved: &Mutex<HashMap<String, WINDOWPLACEMENT>>,
+        window_label: &str,
         topmost: bool,
     ) -> Result<(), String> {
         unsafe {
             let mut was_maximized = false;
-            if saved.lock().map_err(|e| e.to_string())?.is_none() {
+            if !saved
+                .lock()
+                .map_err(|e| e.to_string())?
+                .contains_key(window_label)
+            {
                 let mut placement = WINDOWPLACEMENT {
                     length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
                     ..Default::default()
                 };
                 GetWindowPlacement(hwnd, &mut placement).map_err(|e| e.to_string())?;
                 was_maximized = placement.showCmd == SW_SHOWMAXIMIZED.0 as u32;
-                *saved.lock().map_err(|e| e.to_string())? = Some(placement);
+                saved
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .insert(window_label.to_string(), placement);
             }
 
             // A maximized Win32 window is constrained to the monitor work area,
@@ -156,7 +165,11 @@ mod imp {
         Ok(())
     }
 
-    fn uncover_monitor(hwnd: HWND, saved: &Mutex<Option<WINDOWPLACEMENT>>) -> Result<(), String> {
+    fn uncover_monitor(
+        hwnd: HWND,
+        saved: &Mutex<HashMap<String, WINDOWPLACEMENT>>,
+        window_label: &str,
+    ) -> Result<(), String> {
         unsafe {
             // Restoring the window is mandatory even when Explorer's taskbar API
             // is temporarily unavailable. Report that error only after the window
@@ -175,7 +188,7 @@ mod imp {
 
             let placement = {
                 let mut slot = saved.lock().map_err(|e| e.to_string())?;
-                slot.take()
+                slot.remove(window_label)
             };
 
             if let Some(mut placement) = placement {
@@ -190,14 +203,14 @@ mod imp {
     }
 
     /// Cover the entire monitor for HTML5 site fullscreen.
-    pub fn enter_site_fullscreen_window(app: &AppHandle) -> Result<(), String> {
-        let hwnd = main_window_hwnd(app)?;
-        cover_monitor(hwnd, &SITE_SAVED_PLACEMENT, true)
+    pub fn enter_site_fullscreen_window(app: &AppHandle, window_label: &str) -> Result<(), String> {
+        let hwnd = window_hwnd(app, window_label)?;
+        cover_monitor(hwnd, &SITE_SAVED_PLACEMENT, window_label, true)
     }
 
-    pub fn exit_site_fullscreen_window(app: &AppHandle) -> Result<(), String> {
-        let hwnd = main_window_hwnd(app)?;
-        let result = uncover_monitor(hwnd, &SITE_SAVED_PLACEMENT);
+    pub fn exit_site_fullscreen_window(app: &AppHandle, window_label: &str) -> Result<(), String> {
+        let hwnd = window_hwnd(app, window_label)?;
+        let result = uncover_monitor(hwnd, &SITE_SAVED_PLACEMENT, window_label);
 
         // A page may enter HTML5 fullscreen while Nebula itself is already in
         // F11 fullscreen. Returning from document fullscreen must return to the
@@ -205,10 +218,10 @@ mod imp {
         let browser_fullscreen_active = BROWSER_SAVED_PLACEMENT
             .lock()
             .map_err(|error| error.to_string())?
-            .is_some();
+            .contains_key(window_label);
 
         if browser_fullscreen_active {
-            cover_monitor(hwnd, &BROWSER_SAVED_PLACEMENT, false)?;
+            cover_monitor(hwnd, &BROWSER_SAVED_PLACEMENT, window_label, false)?;
         }
 
         result
@@ -218,27 +231,30 @@ mod imp {
     ///
     /// The saved WINDOWPLACEMENT preserves whether the user was maximized or
     /// windowed, including the original window bounds.
-    pub fn toggle_browser_fullscreen_window(app: &AppHandle) -> Result<bool, String> {
-        let hwnd = main_window_hwnd(app)?;
+    pub fn toggle_browser_fullscreen_window(
+        app: &AppHandle,
+        window_label: &str,
+    ) -> Result<bool, String> {
+        let hwnd = window_hwnd(app, window_label)?;
         let window = app
-            .get_window("main")
-            .ok_or_else(|| "main window not found".to_string())?;
+            .get_window(window_label)
+            .ok_or_else(|| format!("window '{window_label}' not found"))?;
 
         let active = BROWSER_SAVED_PLACEMENT
             .lock()
             .map_err(|error| error.to_string())?
-            .is_some();
+            .contains_key(window_label);
 
         if active {
             // Restore placement first, but always restore the original
             // resizable state even if the fullscreen-exit helper reports an
             // Explorer/taskbar error afterwards.
-            let uncover_result = uncover_monitor(hwnd, &BROWSER_SAVED_PLACEMENT);
+            let uncover_result = uncover_monitor(hwnd, &BROWSER_SAVED_PLACEMENT, window_label);
 
             let saved_resizable = BROWSER_SAVED_RESIZABLE
                 .lock()
                 .map_err(|error| error.to_string())?
-                .take();
+                .remove(window_label);
 
             let resize_result = match saved_resizable {
                 Some(resizable) => window
@@ -254,24 +270,27 @@ mod imp {
         } else {
             let was_resizable = window.is_resizable().map_err(|error| error.to_string())?;
 
-            *BROWSER_SAVED_RESIZABLE
+            BROWSER_SAVED_RESIZABLE
                 .lock()
-                .map_err(|error| error.to_string())? = Some(was_resizable);
+                .map_err(|error| error.to_string())?
+                .insert(window_label.to_string(), was_resizable);
 
             if let Err(error) = window.set_resizable(false) {
-                *BROWSER_SAVED_RESIZABLE
+                BROWSER_SAVED_RESIZABLE
                     .lock()
-                    .map_err(|lock_error| lock_error.to_string())? = None;
+                    .map_err(|lock_error| lock_error.to_string())?
+                    .remove(window_label);
 
                 return Err(error.to_string());
             }
 
-            if let Err(error) = cover_monitor(hwnd, &BROWSER_SAVED_PLACEMENT, false) {
+            if let Err(error) = cover_monitor(hwnd, &BROWSER_SAVED_PLACEMENT, window_label, false) {
                 let _ = window.set_resizable(was_resizable);
 
-                *BROWSER_SAVED_RESIZABLE
+                BROWSER_SAVED_RESIZABLE
                     .lock()
-                    .map_err(|lock_error| lock_error.to_string())? = None;
+                    .map_err(|lock_error| lock_error.to_string())?
+                    .remove(window_label);
 
                 return Err(error);
             }
@@ -287,16 +306,25 @@ pub use imp::{
 };
 
 #[cfg(not(target_os = "windows"))]
-pub fn enter_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), String> {
+pub fn enter_site_fullscreen_window(
+    _app: &tauri::AppHandle,
+    _window_label: &str,
+) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn exit_site_fullscreen_window(_app: &tauri::AppHandle) -> Result<(), String> {
+pub fn exit_site_fullscreen_window(
+    _app: &tauri::AppHandle,
+    _window_label: &str,
+) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn toggle_browser_fullscreen_window(_app: &tauri::AppHandle) -> Result<bool, String> {
+pub fn toggle_browser_fullscreen_window(
+    _app: &tauri::AppHandle,
+    _window_label: &str,
+) -> Result<bool, String> {
     Ok(false)
 }

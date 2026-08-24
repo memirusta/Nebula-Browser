@@ -2,8 +2,13 @@
 identifier = "allow-nebula-webview-commands"
 description = "Allow Nebula custom webview commands"
 commands.allow = [
+  "browser_create_window",
+  "browser_mark_window_active",
+  "browser_reparent_tab",
   "write_transition_log",
   "show_native_notification",
+  "notification_broker_replay",
+  "notification_broker_diagnostics",
   "webview_set_shortcut_bindings",
   "webview_navigate",
   "webview_close_tab",
@@ -44,6 +49,7 @@ commands.allow = [
   "webview_devtools_subscribe",
   "webview_devtools_unsubscribe",
   "webview_apply_privacy",
+  "webview_apply_force_dark_pages",
   "webview_clear_browsing_data",
   "webview_clear_site_permissions",
   "webview_factory_reset_profiles",

@@ -6,6 +6,11 @@ import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 import { debounce } from './debounce'
 import { getActiveBrowseTabId, syncTauriBrowserBounds } from './tauriBrowser'
 import { isChromeShell } from '../core/nebulaBridge'
+import {
+  BROWSER_WINDOW_ID_QUERY,
+  currentBrowserWindowId,
+  currentChromeWebviewLabel,
+} from './browserWindowScope'
 import { isTauri } from './runtime'
 import {
   scheduleStackBrowsingChromeAboveBrowser,
@@ -50,7 +55,14 @@ let chromeBoundsSyncQueue: Promise<void> = Promise.resolve()
 const CHROME_OVERLAY_WIDTH_GUTTER = 32
 
 function chromeWebviewUrl(): string {
-  return `${window.location.origin}${window.location.pathname}#chrome`
+  const query = new URLSearchParams({
+    [BROWSER_WINDOW_ID_QUERY]: currentBrowserWindowId(),
+  })
+  return `${window.location.origin}${window.location.pathname}?${query.toString()}#chrome`
+}
+
+function chromeWebviewLabel(): string {
+  return currentChromeWebviewLabel()
 }
 
 async function chromePhysicalBounds(): Promise<{
@@ -246,7 +258,7 @@ export async function getChromeWebview(): Promise<Webview | null> {
   }
 
   const webview =
-    activeChromeWebview ?? (await Webview.getByLabel(CHROME_WEBVIEW_LABEL))
+    activeChromeWebview ?? (await Webview.getByLabel(chromeWebviewLabel()))
   if (webview) {
     activeChromeWebview = webview
   }
@@ -265,7 +277,7 @@ export async function forceChromeWebviewCompactBounds(): Promise<void> {
 
   const webview =
     await Webview.getByLabel(
-      CHROME_WEBVIEW_LABEL,
+      chromeWebviewLabel(),
     )
 
   if (!webview) return
@@ -349,7 +361,7 @@ export async function showChromeWebview(
   if (!isTauri) return
 
   if (chromeVisibilitySuppressed) {
-    const existing = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+    const existing = await Webview.getByLabel(chromeWebviewLabel())
     if (existing) await existing.hide()
     return
   }
@@ -357,7 +369,7 @@ export async function showChromeWebview(
   setChromeWebviewHeight(logicalHeight)
 
   const appWindow = getCurrentWindow()
-  let webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+  let webview = await Webview.getByLabel(chromeWebviewLabel())
   const bounds = await chromePhysicalBounds()
 
   if (!webview) {
@@ -372,13 +384,13 @@ export async function showChromeWebview(
         focus: false,
         browserExtensionsEnabled: true,
       }
-      webview = new Webview(appWindow, CHROME_WEBVIEW_LABEL, webviewOptions)
+      webview = new Webview(appWindow, chromeWebviewLabel(), webviewOptions)
       await waitForWebviewCreated(webview)
-      await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
+      await invoke('webview_setup_branding', { label: chromeWebviewLabel() })
     } catch {
-      webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+      webview = await Webview.getByLabel(chromeWebviewLabel())
       if (!webview) throw new Error('failed to create chrome webview')
-      await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
+      await invoke('webview_setup_branding', { label: chromeWebviewLabel() })
     }
   } else {
     activeChromeWebview = webview
@@ -386,7 +398,7 @@ export async function showChromeWebview(
 
   // Idempotent repair for an already-created chrome WebView: native browser
   // UI must remain suppressed even if the surface was created very early.
-  await invoke('webview_setup_branding', { label: CHROME_WEBVIEW_LABEL })
+  await invoke('webview_setup_branding', { label: chromeWebviewLabel() })
 
   // Existing chrome keeps the bounds last published by ChromeApp. Never
   // resize it from the main/Home JS context: that context has a separate copy
@@ -416,7 +428,7 @@ export async function setChromeWebviewSuppressed(suppressed: boolean): Promise<v
 
   const requestSequence = ++chromeVisibilityRequestSequence
   chromeVisibilitySuppressed = suppressed
-  const webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+  const webview = await Webview.getByLabel(chromeWebviewLabel())
   if (requestSequence !== chromeVisibilityRequestSequence) return
 
   if (chromeVisibilitySuppressed) {
@@ -430,7 +442,7 @@ export async function setChromeWebviewSuppressed(suppressed: boolean): Promise<v
       requestSequence !== chromeVisibilityRequestSequence ||
       chromeVisibilitySuppressed
     ) {
-      const createdWebview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+      const createdWebview = await Webview.getByLabel(chromeWebviewLabel())
       if (createdWebview && chromeVisibilitySuppressed) await createdWebview.hide()
     }
     return
@@ -451,7 +463,7 @@ export async function hideChromeWebview(): Promise<void> {
   chromeOverlayLogicalWidth = null
   chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
 
-  const webview = await Webview.getByLabel(CHROME_WEBVIEW_LABEL)
+  const webview = await Webview.getByLabel(chromeWebviewLabel())
   if (webview) {
     await webview.hide()
   }

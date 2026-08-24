@@ -12,6 +12,7 @@ import {
   takePendingExternalUrls,
 } from '../../platform/externalOpen'
 import { createPortal } from 'react-dom'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
 import {
@@ -54,7 +55,10 @@ import {
   isSiteFullscreenActive,
   toggleBrowserWindowFullscreen,
 } from '../../platform/tauriSiteFullscreen'
-import { writeTransitionLog } from '../../platform/tauriTransitionLog'
+import {
+  transitionErrorDetails,
+  writeTransitionLog,
+} from '../../platform/tauriTransitionLog'
 import {
   setOverlayModeActive,
   stackBrowsingChromeAboveBrowser,
@@ -105,6 +109,7 @@ import {
   navigateBrowseTabBack,
   navigateBrowseTabForward,
   prepareBrowseTabInBackground,
+  readBrowseTabCurrentUrl,
   reloadBrowseTab,
   listenTabWebviewSnapshots,
   listenTabWebviewLoadingStates,
@@ -112,6 +117,7 @@ import {
   setBrowseTabMuted,
   setBrowseTabZoom,
   zoomBrowseTab,
+  setBrowseForceDarkOptions,
   setBrowsePrivacyOptions,
   clearSitePermissions,
   listenSiteCompatibilityRequests,
@@ -120,6 +126,8 @@ import {
   getUblockExtensionInfo,
   getUblockRuntimeStatus,
   type BrowsingDataKind,
+  adoptReparentedBrowseTab,
+  relinquishBrowseTabOwnership,
 } from '../../platform/tauriBrowser'
 import {
   addSiteException,
@@ -132,6 +140,7 @@ import { useBrowserTabs } from '../../hooks/useBrowserTabs'
 import { useBrowserShortcuts } from '../../hooks/useBrowserShortcuts'
 import { useBrowserShortcutBindings } from '../../hooks/useBrowserShortcutBindings'
 import {
+  faviconForUrl,
   shortcutFromTab,
   shortcutIdForTabWebviewLabel,
   tabWebviewLabel,
@@ -165,9 +174,36 @@ import { useBrowseSessions } from '../../hooks/useBrowseSessions'
 import { useBrowsingHistory } from '../../hooks/useBrowsingHistory'
 import {
   CURRENT_SESSION_KEY,
+  LEGACY_CURRENT_SESSION_KEYS,
   type BrowserSessionSnapshot,
   type ClosedTabEntry,
 } from '../../core/browsingHistory'
+import {
+  primarySessionWindow,
+  sessionWindowById,
+  sessionTabCount,
+  type PersistedBrowserTab,
+} from '../../core/browserSessionSnapshot'
+import { tabHistoryTarget } from '../../core/tabNavigation'
+import {
+  browserWindowAtScreenPoint,
+  clearBrowserTabTransfer,
+  createBrowserTabTransfer,
+  createBrowserWindowId,
+  createNebulaBrowserWindow,
+  loadBrowserTabTransfer,
+  markBrowserWindowActive,
+  reparentBrowserTab,
+  reparentBrowserTabToWindow,
+  saveBrowserTabTransfer,
+  updateBrowserTabTransfer,
+  waitForBrowserTabTransferClaim,
+} from '../../platform/tauriBrowserWorkspace'
+import {
+  currentBrowserWindowId,
+  currentBrowserWindowLabel,
+  currentTransferId,
+} from '../../platform/browserWindowScope'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
 import { useWallpaper } from '../../hooks/useWallpaper'
 import type { ToolbarAnchor } from '../RightToolbar/RightToolbar'
@@ -339,7 +375,6 @@ export function BrowserShell() {
     reloadPinnedIds,
   } = usePinnedShortcuts(
     allShortcuts,
-    visibleShortcuts,
   )
 
   const {
@@ -409,6 +444,24 @@ export function BrowserShell() {
     clearCurrentSession,
   } = useBrowsingHistory()
 
+  const browserWindowIdRef =
+    useRef(
+      currentBrowserWindowId(),
+    )
+
+  useEffect(() => {
+    if (!isTauri) return
+    const currentWindow = getCurrentWindow()
+    void markBrowserWindowActive(currentWindow.label)
+    let unlisten: (() => void) | undefined
+    void currentWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) void markBrowserWindowActive(currentWindow.label)
+    }).then((dispose) => {
+      unlisten = dispose
+    })
+    return () => unlisten?.()
+  }, [])
+
   const {
     tabs,
     activeTab,
@@ -418,11 +471,85 @@ export function BrowserShell() {
     tabsRef,
     openOrSwitchTab,
     closeTab,
+    detachTab,
     applyTabSnapshot,
     updateTabMeta,
     getTab,
     setActiveTabId,
+    navigateTabHistory,
   } = useBrowserTabs()
+
+  const navigationTargetIndexByTabRef =
+    useRef(
+      new Map<string, number>(),
+    )
+
+  const handleTogglePinCurrentPage =
+    useCallback(
+      async (
+        fallback:
+          Shortcut,
+      ) => {
+        const tabBeforeRead =
+          tabsRef.current.find(
+            (tab) =>
+              tab.shortcutId ===
+              fallback.id,
+          )
+
+        let currentUrl =
+          tabBeforeRead?.url ??
+          fallback.url
+
+        if (
+          isTauri &&
+          tabBeforeRead
+        ) {
+          try {
+            currentUrl =
+              await readBrowseTabCurrentUrl(
+                tabBeforeRead.shortcutId,
+              )
+          } catch {
+            // A tab can be closing or temporarily unloaded; its latest
+            // observed snapshot remains the safe fallback.
+          }
+        }
+
+        const latestTab =
+          tabsRef.current.find(
+            (tab) =>
+              tab.shortcutId ===
+              fallback.id,
+          )
+        const metadataMatchesUrl =
+          latestTab?.url ===
+          currentUrl
+
+        togglePin({
+          id:
+            fallback.id,
+          url:
+            currentUrl,
+          label:
+            metadataMatchesUrl
+              ? latestTab.title
+              : titleFromUrl(
+                  currentUrl,
+                ),
+          favicon:
+            metadataMatchesUrl
+              ? latestTab.favicon
+              : faviconForUrl(
+                  currentUrl,
+                ),
+        })
+      },
+      [
+        tabsRef,
+        togglePin,
+      ],
+    )
 
   /*
    * Synchronous cursor for rapid Ctrl+Tab switching.
@@ -450,11 +577,15 @@ export function BrowserShell() {
         settings.browsing.restoreTabsOnStartup
       ) {
         saveCurrentSession(
+          browserWindowIdRef.current,
           tabsRef.current,
           activeTabIdRef.current,
         )
       } else {
         localStorage.removeItem(CURRENT_SESSION_KEY)
+        for (const key of LEGACY_CURRENT_SESSION_KEYS) {
+          localStorage.removeItem(key)
+        }
       }
 
       if (!settings.browsing.restoreTabsOnStartup) {
@@ -491,7 +622,6 @@ export function BrowserShell() {
       downloads.items,
       settings.notifications
         .siteNotifications,
-      settings.notifications.showNotificationContent,
       settings.notifications.downloadNotifications,
     )
   const setSiteNotificationPermission =
@@ -959,6 +1089,10 @@ export function BrowserShell() {
           id,
         )
 
+        unpinShortcut(
+          id,
+        )
+
         removeShortcutFromFolders(
           id,
         )
@@ -966,6 +1100,7 @@ export function BrowserShell() {
       [
         removeShortcut,
         removeShortcutFromFolders,
+        unpinShortcut,
       ],
     )
 
@@ -1945,10 +2080,55 @@ export function BrowserShell() {
           }
         }
 
+        const currentTab =
+          tabsRef.current.find(
+            (tab) =>
+              tab.shortcutId ===
+              snapshot.shortcutId,
+          )
+        const pendingHistoryTarget =
+          navigationTargetIndexByTabRef
+            .current
+            .get(
+              snapshot.shortcutId,
+            )
+        const pendingTargetUrl =
+          pendingHistoryTarget ===
+          undefined
+            ? undefined
+            : currentTab
+                ?.navigation
+                .entries[
+                  pendingHistoryTarget
+                ]?.url
+        const historyTargetIndex =
+          pendingHistoryTarget !==
+            undefined &&
+          (
+            currentTab?.url !==
+              snapshot.url ||
+            pendingTargetUrl ===
+              snapshot.url
+          )
+            ? pendingHistoryTarget
+            : undefined
+
+        if (
+          historyTargetIndex !==
+          undefined
+        ) {
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              snapshot.shortcutId,
+            )
+        }
+
         applyTabSnapshot(
           snapshot.shortcutId,
           snapshot.url,
           snapshot.title,
+          historyTargetIndex,
         )
 
         if (
@@ -2574,8 +2754,15 @@ export function BrowserShell() {
           true,
         restoredId?:
           string,
+        restoredTab?:
+          PersistedBrowserTab,
+        preserveLiveWebview =
+          false,
       ) => {
         const id =
+          restoredTab
+            ?.shortcutId
+            .trim() ||
           restoredId?.trim() ||
           `history-${crypto.randomUUID()}`
 
@@ -2586,6 +2773,10 @@ export function BrowserShell() {
             title?.trim() ||
             url,
           url,
+          favicon:
+            restoredTab
+              ?.favicon ||
+            undefined,
         }
 
         if (
@@ -2597,7 +2788,13 @@ export function BrowserShell() {
               activate:
                 false,
               reload:
-                Boolean(restoredId),
+                Boolean(restoredTab || restoredId),
+              tabId:
+                restoredTab
+                  ?.tabId,
+              navigation:
+                restoredTab
+                  ?.navigation,
             },
           )
 
@@ -2609,7 +2806,7 @@ export function BrowserShell() {
               url,
               {
                 forceNavigate:
-                  true,
+                  !preserveLiveWebview,
               },
             )
           }
@@ -2643,7 +2840,7 @@ export function BrowserShell() {
               id,
             url,
             forceNavigate:
-              true,
+              !preserveLiveWebview,
           }
 
         tabSwitchCursorRef.current =
@@ -2651,10 +2848,16 @@ export function BrowserShell() {
 
         openOrSwitchTab(
           shortcut,
-          restoredId
+          restoredId || restoredTab
             ? {
                 reload:
                   true,
+                tabId:
+                  restoredTab
+                    ?.tabId,
+                navigation:
+                  restoredTab
+                    ?.navigation,
               }
             : undefined,
         )
@@ -2728,9 +2931,21 @@ export function BrowserShell() {
         session:
           BrowserSessionSnapshot,
       ) => {
+        const restoredWindow =
+          sessionWindowById(
+            session,
+            browserWindowIdRef.current,
+          ) ??
+          (
+            browserWindowIdRef.current === 'main'
+              ? primarySessionWindow(session)
+              : null
+          )
+
         if (
-          session.tabs.length ===
-          0
+          !restoredWindow ||
+          restoredWindow.tabs.length ===
+            0
         ) {
           return
         }
@@ -2740,14 +2955,14 @@ export function BrowserShell() {
         const activeIndex =
           Math.max(
             0,
-            session.tabs.findIndex(
+            restoredWindow.tabs.findIndex(
               (tab) =>
-                tab.id ===
-                session.activeTabId,
+                tab.tabId ===
+                restoredWindow.activeTabId,
             ),
           )
 
-        session.tabs.forEach(
+        restoredWindow.tabs.forEach(
           (
             tab,
             index,
@@ -2763,23 +2978,25 @@ export function BrowserShell() {
               tab.url,
               tab.title,
               false,
-              tab.id,
+              tab.shortcutId,
+              tab,
             )
           },
         )
 
         const active =
-          session.tabs[
+          restoredWindow.tabs[
             activeIndex
           ] ??
-          session.tabs[0]
+          restoredWindow.tabs[0]
 
         if (active) {
           openHistoryTab(
             active.url,
             active.title,
             true,
-            active.id,
+            active.shortcutId,
+            active,
           )
         }
       },
@@ -2787,6 +3004,260 @@ export function BrowserShell() {
         closeHistoryPanel,
         openHistoryTab,
       ],
+    )
+
+  useEffect(() => {
+    if (!isTauri) return
+    const claimed = new Set<string>()
+
+    const tryClaim = async (
+      transferId: string,
+    ) => {
+      if (claimed.has(transferId)) return
+      const transfer = loadBrowserTabTransfer(transferId)
+      if (
+        !transfer ||
+        transfer.state !== 'ready' ||
+        transfer.targetWindowId !== browserWindowIdRef.current
+      ) {
+        return
+      }
+
+      claimed.add(transferId)
+      void writeTransitionLog('workspace.transfer.claim', 'start', {
+        transferId,
+        sourceWindowId: transfer.sourceWindowId,
+        targetWindowId: transfer.targetWindowId,
+        webviewLabel: transfer.webviewLabel,
+      })
+      let shortcutId = transfer.tab.shortcutId
+      if (tabsRef.current.some((tab) => tab.shortcutId === shortcutId)) {
+        const base = `moved-${transfer.tab.tabId}`
+        shortcutId = base
+        let suffix = 2
+        while (tabsRef.current.some((tab) => tab.shortcutId === shortcutId)) {
+          shortcutId = `${base}-${suffix}`
+          suffix += 1
+        }
+      }
+
+      try {
+        await adoptReparentedBrowseTab(
+          shortcutId,
+          transfer.webviewLabel,
+        )
+        const restoredTab = {
+          ...transfer.tab,
+          shortcutId,
+        }
+        openHistoryTab(
+          restoredTab.url,
+          restoredTab.title,
+          true,
+          shortcutId,
+          restoredTab,
+          true,
+        )
+        updateBrowserTabTransfer(transfer, 'claimed')
+        void writeTransitionLog('workspace.transfer.claim', 'ok', {
+          transferId,
+          sourceWindowId: transfer.sourceWindowId,
+          targetWindowId: transfer.targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+        })
+        window.setTimeout(
+          () => clearBrowserTabTransfer(transferId),
+          5_000,
+        )
+      } catch (error) {
+        claimed.delete(transferId)
+        updateBrowserTabTransfer(transfer, 'cancelled')
+        void writeTransitionLog('workspace.transfer.claim', 'error', {
+          transferId,
+          sourceWindowId: transfer.sourceWindowId,
+          targetWindowId: transfer.targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+          ...transitionErrorDetails(error),
+        })
+        console.error(
+          '[nebula workspace] Failed to adopt a transferred tab.',
+          error,
+        )
+      }
+    }
+
+    const requestedTransferId = currentTransferId()
+    if (requestedTransferId) void tryClaim(requestedTransferId)
+
+    const onStorage = (event: StorageEvent) => {
+      const prefix = 'nebula-browser-tab-transfer-v1:'
+      if (!event.key?.startsWith(prefix)) return
+      void tryClaim(event.key.slice(prefix.length))
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [openHistoryTab, tabsRef])
+
+  const moveTabBetweenWindows =
+    useCallback(
+      async (
+        shortcutId: string,
+        screenX: number,
+        screenY: number,
+      ) => {
+        const tab = tabsRef.current.find(
+          (entry) => entry.shortcutId === shortcutId,
+        )
+        if (!tab || !isTauri) return
+
+        const sourceWindowId = browserWindowIdRef.current
+        const windowAtPoint = await browserWindowAtScreenPoint(
+          screenX,
+          screenY,
+        )
+        if (windowAtPoint === currentBrowserWindowLabel()) {
+          void writeTransitionLog('workspace.transfer.drop', 'info', {
+            sourceWindowId,
+            shortcutId,
+            result: 'same-window',
+          })
+          return
+        }
+
+        const targetWindowId = windowAtPoint ?? createBrowserWindowId()
+        const transfer = createBrowserTabTransfer(
+          sourceWindowId,
+          targetWindowId,
+          tab,
+        )
+        saveBrowserTabTransfer(transfer)
+        void writeTransitionLog('workspace.transfer', 'start', {
+          transferId: transfer.id,
+          sourceWindowId,
+          targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+          targetKind: windowAtPoint ? 'existing-window' : 'new-window',
+        })
+
+        try {
+          if (!windowAtPoint) {
+            await createNebulaBrowserWindow(targetWindowId, transfer.id)
+            void writeTransitionLog('workspace.transfer.window-created', 'ok', {
+              transferId: transfer.id,
+              targetWindowId,
+            })
+          }
+          await reparentBrowserTab(transfer)
+          void writeTransitionLog('workspace.transfer.reparent', 'ok', {
+            transferId: transfer.id,
+            sourceWindowId,
+            targetWindowId,
+            webviewLabel: transfer.webviewLabel,
+          })
+          await waitForBrowserTabTransferClaim(transfer.id)
+        } catch (error) {
+          try {
+            await reparentBrowserTabToWindow(transfer, sourceWindowId)
+            await applyTauriViewModeNow('browsing', {
+              tabId: shortcutId,
+              url: tab.url,
+            })
+            void writeTransitionLog('workspace.transfer.rollback', 'ok', {
+              transferId: transfer.id,
+              sourceWindowId,
+              shortcutId,
+              webviewLabel: transfer.webviewLabel,
+            })
+          } catch (rollbackError) {
+            void writeTransitionLog('workspace.transfer.rollback', 'error', {
+              transferId: transfer.id,
+              sourceWindowId,
+              shortcutId,
+              webviewLabel: transfer.webviewLabel,
+              ...transitionErrorDetails(rollbackError),
+            })
+            console.error(
+              '[nebula workspace] Failed to restore a rejected tab transfer.',
+              rollbackError,
+            )
+          }
+          updateBrowserTabTransfer(transfer, 'cancelled')
+          void writeTransitionLog('workspace.transfer', 'error', {
+            transferId: transfer.id,
+            sourceWindowId,
+            targetWindowId,
+            shortcutId,
+            webviewLabel: transfer.webviewLabel,
+            ...transitionErrorDetails(error),
+          })
+          console.error(
+            '[nebula workspace] Failed to move the tab; it remains in this window.',
+            error,
+          )
+          return
+        }
+
+        relinquishBrowseTabOwnership(shortcutId)
+        detachTab(shortcutId)
+        historyUrlByTabRef.current.delete(shortcutId)
+        navigationTargetIndexByTabRef.current.delete(shortcutId)
+        setTabSwitchHistory((history) =>
+          history.filter((id) => id !== shortcutId),
+        )
+        void writeTransitionLog('workspace.transfer', 'ok', {
+          transferId: transfer.id,
+          sourceWindowId,
+          targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+        })
+
+        const remaining = tabsRef.current.filter(
+          (entry) => entry.shortcutId !== shortcutId,
+        )
+        if (remaining.length === 0) {
+          await getCurrentWindow().close()
+        }
+      },
+      [detachTab, tabsRef],
+    )
+
+  const launchRestoredWorkspaceWindows =
+    useCallback(
+      (
+        session:
+          BrowserSessionSnapshot,
+      ) => {
+        if (
+          !isTauri ||
+          browserWindowIdRef.current !==
+            'main'
+        ) {
+          return
+        }
+
+        for (
+          const window of
+            session.windows.slice(1)
+        ) {
+          void createNebulaBrowserWindow(
+            window.windowId,
+          ).catch(
+            (
+              error: unknown,
+            ) => {
+              console.error(
+                `[nebula workspace] Failed to restore window ${window.windowId}.`,
+                error,
+              )
+            },
+          )
+        }
+      },
+      [],
     )
 
   const restoreCrashedSession =
@@ -2801,11 +3272,16 @@ export function BrowserShell() {
         false,
       )
 
+      launchRestoredWorkspaceWindows(
+        previousSession,
+      )
+
       openPreviousHistorySession(
         previousSession,
       )
     }, [
       openPreviousHistorySession,
+      launchRestoredWorkspaceWindows,
       previousSession,
     ])
 
@@ -2822,12 +3298,17 @@ export function BrowserShell() {
       return
     }
 
+    launchRestoredWorkspaceWindows(
+      previousSession,
+    )
+
     openPreviousHistorySession(
       previousSession,
     )
   }, [
     crashRecoveryOpen,
     openPreviousHistorySession,
+    launchRestoredWorkspaceWindows,
     previousRunUnclean,
     previousSession,
     settings.browsing.restoreTabsOnStartup,
@@ -2885,6 +3366,12 @@ export function BrowserShell() {
         historyUrlByTabRef.current.delete(
           shortcutId,
         )
+
+        navigationTargetIndexByTabRef
+          .current
+          .delete(
+            shortcutId,
+          )
 
         googleBrowserSessionTrackerRef
           .current
@@ -3058,6 +3545,7 @@ export function BrowserShell() {
       window.setTimeout(
         () => {
           saveCurrentSession(
+            browserWindowIdRef.current,
             tabs,
             activeTabId,
           )
@@ -4163,58 +4651,249 @@ export function BrowserShell() {
         return
       }
 
-      if (
-        isTauri &&
+      const shortcutId =
         activeTabIdRef.current
-      ) {
-        void navigateBrowseTabBack(
-          activeTabIdRef.current,
-        ).then(
-          (
-            wentBack,
-          ) => {
-            if (
-              !wentBack &&
-              viewModeRef.current ===
-                'browsing'
-            ) {
-              setViewMode(
-                'home',
+
+      if (!shortcutId) return
+
+      const tab =
+        tabsRef.current.find(
+          (entry) =>
+            entry.shortcutId ===
+            shortcutId,
+        )
+      const target =
+        tab
+          ? tabHistoryTarget(
+              tab.navigation,
+              -1,
+            )
+          : null
+
+      if (target) {
+        navigationTargetIndexByTabRef
+          .current
+          .set(
+            shortcutId,
+            target.index,
+          )
+      }
+
+      void (
+        isTauri
+          ? navigateBrowseTabBack(
+              shortcutId,
+            )
+          : Promise.resolve(
+              false,
+            )
+      ).then(
+        (
+          wentBack,
+        ) => {
+          if (wentBack) {
+            if (target) {
+              window.setTimeout(
+                () => {
+                  if (
+                    navigationTargetIndexByTabRef
+                      .current
+                      .get(
+                        shortcutId,
+                      ) ===
+                    target.index
+                  ) {
+                    navigationTargetIndexByTabRef
+                      .current
+                      .delete(
+                        shortcutId,
+                      )
+                  }
+                },
+                5_000,
               )
             }
-          },
-        )
+            return
+          }
 
-        return
-      }
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
 
-      if (
-        viewModeRef.current ===
-        'browsing'
-      ) {
-        setViewMode(
-          'home',
-        )
-      }
+          if (target) {
+            navigateTabHistory(
+              shortcutId,
+              target.index,
+            )
+            setActiveUrl(
+              target.entry.url,
+            )
+            if (isTauri) {
+              void navigateBrowseTab(
+                shortcutId,
+                target.entry.url,
+              ).catch(
+                (
+                  error: unknown,
+                ) => {
+                  console.error(
+                    '[nebula navigation] Failed to restore the previous tab history entry.',
+                    error,
+                  )
+                },
+              )
+            }
+            return
+          }
+
+          if (
+            viewModeRef.current ===
+              'browsing'
+          ) {
+            setViewMode(
+              'home',
+            )
+          }
+        },
+      ).catch(
+        (
+          error: unknown,
+        ) => {
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
+          console.error(
+            '[nebula navigation] Failed to navigate back.',
+            error,
+          )
+        },
+      )
     }, [
       activeTabIdRef,
       dismissOverlay,
+      navigateTabHistory,
+      tabsRef,
     ])
 
   const goForwardInPage =
     useCallback(() => {
-      if (
-        !isTauri ||
-        !activeTabIdRef.current
-      ) {
-        return
+      const shortcutId =
+        activeTabIdRef.current
+      if (!shortcutId) return
+
+      const tab =
+        tabsRef.current.find(
+          (entry) =>
+            entry.shortcutId ===
+            shortcutId,
+        )
+      const target =
+        tab
+          ? tabHistoryTarget(
+              tab.navigation,
+              1,
+            )
+          : null
+
+      if (target) {
+        navigationTargetIndexByTabRef
+          .current
+          .set(
+            shortcutId,
+            target.index,
+          )
       }
 
-      void navigateBrowseTabForward(
-        activeTabIdRef.current,
+      void (
+        isTauri
+          ? navigateBrowseTabForward(
+              shortcutId,
+            )
+          : Promise.resolve(
+              false,
+            )
+      ).then(
+        (
+          wentForward,
+        ) => {
+          if (wentForward) {
+            if (target) {
+              window.setTimeout(
+                () => {
+                  if (
+                    navigationTargetIndexByTabRef
+                      .current
+                      .get(
+                        shortcutId,
+                      ) ===
+                    target.index
+                  ) {
+                    navigationTargetIndexByTabRef
+                      .current
+                      .delete(
+                        shortcutId,
+                      )
+                  }
+                },
+                5_000,
+              )
+            }
+            return
+          }
+
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
+          if (!target) return
+
+          navigateTabHistory(
+            shortcutId,
+            target.index,
+          )
+          setActiveUrl(
+            target.entry.url,
+          )
+          if (isTauri) {
+            void navigateBrowseTab(
+              shortcutId,
+              target.entry.url,
+            ).catch(
+              (
+                error: unknown,
+              ) => {
+                console.error(
+                  '[nebula navigation] Failed to restore the next tab history entry.',
+                  error,
+                )
+              },
+            )
+          }
+        },
+      ).catch(
+        (
+          error: unknown,
+        ) => {
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
+          console.error(
+            '[nebula navigation] Failed to navigate forward.',
+            error,
+          )
+        },
       )
     }, [
       activeTabIdRef,
+      navigateTabHistory,
+      tabsRef,
     ])
 
   const reloadActiveTab =
@@ -4481,6 +5160,17 @@ export function BrowserShell() {
         switch (
           action
         ) {
+          case 'new-window':
+            void createNebulaBrowserWindow().catch(
+              (error: unknown) => {
+                console.error(
+                  '[nebula workspace] Failed to create a browser window.',
+                  error,
+                )
+              },
+            )
+            break
+
           case 'new-tab':
             openNewBlankTab()
             break
@@ -4739,6 +5429,7 @@ export function BrowserShell() {
         origin: null,
         hostname: null,
         protectionDisabled: false,
+        darkenWebpagesOverride: 'default',
         permissionPromptsAllowed: false,
         notificationPermission: null,
         permissions: emptyPermissions,
@@ -4753,6 +5444,7 @@ export function BrowserShell() {
         origin: null,
         hostname: null,
         protectionDisabled: false,
+        darkenWebpagesOverride: 'default',
         permissionPromptsAllowed: false,
         notificationPermission: null,
         permissions: emptyPermissions,
@@ -4778,6 +5470,8 @@ export function BrowserShell() {
         target.hostname,
         settings.privacy.siteExceptions,
       ),
+      darkenWebpagesOverride:
+        settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
       notificationPermission:
         notificationCenter.sitePermissions[origin] ?? null,
@@ -4793,6 +5487,7 @@ export function BrowserShell() {
     settings.privacy.permissionExceptions,
     settings.privacy.permissionPolicy,
     settings.privacy.siteExceptions,
+    settings.appearance.darkenWebpagesSiteOverrides,
   ])
 
   const activeSiteInfoStateRef = useRef(activeSiteInfoState)
@@ -4946,6 +5641,20 @@ export function BrowserShell() {
             break
           }
 
+          case 'move-tab':
+            void moveTabBetweenWindows(
+              action.shortcutId,
+              action.screenX,
+              action.screenY,
+            )
+            break
+
+          case 'toggle-pin':
+            void handleTogglePinCurrentPage(
+              action.shortcut,
+            )
+            break
+
           case 'set-site-protection': {
             const site = activeSiteInfoStateRef.current
             if (!site.hostname || site.hostname !== action.hostname) break
@@ -4959,6 +5668,25 @@ export function BrowserShell() {
                   site.hostname,
                 )
             updateCategory('privacy', 'siteExceptions', siteExceptions)
+            break
+          }
+
+          case 'set-site-darkening': {
+            const site = activeSiteInfoStateRef.current
+            if (!site.hostname || site.hostname !== action.hostname) break
+            const overrides = {
+              ...settings.appearance.darkenWebpagesSiteOverrides,
+            }
+            if (action.mode === 'default') {
+              delete overrides[site.hostname]
+            } else {
+              overrides[site.hostname] = action.mode
+            }
+            updateCategory(
+              'appearance',
+              'darkenWebpagesSiteOverrides',
+              overrides,
+            )
             break
           }
 
@@ -5061,6 +5789,8 @@ export function BrowserShell() {
   }, [
     openShortcutByUrl,
     handleCloseTab,
+    handleTogglePinCurrentPage,
+    moveTabBetweenWindows,
     setActiveTabId,
     updateTabMeta,
     openOverlay,
@@ -5074,6 +5804,7 @@ export function BrowserShell() {
     clearFinishedDownloads,
     emitFreshSiteInfoState,
     setSiteNotificationPermission,
+    settings.appearance.darkenWebpagesSiteOverrides,
     settings.privacy.siteExceptions,
     updateCategory,
   ])
@@ -5213,11 +5944,23 @@ export function BrowserShell() {
     !homeEditMode
 
   const {
+    appearance,
     home,
     semiLunar,
     notifications,
     privacy,
   } = settings
+
+  const [systemPrefersDark, setSystemPrefersDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  )
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setSystemPrefersDark(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   const compatibilityContextRef = useRef({
     privacy,
@@ -5396,6 +6139,22 @@ export function BrowserShell() {
     notificationCenter.allowedSites,
     notificationCenter.blockedSites,
   ])
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    void setBrowseForceDarkOptions(
+      {
+        mode: appearance.darkenWebpages,
+        theme: appearance.theme,
+        systemDark: systemPrefersDark,
+        siteOverrides: appearance.darkenWebpagesSiteOverrides,
+      },
+      openTabIds,
+    ).catch((error: unknown) => {
+      console.error('[nebula appearance] Failed to apply webpage darkening.', error)
+    })
+  }, [appearance, openTabIds, systemPrefersDark])
 
   const editLayout =
     homeEditMode &&
@@ -5639,6 +6398,9 @@ export function BrowserShell() {
     onCloseTab:
       handleCloseTab,
 
+    onTabDragDrop:
+      moveTabBetweenWindows,
+
     openTabIds,
     activeTabId,
     getTab,
@@ -5650,7 +6412,7 @@ export function BrowserShell() {
     isPinned,
 
     onTogglePin:
-      togglePin,
+      handleTogglePinCurrentPage,
 
     canPinMore,
 
@@ -6153,8 +6915,9 @@ export function BrowserShell() {
         createPortal(
           <CrashRecoveryPrompt
             tabCount={
-              previousSession
-                .tabs.length
+              sessionTabCount(
+                previousSession,
+              )
             }
             onRestore={
               restoreCrashedSession

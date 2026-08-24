@@ -5,6 +5,11 @@ import {
   type BrowserTab,
 } from './browserTab.ts'
 import type { Shortcut } from './types.ts'
+import {
+  applyTabHistoryTarget,
+  recordTabNavigation,
+  type TabNavigationState,
+} from './tabNavigation.ts'
 
 export interface BrowserTabsState {
   tabs: BrowserTab[]
@@ -17,6 +22,8 @@ export type BrowserTabsAction =
       shortcut: Shortcut
       reload: boolean
       activate: boolean
+      tabId?: string
+      navigation?: TabNavigationState
     }
   | { type: 'close'; shortcutId: string }
   | {
@@ -29,7 +36,9 @@ export type BrowserTabsAction =
       shortcutId: string
       url: string
       title: string | null
+      historyTargetIndex?: number
     }
+  | { type: 'navigate-history'; shortcutId: string; targetIndex: number }
   | { type: 'set-active'; shortcutId: string | null }
 
 export const initialBrowserTabsState: BrowserTabsState = {
@@ -56,12 +65,26 @@ export function browserTabsReducer(
                 initialUrl: action.shortcut.url,
                 title: action.shortcut.label,
                 favicon: action.shortcut.favicon ?? tab.favicon,
+                navigation:
+                  action.navigation ??
+                  recordTabNavigation(
+                    tab.navigation,
+                    action.shortcut.url,
+                    action.shortcut.label,
+                    action.shortcut.favicon ?? tab.favicon,
+                  ),
                 isLoading: true,
               }
             : tab,
         )
       } else if (!existing) {
-        tabs = [...state.tabs, createBrowserTab(action.shortcut)]
+        tabs = [
+          ...state.tabs,
+          createBrowserTab(action.shortcut, {
+            tabId: action.tabId,
+            navigation: action.navigation,
+          }),
+        ]
       }
 
       const activeTabId = action.activate ? action.shortcut.id : state.activeTabId
@@ -90,14 +113,20 @@ export function browserTabsReducer(
       const nextTitle = action.title?.trim() || titleFromUrl(action.url)
       const nextFavicon = faviconForUrl(action.url)
       const current = state.tabs.find((tab) => tab.shortcutId === action.shortcutId)
+      if (!current) return state
+      const navigation = action.historyTargetIndex === undefined
+        ? recordTabNavigation(current.navigation, action.url, nextTitle, nextFavicon)
+        : applyTabHistoryTarget(
+            current.navigation,
+            action.historyTargetIndex,
+            { url: action.url, title: nextTitle, favicon: nextFavicon },
+          )
       if (
-        !current ||
-        (current.url === action.url &&
-          current.title === nextTitle &&
-          current.favicon === nextFavicon)
-      ) {
-        return state
-      }
+        current.url === action.url &&
+        current.title === nextTitle &&
+        current.favicon === nextFavicon &&
+        navigation === current.navigation
+      ) return state
       return {
         ...state,
         tabs: state.tabs.map((tab) =>
@@ -107,6 +136,30 @@ export function browserTabsReducer(
                 url: action.url,
                 title: nextTitle,
                 favicon: nextFavicon,
+                navigation,
+              }
+            : tab,
+        ),
+      }
+    }
+
+    case 'navigate-history': {
+      const current = state.tabs.find((tab) => tab.shortcutId === action.shortcutId)
+      if (!current) return state
+      const navigation = applyTabHistoryTarget(current.navigation, action.targetIndex)
+      const entry = navigation.entries[navigation.index]
+      if (!entry || navigation === current.navigation) return state
+      return {
+        ...state,
+        tabs: state.tabs.map((tab) =>
+          tab.shortcutId === action.shortcutId
+            ? {
+                ...tab,
+                url: entry.url,
+                title: entry.title,
+                favicon: entry.favicon ?? faviconForUrl(entry.url),
+                navigation,
+                isLoading: true,
               }
             : tab,
         ),

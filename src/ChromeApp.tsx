@@ -72,8 +72,7 @@ export function ChromeApp() {
   const {
     isPinned,
     canPinMore,
-    togglePin,
-  } = usePinnedShortcuts(allShortcuts, visibleShortcuts)
+  } = usePinnedShortcuts(allShortcuts)
 
   const {
     dockItemIds,
@@ -108,6 +107,7 @@ export function ChromeApp() {
     origin: null,
     hostname: null,
     protectionDisabled: false,
+    darkenWebpagesOverride: 'default',
     permissionPromptsAllowed: false,
     notificationPermission: null,
     permissions: {
@@ -172,7 +172,7 @@ export function ChromeApp() {
       () => listenSensitiveFeatureUsage((usage) => {
         setSensitiveUsageByTab((current) => {
           const next = new Map(current)
-          if (usage.camera || usage.microphone || usage.location) {
+          if (usage.camera || usage.microphone || usage.location || usage.screen) {
             next.set(usage.tabLabel, usage)
           } else {
             next.delete(usage.tabLabel)
@@ -250,16 +250,18 @@ export function ChromeApp() {
 
   const sensitiveUsageSummary = useMemo(() => {
     const active = [...sensitiveUsageByTab.values()].filter(
-      (usage) => usage.camera || usage.microphone || usage.location,
+      (usage) => usage.camera || usage.microphone || usage.location || usage.screen,
     )
     if (active.length === 0) return null
     let camera = false
     let microphone = false
     let location = false
+    let screen = false
     for (const usage of active) {
       camera ||= usage.camera
       microphone ||= usage.microphone
       location ||= usage.location
+      screen ||= usage.screen
     }
     let host = ''
     if (active.length === 1) {
@@ -269,12 +271,12 @@ export function ChromeApp() {
         host = active[0].origin
       }
     }
-    return { camera, microphone, location, host, siteCount: active.length }
+    return { camera, microphone, location, screen, host, siteCount: active.length }
   }, [sensitiveUsageByTab])
 
   const activeSensitiveUsage = useMemo(() => {
     if (!siteInfoState.shortcutId || !siteInfoState.origin) {
-      return { camera: false, microphone: false, location: false }
+      return { camera: false, microphone: false, location: false, screen: false }
     }
     for (const usage of sensitiveUsageByTab.values()) {
       if (
@@ -285,10 +287,11 @@ export function ChromeApp() {
           camera: usage.camera,
           microphone: usage.microphone,
           location: usage.location,
+          screen: usage.screen,
         }
       }
     }
-    return { camera: false, microphone: false, location: false }
+    return { camera: false, microphone: false, location: false, screen: false }
   }, [sensitiveUsageByTab, siteInfoState.origin, siteInfoState.shortcutId])
 
   const effectiveSiteInfoState = useMemo<SiteInfoStatePayload>(() => {
@@ -314,6 +317,8 @@ export function ChromeApp() {
       origin,
       hostname: target.hostname,
       protectionDisabled: hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
+      darkenWebpagesOverride:
+        settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
       notificationPermission: null,
       permissions: {
@@ -322,7 +327,7 @@ export function ChromeApp() {
         location: fallbackPermission,
       },
     }
-  }, [activeUrl, catalog.activeTabId, settings.privacy, siteInfoState, tabById])
+  }, [activeUrl, catalog.activeTabId, settings.appearance, settings.privacy, siteInfoState, tabById])
 
   useEffect(() => {
     const hasZoom = zoomIndicatorPercent !== null
@@ -520,6 +525,11 @@ export function ChromeApp() {
                 {locale === 'tr' ? 'Konum' : 'Location'}
               </span>
             )}
+            {sensitiveUsageSummary.screen && (
+              <span title={locale === 'tr' ? 'Ekran paylaşılıyor' : 'Screen sharing in use'}>
+                {locale === 'tr' ? 'Ekran' : 'Screen'}
+              </span>
+            )}
           </span>
         </div>
       )}
@@ -606,13 +616,23 @@ export function ChromeApp() {
       onCloseTab={(shortcutId) => {
         void emitChromeAction({ type: 'close-tab', shortcutId })
       }}
+      onTabDragDrop={(shortcutId, screenX, screenY) => {
+        void emitChromeAction({
+          type: 'move-tab',
+          shortcutId,
+          screenX,
+          screenY,
+        })
+      }}
       openTabIds={openTabIds}
       activeTabId={catalog.activeTabId}
       getTab={getTab}
       onToggleMute={toggleMute}
       isMuted={isMuted}
       isPinned={isPinned}
-      onTogglePin={togglePin}
+      onTogglePin={(shortcut) => {
+        void emitChromeAction({ type: 'toggle-pin', shortcut })
+      }}
       canPinMore={canPinMore}
       onRemoveMemberFromFolder={removeMemberFromFolder}
       activeUrl={activeUrl}
@@ -673,6 +693,13 @@ export function ChromeApp() {
               type: 'set-site-protection',
               hostname: effectiveSiteInfoState.hostname!,
               disabled: !effectiveSiteInfoState.protectionDisabled,
+            })
+          }}
+          onSetDarkening={(mode) => {
+            void emitChromeAction({
+              type: 'set-site-darkening',
+              hostname: effectiveSiteInfoState.hostname!,
+              mode,
             })
           }}
           onSetNotificationPermission={(permission) => {

@@ -17,7 +17,8 @@ mod imp {
         ICoreWebView2IsDefaultDownloadDialogOpenChangedEventHandler,
         ICoreWebView2StateChangedEventHandler, ICoreWebView2_4, ICoreWebView2_9,
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON,
-        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED, COREWEBVIEW2_DOWNLOAD_STATE,
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED,
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN, COREWEBVIEW2_DOWNLOAD_STATE,
         COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED,
     };
     use webview2_com::{
@@ -67,6 +68,8 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashSet::new()));
     static RECENT_DOWNLOADS: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static DOWNLOAD_LIFECYCLE: LazyLock<Mutex<DownloadLifecycle>> =
+        LazyLock::new(|| Mutex::new(DownloadLifecycle::default()));
 
     thread_local! {
         static START_HANDLERS: RefCell<HashMap<String, StartHandlers>> =
@@ -87,6 +90,48 @@ mod imp {
         state_token: i64,
         label: String,
         started_at_ms: u64,
+    }
+
+    #[derive(Default)]
+    struct DownloadLifecycle {
+        active_by_label: HashMap<String, HashSet<String>>,
+        deferred_tab_closes: HashSet<String>,
+    }
+
+    impl DownloadLifecycle {
+        fn register(&mut self, label: &str, id: &str) {
+            self.active_by_label
+                .entry(label.to_string())
+                .or_default()
+                .insert(id.to_string());
+        }
+
+        fn defer_tab_close(&mut self, label: &str) -> bool {
+            let has_active = self
+                .active_by_label
+                .get(label)
+                .is_some_and(|downloads| !downloads.is_empty());
+            if has_active {
+                self.deferred_tab_closes.insert(label.to_string());
+            }
+            has_active
+        }
+
+        fn finish(&mut self, label: &str, id: &str) -> bool {
+            let empty = if let Some(downloads) = self.active_by_label.get_mut(label) {
+                downloads.remove(id);
+                downloads.is_empty()
+            } else {
+                true
+            };
+
+            if !empty {
+                return false;
+            }
+
+            self.active_by_label.remove(label);
+            self.deferred_tab_closes.remove(label)
+        }
     }
 
     #[derive(Clone)]
@@ -120,6 +165,14 @@ mod imp {
         danger_reason: Option<String>,
         requires_confirmation: bool,
         started_at_ms: u64,
+    }
+
+    struct DownloadControlDiagnostic {
+        label: String,
+        state: i32,
+        interrupt_reason: i32,
+        can_resume: bool,
+        state_read_ok: bool,
     }
 
     unsafe fn take_webview_string(
@@ -280,6 +333,121 @@ mod imp {
         }
     }
 
+    fn read_control_diagnostic(
+        label: &str,
+        operation: &ICoreWebView2DownloadOperation,
+    ) -> DownloadControlDiagnostic {
+        unsafe {
+            let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+            let mut interrupt_reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
+            let mut can_resume = BOOL::default();
+            let state_read_ok = operation.State(&mut state).is_ok();
+            let _ = operation.InterruptReason(&mut interrupt_reason);
+            let _ = operation.CanResume(&mut can_resume);
+
+            DownloadControlDiagnostic {
+                label: label.to_string(),
+                state: state.0,
+                interrupt_reason: interrupt_reason.0,
+                can_resume: can_resume.as_bool(),
+                state_read_ok,
+            }
+        }
+    }
+
+    fn record_download_control(
+        app: &AppHandle,
+        id: &str,
+        action: &str,
+        diagnostic: Option<DownloadControlDiagnostic>,
+        result: &Result<(), String>,
+    ) {
+        let webview_alive = diagnostic
+            .as_ref()
+            .is_some_and(|item| app.get_webview(&item.label).is_some());
+        let label = diagnostic
+            .as_ref()
+            .map(|item| item.label.clone())
+            .unwrap_or_default();
+        let state = diagnostic.as_ref().map(|item| item.state);
+        let interrupt_reason = diagnostic.as_ref().map(|item| item.interrupt_reason);
+        let can_resume = diagnostic.as_ref().map(|item| item.can_resume);
+        let state_read_ok = diagnostic.as_ref().map(|item| item.state_read_ok);
+        let error = result.as_ref().err().cloned().unwrap_or_default();
+        let status = if result.is_ok() { "ok" } else { "error" };
+        let app = app.clone();
+        let id = id.to_string();
+        let action = action.to_string();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = crate::write_transition_log(
+                app,
+                serde_json::json!({
+                    "stage": "download.control",
+                    "status": status,
+                    "downloadId": id,
+                    "action": action,
+                    "tabLabel": label,
+                    "webviewAlive": webview_alive,
+                    "activeRegistration": state.is_some(),
+                    "state": state,
+                    "interruptReason": interrupt_reason,
+                    "canResume": can_resume,
+                    "stateReadOk": state_read_ok,
+                    "error": error,
+                }),
+            );
+        });
+    }
+
+    fn terminalize_lost_download(
+        app: &AppHandle,
+        id: &str,
+        action: &str,
+        label: &str,
+        operation: &ICoreWebView2DownloadOperation,
+        download_started_at: u64,
+    ) {
+        let mut payload = read_payload(id, label, operation, download_started_at);
+        let cancelled = action == "cancel";
+        payload.state = if cancelled {
+            "cancelled".to_string()
+        } else {
+            "interrupted".to_string()
+        };
+        payload.interrupt_reason = if cancelled {
+            COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED.0
+        } else {
+            COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN.0
+        };
+        payload.can_resume = false;
+        payload.paused = false;
+        payload.requires_confirmation = false;
+        payload.danger_reason = None;
+        let _ = app.emit(DOWNLOAD_EVENT, payload.clone());
+        finalize_download(app, id, &payload);
+    }
+
+    fn complete_native_control(
+        app: &AppHandle,
+        id: &str,
+        action: &str,
+        label: &str,
+        operation: &ICoreWebView2DownloadOperation,
+        download_started_at: u64,
+        result: Result<(), String>,
+    ) -> Result<bool, String> {
+        let diagnostic = read_control_diagnostic(label, operation);
+        let native_operation_gone = !diagnostic.state_read_ok || app.get_webview(label).is_none();
+        record_download_control(app, id, action, Some(diagnostic), &result);
+
+        if result.is_err() && native_operation_gone {
+            terminalize_lost_download(app, id, action, label, operation, download_started_at);
+            return Ok(true);
+        }
+
+        result.map(|_| false)
+    }
+
     fn emit_download(
         app: &AppHandle,
         id: &str,
@@ -361,11 +529,30 @@ mod imp {
         });
     }
 
-    fn finalize_download(id: &str, payload: &DownloadPayload) {
+    fn close_deferred_download_host(app: &AppHandle, label: String) {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            // Let the terminal WebView2 callback and tab teardown return before
+            // releasing the controller that owned the download operation.
+            std::thread::sleep(Duration::from_millis(250));
+            let app_for_close = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Some(webview) = app_for_close.get_webview(&label) {
+                    let _ = webview.close();
+                }
+            });
+        });
+    }
+
+    fn finalize_download(app: &AppHandle, id: &str, payload: &DownloadPayload) {
         remember_finished_download(id, payload);
         remember_failed_download(id, payload);
 
         let registration = DOWNLOADS.with(|downloads| downloads.borrow_mut().remove(id));
+        let label = registration
+            .as_ref()
+            .map(|registration| registration.label.clone())
+            .unwrap_or_else(|| payload.tab_label.clone());
         if let Some(registration) = registration {
             unsafe {
                 let _ = registration
@@ -397,6 +584,14 @@ mod imp {
         }
         if let Ok(mut completions) = SYNTHETIC_COMPLETIONS.lock() {
             completions.remove(id);
+        }
+
+        let close_download_host = DOWNLOAD_LIFECYCLE
+            .lock()
+            .map(|mut lifecycle| lifecycle.finish(&label, id))
+            .unwrap_or(false);
+        if close_download_host {
+            close_deferred_download_host(app, label);
         }
     }
 
@@ -508,7 +703,7 @@ mod imp {
                         download_started_at,
                     );
                     if is_terminal(&payload) {
-                        finalize_download(&id_for_main, &payload);
+                        finalize_download(&app_for_main, &id_for_main, &payload);
                     }
                 })
                 .is_err()
@@ -541,6 +736,13 @@ mod imp {
                 .values()
                 .any(|registration| registration.label == label)
         })
+    }
+
+    pub(crate) fn defer_tab_close_if_active(label: &str) -> bool {
+        DOWNLOAD_LIFECYCLE
+            .lock()
+            .map(|mut lifecycle| lifecycle.defer_tab_close(label))
+            .unwrap_or(false)
     }
 
     fn schedule_completion_fallback(
@@ -617,7 +819,7 @@ mod imp {
 
                     if is_terminal(&payload) {
                         let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
-                        finalize_download(&id_for_main, &payload);
+                        finalize_download(&app_for_main, &id_for_main, &payload);
                         return;
                     }
 
@@ -646,7 +848,7 @@ mod imp {
                         payload.can_resume = false;
 
                         let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
-                        finalize_download(&id_for_main, &payload);
+                        finalize_download(&app_for_main, &id_for_main, &payload);
                     } else if let Ok(mut pending) = COMPLETION_FALLBACKS.lock() {
                         pending.remove(&id_for_main);
                     }
@@ -833,7 +1035,7 @@ mod imp {
                                         download_started_at,
                                     );
                                     if is_terminal(&payload) {
-                                        finalize_download(&state_id, &payload);
+                                        finalize_download(&state_app, &state_id, &payload);
                                     }
                                 }
                                 Ok(())
@@ -881,6 +1083,9 @@ mod imp {
                                 },
                             );
                         });
+                        if let Ok(mut lifecycle) = DOWNLOAD_LIFECYCLE.lock() {
+                            lifecycle.register(&download_label, &id);
+                        }
 
                         if maybe_schedule_signature_check(&app_handle, &id, &operation_for_emit) {
                             return Ok(());
@@ -894,7 +1099,7 @@ mod imp {
                             download_started_at,
                         );
                         if is_terminal(&payload) {
-                            finalize_download(&id, &payload);
+                            finalize_download(&app_handle, &id, &payload);
                         }
                         Ok(())
                     }));
@@ -1045,8 +1250,8 @@ mod imp {
                 }
 
                 let window = app_for_main
-                    .get_window("main")
-                    .ok_or_else(|| "main window not found".to_string())?;
+                    .get_window(&crate::browser_workspace::most_recent_window_label())
+                    .ok_or_else(|| "active Nebula window not found".to_string())?;
                 let hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
                 unsafe { start_shell_file_drag(hwnd, &path) }
@@ -1094,12 +1299,22 @@ mod imp {
                                     .map_err(|error| error.to_string())?
                                     .insert(id.clone());
 
-                                if let Err(error) = operation.Pause() {
+                                let control = complete_native_control(
+                                    &app_for_main,
+                                    &id,
+                                    &action,
+                                    &label,
+                                    &operation,
+                                    download_started_at,
+                                    operation.Pause().map_err(|error| error.to_string()),
+                                );
+                                if control.is_err() {
                                     if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
                                         paused.remove(&id);
                                     }
-
-                                    return Err(error.to_string());
+                                }
+                                if control? {
+                                    return Ok(());
                                 }
                                 true
                             },
@@ -1118,16 +1333,37 @@ mod imp {
                                     .lock()
                                     .map_err(|error| error.to_string())?
                                     .remove(&id);
-                                if let Err(error) = operation.Resume() {
+                                let control = complete_native_control(
+                                    &app_for_main,
+                                    &id,
+                                    &action,
+                                    &label,
+                                    &operation,
+                                    download_started_at,
+                                    operation.Resume().map_err(|error| error.to_string()),
+                                );
+                                if control.is_err() {
                                     if let Ok(mut paused) = PAUSED_DOWNLOADS.lock() {
                                         paused.insert(id.clone());
                                     }
-                                    return Err(error.to_string());
+                                }
+                                if control? {
+                                    return Ok(());
                                 }
                                 false
                             },
                             "cancel" => unsafe {
-                                operation.Cancel().map_err(|error| error.to_string())?;
+                                if complete_native_control(
+                                    &app_for_main,
+                                    &id,
+                                    &action,
+                                    &label,
+                                    &operation,
+                                    download_started_at,
+                                    operation.Cancel().map_err(|error| error.to_string()),
+                                )? {
+                                    return Ok(());
+                                }
                                 PAUSED_DOWNLOADS
                                     .lock()
                                     .map_err(|error| error.to_string())?
@@ -1150,7 +1386,7 @@ mod imp {
                                 payload.requires_confirmation = false;
                                 payload.danger_reason = None;
                                 let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
-                                finalize_download(&id, &payload);
+                                finalize_download(&app_for_main, &id, &payload);
                                 return Ok(());
                             },
                             "keep" => {
@@ -1191,7 +1427,7 @@ mod imp {
                                 payload.requires_confirmation = false;
                                 payload.danger_reason = None;
                                 let _ = app_for_main.emit(DOWNLOAD_EVENT, payload.clone());
-                                finalize_download(&id, &payload);
+                                finalize_download(&app_for_main, &id, &payload);
                                 return Ok(());
                             },
                             _ => unreachable!(),
@@ -1211,7 +1447,7 @@ mod imp {
                                 download_started_at,
                             );
                             if is_terminal(&payload) {
-                                finalize_download(&id, &payload);
+                                finalize_download(&app_for_main, &id, &payload);
                             }
                         }
                     }
@@ -1284,7 +1520,26 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::{dangerous_file_reason, has_trusted_authenticode_signature};
+        use super::{dangerous_file_reason, has_trusted_authenticode_signature, DownloadLifecycle};
+
+        #[test]
+        fn active_download_defers_tab_close_until_the_last_operation_finishes() {
+            let mut lifecycle = DownloadLifecycle::default();
+            lifecycle.register("nebula-tab-a", "download-1");
+            lifecycle.register("nebula-tab-a", "download-2");
+
+            assert!(lifecycle.defer_tab_close("nebula-tab-a"));
+            assert!(!lifecycle.finish("nebula-tab-a", "download-1"));
+            assert!(lifecycle.finish("nebula-tab-a", "download-2"));
+            assert!(!lifecycle.finish("nebula-tab-a", "download-2"));
+        }
+
+        #[test]
+        fn tab_without_an_active_download_closes_immediately() {
+            let mut lifecycle = DownloadLifecycle::default();
+
+            assert!(!lifecycle.defer_tab_close("nebula-tab-empty"));
+        }
 
         #[test]
         fn executable_and_script_downloads_require_confirmation() {
@@ -1315,7 +1570,7 @@ mod imp {
 pub use imp::{control_download, setup_tab_downloads, start_download_drag, teardown_tab_downloads};
 
 #[cfg(target_os = "windows")]
-pub(crate) use imp::has_recent_or_active_download_for_label;
+pub(crate) use imp::{defer_tab_close_if_active, has_recent_or_active_download_for_label};
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_downloads(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
@@ -1324,6 +1579,11 @@ pub fn setup_tab_downloads(_app: &tauri::AppHandle, _label: &str) -> Result<(), 
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown_tab_downloads(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn defer_tab_close_if_active(_label: &str) -> bool {
+    false
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn start_download_drag(_app: tauri::AppHandle, _id: String) -> Result<(), String> {

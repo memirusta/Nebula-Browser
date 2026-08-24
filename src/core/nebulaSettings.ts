@@ -4,10 +4,14 @@ import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
 export const NEBULA_SETTINGS_KEY = 'nebula-settings-v1'
 
 export type NebulaTheme = 'forest' | 'dark' | 'light'
+export type DarkenWebpagesMode = 'off' | 'auto' | 'always'
+export type DarkenWebpagesSiteMode = 'off' | 'always'
 export type SearchEngine = 'google' | 'duckduckgo' | 'bing'
 
 export interface AppearanceSettings {
   theme: NebulaTheme
+  darkenWebpages: DarkenWebpagesMode
+  darkenWebpagesSiteOverrides: Record<string, DarkenWebpagesSiteMode>
   glassBlurPx: number
   glassSaturate: number
   glassContrast: number
@@ -113,6 +117,8 @@ export interface NebulaSettings {
 export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
   appearance: {
     theme: 'forest',
+    darkenWebpages: 'off',
+    darkenWebpagesSiteOverrides: {},
     glassBlurPx: 40,
     glassSaturate: 1.1,
     glassContrast: 0.82,
@@ -205,6 +211,28 @@ function hexColor(value: unknown, fallback: string): string {
   return value
 }
 
+function darkenWebpagesSiteOverrides(
+  value: unknown,
+): Record<string, DarkenWebpagesSiteMode> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+
+  const normalized: Record<string, DarkenWebpagesSiteMode> = {}
+  for (const [rawHost, rawMode] of Object.entries(value)) {
+    if (Object.keys(normalized).length >= 256) break
+    const host = rawHost.trim().toLowerCase()
+    if (
+      !host ||
+      host.length > 253 ||
+      !/^[a-z0-9.-]+$/.test(host) ||
+      (rawMode !== 'off' && rawMode !== 'always')
+    ) {
+      continue
+    }
+    normalized[host] = rawMode
+  }
+  return normalized
+}
+
 function rgbTriplet(value: unknown, fallback: string): string {
   if (typeof value !== 'string' || !/^\d{1,3},\s*\d{1,3},\s*\d{1,3}$/.test(value)) {
     return fallback
@@ -261,6 +289,13 @@ export function normalizeNebulaSettings(
         a?.theme === 'dark' || a?.theme === 'light' || a?.theme === 'forest'
           ? a.theme
           : d.appearance.theme,
+      darkenWebpages:
+        a?.darkenWebpages === 'auto' || a?.darkenWebpages === 'always' || a?.darkenWebpages === 'off'
+          ? a.darkenWebpages
+          : d.appearance.darkenWebpages,
+      darkenWebpagesSiteOverrides: darkenWebpagesSiteOverrides(
+        a?.darkenWebpagesSiteOverrides,
+      ),
       glassBlurPx: clampNum(a?.glassBlurPx, 0, 80, d.appearance.glassBlurPx),
       glassSaturate: clampFloat(a?.glassSaturate, 0.5, 2, d.appearance.glassSaturate),
       glassContrast: clampFloat(a?.glassContrast, 0.6, 1.2, d.appearance.glassContrast),
