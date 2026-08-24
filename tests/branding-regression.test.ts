@@ -4,8 +4,12 @@ import test from 'node:test'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-test('canonical Nebula mark is reused by web branding surfaces', () => {
-  assert.equal(existsSync(new URL('../public/icon-square.svg', import.meta.url)), true)
+test('detailed and small-size Nebula marks are reused by the right branding surfaces', () => {
+  assert.equal(existsSync(new URL('../public/nebula-app-logo.png', import.meta.url)), true)
+  assert.equal(existsSync(new URL('../public/nebula-simple-logo.png', import.meta.url)), true)
+  assert.equal(existsSync(new URL('../public/nebula-thumbnail.png', import.meta.url)), true)
+  assert.equal(existsSync(new URL('../public/favicon.png', import.meta.url)), true)
+  assert.equal(existsSync(new URL('../src-tauri/resources/branding/nebula-app-logo-128.base64', import.meta.url)), true)
 
   const index = read('../index.html')
   const onboarding = read('../src/components/Onboarding/OnboardingWelcomeStep.tsx')
@@ -14,13 +18,14 @@ test('canonical Nebula mark is reused by web branding surfaces', () => {
   const sitePrompt = read('../src/components/SiteUiPrompt/SiteUiPrompt.tsx')
   const errorPage = read('../src-tauri/src/tab_error_page.rs')
 
-  assert.match(index, /href="\/favicon\.svg"/)
-  assert.match(onboarding, /src="\/icon-square\.svg"/)
+  assert.match(index, /type="image\/png" href="\/favicon\.png"/)
+  assert.match(onboarding, /src="\/nebula-app-logo\.png"/)
   assert.doesNotMatch(onboarding, /src-tauri\/icons\/icon\.png/)
-  assert.match(about, /src="\/icon-square\.svg"/)
-  assert.match(appDialog, /src="\/icon-square\.svg"/)
-  assert.match(sitePrompt, /src="\/icon-square\.svg"/)
-  assert.match(errorPage, /include_str!\("\.\.\/\.\.\/public\/icon-square\.svg"\)/)
+  assert.match(about, /src="\/nebula-app-logo\.png"/)
+  assert.match(appDialog, /src="\/nebula-app-logo\.png"/)
+  assert.match(sitePrompt, /src="\/nebula-app-logo\.png"/)
+  assert.match(errorPage, /include_str!\("\.\.\/resources\/branding\/nebula-app-logo-128\.base64"\)/)
+  assert.match(errorPage, /data:image\/png;base64,\{nebula_mark\}/)
   assert.doesNotMatch(errorPage, /class="glyph">N</)
 })
 

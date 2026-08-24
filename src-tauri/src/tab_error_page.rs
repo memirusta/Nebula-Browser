@@ -203,7 +203,7 @@ mod imp {
     }
 
     fn build_error_page_url(retry_url: &str, error_status: &str, locale: &str) -> String {
-        let nebula_mark = include_str!("../../public/icon-square.svg");
+        let nebula_mark = include_str!("../resources/branding/nebula-app-logo-128.base64").trim();
         let retry_js = retry_url
             .replace('\\', "\\\\")
             .replace('\'', "\\'")
@@ -262,7 +262,7 @@ mod imp {
     justify-content: center;
     overflow: hidden;
   }}
-  .glyph svg {{ width: 100%; height: 100%; display: block; }}
+  .glyph img {{ width: 100%; height: 100%; display: block; }}
   h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 8px; }}
   p {{ color: #a89bc4; max-width: 420px; margin-bottom: 24px; }}
   .url {{
@@ -287,7 +287,7 @@ mod imp {
 </style>
 </head>
 <body>
-  <div class="glyph">{nebula_mark}</div>
+  <div class="glyph"><img src="data:image/png;base64,{nebula_mark}" alt=""></div>
   <h1>{title}</h1>
   <p>{description}</p>
   <div class="url">{display_url}</div>

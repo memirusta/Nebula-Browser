@@ -329,7 +329,7 @@ export function SiteUiPrompt({
         <div className={styles.headerRow}>
           <div className={styles.siteMark}>
             {isInternalLocation
-              ? <img src="/icon-square.svg" alt="" aria-hidden="true" draggable={false} />
+              ? <img src="/nebula-app-logo.png" alt="" aria-hidden="true" draggable={false} />
               : request.title.slice(0, 1).toUpperCase()}
           </div>
 

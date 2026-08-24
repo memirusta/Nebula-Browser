@@ -628,7 +628,7 @@ export function OnboardingWelcomeStep({
       <div className={styles.welcomeHero}>
         <img
           className={styles.nebulaLogo}
-          src="/icon-square.svg"
+          src="/nebula-app-logo.png"
           alt=""
           aria-hidden="true"
           draggable={false}

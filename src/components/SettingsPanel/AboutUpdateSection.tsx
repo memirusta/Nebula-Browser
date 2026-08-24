@@ -42,7 +42,7 @@ export function AboutUpdateSection() {
         <div className={styles.aboutBrand}>
           <img
             className={styles.aboutLogo}
-            src="/icon-square.svg"
+            src="/nebula-app-logo.png"
             alt=""
             aria-hidden="true"
             draggable={false}
