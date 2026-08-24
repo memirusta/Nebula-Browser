@@ -101,8 +101,12 @@ export function useBrowsingHistory() {
     setClosedTabs([])
   }, [])
 
-  const saveCurrentSession = useCallback((tabs: BrowserTab[], activeTabId: string | null) => {
-    persistCurrentSessionSnapshot(tabs, activeTabId)
+  const saveCurrentSession = useCallback((
+    windowId: string,
+    tabs: BrowserTab[],
+    activeTabId: string | null,
+  ) => {
+    persistCurrentSessionSnapshot(windowId, tabs, activeTabId)
   }, [])
 
   const clearCurrentSession = useCallback(() => {

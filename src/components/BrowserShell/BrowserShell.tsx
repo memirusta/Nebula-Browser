@@ -167,9 +167,16 @@ import { useBrowseSessions } from '../../hooks/useBrowseSessions'
 import { useBrowsingHistory } from '../../hooks/useBrowsingHistory'
 import {
   CURRENT_SESSION_KEY,
+  LEGACY_CURRENT_SESSION_KEYS,
   type BrowserSessionSnapshot,
   type ClosedTabEntry,
 } from '../../core/browsingHistory'
+import {
+  primarySessionWindow,
+  sessionTabCount,
+  type PersistedBrowserTab,
+} from '../../core/browserSessionSnapshot'
+import { tabHistoryTarget } from '../../core/tabNavigation'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
 import { useWallpaper } from '../../hooks/useWallpaper'
 import type { ToolbarAnchor } from '../RightToolbar/RightToolbar'
@@ -410,6 +417,13 @@ export function BrowserShell() {
     clearCurrentSession,
   } = useBrowsingHistory()
 
+  const browserWindowIdRef =
+    useRef(
+      previousSession?.windows[0]
+        ?.windowId ??
+        `window-${crypto.randomUUID()}`,
+    )
+
   const {
     tabs,
     activeTab,
@@ -423,7 +437,13 @@ export function BrowserShell() {
     updateTabMeta,
     getTab,
     setActiveTabId,
+    navigateTabHistory,
   } = useBrowserTabs()
+
+  const navigationTargetIndexByTabRef =
+    useRef(
+      new Map<string, number>(),
+    )
 
   const handleTogglePinCurrentPage =
     useCallback(
@@ -518,11 +538,15 @@ export function BrowserShell() {
         settings.browsing.restoreTabsOnStartup
       ) {
         saveCurrentSession(
+          browserWindowIdRef.current,
           tabsRef.current,
           activeTabIdRef.current,
         )
       } else {
         localStorage.removeItem(CURRENT_SESSION_KEY)
+        for (const key of LEGACY_CURRENT_SESSION_KEYS) {
+          localStorage.removeItem(key)
+        }
       }
 
       if (!settings.browsing.restoreTabsOnStartup) {
@@ -2018,10 +2042,55 @@ export function BrowserShell() {
           }
         }
 
+        const currentTab =
+          tabsRef.current.find(
+            (tab) =>
+              tab.shortcutId ===
+              snapshot.shortcutId,
+          )
+        const pendingHistoryTarget =
+          navigationTargetIndexByTabRef
+            .current
+            .get(
+              snapshot.shortcutId,
+            )
+        const pendingTargetUrl =
+          pendingHistoryTarget ===
+          undefined
+            ? undefined
+            : currentTab
+                ?.navigation
+                .entries[
+                  pendingHistoryTarget
+                ]?.url
+        const historyTargetIndex =
+          pendingHistoryTarget !==
+            undefined &&
+          (
+            currentTab?.url !==
+              snapshot.url ||
+            pendingTargetUrl ===
+              snapshot.url
+          )
+            ? pendingHistoryTarget
+            : undefined
+
+        if (
+          historyTargetIndex !==
+          undefined
+        ) {
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              snapshot.shortcutId,
+            )
+        }
+
         applyTabSnapshot(
           snapshot.shortcutId,
           snapshot.url,
           snapshot.title,
+          historyTargetIndex,
         )
 
         if (
@@ -2647,8 +2716,13 @@ export function BrowserShell() {
           true,
         restoredId?:
           string,
+        restoredTab?:
+          PersistedBrowserTab,
       ) => {
         const id =
+          restoredTab
+            ?.shortcutId
+            .trim() ||
           restoredId?.trim() ||
           `history-${crypto.randomUUID()}`
 
@@ -2659,6 +2733,10 @@ export function BrowserShell() {
             title?.trim() ||
             url,
           url,
+          favicon:
+            restoredTab
+              ?.favicon ||
+            undefined,
         }
 
         if (
@@ -2670,7 +2748,13 @@ export function BrowserShell() {
               activate:
                 false,
               reload:
-                Boolean(restoredId),
+                Boolean(restoredTab || restoredId),
+              tabId:
+                restoredTab
+                  ?.tabId,
+              navigation:
+                restoredTab
+                  ?.navigation,
             },
           )
 
@@ -2724,10 +2808,16 @@ export function BrowserShell() {
 
         openOrSwitchTab(
           shortcut,
-          restoredId
+          restoredId || restoredTab
             ? {
                 reload:
                   true,
+                tabId:
+                  restoredTab
+                    ?.tabId,
+                navigation:
+                  restoredTab
+                    ?.navigation,
               }
             : undefined,
         )
@@ -2801,26 +2891,35 @@ export function BrowserShell() {
         session:
           BrowserSessionSnapshot,
       ) => {
+        const restoredWindow =
+          primarySessionWindow(
+            session,
+          )
+
         if (
-          session.tabs.length ===
-          0
+          !restoredWindow ||
+          restoredWindow.tabs.length ===
+            0
         ) {
           return
         }
+
+        browserWindowIdRef.current =
+          restoredWindow.windowId
 
         closeHistoryPanel()
 
         const activeIndex =
           Math.max(
             0,
-            session.tabs.findIndex(
+            restoredWindow.tabs.findIndex(
               (tab) =>
-                tab.id ===
-                session.activeTabId,
+                tab.tabId ===
+                restoredWindow.activeTabId,
             ),
           )
 
-        session.tabs.forEach(
+        restoredWindow.tabs.forEach(
           (
             tab,
             index,
@@ -2836,23 +2935,25 @@ export function BrowserShell() {
               tab.url,
               tab.title,
               false,
-              tab.id,
+              tab.shortcutId,
+              tab,
             )
           },
         )
 
         const active =
-          session.tabs[
+          restoredWindow.tabs[
             activeIndex
           ] ??
-          session.tabs[0]
+          restoredWindow.tabs[0]
 
         if (active) {
           openHistoryTab(
             active.url,
             active.title,
             true,
-            active.id,
+            active.shortcutId,
+            active,
           )
         }
       },
@@ -2958,6 +3059,12 @@ export function BrowserShell() {
         historyUrlByTabRef.current.delete(
           shortcutId,
         )
+
+        navigationTargetIndexByTabRef
+          .current
+          .delete(
+            shortcutId,
+          )
 
         googleBrowserSessionTrackerRef
           .current
@@ -3131,6 +3238,7 @@ export function BrowserShell() {
       window.setTimeout(
         () => {
           saveCurrentSession(
+            browserWindowIdRef.current,
             tabs,
             activeTabId,
           )
@@ -4236,58 +4344,249 @@ export function BrowserShell() {
         return
       }
 
-      if (
-        isTauri &&
+      const shortcutId =
         activeTabIdRef.current
-      ) {
-        void navigateBrowseTabBack(
-          activeTabIdRef.current,
-        ).then(
-          (
-            wentBack,
-          ) => {
-            if (
-              !wentBack &&
-              viewModeRef.current ===
-                'browsing'
-            ) {
-              setViewMode(
-                'home',
+
+      if (!shortcutId) return
+
+      const tab =
+        tabsRef.current.find(
+          (entry) =>
+            entry.shortcutId ===
+            shortcutId,
+        )
+      const target =
+        tab
+          ? tabHistoryTarget(
+              tab.navigation,
+              -1,
+            )
+          : null
+
+      if (target) {
+        navigationTargetIndexByTabRef
+          .current
+          .set(
+            shortcutId,
+            target.index,
+          )
+      }
+
+      void (
+        isTauri
+          ? navigateBrowseTabBack(
+              shortcutId,
+            )
+          : Promise.resolve(
+              false,
+            )
+      ).then(
+        (
+          wentBack,
+        ) => {
+          if (wentBack) {
+            if (target) {
+              window.setTimeout(
+                () => {
+                  if (
+                    navigationTargetIndexByTabRef
+                      .current
+                      .get(
+                        shortcutId,
+                      ) ===
+                    target.index
+                  ) {
+                    navigationTargetIndexByTabRef
+                      .current
+                      .delete(
+                        shortcutId,
+                      )
+                  }
+                },
+                5_000,
               )
             }
-          },
-        )
+            return
+          }
 
-        return
-      }
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
 
-      if (
-        viewModeRef.current ===
-        'browsing'
-      ) {
-        setViewMode(
-          'home',
-        )
-      }
+          if (target) {
+            navigateTabHistory(
+              shortcutId,
+              target.index,
+            )
+            setActiveUrl(
+              target.entry.url,
+            )
+            if (isTauri) {
+              void navigateBrowseTab(
+                shortcutId,
+                target.entry.url,
+              ).catch(
+                (
+                  error: unknown,
+                ) => {
+                  console.error(
+                    '[nebula navigation] Failed to restore the previous tab history entry.',
+                    error,
+                  )
+                },
+              )
+            }
+            return
+          }
+
+          if (
+            viewModeRef.current ===
+              'browsing'
+          ) {
+            setViewMode(
+              'home',
+            )
+          }
+        },
+      ).catch(
+        (
+          error: unknown,
+        ) => {
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
+          console.error(
+            '[nebula navigation] Failed to navigate back.',
+            error,
+          )
+        },
+      )
     }, [
       activeTabIdRef,
       dismissOverlay,
+      navigateTabHistory,
+      tabsRef,
     ])
 
   const goForwardInPage =
     useCallback(() => {
-      if (
-        !isTauri ||
-        !activeTabIdRef.current
-      ) {
-        return
+      const shortcutId =
+        activeTabIdRef.current
+      if (!shortcutId) return
+
+      const tab =
+        tabsRef.current.find(
+          (entry) =>
+            entry.shortcutId ===
+            shortcutId,
+        )
+      const target =
+        tab
+          ? tabHistoryTarget(
+              tab.navigation,
+              1,
+            )
+          : null
+
+      if (target) {
+        navigationTargetIndexByTabRef
+          .current
+          .set(
+            shortcutId,
+            target.index,
+          )
       }
 
-      void navigateBrowseTabForward(
-        activeTabIdRef.current,
+      void (
+        isTauri
+          ? navigateBrowseTabForward(
+              shortcutId,
+            )
+          : Promise.resolve(
+              false,
+            )
+      ).then(
+        (
+          wentForward,
+        ) => {
+          if (wentForward) {
+            if (target) {
+              window.setTimeout(
+                () => {
+                  if (
+                    navigationTargetIndexByTabRef
+                      .current
+                      .get(
+                        shortcutId,
+                      ) ===
+                    target.index
+                  ) {
+                    navigationTargetIndexByTabRef
+                      .current
+                      .delete(
+                        shortcutId,
+                      )
+                  }
+                },
+                5_000,
+              )
+            }
+            return
+          }
+
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
+          if (!target) return
+
+          navigateTabHistory(
+            shortcutId,
+            target.index,
+          )
+          setActiveUrl(
+            target.entry.url,
+          )
+          if (isTauri) {
+            void navigateBrowseTab(
+              shortcutId,
+              target.entry.url,
+            ).catch(
+              (
+                error: unknown,
+              ) => {
+                console.error(
+                  '[nebula navigation] Failed to restore the next tab history entry.',
+                  error,
+                )
+              },
+            )
+          }
+        },
+      ).catch(
+        (
+          error: unknown,
+        ) => {
+          navigationTargetIndexByTabRef
+            .current
+            .delete(
+              shortcutId,
+            )
+          console.error(
+            '[nebula navigation] Failed to navigate forward.',
+            error,
+          )
+        },
       )
     }, [
       activeTabIdRef,
+      navigateTabHistory,
+      tabsRef,
     ])
 
   const reloadActiveTab =
@@ -6233,8 +6532,9 @@ export function BrowserShell() {
         createPortal(
           <CrashRecoveryPrompt
             tabCount={
-              previousSession
-                .tabs.length
+              sessionTabCount(
+                previousSession,
+              )
             }
             onRestore={
               restoreCrashedSession

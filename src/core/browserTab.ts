@@ -1,4 +1,8 @@
 import type { Shortcut } from './types'
+import {
+  createTabNavigationState,
+  type TabNavigationState,
+} from './tabNavigation.ts'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
@@ -12,6 +16,7 @@ export interface BrowserTab {
   url: string
   title: string
   favicon: string
+  navigation: TabNavigationState
   isLoading?: boolean
   isMuted?: boolean
 }
@@ -67,15 +72,24 @@ export function titleFromUrl(url: string): string {
   }
 }
 
-export function createBrowserTab(shortcut: Shortcut): BrowserTab {
+export function createBrowserTab(
+  shortcut: Shortcut,
+  options?: {
+    tabId?: string
+    navigation?: TabNavigationState
+  },
+): BrowserTab {
   const favicon = shortcut.favicon ?? faviconForUrl(shortcut.url)
   return {
-    id: shortcut.id,
+    id: options?.tabId ?? shortcut.id,
     shortcutId: shortcut.id,
     initialUrl: shortcut.url,
     url: shortcut.url,
     title: shortcut.label,
     favicon,
+    navigation:
+      options?.navigation ??
+      createTabNavigationState(shortcut.url, shortcut.label, favicon),
     isLoading: true,
     isMuted: false,
   }

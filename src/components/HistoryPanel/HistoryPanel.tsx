@@ -6,6 +6,7 @@ import {
   type HistoryEntry,
   type HistoryTimeFilter,
 } from '../../core/browsingHistory'
+import { sessionTabCount } from '../../core/browserSessionSnapshot'
 import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
@@ -104,7 +105,9 @@ export function HistoryPanel({
   useDialogFocusTrap({ active: true, containerRef: panelRef, initialFocusRef: searchRef, onEscape: onClose })
 
   const filtersActive = !!query.trim() || host !== 'all' || time !== 'all'
-  const previousSessionTabs = previousSession?.tabs ?? []
+  const previousSessionTabs = previousSession
+    ? sessionTabCount(previousSession)
+    : 0
 
   return (
     <>
@@ -168,15 +171,15 @@ export function HistoryPanel({
         </div>
 
         <div className={styles.content}>
-          {(closedTabs.length > 0 || previousSessionTabs.length > 0) && (
+          {(closedTabs.length > 0 || previousSessionTabs > 0) && (
             <section className={styles.restoreSection}>
               <div className={styles.sectionHeader}><h3>{t('historyRestore')}</h3></div>
-              {previousSessionTabs.length > 0 && (
+              {previousSessionTabs > 0 && (
                 <button type="button" className={styles.sessionCard} onClick={() => previousSession && onOpenPreviousSession(previousSession)}>
                   <span className={styles.sessionIcon}><HistoryGlyph /></span>
                   <span className={styles.sessionText}>
                     <strong>{t('historyPreviousSession')}</strong>
-                    <span>{t('historySessionTabs').replace('{n}', String(previousSessionTabs.length))} · {previousSession ? dateTimeFormatter.format(previousSession.savedAt) : ''}</span>
+                    <span>{t('historySessionTabs').replace('{n}', String(previousSessionTabs))} · {previousSession ? dateTimeFormatter.format(previousSession.savedAt) : ''}</span>
                   </span>
                   <span className={styles.openArrow}>↗</span>
                 </button>

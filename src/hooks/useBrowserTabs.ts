@@ -7,6 +7,7 @@ import {
   initialBrowserTabsState,
 } from '../core/browserTabsReducer'
 import type { Shortcut } from '../core/types'
+import type { TabNavigationState } from '../core/tabNavigation'
 
 export function useBrowserTabs() {
   const [{ tabs, activeTabId }, dispatch] = useReducer(
@@ -20,12 +21,22 @@ export function useBrowserTabs() {
   activeTabIdRef.current = activeTabId
 
   const openOrSwitchTab = useCallback(
-    (shortcut: Shortcut, options?: { reload?: boolean; activate?: boolean }) => {
+    (
+      shortcut: Shortcut,
+      options?: {
+        reload?: boolean
+        activate?: boolean
+        tabId?: string
+        navigation?: TabNavigationState
+      },
+    ) => {
       dispatch({
         type: 'open-or-switch',
         shortcut,
         reload: options?.reload ?? false,
         activate: options?.activate !== false,
+        tabId: options?.tabId,
+        navigation: options?.navigation,
       })
     },
     [],
@@ -43,8 +54,21 @@ export function useBrowserTabs() {
   )
 
   const applyTabSnapshot = useCallback(
-    (shortcutId: string, url: string | null, title: string | null) => {
-      if (url) dispatch({ type: 'apply-snapshot', shortcutId, url, title })
+    (
+      shortcutId: string,
+      url: string | null,
+      title: string | null,
+      historyTargetIndex?: number,
+    ) => {
+      if (url) {
+        dispatch({
+          type: 'apply-snapshot',
+          shortcutId,
+          url,
+          title,
+          historyTargetIndex,
+        })
+      }
     },
     [],
   )
@@ -63,6 +87,9 @@ export function useBrowserTabs() {
   const setActiveTabId = useCallback((shortcutId: string | null) => {
     dispatch({ type: 'set-active', shortcutId })
   }, [])
+  const navigateTabHistory = useCallback((shortcutId: string, targetIndex: number) => {
+    dispatch({ type: 'navigate-history', shortcutId, targetIndex })
+  }, [])
 
   return {
     tabs,
@@ -77,5 +104,6 @@ export function useBrowserTabs() {
     applyTabSnapshot,
     getTab,
     setActiveTabId,
+    navigateTabHistory,
   }
 }

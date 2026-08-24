@@ -1,9 +1,22 @@
 import { persistLocalStorage } from './storageSync'
 import type { BrowserTab } from './browserTab'
+import {
+  createBrowserSessionSnapshot,
+  CURRENT_SESSION_KEY,
+  LEGACY_CURRENT_SESSION_KEYS,
+  loadBrowserSessionSnapshot,
+  serializeBrowserSessionSnapshot,
+  type BrowserSessionSnapshot,
+} from './browserSessionSnapshot'
+
+export {
+  CURRENT_SESSION_KEY,
+  LEGACY_CURRENT_SESSION_KEYS,
+} from './browserSessionSnapshot'
+export type { BrowserSessionSnapshot } from './browserSessionSnapshot'
 
 export const BROWSING_HISTORY_KEY = 'nebula-browsing-history-v1'
 export const CLOSED_TABS_KEY = 'nebula-closed-tabs-v1'
-export const CURRENT_SESSION_KEY = 'nebula-current-browser-session-v1'
 export const BROWSER_RUN_STATE_KEY = 'nebula-browser-run-state-v1'
 
 const MAX_HISTORY_ENTRIES = 5_000
@@ -26,13 +39,6 @@ export interface ClosedTabEntry {
   title: string
   favicon?: string
   closedAt: number
-}
-
-export interface BrowserSessionSnapshot {
-  id: string
-  savedAt: number
-  activeTabId: string | null
-  tabs: Array<Pick<BrowserTab, 'id' | 'url' | 'title' | 'favicon'>>
 }
 
 interface StoredHistory {
@@ -278,59 +284,25 @@ export function closedTabFromBrowserTab(tab: BrowserTab): ClosedTabEntry | null 
 }
 
 export function loadCurrentSessionSnapshot(): BrowserSessionSnapshot | null {
-  try {
-    const raw = localStorage.getItem(CURRENT_SESSION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<BrowserSessionSnapshot>
-    if (!Array.isArray(parsed.tabs) || parsed.tabs.length === 0) return null
-    const tabs = parsed.tabs.flatMap((tab) => {
-      if (!tab || typeof tab !== 'object') return []
-      const candidate = tab as Partial<BrowserSessionSnapshot['tabs'][number]>
-      if (typeof candidate.url !== 'string') return []
-      const url = normalizeHttpUrl(candidate.url)
-      if (!url) return []
-      const id = typeof candidate.id === 'string' && candidate.id ? candidate.id : `history-${crypto.randomUUID()}`
-      return [{
-        id,
-        url,
-        title: sanitizeTitle(candidate.title, url),
-        favicon: typeof candidate.favicon === 'string' ? candidate.favicon : '',
-      }]
-    })
-    if (tabs.length === 0) return null
-    return {
-      id: typeof parsed.id === 'string' && parsed.id ? parsed.id : crypto.randomUUID(),
-      savedAt: typeof parsed.savedAt === 'number' && Number.isFinite(parsed.savedAt) ? parsed.savedAt : Date.now(),
-      activeTabId: typeof parsed.activeTabId === 'string' ? parsed.activeTabId : null,
-      tabs,
-    }
-  } catch {
-    return null
-  }
+  return loadBrowserSessionSnapshot()
 }
 
 export function clearCurrentSessionSnapshot(): void {
   try {
     localStorage.removeItem(CURRENT_SESSION_KEY)
+    for (const key of LEGACY_CURRENT_SESSION_KEYS) localStorage.removeItem(key)
   } catch {
     // Storage can be unavailable in restricted web contexts.
   }
 }
 
-export function persistCurrentSessionSnapshot(tabs: BrowserTab[], activeTabId: string | null): void {
-  const serializableTabs = tabs.flatMap((tab) => {
-    const url = normalizeHttpUrl(tab.url)
-    if (!url) return []
-    return [{ id: tab.id, url, title: sanitizeTitle(tab.title, url), favicon: tab.favicon }]
-  })
-
-  const snapshot: BrowserSessionSnapshot = {
-    id: crypto.randomUUID(),
-    savedAt: Date.now(),
-    activeTabId,
-    tabs: serializableTabs,
-  }
-  persistLocalStorage(CURRENT_SESSION_KEY, JSON.stringify(snapshot))
+export function persistCurrentSessionSnapshot(
+  windowId: string,
+  tabs: BrowserTab[],
+  activeTabId: string | null,
+): void {
+  const snapshot = createBrowserSessionSnapshot(windowId, tabs, activeTabId)
+  persistLocalStorage(CURRENT_SESSION_KEY, serializeBrowserSessionSnapshot(snapshot))
 }
 
 export type HistoryTimeFilter = 'all' | 'today' | '7d' | '30d'
