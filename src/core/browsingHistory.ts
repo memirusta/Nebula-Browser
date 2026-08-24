@@ -346,15 +346,127 @@ export function historyTimeCutoff(filter: HistoryTimeFilter, now = Date.now()): 
   return now - days * 24 * 60 * 60 * 1_000
 }
 
+function normalizeHistorySearchText(value: string): string {
+  return value.toLocaleLowerCase()
+}
+
+function startsAtWordBoundary(
+  value: string,
+  query: string,
+): boolean {
+  const normalized =
+    normalizeHistorySearchText(value)
+
+  if (normalized.startsWith(query)) {
+    return true
+  }
+
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous =
+      normalized[index - 1]
+
+    const current =
+      normalized[index]
+
+    if (
+      !/[a-z0-9ğüşöçıİ]/i.test(previous) &&
+      current === query[0] &&
+      normalized.startsWith(query, index)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function historyEntryMatchesQuery(
+  entry: HistoryEntry,
+  rawQuery: string,
+): boolean {
+  const query =
+    normalizeHistorySearchText(
+      rawQuery.trim(),
+    )
+
+  if (!query) {
+    return true
+  }
+
+  const title =
+    normalizeHistorySearchText(
+      entry.title,
+    )
+
+  const host =
+    normalizeHistorySearchText(
+      entry.host,
+    )
+
+  const url =
+    normalizeHistorySearchText(
+      entry.url,
+    )
+
+  if (
+    startsAtWordBoundary(title, query) ||
+    startsAtWordBoundary(host, query)
+  ) {
+    return true
+  }
+
+  try {
+    const parsed =
+      new URL(entry.url)
+
+    const segments = [
+      parsed.hostname,
+      ...parsed.pathname
+        .split('/')
+        .filter(Boolean),
+    ]
+
+    if (
+      segments.some((segment) =>
+        normalizeHistorySearchText(
+          segment,
+        ).startsWith(query),
+      )
+    ) {
+      return true
+    }
+  } catch {
+    // Fall through to generic matching.
+  }
+
+  if (query.length <= 2) {
+    return false
+  }
+
+  return (
+    title.includes(query) ||
+    host.includes(query) ||
+    url.includes(query)
+  )
+}
+
+
 export function entryMatchesHistoryFilters(
   entry: HistoryEntry,
   options: { query?: string; host?: string; time?: HistoryTimeFilter },
 ): boolean {
-  const query = options.query?.trim().toLocaleLowerCase() ?? ''
-  if (query) {
-    const haystack = `${entry.title}\n${entry.url}\n${entry.host}`.toLocaleLowerCase()
-    if (!haystack.includes(query)) return false
-  }
+  const query =
+  options.query?.trim() ?? ''
+
+if (
+  query &&
+  !historyEntryMatchesQuery(
+    entry,
+    query,
+  )
+) {
+  return false
+}
   if (options.host && options.host !== 'all' && entry.host !== options.host) return false
   const cutoff = historyTimeCutoff(options.time ?? 'all')
   return cutoff === null || entry.visitedAt >= cutoff
