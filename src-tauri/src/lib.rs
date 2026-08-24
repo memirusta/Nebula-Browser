@@ -9,6 +9,9 @@ mod external_open;
 mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
+mod media_session;
+#[cfg(target_os = "windows")]
+mod media_session_bindings;
 mod native_notification;
 mod notification_broker;
 mod password_webview;
@@ -526,6 +529,7 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
     // unconfigured WebView and abort tab activation.
     webview_branding::setup_webview_branding(&app, &label)?;
     site_ui::setup(&app, &label)?;
+    media_session::setup(&app, &label)?;
     force_dark_pages::setup(&app, &label)?;
     // Context-menu interception requires a newer WebView2 interface. Keep tab
     // creation resilient on an unexpectedly old runtime; in that case the
@@ -749,6 +753,7 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
     devtools_bridge::teardown(&app, &label);
     context_menu::teardown(&app, &label);
     site_ui::teardown(&app, &label);
+    media_session::teardown(&app, &label);
     force_dark_pages::teardown(&app, &label);
     download_manager::teardown_tab_downloads(&app, &label);
     webview_privacy::teardown(&app, &label);
@@ -1396,6 +1401,10 @@ fn load_runtime_env() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(error) = media_session::initialize_process_identity() {
+        eprintln!("media.session identity-error: {error}");
+    }
+
     let builder = tauri::Builder::default();
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
