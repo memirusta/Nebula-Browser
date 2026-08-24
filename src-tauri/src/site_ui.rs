@@ -1631,6 +1631,50 @@ mod imp {
                             };
 
                             if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-force-dark-status")
+                            {
+                                let claimed_origin = value
+                                    .get("origin")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let mode = value
+                                    .get("mode")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                if claimed_origin == source_origin
+                                    && matches!(mode, "off" | "native" | "algorithm")
+                                {
+                                    let media_protected = value
+                                        .get("mediaProtected")
+                                        .and_then(serde_json::Value::as_bool)
+                                        .unwrap_or(false);
+                                    let mutation_observed = value
+                                        .get("mutationObserved")
+                                        .and_then(serde_json::Value::as_bool)
+                                        .unwrap_or(false);
+                                    let log_app = protocol_app.clone();
+                                    let log_label = protocol_label.clone();
+                                    let log_origin = source_origin.clone();
+                                    let log_mode = mode.to_string();
+                                    tauri::async_runtime::spawn_blocking(move || {
+                                        let _ = crate::write_transition_log(
+                                            log_app,
+                                            serde_json::json!({
+                                                "stage": "force-dark.result",
+                                                "status": "ok",
+                                                "tabLabel": log_label,
+                                                "origin": log_origin,
+                                                "mode": log_mode,
+                                                "mediaProtected": media_protected,
+                                                "mutationObserved": mutation_observed,
+                                            }),
+                                        );
+                                    });
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
                                 == Some("nebula-site-notification-content")
                             {
                                 let host = source_url.host_str().unwrap_or_default();

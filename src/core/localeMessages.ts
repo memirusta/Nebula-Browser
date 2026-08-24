@@ -266,6 +266,14 @@ catShortcutsDesc: {
   themeForest: { tr: 'Forest (varsayılan)', en: 'Forest (default)' },
   themeDark: { tr: 'Koyu', en: 'Dark' },
   themeLight: { tr: 'Açık', en: 'Light' },
+  darkenWebpages: { tr: 'Web sayfalarını koyulaştır', en: 'Darken webpages' },
+  darkenWebpagesHint: {
+    tr: 'Sitenin kendi koyu temasını tercih eder; gerekirse Nebula karartmasını uygular',
+    en: "Prefers the site's own dark theme, then applies Nebula darkening when needed",
+  },
+  darkenWebpagesOff: { tr: 'Kapalı', en: 'Off' },
+  darkenWebpagesAuto: { tr: 'Otomatik', en: 'Auto' },
+  darkenWebpagesAlways: { tr: 'Her zaman', en: 'Always' },
   glassBlur: { tr: 'Arka plan bulanıklığı', en: 'Background blur' },
   glassBlurHint: {
     tr: 'Cam yüzeylerin arkasındaki görüntüyü yumuşatır',
@@ -296,8 +304,8 @@ catShortcutsDesc: {
   lunarGlassOpacityHint: { tr: 'Üst menü cam yoğunluğu', en: 'Top menu glass density' },
   appearanceReset: { tr: 'Görünüm varsayılanları', en: 'Reset appearance defaults' },
   appearanceResetHint: {
-    tr: 'Tema ve cam ayarlarını sıfırla',
-    en: 'Reset theme and glass settings',
+    tr: 'Tema, web sayfası ve cam ayarlarını sıfırla',
+    en: 'Reset theme, webpage, and glass settings',
   },
   editUi: { tr: 'Arayüzü düzenle', en: 'Edit UI' },
   editUiHint: {

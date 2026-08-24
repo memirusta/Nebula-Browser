@@ -107,6 +107,7 @@ export function ChromeApp() {
     origin: null,
     hostname: null,
     protectionDisabled: false,
+    darkenWebpagesOverride: 'default',
     permissionPromptsAllowed: false,
     notificationPermission: null,
     permissions: {
@@ -316,6 +317,8 @@ export function ChromeApp() {
       origin,
       hostname: target.hostname,
       protectionDisabled: hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
+      darkenWebpagesOverride:
+        settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
       notificationPermission: null,
       permissions: {
@@ -324,7 +327,7 @@ export function ChromeApp() {
         location: fallbackPermission,
       },
     }
-  }, [activeUrl, catalog.activeTabId, settings.privacy, siteInfoState, tabById])
+  }, [activeUrl, catalog.activeTabId, settings.appearance, settings.privacy, siteInfoState, tabById])
 
   useEffect(() => {
     const hasZoom = zoomIndicatorPercent !== null
@@ -690,6 +693,13 @@ export function ChromeApp() {
               type: 'set-site-protection',
               hostname: effectiveSiteInfoState.hostname!,
               disabled: !effectiveSiteInfoState.protectionDisabled,
+            })
+          }}
+          onSetDarkening={(mode) => {
+            void emitChromeAction({
+              type: 'set-site-darkening',
+              hostname: effectiveSiteInfoState.hostname!,
+              mode,
             })
           }}
           onSetNotificationPermission={(permission) => {

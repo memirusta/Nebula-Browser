@@ -29,6 +29,11 @@ export type ChromeShellAction =
   | { type: 'clear-finished-downloads' }
   | { type: 'set-site-protection'; hostname: string; disabled: boolean }
   | {
+      type: 'set-site-darkening'
+      hostname: string
+      mode: 'default' | 'off' | 'always'
+    }
+  | {
       type: 'set-site-notification-permission'
       origin: string
       permission: 'allow' | 'block' | null
@@ -60,6 +65,7 @@ export interface SiteInfoStatePayload {
   origin: string | null
   hostname: string | null
   protectionDisabled: boolean
+  darkenWebpagesOverride: 'default' | 'off' | 'always'
   permissionPromptsAllowed: boolean
   notificationPermission: 'allow' | 'block' | null
   permissions: {

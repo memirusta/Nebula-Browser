@@ -117,6 +117,7 @@ import {
   setBrowseTabMuted,
   setBrowseTabZoom,
   zoomBrowseTab,
+  setBrowseForceDarkOptions,
   setBrowsePrivacyOptions,
   clearSitePermissions,
   listenSiteCompatibilityRequests,
@@ -5428,6 +5429,7 @@ export function BrowserShell() {
         origin: null,
         hostname: null,
         protectionDisabled: false,
+        darkenWebpagesOverride: 'default',
         permissionPromptsAllowed: false,
         notificationPermission: null,
         permissions: emptyPermissions,
@@ -5442,6 +5444,7 @@ export function BrowserShell() {
         origin: null,
         hostname: null,
         protectionDisabled: false,
+        darkenWebpagesOverride: 'default',
         permissionPromptsAllowed: false,
         notificationPermission: null,
         permissions: emptyPermissions,
@@ -5467,6 +5470,8 @@ export function BrowserShell() {
         target.hostname,
         settings.privacy.siteExceptions,
       ),
+      darkenWebpagesOverride:
+        settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
       notificationPermission:
         notificationCenter.sitePermissions[origin] ?? null,
@@ -5482,6 +5487,7 @@ export function BrowserShell() {
     settings.privacy.permissionExceptions,
     settings.privacy.permissionPolicy,
     settings.privacy.siteExceptions,
+    settings.appearance.darkenWebpagesSiteOverrides,
   ])
 
   const activeSiteInfoStateRef = useRef(activeSiteInfoState)
@@ -5665,6 +5671,25 @@ export function BrowserShell() {
             break
           }
 
+          case 'set-site-darkening': {
+            const site = activeSiteInfoStateRef.current
+            if (!site.hostname || site.hostname !== action.hostname) break
+            const overrides = {
+              ...settings.appearance.darkenWebpagesSiteOverrides,
+            }
+            if (action.mode === 'default') {
+              delete overrides[site.hostname]
+            } else {
+              overrides[site.hostname] = action.mode
+            }
+            updateCategory(
+              'appearance',
+              'darkenWebpagesSiteOverrides',
+              overrides,
+            )
+            break
+          }
+
           case 'set-site-notification-permission': {
             const site = activeSiteInfoStateRef.current
             if (!site.origin || site.origin !== action.origin) break
@@ -5779,6 +5804,7 @@ export function BrowserShell() {
     clearFinishedDownloads,
     emitFreshSiteInfoState,
     setSiteNotificationPermission,
+    settings.appearance.darkenWebpagesSiteOverrides,
     settings.privacy.siteExceptions,
     updateCategory,
   ])
@@ -5918,11 +5944,23 @@ export function BrowserShell() {
     !homeEditMode
 
   const {
+    appearance,
     home,
     semiLunar,
     notifications,
     privacy,
   } = settings
+
+  const [systemPrefersDark, setSystemPrefersDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  )
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setSystemPrefersDark(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
 
   const compatibilityContextRef = useRef({
     privacy,
@@ -6101,6 +6139,22 @@ export function BrowserShell() {
     notificationCenter.allowedSites,
     notificationCenter.blockedSites,
   ])
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    void setBrowseForceDarkOptions(
+      {
+        mode: appearance.darkenWebpages,
+        theme: appearance.theme,
+        systemDark: systemPrefersDark,
+        siteOverrides: appearance.darkenWebpagesSiteOverrides,
+      },
+      openTabIds,
+    ).catch((error: unknown) => {
+      console.error('[nebula appearance] Failed to apply webpage darkening.', error)
+    })
+  }, [appearance, openTabIds, systemPrefersDark])
 
   const editLayout =
     homeEditMode &&

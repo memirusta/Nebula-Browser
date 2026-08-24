@@ -6,6 +6,7 @@ mod default_browser;
 mod devtools_bridge;
 mod download_manager;
 mod external_open;
+mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
 mod native_notification;
@@ -525,6 +526,7 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
     // unconfigured WebView and abort tab activation.
     webview_branding::setup_webview_branding(&app, &label)?;
     site_ui::setup(&app, &label)?;
+    force_dark_pages::setup(&app, &label)?;
     // Context-menu interception requires a newer WebView2 interface. Keep tab
     // creation resilient on an unexpectedly old runtime; in that case the
     // branding layer still leaves the native Edge menu disabled.
@@ -561,6 +563,7 @@ fn webview_setup_popup_target(app: tauri::AppHandle, label: String) -> Result<()
     // navigation are installed here.
     webview_branding::setup_webview_branding(&app, &label)?;
     site_ui::setup(&app, &label)?;
+    force_dark_pages::setup(&app, &label)?;
     if let Err(_error) = context_menu::setup(&app, &label) {
         #[cfg(debug_assertions)]
         eprintln!("[nebula context menu] {label}: {_error}");
@@ -597,6 +600,7 @@ fn webview_teardown_popup_target(app: tauri::AppHandle, label: String) -> Result
 
     context_menu::teardown(&app, &label);
     site_ui::teardown(&app, &label);
+    force_dark_pages::teardown(&app, &label);
     download_manager::teardown_tab_downloads(&app, &label);
     webview_privacy::teardown(&app, &label);
     tab_error_page::teardown_tab_error_page(&app, &label);
@@ -650,6 +654,15 @@ fn webview_apply_privacy(
     options: webview_privacy::PrivacyOptions,
 ) -> Result<(), String> {
     webview_privacy::apply(&app, &label, options)
+}
+
+#[tauri::command]
+fn webview_apply_force_dark_pages(
+    app: tauri::AppHandle,
+    label: String,
+    options: force_dark_pages::ForceDarkOptions,
+) -> Result<(), String> {
+    force_dark_pages::apply(&app, &label, options)
 }
 
 #[tauri::command]
@@ -735,6 +748,7 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
     devtools_bridge::teardown(&app, &label);
     context_menu::teardown(&app, &label);
     site_ui::teardown(&app, &label);
+    force_dark_pages::teardown(&app, &label);
     download_manager::teardown_tab_downloads(&app, &label);
     webview_privacy::teardown(&app, &label);
     tab_error_page::teardown_tab_error_page(&app, &label);
@@ -1451,6 +1465,7 @@ pub fn run() {
             webview_devtools_subscribe,
             webview_devtools_unsubscribe,
             webview_apply_privacy,
+            webview_apply_force_dark_pages,
             webview_clear_browsing_data,
             webview_clear_site_permissions,
             webview_factory_reset_profiles,

@@ -19,6 +19,7 @@ interface SiteInfoPanelProps {
   }
   onClose: () => void
   onToggleProtection: () => void
+  onSetDarkening: (mode: 'default' | 'off' | 'always') => void
   onSetNotificationPermission: (
     permission: 'allow' | 'block' | null,
   ) => void
@@ -67,6 +68,7 @@ export function SiteInfoPanel({
   usage,
   onClose,
   onToggleProtection,
+  onSetDarkening,
   onSetNotificationPermission,
   onResetPermissions,
   onClearSiteData,
@@ -236,6 +238,26 @@ export function SiteInfoPanel({
           </small>
         </span>
       </button>
+
+      <div className={styles.notificationRow}>
+        <span>{tr ? 'Sayfa koyulaştırma' : 'Page darkening'}</span>
+        <div className={styles.segmented}>
+          {([
+            ['default', tr ? 'Varsayılan' : 'Default'],
+            ['off', tr ? 'Kapalı' : 'Off'],
+            ['always', tr ? 'Her zaman' : 'Always'],
+          ] as const).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={state.darkenWebpagesOverride === value ? styles.segmentActive : ''}
+              onClick={() => onSetDarkening(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className={styles.sectionHeader}>
         <span>{tr ? 'İzinler' : 'Permissions'}</span>
