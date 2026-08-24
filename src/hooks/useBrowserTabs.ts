@@ -46,6 +46,10 @@ export function useBrowserTabs() {
     dispatch({ type: 'close', shortcutId })
   }, [])
 
+  const detachTab = useCallback((shortcutId: string) => {
+    dispatch({ type: 'close', shortcutId })
+  }, [])
+
   const updateTabMeta = useCallback(
     (shortcutId: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted'>>) => {
       dispatch({ type: 'update-meta', shortcutId, patch })
@@ -100,6 +104,7 @@ export function useBrowserTabs() {
     tabsRef,
     openOrSwitchTab,
     closeTab,
+    detachTab,
     updateTabMeta,
     applyTabSnapshot,
     getTab,

@@ -300,7 +300,9 @@ fn open_google_oauth_popup(
             .incognito(false)
             .browser_extensions_enabled(true);
 
-    if let Some(main) = app.get_webview_window("main") {
+    if let Some(main) =
+        app.get_webview_window(&crate::browser_workspace::most_recent_window_label())
+    {
         builder = builder.parent(&main).map_err(|error| error.to_string())?;
     }
 

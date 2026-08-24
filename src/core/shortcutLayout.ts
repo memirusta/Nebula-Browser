@@ -2,14 +2,16 @@ import {
   clampToLunarDome,
   createLunarMetrics,
   DEFAULT_LUNAR_METRICS,
+  isIconDiscInsideLunarDome,
   pointOnLunarEllipse,
   type LunarMetrics,
-} from './lunarShape'
+} from './lunarShape.ts'
 
 export const ICON_SIZE = 44
 export const ICON_GAP = 10
 export const DRAG_THRESHOLD = 4
 export const SHORTCUT_POSITIONS_KEY = 'nebula-shortcut-positions-v10'
+export const LUNAR_CHROME_SAFE_BOTTOM = 52
 
 export interface ShortcutPosition {
   id: string
@@ -289,6 +291,32 @@ export function clampToBounds(
   metrics: LunarMetrics = DEFAULT_LUNAR_METRICS,
 ): { x: number; y: number } {
   return clampToLunarDome(x, y, iconSizePx / 2, metrics)
+}
+
+/** Keep shortcuts below Tauri's drag strip and window-control rows. */
+export function clampBelowLunarChrome(
+  x: number,
+  y: number,
+  iconSizePx: number = ICON_SIZE,
+  metrics: LunarMetrics = DEFAULT_LUNAR_METRICS,
+): { x: number; y: number } {
+  const radius = iconSizePx / 2
+  const minCenterY = Math.min(
+    metrics.h - radius,
+    LUNAR_CHROME_SAFE_BOTTOM + radius,
+  )
+  const clamped = clampToBounds(x, y, iconSizePx, metrics)
+  if (clamped.y >= minCenterY) return clamped
+
+  let safeX = clamped.x
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    if (isIconDiscInsideLunarDome(safeX, minCenterY, radius, metrics)) {
+      return { x: safeX, y: minCenterY }
+    }
+    safeX = metrics.cx + (safeX - metrics.cx) * 0.9
+  }
+
+  return { x: metrics.cx, y: minCenterY }
 }
 
 export { createLunarMetrics, type LunarMetrics }

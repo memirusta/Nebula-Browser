@@ -54,8 +54,8 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashSet::new()));
     static TOKENS: LazyLock<Mutex<HashMap<String, HandlerTokens>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
-    static MAIN_PERMISSION_UI_CONFIGURED: LazyLock<Mutex<bool>> =
-        LazyLock::new(|| Mutex::new(false));
+    static MAIN_PERMISSION_UI_CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
+        LazyLock::new(|| Mutex::new(HashSet::new()));
 
     struct HandlerTokens {
         script_dialog: i64,
@@ -130,8 +130,8 @@ mod imp {
         static HANDLERS: RefCell<HashMap<String, Handlers>> = RefCell::new(HashMap::new());
         static PENDING: RefCell<HashMap<String, PendingRequest>> = RefCell::new(HashMap::new());
         static PENDING_POPUPS: RefCell<HashMap<String, PendingPopup>> = RefCell::new(HashMap::new());
-        static MAIN_PERMISSION_UI_HANDLER: RefCell<Option<MainPermissionUiHandler>> =
-            const { RefCell::new(None) };
+        static MAIN_PERMISSION_UI_HANDLERS: RefCell<HashMap<String, MainPermissionUiHandler>> =
+            RefCell::new(HashMap::new());
     }
 
     #[derive(Clone, Serialize)]
@@ -1381,22 +1381,27 @@ mod imp {
         Ok(())
     }
 
-    pub fn setup_main_permission_ui(app: &AppHandle) -> Result<(), String> {
+    pub fn setup_main_permission_ui(app: &AppHandle, label: &str) -> Result<(), String> {
+        if label != "main" && !label.starts_with("nebula-window-") {
+            return Err("permission UI is limited to Nebula browser windows".to_string());
+        }
         {
             let configured = MAIN_PERMISSION_UI_CONFIGURED
                 .lock()
                 .map_err(|error| error.to_string())?;
 
-            if *configured {
+            if configured.contains(label) {
                 return Ok(());
             }
         }
 
         let webview = app
-            .get_webview("main")
-            .ok_or_else(|| "webview 'main' not found".to_string())?;
+            .get_webview(label)
+            .ok_or_else(|| format!("webview '{label}' not found"))?;
 
         let permission_app = app.clone();
+        let permission_label = label.to_string();
+        let handler_label = label.to_string();
 
         webview
             .with_webview(move |inner| unsafe {
@@ -1420,7 +1425,7 @@ mod imp {
 
                             request_permission(
                                 &request_app,
-                                "main",
+                                &permission_label,
                                 args,
                                 uri,
                                 kind,
@@ -1439,12 +1444,12 @@ mod imp {
 
                 match result {
                     Ok(handler) => {
-                        MAIN_PERMISSION_UI_HANDLER.with(|slot| {
-                            *slot.borrow_mut() = Some(handler);
+                        MAIN_PERMISSION_UI_HANDLERS.with(|handlers| {
+                            handlers.borrow_mut().insert(handler_label.clone(), handler);
                         });
 
                         if let Ok(mut configured) = MAIN_PERMISSION_UI_CONFIGURED.lock() {
-                            *configured = true;
+                            configured.insert(handler_label.clone());
                         }
                     }
                     Err(_error) => {
@@ -1455,9 +1460,10 @@ mod imp {
             })
             .map_err(|error| error.to_string())?;
 
-        if *MAIN_PERMISSION_UI_CONFIGURED
+        if MAIN_PERMISSION_UI_CONFIGURED
             .lock()
             .map_err(|error| error.to_string())?
+            .contains(label)
         {
             Ok(())
         } else {
@@ -2441,7 +2447,7 @@ pub fn setup(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn setup_main_permission_ui(_app: &tauri::AppHandle) -> Result<(), String> {
+pub fn setup_main_permission_ui(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
     Ok(())
 }
 

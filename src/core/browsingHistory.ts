@@ -1,11 +1,13 @@
 import { persistLocalStorage } from './storageSync'
 import type { BrowserTab } from './browserTab'
 import {
-  createBrowserSessionSnapshot,
+  createBrowserWindowSessionSnapshot,
   CURRENT_SESSION_KEY,
   LEGACY_CURRENT_SESSION_KEYS,
   loadBrowserSessionSnapshot,
+  removeBrowserSessionWindow,
   serializeBrowserSessionSnapshot,
+  upsertBrowserSessionWindow,
   type BrowserSessionSnapshot,
 } from './browserSessionSnapshot'
 
@@ -301,7 +303,25 @@ export function persistCurrentSessionSnapshot(
   tabs: BrowserTab[],
   activeTabId: string | null,
 ): void {
-  const snapshot = createBrowserSessionSnapshot(windowId, tabs, activeTabId)
+  const current = loadBrowserSessionSnapshot()
+  const window = createBrowserWindowSessionSnapshot(
+    windowId,
+    tabs,
+    activeTabId,
+  )
+  const snapshot = upsertBrowserSessionWindow(current, window)
+  persistLocalStorage(CURRENT_SESSION_KEY, serializeBrowserSessionSnapshot(snapshot))
+}
+
+export function removeCurrentSessionWindow(windowId: string): void {
+  const snapshot = removeBrowserSessionWindow(
+    loadBrowserSessionSnapshot(),
+    windowId,
+  )
+  if (!snapshot) {
+    localStorage.removeItem(CURRENT_SESSION_KEY)
+    return
+  }
   persistLocalStorage(CURRENT_SESSION_KEY, serializeBrowserSessionSnapshot(snapshot))
 }
 

@@ -3,6 +3,10 @@ import {
   createTabNavigationState,
   type TabNavigationState,
 } from './tabNavigation.ts'
+import {
+  browserTabWebviewLabel,
+  browserWindowIdFromRuntime,
+} from './browserWorkspace.ts'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
@@ -31,7 +35,8 @@ export function shortcutFromTab(tab: BrowserTab): Shortcut {
 }
 
 export function tabWebviewLabel(shortcutId: string): string {
-  return assignedWebviewLabels.get(shortcutId) ?? `${TAB_WEBVIEW_PREFIX}${shortcutId}`
+  return assignedWebviewLabels.get(shortcutId) ??
+    browserTabWebviewLabel(browserWindowIdFromRuntime(), shortcutId)
 }
 
 export function assignTabWebviewLabel(shortcutId: string, label: string): void {
@@ -50,8 +55,9 @@ export function releaseTabWebviewLabel(shortcutId: string): void {
 export function shortcutIdForTabWebviewLabel(label: string): string | null {
   const assigned = assignedShortcutIds.get(label)
   if (assigned) return assigned
-  if (!label.startsWith(TAB_WEBVIEW_PREFIX)) return null
-  return label.slice(TAB_WEBVIEW_PREFIX.length)
+  const currentPrefix = `${TAB_WEBVIEW_PREFIX}${browserWindowIdFromRuntime()}-`
+  if (!label.startsWith(currentPrefix)) return null
+  return label.slice(currentPrefix.length)
 }
 
 export function faviconForUrl(url: string): string {

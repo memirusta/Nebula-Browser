@@ -25,8 +25,16 @@ import {
   setBrowsingChromeExpected,
   stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
+import {
+  currentBrowserWindowLabel,
+  scopedBrowserEvent,
+} from './browserWindowScope'
 
 export const SITE_FULLSCREEN_EXIT_EVENT = 'nebula-site-fullscreen-exit'
+
+export function siteFullscreenExitEvent(): string {
+  return scopedBrowserEvent(SITE_FULLSCREEN_EXIT_EVENT)
+}
 
 interface TabFullscreenPayload {
   label: string
@@ -176,7 +184,9 @@ async function enterSiteFullscreen(shortcutId: string): Promise<void> {
     } catch {
       // chrome may not exist yet
     }
-    await invoke('window_enter_site_fullscreen')
+    await invoke('window_enter_site_fullscreen', {
+      windowLabel: currentBrowserWindowLabel(),
+    })
 
     await waitForWindowLayoutSettle(appWindow)
     await syncTabWebviewFullscreenBounds(shortcutId)
@@ -195,7 +205,9 @@ async function enterSiteFullscreen(shortcutId: string): Promise<void> {
     resetSiteFullscreenState()
     setBrowsingChromeExpected(true)
     try {
-      await invoke('window_exit_site_fullscreen')
+      await invoke('window_exit_site_fullscreen', {
+        windowLabel: currentBrowserWindowLabel(),
+      })
     } catch {
       // ignore
     }
@@ -220,7 +232,9 @@ async function exitSiteFullscreen(): Promise<void> {
   setSiteFullscreenBoundsMode(false)
 
   try {
-    await invoke('window_exit_site_fullscreen')
+    await invoke('window_exit_site_fullscreen', {
+      windowLabel: currentBrowserWindowLabel(),
+    })
   } catch (error) {
     if (import.meta.env.DEV) {
       console.warn('[nebula] window_exit_site_fullscreen failed', error)
@@ -230,7 +244,9 @@ async function exitSiteFullscreen(): Promise<void> {
   await waitForWindowLayoutSettle(appWindow)
 
   try {
-    await invoke('webview_restore_browsing_layout')
+    await invoke('webview_restore_browsing_layout', {
+      windowLabel: currentBrowserWindowLabel(),
+    })
   } catch (error) {
     if (import.meta.env.DEV) {
       console.warn('[nebula] webview_restore_browsing_layout failed', error)
@@ -257,7 +273,7 @@ async function exitSiteFullscreen(): Promise<void> {
   setBrowsingChromeExpected(true)
   await forceSyncActiveTabBounds()
   await stackBrowsingChromeAboveBrowser(returningTabId)
-  await emit(SITE_FULLSCREEN_EXIT_EVENT)
+  await emit(siteFullscreenExitEvent())
 }
 
 async function handleTabFullscreenPayload(payload: TabFullscreenPayload): Promise<void> {
@@ -368,6 +384,10 @@ export function exitSiteFullscreenForTabSwitch(
     try {
       await invoke(
         'window_exit_site_fullscreen',
+        {
+          windowLabel:
+            currentBrowserWindowLabel(),
+        },
       )
     } catch (error) {
       if (import.meta.env.DEV) {
@@ -406,7 +426,7 @@ export function exitSiteFullscreenForTabSwitch(
      * switch on a listener running in another JS context.
      */
     void emit(
-      SITE_FULLSCREEN_EXIT_EVENT,
+      siteFullscreenExitEvent(),
     ).catch(
       () => undefined,
     )
@@ -470,7 +490,9 @@ export function toggleBrowserWindowFullscreen(): Promise<void> {
     // Tauri setFullscreen() leaves the taskbar visible on Nebula's
     // transparent frameless Windows window. The native command covers the
     // monitor rect and informs Explorer about fullscreen state.
-    await invoke<boolean>('window_toggle_browser_fullscreen')
+    await invoke<boolean>('window_toggle_browser_fullscreen', {
+      windowLabel: currentBrowserWindowLabel(),
+    })
 
     await waitForWindowLayoutSettle(appWindow)
 

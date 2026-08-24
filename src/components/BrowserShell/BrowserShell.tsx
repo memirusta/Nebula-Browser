@@ -12,6 +12,7 @@ import {
   takePendingExternalUrls,
 } from '../../platform/externalOpen'
 import { createPortal } from 'react-dom'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
 import {
@@ -54,7 +55,10 @@ import {
   isSiteFullscreenActive,
   toggleBrowserWindowFullscreen,
 } from '../../platform/tauriSiteFullscreen'
-import { writeTransitionLog } from '../../platform/tauriTransitionLog'
+import {
+  transitionErrorDetails,
+  writeTransitionLog,
+} from '../../platform/tauriTransitionLog'
 import {
   setOverlayModeActive,
   stackBrowsingChromeAboveBrowser,
@@ -121,6 +125,8 @@ import {
   getUblockExtensionInfo,
   getUblockRuntimeStatus,
   type BrowsingDataKind,
+  adoptReparentedBrowseTab,
+  relinquishBrowseTabOwnership,
 } from '../../platform/tauriBrowser'
 import {
   addSiteException,
@@ -173,10 +179,30 @@ import {
 } from '../../core/browsingHistory'
 import {
   primarySessionWindow,
+  sessionWindowById,
   sessionTabCount,
   type PersistedBrowserTab,
 } from '../../core/browserSessionSnapshot'
 import { tabHistoryTarget } from '../../core/tabNavigation'
+import {
+  browserWindowAtScreenPoint,
+  clearBrowserTabTransfer,
+  createBrowserTabTransfer,
+  createBrowserWindowId,
+  createNebulaBrowserWindow,
+  loadBrowserTabTransfer,
+  markBrowserWindowActive,
+  reparentBrowserTab,
+  reparentBrowserTabToWindow,
+  saveBrowserTabTransfer,
+  updateBrowserTabTransfer,
+  waitForBrowserTabTransferClaim,
+} from '../../platform/tauriBrowserWorkspace'
+import {
+  currentBrowserWindowId,
+  currentBrowserWindowLabel,
+  currentTransferId,
+} from '../../platform/browserWindowScope'
 import { useWidgetLayout } from '../../hooks/useWidgetLayout'
 import { useWallpaper } from '../../hooks/useWallpaper'
 import type { ToolbarAnchor } from '../RightToolbar/RightToolbar'
@@ -419,10 +445,21 @@ export function BrowserShell() {
 
   const browserWindowIdRef =
     useRef(
-      previousSession?.windows[0]
-        ?.windowId ??
-        `window-${crypto.randomUUID()}`,
+      currentBrowserWindowId(),
     )
+
+  useEffect(() => {
+    if (!isTauri) return
+    const currentWindow = getCurrentWindow()
+    void markBrowserWindowActive(currentWindow.label)
+    let unlisten: (() => void) | undefined
+    void currentWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) void markBrowserWindowActive(currentWindow.label)
+    }).then((dispose) => {
+      unlisten = dispose
+    })
+    return () => unlisten?.()
+  }, [])
 
   const {
     tabs,
@@ -433,6 +470,7 @@ export function BrowserShell() {
     tabsRef,
     openOrSwitchTab,
     closeTab,
+    detachTab,
     applyTabSnapshot,
     updateTabMeta,
     getTab,
@@ -2718,6 +2756,8 @@ export function BrowserShell() {
           string,
         restoredTab?:
           PersistedBrowserTab,
+        preserveLiveWebview =
+          false,
       ) => {
         const id =
           restoredTab
@@ -2766,7 +2806,7 @@ export function BrowserShell() {
               url,
               {
                 forceNavigate:
-                  true,
+                  !preserveLiveWebview,
               },
             )
           }
@@ -2800,7 +2840,7 @@ export function BrowserShell() {
               id,
             url,
             forceNavigate:
-              true,
+              !preserveLiveWebview,
           }
 
         tabSwitchCursorRef.current =
@@ -2892,8 +2932,14 @@ export function BrowserShell() {
           BrowserSessionSnapshot,
       ) => {
         const restoredWindow =
-          primarySessionWindow(
+          sessionWindowById(
             session,
+            browserWindowIdRef.current,
+          ) ??
+          (
+            browserWindowIdRef.current === 'main'
+              ? primarySessionWindow(session)
+              : null
           )
 
         if (
@@ -2903,9 +2949,6 @@ export function BrowserShell() {
         ) {
           return
         }
-
-        browserWindowIdRef.current =
-          restoredWindow.windowId
 
         closeHistoryPanel()
 
@@ -2963,6 +3006,260 @@ export function BrowserShell() {
       ],
     )
 
+  useEffect(() => {
+    if (!isTauri) return
+    const claimed = new Set<string>()
+
+    const tryClaim = async (
+      transferId: string,
+    ) => {
+      if (claimed.has(transferId)) return
+      const transfer = loadBrowserTabTransfer(transferId)
+      if (
+        !transfer ||
+        transfer.state !== 'ready' ||
+        transfer.targetWindowId !== browserWindowIdRef.current
+      ) {
+        return
+      }
+
+      claimed.add(transferId)
+      void writeTransitionLog('workspace.transfer.claim', 'start', {
+        transferId,
+        sourceWindowId: transfer.sourceWindowId,
+        targetWindowId: transfer.targetWindowId,
+        webviewLabel: transfer.webviewLabel,
+      })
+      let shortcutId = transfer.tab.shortcutId
+      if (tabsRef.current.some((tab) => tab.shortcutId === shortcutId)) {
+        const base = `moved-${transfer.tab.tabId}`
+        shortcutId = base
+        let suffix = 2
+        while (tabsRef.current.some((tab) => tab.shortcutId === shortcutId)) {
+          shortcutId = `${base}-${suffix}`
+          suffix += 1
+        }
+      }
+
+      try {
+        await adoptReparentedBrowseTab(
+          shortcutId,
+          transfer.webviewLabel,
+        )
+        const restoredTab = {
+          ...transfer.tab,
+          shortcutId,
+        }
+        openHistoryTab(
+          restoredTab.url,
+          restoredTab.title,
+          true,
+          shortcutId,
+          restoredTab,
+          true,
+        )
+        updateBrowserTabTransfer(transfer, 'claimed')
+        void writeTransitionLog('workspace.transfer.claim', 'ok', {
+          transferId,
+          sourceWindowId: transfer.sourceWindowId,
+          targetWindowId: transfer.targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+        })
+        window.setTimeout(
+          () => clearBrowserTabTransfer(transferId),
+          5_000,
+        )
+      } catch (error) {
+        claimed.delete(transferId)
+        updateBrowserTabTransfer(transfer, 'cancelled')
+        void writeTransitionLog('workspace.transfer.claim', 'error', {
+          transferId,
+          sourceWindowId: transfer.sourceWindowId,
+          targetWindowId: transfer.targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+          ...transitionErrorDetails(error),
+        })
+        console.error(
+          '[nebula workspace] Failed to adopt a transferred tab.',
+          error,
+        )
+      }
+    }
+
+    const requestedTransferId = currentTransferId()
+    if (requestedTransferId) void tryClaim(requestedTransferId)
+
+    const onStorage = (event: StorageEvent) => {
+      const prefix = 'nebula-browser-tab-transfer-v1:'
+      if (!event.key?.startsWith(prefix)) return
+      void tryClaim(event.key.slice(prefix.length))
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [openHistoryTab, tabsRef])
+
+  const moveTabBetweenWindows =
+    useCallback(
+      async (
+        shortcutId: string,
+        screenX: number,
+        screenY: number,
+      ) => {
+        const tab = tabsRef.current.find(
+          (entry) => entry.shortcutId === shortcutId,
+        )
+        if (!tab || !isTauri) return
+
+        const sourceWindowId = browserWindowIdRef.current
+        const windowAtPoint = await browserWindowAtScreenPoint(
+          screenX,
+          screenY,
+        )
+        if (windowAtPoint === currentBrowserWindowLabel()) {
+          void writeTransitionLog('workspace.transfer.drop', 'info', {
+            sourceWindowId,
+            shortcutId,
+            result: 'same-window',
+          })
+          return
+        }
+
+        const targetWindowId = windowAtPoint ?? createBrowserWindowId()
+        const transfer = createBrowserTabTransfer(
+          sourceWindowId,
+          targetWindowId,
+          tab,
+        )
+        saveBrowserTabTransfer(transfer)
+        void writeTransitionLog('workspace.transfer', 'start', {
+          transferId: transfer.id,
+          sourceWindowId,
+          targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+          targetKind: windowAtPoint ? 'existing-window' : 'new-window',
+        })
+
+        try {
+          if (!windowAtPoint) {
+            await createNebulaBrowserWindow(targetWindowId, transfer.id)
+            void writeTransitionLog('workspace.transfer.window-created', 'ok', {
+              transferId: transfer.id,
+              targetWindowId,
+            })
+          }
+          await reparentBrowserTab(transfer)
+          void writeTransitionLog('workspace.transfer.reparent', 'ok', {
+            transferId: transfer.id,
+            sourceWindowId,
+            targetWindowId,
+            webviewLabel: transfer.webviewLabel,
+          })
+          await waitForBrowserTabTransferClaim(transfer.id)
+        } catch (error) {
+          try {
+            await reparentBrowserTabToWindow(transfer, sourceWindowId)
+            await applyTauriViewModeNow('browsing', {
+              tabId: shortcutId,
+              url: tab.url,
+            })
+            void writeTransitionLog('workspace.transfer.rollback', 'ok', {
+              transferId: transfer.id,
+              sourceWindowId,
+              shortcutId,
+              webviewLabel: transfer.webviewLabel,
+            })
+          } catch (rollbackError) {
+            void writeTransitionLog('workspace.transfer.rollback', 'error', {
+              transferId: transfer.id,
+              sourceWindowId,
+              shortcutId,
+              webviewLabel: transfer.webviewLabel,
+              ...transitionErrorDetails(rollbackError),
+            })
+            console.error(
+              '[nebula workspace] Failed to restore a rejected tab transfer.',
+              rollbackError,
+            )
+          }
+          updateBrowserTabTransfer(transfer, 'cancelled')
+          void writeTransitionLog('workspace.transfer', 'error', {
+            transferId: transfer.id,
+            sourceWindowId,
+            targetWindowId,
+            shortcutId,
+            webviewLabel: transfer.webviewLabel,
+            ...transitionErrorDetails(error),
+          })
+          console.error(
+            '[nebula workspace] Failed to move the tab; it remains in this window.',
+            error,
+          )
+          return
+        }
+
+        relinquishBrowseTabOwnership(shortcutId)
+        detachTab(shortcutId)
+        historyUrlByTabRef.current.delete(shortcutId)
+        navigationTargetIndexByTabRef.current.delete(shortcutId)
+        setTabSwitchHistory((history) =>
+          history.filter((id) => id !== shortcutId),
+        )
+        void writeTransitionLog('workspace.transfer', 'ok', {
+          transferId: transfer.id,
+          sourceWindowId,
+          targetWindowId,
+          shortcutId,
+          webviewLabel: transfer.webviewLabel,
+        })
+
+        const remaining = tabsRef.current.filter(
+          (entry) => entry.shortcutId !== shortcutId,
+        )
+        if (remaining.length === 0) {
+          await getCurrentWindow().close()
+        }
+      },
+      [detachTab, tabsRef],
+    )
+
+  const launchRestoredWorkspaceWindows =
+    useCallback(
+      (
+        session:
+          BrowserSessionSnapshot,
+      ) => {
+        if (
+          !isTauri ||
+          browserWindowIdRef.current !==
+            'main'
+        ) {
+          return
+        }
+
+        for (
+          const window of
+            session.windows.slice(1)
+        ) {
+          void createNebulaBrowserWindow(
+            window.windowId,
+          ).catch(
+            (
+              error: unknown,
+            ) => {
+              console.error(
+                `[nebula workspace] Failed to restore window ${window.windowId}.`,
+                error,
+              )
+            },
+          )
+        }
+      },
+      [],
+    )
+
   const restoreCrashedSession =
     useCallback(() => {
       if (
@@ -2975,11 +3272,16 @@ export function BrowserShell() {
         false,
       )
 
+      launchRestoredWorkspaceWindows(
+        previousSession,
+      )
+
       openPreviousHistorySession(
         previousSession,
       )
     }, [
       openPreviousHistorySession,
+      launchRestoredWorkspaceWindows,
       previousSession,
     ])
 
@@ -2996,12 +3298,17 @@ export function BrowserShell() {
       return
     }
 
+    launchRestoredWorkspaceWindows(
+      previousSession,
+    )
+
     openPreviousHistorySession(
       previousSession,
     )
   }, [
     crashRecoveryOpen,
     openPreviousHistorySession,
+    launchRestoredWorkspaceWindows,
     previousRunUnclean,
     previousSession,
     settings.browsing.restoreTabsOnStartup,
@@ -4853,6 +5160,17 @@ export function BrowserShell() {
         switch (
           action
         ) {
+          case 'new-window':
+            void createNebulaBrowserWindow().catch(
+              (error: unknown) => {
+                console.error(
+                  '[nebula workspace] Failed to create a browser window.',
+                  error,
+                )
+              },
+            )
+            break
+
           case 'new-tab':
             openNewBlankTab()
             break
@@ -5318,6 +5636,14 @@ export function BrowserShell() {
             break
           }
 
+          case 'move-tab':
+            void moveTabBetweenWindows(
+              action.shortcutId,
+              action.screenX,
+              action.screenY,
+            )
+            break
+
           case 'toggle-pin':
             void handleTogglePinCurrentPage(
               action.shortcut,
@@ -5440,6 +5766,7 @@ export function BrowserShell() {
     openShortcutByUrl,
     handleCloseTab,
     handleTogglePinCurrentPage,
+    moveTabBetweenWindows,
     setActiveTabId,
     updateTabMeta,
     openOverlay,
@@ -6017,6 +6344,9 @@ export function BrowserShell() {
 
     onCloseTab:
       handleCloseTab,
+
+    onTabDragDrop:
+      moveTabBetweenWindows,
 
     openTabIds,
     activeTabId,

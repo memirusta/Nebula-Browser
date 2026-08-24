@@ -2,6 +2,7 @@ import { persistLocalStorage } from './storageSync'
 
 /** Nebula browser shortcut identifiers. */
 export type BrowserShortcutId =
+  | 'new-window'
   | 'new-tab'
   | 'close-tab'
   | 'reopen-tab'
@@ -42,6 +43,7 @@ export const BROWSER_SHORTCUT_BINDINGS_KEY = 'nebula-browser-shortcut-bindings-v
 const BROWSER_SHORTCUT_BINDINGS_VERSION = 1 as const
 
 export const CONFIGURABLE_BROWSER_SHORTCUT_IDS: ConfigurableBrowserShortcutId[] = [
+  'new-window',
   'close-tab',
   'reopen-tab',
   'next-tab',
@@ -71,6 +73,7 @@ export const CONFIGURABLE_BROWSER_SHORTCUT_IDS: ConfigurableBrowserShortcutId[] 
 ]
 
 export const DEFAULT_BROWSER_SHORTCUT_BINDINGS: BrowserShortcutBindings = {
+  'new-window': ['Ctrl+N'],
   'close-tab': ['Ctrl+W'],
   'reopen-tab': ['Ctrl+Shift+T'],
   'next-tab': ['Ctrl+Tab'],

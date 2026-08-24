@@ -3,6 +3,7 @@ import {
   listen,
   type UnlistenFn,
 } from '@tauri-apps/api/event'
+import { currentBrowserWindowLabel } from './browserWindowScope'
 
 const EXTERNAL_URL_PENDING_EVENT =
   'nebula-external-url-pending'
@@ -10,6 +11,9 @@ const EXTERNAL_URL_PENDING_EVENT =
 export function takePendingExternalUrls(): Promise<string[]> {
   return invoke<string[]>(
     'take_pending_open_urls',
+    {
+      windowLabel: currentBrowserWindowLabel(),
+    },
   )
 }
 

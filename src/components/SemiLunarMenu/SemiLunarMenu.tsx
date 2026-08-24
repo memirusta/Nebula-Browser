@@ -9,7 +9,12 @@ import {
   LUNAR_INNER_RIM_OFFSET,
   LUNAR_RIM_CLIP_Y,
 } from '../../core/lunarShape'
-import { DRAG_THRESHOLD, clampToBounds, type ShortcutPosition } from '../../core/shortcutLayout'
+import {
+  DRAG_THRESHOLD,
+  clampBelowLunarChrome,
+  clampToBounds,
+  type ShortcutPosition,
+} from '../../core/shortcutLayout'
 import {
   buildBrowsingVisibleDockItemIds,
   openTabIdForDockId,
@@ -26,7 +31,7 @@ import type { ShellViewMode } from '../../core/nebulaBridge'
 import { isTauri } from '../../platform/runtime'
 import { debounce } from '../../platform/debounce'
 import { expandShellHitRegionToFitBottom, syncChromeShellLayout } from '../../platform/tauriShell'
-import { SITE_FULLSCREEN_EXIT_EVENT } from '../../platform/tauriSiteFullscreen'
+import { siteFullscreenExitEvent } from '../../platform/tauriSiteFullscreen'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useLocale } from '../../hooks/useLocale'
@@ -52,6 +57,7 @@ interface SemiLunarMenuProps {
   onNavigate: (url: string, shortcutId?: string) => void
   onRemoveShortcut?: (id: string) => void
   onCloseTab?: (id: string) => void
+  onTabDragDrop?: (id: string, screenX: number, screenY: number) => void
   openTabIds?: string[]
   activeTabId?: string | null
   getTab?: (shortcutId: string) => BrowserTab | null
@@ -104,6 +110,7 @@ export function SemiLunarMenu({
   onNavigate,
   onRemoveShortcut,
   onCloseTab,
+  onTabDragDrop,
   openTabIds = [],
   activeTabId = null,
   getTab,
@@ -226,6 +233,20 @@ export function SemiLunarMenu({
       lunarHeightPx,
       rememberLayout,
     )
+
+  useEffect(() => {
+    if (!isTauri) return
+    for (const position of positions) {
+      const safe = clampBelowLunarChrome(
+        position.x,
+        position.y,
+        iconSizePx,
+        lunarMetrics,
+      )
+      if (safe.x === position.x && safe.y === position.y) continue
+      setPosition(position.id, safe.x, safe.y)
+    }
+  }, [iconSizePx, lunarMetrics, positions, setPosition])
 
   dragHoverRef.current = dragHover
   positionsRef.current = positions
@@ -850,7 +871,7 @@ const handleFolderMemberClose = useCallback(
     let unlisten: (() => void) | undefined
     let cancelled = false
 
-    void listen(SITE_FULLSCREEN_EXIT_EVENT, () => {
+    void listen(siteFullscreenExitEvent(), () => {
       setPreviewShortcut(null)
       setPreviewTabId(null)
       shellBoundedLayoutResyncRef.current()
@@ -1334,6 +1355,12 @@ const members = memberIds
                     }}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
+                    onExternalDrop={
+                      tabIsOpen && openTabId
+                        ? (screenX, screenY) =>
+                            onTabDragDrop?.(openTabId, screenX, screenY)
+                        : undefined
+                    }
                     onDragMove={(x, y) => setDragHover({ id: dockId, x, y })}
                     previewOnHover={previewOnHover}
                     previewDelayMs={previewDelayMs}
@@ -1596,6 +1623,7 @@ function DraggableShortcut({
   onPreviewHide,
   onDragStart,
   onDragEnd,
+  onExternalDrop,
   onDragMove,
   previewOnHover,
   previewDelayMs,
@@ -1623,6 +1651,7 @@ function DraggableShortcut({
   onPreviewHide: () => void
   onDragStart: () => void
   onDragEnd: () => void
+  onExternalDrop?: (screenX: number, screenY: number) => void
   onDragMove: (x: number, y: number) => void
   previewOnHover: boolean
   previewDelayMs: number
@@ -1818,7 +1847,7 @@ function DraggableShortcut({
   )
 
   const finishDrag = useCallback(
-    (clientX: number, clientY: number) => {
+    (clientX: number, clientY: number, screenX: number, screenY: number) => {
       if (!dragState.current.active) return
       const wasMoved = dragState.current.moved
       dragState.current.active = false
@@ -1830,9 +1859,10 @@ function DraggableShortcut({
         }
         setIsDragging(false)
         onDragEnd()
+        onExternalDrop?.(screenX, screenY)
       }
     },
-    [getLocalPosition, onDragEnd, scheduleMove],
+    [getLocalPosition, onDragEnd, onExternalDrop, scheduleMove],
   )
 
   const cancelPointerInteraction = useCallback(() => {
@@ -1874,7 +1904,7 @@ function DraggableShortcut({
     const onWindowPointerUp = (e: PointerEvent) => {
       if (e.pointerId !== dragState.current.pointerId) return
       if (dragState.current.moved) {
-        finishDrag(e.clientX, e.clientY)
+        finishDrag(e.clientX, e.clientY, e.screenX, e.screenY)
       } else {
         dragState.current.active = false
         onNavigate()
@@ -1904,7 +1934,7 @@ function DraggableShortcut({
       e.currentTarget.releasePointerCapture(e.pointerId)
     }
     if (dragState.current.moved) {
-      finishDrag(e.clientX, e.clientY)
+      finishDrag(e.clientX, e.clientY, e.screenX, e.screenY)
     } else {
       dragState.current.active = false
       onNavigate()
@@ -1979,7 +2009,8 @@ function DraggableShortcut({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onContextMenu={handleContextMenu}
-        aria-label={tf('shortcutAria', { label: item.label })}
+        title={tf('shortcutAria', { label: resolvedHoverTitle })}
+        aria-label={tf('shortcutAria', { label: resolvedHoverTitle })}
         tabIndex={-1}
       >
         <span className={styles.faviconShell}>

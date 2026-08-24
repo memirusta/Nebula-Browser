@@ -2,6 +2,9 @@
 identifier = "allow-nebula-webview-commands"
 description = "Allow Nebula custom webview commands"
 commands.allow = [
+  "browser_create_window",
+  "browser_mark_window_active",
+  "browser_reparent_tab",
   "write_transition_log",
   "show_native_notification",
   "webview_set_shortcut_bindings",

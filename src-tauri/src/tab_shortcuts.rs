@@ -25,6 +25,7 @@ mod imp {
 
     fn default_bindings() -> HashMap<String, Vec<String>> {
         HashMap::from([
+            ("new-window".into(), vec!["Ctrl+N".into()]),
             ("close-tab".into(), vec!["Ctrl+W".into()]),
             ("reopen-tab".into(), vec!["Ctrl+Shift+T".into()]),
             ("next-tab".into(), vec!["Ctrl+Tab".into()]),
@@ -204,6 +205,7 @@ mod imp {
             .ok_or_else(|| format!("webview '{label}' not found"))?;
         let app_handle = app.clone();
         let label_for_store = label.to_string();
+        let label_for_event = label.to_string();
 
         webview
             .with_webview(move |inner| unsafe {
@@ -240,7 +242,11 @@ mod imp {
 
                         if let Some(action) = binding.as_deref().and_then(action_for_binding) {
                             let _ = args.SetHandled(true);
-                            let _ = app_handle.emit("nebula-browser-shortcut", action);
+                            if let Some(webview) = app_handle.get_webview(&label_for_event) {
+                                let target = webview.window().label().to_string();
+                                let _ =
+                                    app_handle.emit_to(target, "nebula-browser-shortcut", action);
+                            }
                         }
                         Ok(())
                     }));

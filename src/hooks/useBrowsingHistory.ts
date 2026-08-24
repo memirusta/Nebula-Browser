@@ -21,6 +21,7 @@ import {
 } from '../core/browsingHistory'
 import type { BrowserTab } from '../core/browserTab'
 import { useStorageSync } from '../core/storageSync'
+import { currentBrowserWindowId } from '../platform/browserWindowScope'
 
 export function useBrowsingHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadBrowsingHistory)
@@ -28,7 +29,12 @@ export function useBrowsingHistory() {
   const [previousSession, setPreviousSession] = useState<BrowserSessionSnapshot | null>(
     loadCurrentSessionSnapshot,
   )
-  const [previousRunUnclean] = useState(() => initializeBrowserRunState().previousRunUnclean)
+  const [primaryWindow] = useState(() => currentBrowserWindowId() === 'main')
+  const [previousRunUnclean] = useState(() =>
+    primaryWindow
+      ? initializeBrowserRunState().previousRunUnclean
+      : false,
+  )
   const entriesRef = useRef(entries)
   const closedTabsRef = useRef(closedTabs)
   entriesRef.current = entries
@@ -40,6 +46,7 @@ export function useBrowsingHistory() {
   useStorageSync(CLOSED_TABS_KEY, reloadClosedTabs)
 
   useEffect(() => {
+    if (!primaryWindow) return
     const markClean = () => markBrowserRunClean()
     window.addEventListener('beforeunload', markClean)
     window.addEventListener('pagehide', markClean)
@@ -47,7 +54,7 @@ export function useBrowsingHistory() {
       window.removeEventListener('beforeunload', markClean)
       window.removeEventListener('pagehide', markClean)
     }
-  }, [])
+  }, [primaryWindow])
 
   const recordVisit = useCallback((url: string, title?: string | null) => {
     setEntries((previous) => {

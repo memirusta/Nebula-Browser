@@ -1,5 +1,6 @@
 mod browser_bookmarks;
 mod browser_passwords;
+mod browser_workspace;
 mod context_menu;
 mod default_browser;
 mod devtools_bridge;
@@ -443,8 +444,31 @@ fn webview_set_ui_locale(locale: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn webview_setup_main_site_permissions(app: tauri::AppHandle) -> Result<(), String> {
-    site_ui::setup_main_permission_ui(&app)
+async fn browser_create_window(
+    app: tauri::AppHandle,
+    window_id: String,
+    transfer_id: Option<String>,
+) -> Result<String, String> {
+    browser_workspace::create_window(&app, window_id, transfer_id)
+}
+
+#[tauri::command]
+fn browser_reparent_tab(
+    app: tauri::AppHandle,
+    tab_label: String,
+    target_window_label: String,
+) -> Result<String, String> {
+    browser_workspace::reparent_tab(&app, tab_label, target_window_label)
+}
+
+#[tauri::command]
+fn browser_mark_window_active(window_label: String) -> Result<(), String> {
+    browser_workspace::mark_window_active(window_label)
+}
+
+#[tauri::command]
+fn webview_setup_main_site_permissions(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    site_ui::setup_main_permission_ui(&app, &label)
 }
 
 #[tauri::command]
@@ -868,7 +892,7 @@ fn debug_labels(app: &tauri::AppHandle) -> String {
 
 /// Force the OS to repaint the whole window tree after native z-order changes.
 #[cfg(target_os = "windows")]
-fn force_redraw(app: &tauri::AppHandle) {
+fn force_redraw(app: &tauri::AppHandle, window_label: &str) {
     use tauri::Manager;
     use windows::Win32::Graphics::Gdi::{
         RedrawWindow, RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_NOERASE, RDW_UPDATENOW,
@@ -877,7 +901,7 @@ fn force_redraw(app: &tauri::AppHandle) {
     // Home, browser tabs, and dedicated chrome are sibling child HWNDs.
     // Repaint the top-level window and all children immediately so composition
     // catches up with native z-order changes in the same transition.
-    if let Some(window) = app.get_window("main") {
+    if let Some(window) = app.get_window(window_label) {
         if let Ok(hwnd) = window.hwnd() {
             unsafe {
                 let _ = RedrawWindow(
@@ -896,6 +920,7 @@ fn force_redraw(app: &tauri::AppHandle) {
 #[cfg(target_os = "windows")]
 fn stack_chrome_above_browser(
     app: &tauri::AppHandle,
+    window_label: &str,
     active_tab_label: Option<&str>,
 ) -> Result<(), String> {
     use tauri::Manager;
@@ -903,12 +928,18 @@ fn stack_chrome_above_browser(
         SetWindowPos, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     };
 
-    if let Some(main) = app.get_webview("main") {
+    let chrome_label = if window_label == "main" {
+        "nebula-chrome".to_string()
+    } else {
+        format!("nebula-chrome-{window_label}")
+    };
+
+    if let Some(main) = app.get_webview(window_label) {
         let _ = main.show();
     }
 
     // Home is deliberately kept alive and opaque underneath every browser tab.
-    if let Ok(main_hwnd) = resolve_webview_hwnd(app, "main") {
+    if let Ok(main_hwnd) = resolve_webview_hwnd(app, window_label) {
         unsafe {
             SetWindowPos(
                 main_hwnd,
@@ -927,6 +958,13 @@ fn stack_chrome_above_browser(
     // native containers low as an additional guard, then raise only the active tab.
     for (label, _) in app.webviews() {
         if label.starts_with("nebula-tab-") {
+            let belongs_to_window = app
+                .get_webview(&label)
+                .map(|webview| webview.window().label() == window_label)
+                .unwrap_or(false);
+            if !belongs_to_window {
+                continue;
+            }
             if active_tab_label == Some(label.as_str()) {
                 continue;
             }
@@ -964,7 +1002,7 @@ fn stack_chrome_above_browser(
         }
     }
 
-    if let Ok(chrome_hwnd) = resolve_webview_hwnd(app, "nebula-chrome") {
+    if let Ok(chrome_hwnd) = resolve_webview_hwnd(app, &chrome_label) {
         unsafe {
             SetWindowPos(
                 chrome_hwnd,
@@ -979,24 +1017,37 @@ fn stack_chrome_above_browser(
         }
     }
 
-    force_redraw(app);
+    force_redraw(app, window_label);
     Ok(())
 }
 
 /// Quick menu overlay: tabs at bottom, main shell interactive, chrome strip on top.
 #[cfg(target_os = "windows")]
-fn stack_overlay_mode(app: &tauri::AppHandle) -> Result<(), String> {
+fn stack_overlay_mode(app: &tauri::AppHandle, window_label: &str) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::UI::WindowsAndMessaging::{
         SetWindowPos, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     };
 
-    if let Some(main) = app.get_webview("main") {
+    let chrome_label = if window_label == "main" {
+        "nebula-chrome".to_string()
+    } else {
+        format!("nebula-chrome-{window_label}")
+    };
+
+    if let Some(main) = app.get_webview(window_label) {
         let _ = main.show();
     }
 
     for (label, _) in app.webviews() {
         if label.starts_with("nebula-tab-") {
+            let belongs_to_window = app
+                .get_webview(&label)
+                .map(|webview| webview.window().label() == window_label)
+                .unwrap_or(false);
+            if !belongs_to_window {
+                continue;
+            }
             if let Ok(browser_hwnd) = resolve_webview_hwnd(app, &label) {
                 unsafe {
                     SetWindowPos(
@@ -1014,7 +1065,7 @@ fn stack_overlay_mode(app: &tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    let main_hwnd = resolve_webview_hwnd(app, "main")?;
+    let main_hwnd = resolve_webview_hwnd(app, window_label)?;
     unsafe {
         SetWindowPos(
             main_hwnd,
@@ -1028,7 +1079,7 @@ fn stack_overlay_mode(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     }
 
-    if let Ok(chrome_hwnd) = resolve_webview_hwnd(app, "nebula-chrome") {
+    if let Ok(chrome_hwnd) = resolve_webview_hwnd(app, &chrome_label) {
         unsafe {
             SetWindowPos(
                 chrome_hwnd,
@@ -1043,21 +1094,24 @@ fn stack_overlay_mode(app: &tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    force_redraw(app);
+    force_redraw(app, window_label);
 
     Ok(())
 }
 
 /// Parent window client area in physical pixels.
 #[cfg(target_os = "windows")]
-fn main_client_physical_rect(app: &tauri::AppHandle) -> Result<(i32, i32, i32, i32), String> {
+fn window_client_physical_rect(
+    app: &tauri::AppHandle,
+    window_label: &str,
+) -> Result<(i32, i32, i32, i32), String> {
     use tauri::Manager;
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
     let window = app
-        .get_window("main")
-        .ok_or_else(|| format!("main window not found ({})", debug_labels(app)))?;
+        .get_window(window_label)
+        .ok_or_else(|| format!("window '{window_label}' not found ({})", debug_labels(app)))?;
     let parent_hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
     unsafe {
@@ -1131,11 +1185,23 @@ fn webview_set_chrome_bounds(
 /// Raise a tab webview above shell/chrome for HTML5 fullscreen video.
 #[cfg(target_os = "windows")]
 fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), String> {
+    use tauri::Manager;
     use windows::Win32::UI::WindowsAndMessaging::{HWND_BOTTOM, HWND_TOP};
 
-    let (x, y, width, height) = main_client_physical_rect(app)?;
+    let window_label = app
+        .get_webview(tab_label)
+        .ok_or_else(|| format!("webview '{tab_label}' not found"))?
+        .window()
+        .label()
+        .to_string();
+    let chrome_label = if window_label == "main" {
+        "nebula-chrome".to_string()
+    } else {
+        format!("nebula-chrome-{window_label}")
+    };
+    let (x, y, width, height) = window_client_physical_rect(app, &window_label)?;
 
-    for label in ["main", "nebula-chrome"] {
+    for label in [&window_label, &chrome_label] {
         if let Ok(hwnd) = resolve_webview_hwnd(app, label) {
             layout_webview_hwnd(hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
         }
@@ -1145,64 +1211,80 @@ fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), S
         layout_webview_hwnd(tab_hwnd, x, y, width, height, Some(HWND_TOP))?;
     }
 
-    force_redraw(app);
+    force_redraw(app, &window_label);
 
     Ok(())
 }
 
 /// Reset tab + shell HWND geometry after leaving site fullscreen.
 #[cfg(target_os = "windows")]
-fn restore_browsing_webview_layout(app: &tauri::AppHandle) -> Result<(), String> {
+fn restore_browsing_webview_layout(
+    app: &tauri::AppHandle,
+    window_label: &str,
+) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::UI::WindowsAndMessaging::HWND_BOTTOM;
 
-    let (x, y, width, height) = main_client_physical_rect(app)?;
+    let (x, y, width, height) = window_client_physical_rect(app, window_label)?;
 
     for (label, _) in app.webviews() {
         if label.starts_with("nebula-tab-") {
+            let belongs_to_window = app
+                .get_webview(&label)
+                .map(|webview| webview.window().label() == window_label)
+                .unwrap_or(false);
+            if !belongs_to_window {
+                continue;
+            }
             if let Ok(tab_hwnd) = resolve_webview_hwnd(app, &label) {
                 layout_webview_hwnd(tab_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
             }
         }
     }
 
-    if let Ok(main_hwnd) = resolve_webview_hwnd(app, "main") {
+    if let Ok(main_hwnd) = resolve_webview_hwnd(app, window_label) {
         layout_webview_hwnd(main_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
     }
 
-    if let Some(main) = app.get_webview("main") {
+    if let Some(main) = app.get_webview(window_label) {
         let _ = main.show();
     }
 
-    force_redraw(app);
+    force_redraw(app, window_label);
 
     Ok(())
 }
 
 #[tauri::command]
-fn window_enter_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
-    site_fullscreen_window::enter_site_fullscreen_window(&app)
+fn window_enter_site_fullscreen(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
+    site_fullscreen_window::enter_site_fullscreen_window(&app, &window_label)
 }
 
 #[tauri::command]
-fn window_exit_site_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
-    site_fullscreen_window::exit_site_fullscreen_window(&app)
+fn window_exit_site_fullscreen(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
+    site_fullscreen_window::exit_site_fullscreen_window(&app, &window_label)
 }
 
 #[tauri::command]
-fn window_toggle_browser_fullscreen(app: tauri::AppHandle) -> Result<bool, String> {
-    site_fullscreen_window::toggle_browser_fullscreen_window(&app)
+fn window_toggle_browser_fullscreen(
+    app: tauri::AppHandle,
+    window_label: String,
+) -> Result<bool, String> {
+    site_fullscreen_window::toggle_browser_fullscreen_window(&app, &window_label)
 }
 
 #[tauri::command]
-fn webview_restore_browsing_layout(app: tauri::AppHandle) -> Result<(), String> {
+fn webview_restore_browsing_layout(
+    app: tauri::AppHandle,
+    window_label: String,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        restore_browsing_webview_layout(&app)
+        restore_browsing_webview_layout(&app, &window_label)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = app;
+        let _ = (app, window_label);
         Ok(())
     }
 }
@@ -1224,14 +1306,14 @@ fn webview_raise_tab_fullscreen(app: tauri::AppHandle, label: String) -> Result<
 }
 
 #[tauri::command]
-fn webview_raise_overlay(app: tauri::AppHandle) -> Result<(), String> {
+fn webview_raise_overlay(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        stack_overlay_mode(&app)
+        stack_overlay_mode(&app, &window_label)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = app;
+        let _ = (app, window_label);
         Ok(())
     }
 }
@@ -1239,15 +1321,16 @@ fn webview_raise_overlay(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn webview_raise_chrome(
     app: tauri::AppHandle,
+    window_label: String,
     active_tab_label: Option<String>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        stack_chrome_above_browser(&app, active_tab_label.as_deref())
+        stack_chrome_above_browser(&app, &window_label, active_tab_label.as_deref())
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, active_tab_label);
+        let _ = (app, window_label, active_tab_label);
         Ok(())
     }
 }
@@ -1303,6 +1386,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             default_browser::open_default_browser_settings,
+            browser_create_window,
+            browser_mark_window_active,
+            browser_reparent_tab,
             external_open::take_pending_open_urls,
             show_native_notification,
             write_transition_log,

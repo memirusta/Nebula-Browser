@@ -1045,8 +1045,8 @@ mod imp {
                 }
 
                 let window = app_for_main
-                    .get_window("main")
-                    .ok_or_else(|| "main window not found".to_string())?;
+                    .get_window(&crate::browser_workspace::most_recent_window_label())
+                    .ok_or_else(|| "active Nebula window not found".to_string())?;
                 let hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
                 unsafe { start_shell_file_drag(hwnd, &path) }

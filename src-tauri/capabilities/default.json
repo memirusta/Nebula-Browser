@@ -4,7 +4,9 @@
   "description": "enables the default permissions",
   "webviews": [
     "main",
-    "nebula-chrome"
+    "nebula-chrome",
+    "nebula-window-*",
+    "nebula-chrome-*"
   ],
   "permissions": [
     "core:default",
@@ -23,6 +25,10 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-scale-factor",
     "core:window:allow-inner-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-get-all-windows",
+    "core:window:allow-cursor-position",
     "core:webview:allow-create-webview",
     "core:webview:allow-webview-show",
     "core:webview:allow-webview-hide",

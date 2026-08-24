@@ -209,6 +209,24 @@ export function createBrowserSessionSnapshot(
   tabs: BrowserTab[],
   activeShortcutId: string | null,
 ): BrowserSessionSnapshot {
+  const window = createBrowserWindowSessionSnapshot(
+    windowId,
+    tabs,
+    activeShortcutId,
+  )
+  return {
+    schemaVersion: BROWSER_SESSION_SCHEMA_VERSION,
+    id: randomId('session'),
+    savedAt: Date.now(),
+    windows: [window],
+  }
+}
+
+export function createBrowserWindowSessionSnapshot(
+  windowId: string,
+  tabs: BrowserTab[],
+  activeShortcutId: string | null,
+): BrowserWindowSessionSnapshot {
   const persistedTabs = tabs.flatMap((tab) => {
     const persisted = sanitizePersistedTab({
       tabId: tab.id,
@@ -228,15 +246,62 @@ export function createBrowserSessionSnapshot(
     (tab) => tab.shortcutId === activeShortcutId,
   )?.tabId ?? persistedTabs[0]?.tabId ?? null
   return {
-    schemaVersion: BROWSER_SESSION_SCHEMA_VERSION,
-    id: randomId('session'),
-    savedAt: Date.now(),
-    windows: [{
-      windowId: windowId.trim() || randomId('window'),
-      activeTabId,
-      tabs: persistedTabs,
-    }],
+    windowId: windowId.trim() || randomId('window'),
+    activeTabId,
+    tabs: persistedTabs,
   }
+}
+
+export function persistedBrowserTabFromBrowserTab(
+  tab: BrowserTab,
+): PersistedBrowserTab | null {
+  return sanitizePersistedTab({
+    tabId: tab.id,
+    shortcutId: tab.shortcutId,
+    url: tab.url,
+    title: tab.title,
+    favicon: tab.favicon,
+    navigation: tab.navigation,
+  })
+}
+
+export function upsertBrowserSessionWindow(
+  snapshot: BrowserSessionSnapshot | null,
+  window: BrowserWindowSessionSnapshot,
+): BrowserSessionSnapshot {
+  const windows = snapshot ? [...snapshot.windows] : []
+  const index = windows.findIndex((entry) => entry.windowId === window.windowId)
+  if (index === -1) windows.push(window)
+  else windows[index] = window
+  return {
+    schemaVersion: BROWSER_SESSION_SCHEMA_VERSION,
+    id: snapshot?.id ?? randomId('session'),
+    savedAt: Date.now(),
+    windows,
+  }
+}
+
+export function removeBrowserSessionWindow(
+  snapshot: BrowserSessionSnapshot | null,
+  windowId: string,
+): BrowserSessionSnapshot | null {
+  if (!snapshot) return null
+  const windows = snapshot.windows.filter(
+    (window) => window.windowId !== windowId,
+  )
+  if (windows.length === 0) return null
+  return {
+    ...snapshot,
+    savedAt: Date.now(),
+    windows,
+  }
+}
+
+export function sessionWindowById(
+  snapshot: BrowserSessionSnapshot,
+  windowId: string,
+): BrowserWindowSessionSnapshot | null {
+  return snapshot.windows.find((window) => window.windowId === windowId) ?? null
 }
 
 export function sessionTabCount(snapshot: BrowserSessionSnapshot): number {

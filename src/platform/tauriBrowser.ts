@@ -17,6 +17,10 @@ import {
 import { debounce } from './debounce'
 import { isTauri } from './runtime'
 import {
+  currentBrowserWindowId,
+  currentBrowserWindowLabel,
+} from './browserWindowScope'
+import {
   traceTransitionCall,
   transitionErrorDetails,
   writeTransitionLog,
@@ -198,7 +202,7 @@ async function ensureUblockProfile(label: string): Promise<void> {
 /** Install/verify uBO while the home screen is visible so first navigation stays fast. */
 export async function prewarmUblockProfile(): Promise<void> {
   if (!isTauri) return
-  await ensureUblockProfile('main')
+  await ensureUblockProfile(currentBrowserWindowLabel())
 }
 
 export interface BrowserPrivacyOptions {
@@ -973,15 +977,15 @@ export async function prewarmBrowseWebview(): Promise<void> {
     await traceTransitionCall(
       traceId,
       'browser.prewarm.ensure-ublock',
-      { label: 'main' },
+      { label: currentBrowserWindowLabel() },
       () =>
         ensureUblockProfile(
-          'main',
+          currentBrowserWindowLabel(),
         ),
     )
 
     const label =
-      `${PREWARMED_TAB_PREFIX}${++prewarmSequence}`
+      `${PREWARMED_TAB_PREFIX}${currentBrowserWindowId()}-${++prewarmSequence}`
 
     const appWindow =
       getCurrentWindow()
@@ -2675,7 +2679,7 @@ async function getOrCreateTabWebview(
       },
       () =>
         ensureUblockProfile(
-          'main',
+          currentBrowserWindowLabel(),
         ),
     )
 
@@ -4039,6 +4043,8 @@ export async function hideAllBrowseTabs(): Promise<void> {
           (webview) =>
             webview.label !==
               spareLabel &&
+            webview.window.label ===
+              currentBrowserWindowLabel() &&
             webview.label.startsWith(
               'nebula-tab-',
             ),
@@ -4052,6 +4058,42 @@ export async function hideAllBrowseTabs(): Promise<void> {
     )
   } catch {
     // ignore
+  }
+}
+
+export async function adoptReparentedBrowseTab(
+  shortcutId: string,
+  label: string,
+): Promise<void> {
+  if (!isTauri) return
+  const webview = await Webview.getByLabel(label)
+  if (!webview) throw new Error(`Transferred webview '${label}' was not found.`)
+  assignTabWebviewLabel(shortcutId, label)
+  webviewCache.set(shortcutId, webview)
+  createdTabs.add(shortcutId)
+  await configureTabWebview(
+    label,
+    `transfer-adopt-${Date.now()}`,
+  )
+}
+
+export function relinquishBrowseTabOwnership(shortcutId: string): void {
+  const label = tabWebviewLabel(shortcutId)
+  cancelTabUnload(shortcutId)
+  cancelTabSleep(label)
+  webviewCache.delete(shortcutId)
+  createdTabs.delete(shortcutId)
+  lowMemoryWebviews.delete(label)
+  suspendedWebviews.delete(label)
+  tabLastActiveAt.delete(shortcutId)
+  unloadedTabStates.delete(shortcutId)
+  privacyApplyRunner.invalidate(label)
+  releaseTabWebviewLabel(shortcutId)
+  if (activeTabId === shortcutId) {
+    activeTabId = null
+    activeWebview = null
+    unbindResizeListeners()
+    lastBrowserBoundsKey = null
   }
 }
 

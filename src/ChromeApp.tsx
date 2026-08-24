@@ -605,6 +605,14 @@ export function ChromeApp() {
       onCloseTab={(shortcutId) => {
         void emitChromeAction({ type: 'close-tab', shortcutId })
       }}
+      onTabDragDrop={(shortcutId, screenX, screenY) => {
+        void emitChromeAction({
+          type: 'move-tab',
+          shortcutId,
+          screenX,
+          screenY,
+        })
+      }}
       openTabIds={openTabIds}
       activeTabId={catalog.activeTabId}
       getTab={getTab}

@@ -1,6 +1,8 @@
 pub fn is_nebula_webview_label(label: &str) -> bool {
     label == "main"
         || label == "nebula-chrome"
+        || label.starts_with("nebula-window-")
+        || label.starts_with("nebula-chrome-nebula-window-")
         || label.starts_with("nebula-tab-")
         || label.starts_with("nebula-popup-content-")
 }

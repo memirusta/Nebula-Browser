@@ -31,6 +31,7 @@ import {
   setOverlayModeActive,
   stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
+import { currentBrowserWindowLabel } from './browserWindowScope'
 
 export type TauriViewMode =
   | 'home'
@@ -307,7 +308,9 @@ async function applyOverlayMode(
 if (!isCurrentTransition(requestId)) return
 
 try {
-  await invoke('webview_raise_overlay')
+  await invoke('webview_raise_overlay', {
+    windowLabel: currentBrowserWindowLabel(),
+  })
 } catch (error) {
   if (import.meta.env.DEV) {
     console.warn(

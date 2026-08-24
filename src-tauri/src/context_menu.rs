@@ -343,7 +343,9 @@ mod imp {
                                 let mut location = POINT::default();
                                 let _ = args.Location(&mut location);
                                 let scale = handler_app
-                                    .get_window("main")
+                                    .get_webview(&handler_label)
+                                    .map(|webview| webview.window().label().to_string())
+                                    .and_then(|window_label| handler_app.get_window(&window_label))
                                     .and_then(|window| window.scale_factor().ok())
                                     .filter(|value| *value > 0.0)
                                     .unwrap_or(1.0);
