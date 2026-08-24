@@ -63,7 +63,9 @@ export function AppDialogHost() {
         }}
       >
         <div className={styles.headerRow}>
-          <div className={styles.siteMark}>N</div>
+          <div className={styles.siteMark}>
+            <img src="/icon-square.svg" alt="" aria-hidden="true" draggable={false} />
+          </div>
           <div className={styles.heading}>
             <span>{locale === 'tr' ? 'Uygulama mesajı' : 'App message'}</span>
             <h2 id="nebula-app-dialog-title">{request.title}</h2>

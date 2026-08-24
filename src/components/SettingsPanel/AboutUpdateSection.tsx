@@ -39,9 +39,20 @@ export function AboutUpdateSection() {
   return (
     <>
       <div className={styles.placeholder}>
-        <strong>{t('updateProduct')}</strong>
-        <div className={styles.version}>
-          {t('updateVersion')} {APP_VERSION}
+        <div className={styles.aboutBrand}>
+          <img
+            className={styles.aboutLogo}
+            src="/icon-square.svg"
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+          />
+          <div className={styles.aboutBrandCopy}>
+            <strong>{t('updateProduct')}</strong>
+            <div className={styles.version}>
+              {t('updateVersion')} {APP_VERSION}
+            </div>
+          </div>
         </div>
         <p style={{ marginTop: 16 }}>{t('updateBlurb')}</p>
       </div>
