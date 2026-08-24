@@ -11,7 +11,10 @@ import {
   hideChromeWebview,
   showChromeWebview,
 } from './tauriChromeWebview'
-import { showMainWebview } from './tauriMainWebview'
+import {
+  focusMainWebview,
+  showMainWebview,
+} from './tauriMainWebview'
 import {
   consumeSiteFullscreenTabSwitchHandoff,
   forceExitSiteFullscreen,
@@ -301,15 +304,22 @@ async function applyOverlayMode(
 
   await showMainWebview()
 
-  if (!isCurrentTransition(requestId)) return
+if (!isCurrentTransition(requestId)) return
 
-  try {
-    await invoke('webview_raise_overlay')
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.warn('[nebula] webview_raise_overlay failed', error)
-    }
+try {
+  await invoke('webview_raise_overlay')
+} catch (error) {
+  if (import.meta.env.DEV) {
+    console.warn(
+      '[nebula] webview_raise_overlay failed',
+      error,
+    )
   }
+}
+
+if (!isCurrentTransition(requestId)) return
+
+await focusMainWebview()
 }
 
 async function applyViewMode(

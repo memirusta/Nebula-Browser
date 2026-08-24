@@ -24,6 +24,34 @@ export async function showMainWebview(): Promise<void> {
     }
   }
 }
+export async function focusMainWebview(): Promise<void> {
+  if (!isTauri) return
+
+  try {
+    const webview =
+      await Webview.getByLabel(
+        MAIN_WEBVIEW_LABEL,
+      )
+
+    if (webview) {
+      await webview.setFocus()
+      return
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    await getCurrentWebview().setFocus()
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[nebula] focusMainWebview failed',
+        error,
+      )
+    }
+  }
+}
 
 export async function hideMainWebview(): Promise<void> {
   if (!isTauri) return
