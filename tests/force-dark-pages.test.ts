@@ -51,6 +51,8 @@ test('force dark prefers native site theming before algorithmic DOM darkening', 
   assert.match(native, /img,video,canvas,svg,picture,iframe,object,embed/)
   assert.doesNotMatch(native, /background-image:\s*none/)
   assert.match(native, /nebula-force-dark-status/)
+  assert.match(native, /location\.protocol === 'http:' \|\| location\.protocol === 'https:'/)
+  assert.match(native, /const postToHost = canReportToHost &&/)
   assert.match(siteUi, /claimed_origin == source_origin/)
   assert.match(siteUi, /"stage": "force-dark\.result"/)
 })

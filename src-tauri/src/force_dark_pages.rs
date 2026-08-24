@@ -26,7 +26,9 @@ mod imp {
   const MEDIA_SELECTOR = 'img,video,canvas,svg,picture,iframe,object,embed,[role="img"]';
   const MARK_SELECTOR = '[data-nebula-dark-bg],[data-nebula-dark-text],[data-nebula-dark-border]';
   const STYLE_ID = 'nebula-force-dark-style';
-  const postToHost = typeof window.chrome?.webview?.postMessage === 'function'
+  const canReportToHost =
+    location.protocol === 'http:' || location.protocol === 'https:';
+  const postToHost = canReportToHost && typeof window.chrome?.webview?.postMessage === 'function'
     ? window.chrome.webview.postMessage.bind(window.chrome.webview)
     : null;
   let observer = null;

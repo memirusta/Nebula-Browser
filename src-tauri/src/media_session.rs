@@ -28,6 +28,7 @@ mod imp {
     const MEDIA_BRIDGE_SCRIPT: &str = r#"
 (function () {
   if (window.top !== window || window.__nebulaMediaSessionBridgeInstalled) return;
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
   window.__nebulaMediaSessionBridgeInstalled = true;
   const bridge = window.chrome && window.chrome.webview;
   if (!bridge) return;

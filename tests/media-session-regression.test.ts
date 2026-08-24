@@ -13,6 +13,7 @@ test('Windows media identity is owned by Nebula and follows real Media Session m
   assert.match(media, /SetCurrentProcessExplicitAppUserModelID/)
   assert.match(media, /com\.nebula\.browser/)
   assert.match(media, /navigator\.mediaSession/)
+  assert.match(media, /location\.protocol !== 'http:' && location\.protocol !== 'https:'/)
   assert.match(media, /metadata && metadata\.title/)
   assert.match(media, /metadata && metadata\.artist/)
   assert.match(media, /metadata && metadata\.album/)
