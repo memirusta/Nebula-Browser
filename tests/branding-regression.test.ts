@@ -4,7 +4,22 @@ import test from 'node:test'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-test('detailed and small-size Nebula marks are reused by the right branding surfaces', () => {
+test('detailed square and transparent Nebula marks are reused by the right branding surfaces', () => {
+  assert.equal(
+    existsSync(
+      new URL('../branding/source/nebula-taskbar-logo-detailed-clean.png', import.meta.url),
+    ),
+    true,
+  )
+  assert.equal(
+    existsSync(new URL('../branding/source/nebula-taskbar-logo-small-clean.png', import.meta.url)),
+    true,
+  )
+  assert.equal(existsSync(new URL('../branding/nebula-taskbar-logo-2048.png', import.meta.url)), true)
+  assert.equal(
+    existsSync(new URL('../branding/nebula-taskbar-logo-small-2048.png', import.meta.url)),
+    true,
+  )
   assert.equal(existsSync(new URL('../public/nebula-app-logo.png', import.meta.url)), true)
   assert.equal(existsSync(new URL('../public/nebula-simple-logo.png', import.meta.url)), true)
   assert.equal(existsSync(new URL('../public/nebula-thumbnail.png', import.meta.url)), true)
