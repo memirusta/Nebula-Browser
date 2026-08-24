@@ -171,7 +171,7 @@ export function ChromeApp() {
       () => listenSensitiveFeatureUsage((usage) => {
         setSensitiveUsageByTab((current) => {
           const next = new Map(current)
-          if (usage.camera || usage.microphone || usage.location) {
+          if (usage.camera || usage.microphone || usage.location || usage.screen) {
             next.set(usage.tabLabel, usage)
           } else {
             next.delete(usage.tabLabel)
@@ -249,16 +249,18 @@ export function ChromeApp() {
 
   const sensitiveUsageSummary = useMemo(() => {
     const active = [...sensitiveUsageByTab.values()].filter(
-      (usage) => usage.camera || usage.microphone || usage.location,
+      (usage) => usage.camera || usage.microphone || usage.location || usage.screen,
     )
     if (active.length === 0) return null
     let camera = false
     let microphone = false
     let location = false
+    let screen = false
     for (const usage of active) {
       camera ||= usage.camera
       microphone ||= usage.microphone
       location ||= usage.location
+      screen ||= usage.screen
     }
     let host = ''
     if (active.length === 1) {
@@ -268,12 +270,12 @@ export function ChromeApp() {
         host = active[0].origin
       }
     }
-    return { camera, microphone, location, host, siteCount: active.length }
+    return { camera, microphone, location, screen, host, siteCount: active.length }
   }, [sensitiveUsageByTab])
 
   const activeSensitiveUsage = useMemo(() => {
     if (!siteInfoState.shortcutId || !siteInfoState.origin) {
-      return { camera: false, microphone: false, location: false }
+      return { camera: false, microphone: false, location: false, screen: false }
     }
     for (const usage of sensitiveUsageByTab.values()) {
       if (
@@ -284,10 +286,11 @@ export function ChromeApp() {
           camera: usage.camera,
           microphone: usage.microphone,
           location: usage.location,
+          screen: usage.screen,
         }
       }
     }
-    return { camera: false, microphone: false, location: false }
+    return { camera: false, microphone: false, location: false, screen: false }
   }, [sensitiveUsageByTab, siteInfoState.origin, siteInfoState.shortcutId])
 
   const effectiveSiteInfoState = useMemo<SiteInfoStatePayload>(() => {
@@ -517,6 +520,11 @@ export function ChromeApp() {
             {sensitiveUsageSummary.location && (
               <span title={locale === 'tr' ? 'Konum kullanılıyor' : 'Location in use'}>
                 {locale === 'tr' ? 'Konum' : 'Location'}
+              </span>
+            )}
+            {sensitiveUsageSummary.screen && (
+              <span title={locale === 'tr' ? 'Ekran paylaşılıyor' : 'Screen sharing in use'}>
+                {locale === 'tr' ? 'Ekran' : 'Screen'}
               </span>
             )}
           </span>

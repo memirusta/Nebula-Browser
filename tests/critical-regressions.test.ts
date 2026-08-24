@@ -1175,6 +1175,8 @@ test('sensitive device usage is source-validated and visible in browsing chrome'
   assert.match(siteUi, /message_url != top_level_url/)
   assert.match(siteUi, /nebula-sensitive-feature-usage/)
   assert.match(siteUi, /mediaDevices\.getUserMedia/)
+  assert.match(siteUi, /mediaDevices\.getDisplayMedia/)
+  assert.match(siteUi, /liveDisplayTracks/)
   assert.match(siteUi, /track\.addEventListener\('ended'/)
   assert.match(siteUi, /Object\.defineProperty\(geolocation, 'watchPosition'/)
   assert.match(fullscreen, /validated_web_message_source\(&webview, &args\)/)
@@ -1182,6 +1184,52 @@ test('sensitive device usage is source-validated and visible in browsing chrome'
   assert.match(usage, /startsWith\('nebula-tab-'\)/)
   assert.match(chrome, /listenSensitiveFeatureUsage/)
   assert.match(chrome, /privacyIndicator/)
+  assert.match(chrome, /sensitiveUsageSummary\.screen/)
+})
+
+test('getDisplayMedia delegates to the native WebView2 picker and tracks its tab lifetime', () => {
+  const siteUi = readFileSync(
+    new URL('../src-tauri/src/site_ui.rs', import.meta.url),
+    'utf8',
+  )
+  const usage = readFileSync(
+    new URL('../src/core/sensitiveFeatureUsage.ts', import.meta.url),
+    'utf8',
+  )
+  const chrome = readFileSync(
+    new URL('../src/ChromeApp.tsx', import.meta.url),
+    'utf8',
+  )
+
+  const nativeStart = siteUi.indexOf('Observe getDisplayMedia')
+  const nativeEnd = siteUi.indexOf('let script_app', nativeStart)
+  assert.ok(nativeStart >= 0 && nativeEnd > nativeStart)
+  const nativeHandler = siteUi.slice(nativeStart, nativeEnd)
+
+  assert.match(nativeHandler, /core\.cast::<ICoreWebView2_27>\(\)/)
+  assert.match(nativeHandler, /ScreenCaptureStartingEventHandler::create/)
+  assert.match(nativeHandler, /add_ScreenCaptureStarting/)
+  assert.match(nativeHandler, /native-picker-delegated/)
+  assert.doesNotMatch(nativeHandler, /SetCancel|SetHandled/)
+  assert.match(siteUi, /remove_ScreenCaptureStarting/)
+
+  const displayStart = siteUi.indexOf(
+    "typeof mediaDevices.getDisplayMedia === 'function'",
+  )
+  const displayEnd = siteUi.indexOf(
+    "if (typeof MediaStreamTrack !== 'undefined'",
+    displayStart,
+  )
+  assert.ok(displayStart >= 0 && displayEnd > displayStart)
+  const displayWrapper = siteUi.slice(displayStart, displayEnd)
+  assert.match(displayWrapper, /nativeGetDisplayMedia\(constraints\)\.then/)
+  assert.match(displayWrapper, /trackDevice\(track, 'screen'\)/)
+  assert.doesNotMatch(displayWrapper, /\.catch\(/)
+  assert.match(siteUi, /liveDisplayTracks\.clear\(\)/)
+  assert.match(siteUi, /source-tab-closed/)
+  assert.doesNotMatch(siteUi, /visibilitychange[\s\S]*?liveDisplayTracks\.clear/)
+  assert.match(usage, /screen: boolean/)
+  assert.match(chrome, /Ekran paylaşılıyor/)
 })
 
 test('transition logs redact secrets and Store updater absence is automated', () => {

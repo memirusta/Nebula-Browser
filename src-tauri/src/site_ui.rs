@@ -15,19 +15,20 @@ mod imp {
         ICoreWebView2LaunchingExternalUriSchemeEventHandler,
         ICoreWebView2NewWindowRequestedEventArgs, ICoreWebView2NewWindowRequestedEventHandler,
         ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2PermissionRequestedEventArgs3,
-        ICoreWebView2PermissionRequestedEventHandler, ICoreWebView2ScriptDialogOpeningEventArgs,
+        ICoreWebView2PermissionRequestedEventHandler, ICoreWebView2ScreenCaptureStartingEventArgs,
+        ICoreWebView2ScreenCaptureStartingEventHandler, ICoreWebView2ScriptDialogOpeningEventArgs,
         ICoreWebView2ScriptDialogOpeningEventHandler, ICoreWebView2WebMessageReceivedEventArgs,
         ICoreWebView2WebMessageReceivedEventHandler, ICoreWebView2WindowCloseRequestedEventHandler,
-        ICoreWebView2_10, ICoreWebView2_13, ICoreWebView2_18, COREWEBVIEW2_PERMISSION_KIND,
-        COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
-        COREWEBVIEW2_SCRIPT_DIALOG_KIND,
+        ICoreWebView2_10, ICoreWebView2_13, ICoreWebView2_18, ICoreWebView2_27,
+        COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_SCRIPT_DIALOG_KIND,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
         BasicAuthenticationRequestedEventHandler, LaunchingExternalUriSchemeEventHandler,
         NewWindowRequestedEventHandler, PermissionRequestedEventHandler,
-        ScriptDialogOpeningEventHandler, WebMessageReceivedEventHandler,
-        WindowCloseRequestedEventHandler,
+        ScreenCaptureStartingEventHandler, ScriptDialogOpeningEventHandler,
+        WebMessageReceivedEventHandler, WindowCloseRequestedEventHandler,
     };
     use windows::core::PCWSTR;
     use windows::Win32::UI::Shell::ShellExecuteW;
@@ -55,6 +56,8 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static MAIN_PERMISSION_UI_CONFIGURED: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
+    static SCREEN_CAPTURE_ACTIVE: LazyLock<Mutex<HashMap<String, bool>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
     struct HandlerTokens {
         script_dialog: i64,
@@ -63,6 +66,7 @@ mod imp {
         window_close: i64,
         web_message: i64,
         external_uri: Option<i64>,
+        screen_capture: Option<i64>,
     }
 
     struct Handlers {
@@ -72,6 +76,7 @@ mod imp {
         _window_close: ICoreWebView2WindowCloseRequestedEventHandler,
         _web_message: ICoreWebView2WebMessageReceivedEventHandler,
         _external_uri: Option<ICoreWebView2LaunchingExternalUriSchemeEventHandler>,
+        _screen_capture: Option<ICoreWebView2ScreenCaptureStartingEventHandler>,
     }
 
     struct MainPermissionUiHandler {
@@ -204,6 +209,7 @@ mod imp {
         camera: bool,
         microphone: bool,
         location: bool,
+        screen: bool,
     }
 
     #[derive(Debug, Deserialize)]
@@ -502,6 +508,7 @@ mod imp {
 
     const liveCameraTracks = new Set();
     const liveMicrophoneTracks = new Set();
+    const liveDisplayTracks = new Set();
     const trackedKinds = new WeakMap();
     const locationWatches = new Set();
     let pendingLocationRequests = 0;
@@ -514,16 +521,20 @@ mod imp {
       for (const track of Array.from(liveMicrophoneTracks)) {
         if (!track || track.readyState === 'ended') liveMicrophoneTracks.delete(track);
       }
+      for (const track of Array.from(liveDisplayTracks)) {
+        if (!track || track.readyState === 'ended') liveDisplayTracks.delete(track);
+      }
       return {
         camera: liveCameraTracks.size > 0,
         microphone: liveMicrophoneTracks.size > 0,
-        location: pendingLocationRequests > 0 || locationWatches.size > 0
+        location: pendingLocationRequests > 0 || locationWatches.size > 0,
+        screen: liveDisplayTracks.size > 0
       };
     }
 
     function reportUsage(force) {
       const usage = currentUsage();
-      const key = [usage.camera, usage.microphone, usage.location].join(':');
+      const key = [usage.camera, usage.microphone, usage.location, usage.screen].join(':');
       if (!force && key === lastUsageKey) return;
       lastUsageKey = key;
       try {
@@ -532,7 +543,8 @@ mod imp {
           origin: window.location.origin,
           camera: usage.camera,
           microphone: usage.microphone,
-          location: usage.location
+          location: usage.location,
+          screen: usage.screen
         }));
       } catch (_) {}
     }
@@ -540,15 +552,26 @@ mod imp {
     function releaseTrack(track) {
       liveCameraTracks.delete(track);
       liveMicrophoneTracks.delete(track);
+      liveDisplayTracks.delete(track);
       reportUsage(false);
     }
 
-    function trackDevice(track) {
+    function trackDevice(track, forcedKind) {
       if (!track || track.readyState === 'ended' || trackedKinds.has(track)) return track;
-      const kind = track.kind === 'video' ? 'camera' : track.kind === 'audio' ? 'microphone' : '';
+      const kind = forcedKind === 'screen'
+        ? 'screen'
+        : track.kind === 'video'
+          ? 'camera'
+          : track.kind === 'audio'
+            ? 'microphone'
+            : '';
       if (!kind) return track;
       trackedKinds.set(track, kind);
-      (kind === 'camera' ? liveCameraTracks : liveMicrophoneTracks).add(track);
+      (kind === 'screen'
+        ? liveDisplayTracks
+        : kind === 'camera'
+          ? liveCameraTracks
+          : liveMicrophoneTracks).add(track);
       track.addEventListener('ended', function () { releaseTrack(track); }, { once: true });
       if (typeof track.stop === 'function') {
         const nativeStop = track.stop.bind(track);
@@ -584,6 +607,25 @@ mod imp {
       } catch (_) {}
     }
 
+    if (mediaDevices && typeof mediaDevices.getDisplayMedia === 'function') {
+      const nativeGetDisplayMedia = mediaDevices.getDisplayMedia.bind(mediaDevices);
+      try {
+        Object.defineProperty(mediaDevices, 'getDisplayMedia', {
+          configurable: true,
+          value: function (constraints) {
+            return nativeGetDisplayMedia(constraints).then(function (stream) {
+              if (stream && typeof stream.getTracks === 'function') {
+                stream.getTracks().forEach(function (track) {
+                  trackDevice(track, 'screen');
+                });
+              }
+              return stream;
+            });
+          }
+        });
+      } catch (_) {}
+    }
+
     if (typeof MediaStreamTrack !== 'undefined' && MediaStreamTrack.prototype) {
       const nativeClone = MediaStreamTrack.prototype.clone;
       if (typeof nativeClone === 'function') {
@@ -592,7 +634,7 @@ mod imp {
             configurable: true,
             value: function () {
               const cloned = nativeClone.call(this);
-              return trackedKinds.has(this) ? trackDevice(cloned) : cloned;
+              return trackedKinds.has(this) ? trackDevice(cloned, trackedKinds.get(this)) : cloned;
             }
           });
         } catch (_) {}
@@ -663,6 +705,7 @@ mod imp {
     window.addEventListener('pagehide', function () {
       liveCameraTracks.clear();
       liveMicrophoneTracks.clear();
+      liveDisplayTracks.clear();
       locationWatches.clear();
       pendingLocationRequests = 0;
       reportUsage(true);
@@ -989,6 +1032,80 @@ mod imp {
             windows::Win32::System::Com::CoTaskMemFree(Some(value.as_ptr().cast()));
         }
         text
+    }
+
+    fn screen_capture_origin(args: &ICoreWebView2ScreenCaptureStartingEventArgs) -> String {
+        let source = unsafe {
+            args.OriginalSourceFrameInfo()
+                .ok()
+                .map(|frame| take_string(|value| frame.Source(value)))
+                .unwrap_or_default()
+        };
+        url::Url::parse(&source)
+            .ok()
+            .filter(|url| matches!(url.scheme(), "http" | "https"))
+            .map(|url| url.origin().ascii_serialization())
+            .unwrap_or_default()
+    }
+
+    fn record_screen_capture_transition(
+        app: &AppHandle,
+        tab_label: &str,
+        origin: &str,
+        stage: &str,
+        status: &str,
+        reason: &str,
+    ) {
+        let log_app = app.clone();
+        let tab_label = tab_label.to_string();
+        let origin = origin.to_string();
+        let stage = stage.to_string();
+        let status = status.to_string();
+        let reason = reason.to_string();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = crate::write_transition_log(
+                log_app,
+                serde_json::json!({
+                "stage": stage,
+                "status": status,
+                "tabLabel": tab_label,
+                "origin": origin,
+                "reason": reason,
+                "nativePicker": true,
+                "runtimeInterface": "ICoreWebView2_27",
+                }),
+            );
+        });
+    }
+
+    fn update_screen_capture_state(app: &AppHandle, tab_label: &str, origin: &str, active: bool) {
+        let changed = if let Ok(mut states) = SCREEN_CAPTURE_ACTIVE.lock() {
+            if active {
+                states.insert(tab_label.to_string(), true) != Some(true)
+            } else {
+                states.remove(tab_label) == Some(true)
+            }
+        } else {
+            false
+        };
+        if changed {
+            record_screen_capture_transition(
+                app,
+                tab_label,
+                origin,
+                if active {
+                    "screen-capture.active"
+                } else {
+                    "screen-capture.stopped"
+                },
+                "ok",
+                if active {
+                    "display-track-live"
+                } else {
+                    "display-track-ended"
+                },
+            );
+        }
     }
 
     fn validated_http_document_source_values(
@@ -1614,10 +1731,23 @@ mod imp {
                                 let location = value
                                     .get("location")
                                     .and_then(serde_json::Value::as_bool);
+                                let screen = value
+                                    .get("screen")
+                                    .and_then(serde_json::Value::as_bool);
                                 if claimed_origin == source_origin {
-                                    if let (Some(camera), Some(microphone), Some(location)) =
-                                        (camera, microphone, location)
+                                    if let (
+                                        Some(camera),
+                                        Some(microphone),
+                                        Some(location),
+                                        Some(screen),
+                                    ) = (camera, microphone, location, screen)
                                     {
+                                        update_screen_capture_state(
+                                            &protocol_app,
+                                            &protocol_label,
+                                            &source_origin,
+                                            screen,
+                                        );
                                         let _ = protocol_app.emit(
                                             SENSITIVE_FEATURE_USAGE_EVENT,
                                             SensitiveFeatureUsagePayload {
@@ -1626,6 +1756,7 @@ mod imp {
                                                 camera,
                                                 microphone,
                                                 location,
+                                                screen,
                                             },
                                         );
                                     }
@@ -1833,6 +1964,56 @@ mod imp {
                         external_uri_handler = Some(handler);
                     }
 
+                    // Observe getDisplayMedia without taking ownership of the picker. Leaving
+                    // Cancel and Handled untouched delegates selection and cancellation to the
+                    // native WebView2/Windows screen-capture UI.
+                    let mut screen_capture_handler = None;
+                    let mut screen_capture_token = None;
+                    match core.cast::<ICoreWebView2_27>() {
+                        Ok(core27) => {
+                            let capture_app = app_for_handlers.clone();
+                            let capture_label = label_for_handlers.clone();
+                            let handler = ScreenCaptureStartingEventHandler::create(Box::new(
+                                move |_, args| {
+                                    let Some(args) = args else { return Ok(()) };
+                                    let origin = screen_capture_origin(&args);
+                                    record_screen_capture_transition(
+                                        &capture_app,
+                                        &capture_label,
+                                        &origin,
+                                        "screen-capture.request",
+                                        "info",
+                                        "native-picker-delegated",
+                                    );
+                                    Ok(())
+                                },
+                            ));
+                            let mut token = 0i64;
+                            match core27.add_ScreenCaptureStarting(&handler, &mut token) {
+                                Ok(()) => {
+                                    screen_capture_token = Some(token);
+                                    screen_capture_handler = Some(handler);
+                                }
+                                Err(error) => record_screen_capture_transition(
+                                    &app_for_handlers,
+                                    &label_for_handlers,
+                                    "",
+                                    "screen-capture.interface",
+                                    "error",
+                                    &format!("event-registration-failed: {error}"),
+                                ),
+                            }
+                        }
+                        Err(error) => record_screen_capture_transition(
+                            &app_for_handlers,
+                            &label_for_handlers,
+                            "",
+                            "screen-capture.interface",
+                            "unsupported",
+                            &format!("interface-unavailable: {error}"),
+                        ),
+                    }
+
                     let script_app = app_for_handlers.clone();
                     let script_label = label_for_handlers.clone();
                     let script_dialog =
@@ -1986,6 +2167,7 @@ mod imp {
                             window_close: window_close_token,
                             web_message: web_message_token,
                             external_uri: external_uri_token,
+                            screen_capture: screen_capture_token,
                         },
                         Handlers {
                             _script_dialog: script_dialog,
@@ -1994,6 +2176,7 @@ mod imp {
                             _window_close: window_close,
                             _web_message: web_message,
                             _external_uri: external_uri_handler,
+                            _screen_capture: screen_capture_handler,
                         },
                     ))
                 })();
@@ -2296,6 +2479,11 @@ mod imp {
                     {
                         let _ = core18.remove_LaunchingExternalUriScheme(token);
                     }
+                    if let (Some(token), Ok(core27)) =
+                        (tokens.screen_capture, core.cast::<ICoreWebView2_27>())
+                    {
+                        let _ = core27.remove_ScreenCaptureStarting(token);
+                    }
                 }
                 HANDLERS.with(|slots| {
                     slots.borrow_mut().remove(&handler_label);
@@ -2304,6 +2492,21 @@ mod imp {
         }
         if let Ok(mut configured) = CONFIGURED.lock() {
             configured.remove(label);
+        }
+        let capture_was_active = SCREEN_CAPTURE_ACTIVE
+            .lock()
+            .ok()
+            .and_then(|mut states| states.remove(label))
+            == Some(true);
+        if capture_was_active {
+            record_screen_capture_transition(
+                app,
+                label,
+                "",
+                "screen-capture.stopped",
+                "ok",
+                "source-tab-closed",
+            );
         }
         cancel_for_tab(app, label);
     }

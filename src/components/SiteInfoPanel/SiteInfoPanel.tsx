@@ -15,6 +15,7 @@ interface SiteInfoPanelProps {
     camera: boolean
     microphone: boolean
     location: boolean
+    screen: boolean
   }
   onClose: () => void
   onToggleProtection: () => void
@@ -25,7 +26,7 @@ interface SiteInfoPanelProps {
   onClearSiteData: () => void
 }
 
-type PermissionName = 'camera' | 'microphone' | 'location'
+type PermissionName = 'camera' | 'microphone' | 'location' | 'screen'
 
 function PermissionIcon({ name }: { name: PermissionName }) {
   if (name === 'camera') {
@@ -40,6 +41,14 @@ function PermissionIcon({ name }: { name: PermissionName }) {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="8" y="3" width="8" height="12" rx="4" />
         <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
+      </svg>
+    )
+  }
+  if (name === 'screen') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="13" rx="2" />
+        <path d="M8 21h8M12 17v4M9 10l3-3 3 3M12 7v7" />
       </svg>
     )
   }
@@ -151,6 +160,7 @@ export function SiteInfoPanel({
     ['camera', tr ? 'Kamera' : 'Camera', state.permissions.camera],
     ['microphone', tr ? 'Mikrofon' : 'Microphone', state.permissions.microphone],
     ['location', tr ? 'Konum' : 'Location', state.permissions.location],
+    ['screen', tr ? 'Ekran paylaşımı' : 'Screen sharing', 'prompt'],
   ]
 
   return (
