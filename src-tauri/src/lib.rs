@@ -744,6 +744,7 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
     if !label.starts_with("nebula-tab-") {
         return Err("close is limited to browser tabs".to_string());
     }
+    let deferred_for_download = download_manager::defer_tab_close_if_active(&label);
     tab_fullscreen::teardown_tab_fullscreen(&app, &label);
     devtools_bridge::teardown(&app, &label);
     context_menu::teardown(&app, &label);
@@ -756,9 +757,23 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
     tab_metadata::teardown_tab_metadata(&app, &label);
     webview_branding::teardown_webview_branding(&label);
 
-    let webview = app
-        .get_webview(&label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let Some(webview) = app.get_webview(&label) else {
+        return if deferred_for_download {
+            Ok(())
+        } else {
+            Err(format!("webview '{label}' not found"))
+        };
+    };
+
+    if deferred_for_download {
+        // Navigating away stops the closed page's scripts while the hidden
+        // controller stays alive to own its active WebView2 downloads.
+        if let Ok(parsed) = "about:blank".parse::<url::Url>() {
+            let _ = webview.navigate(parsed);
+        }
+        let _ = webview.hide();
+        return Ok(());
+    }
 
     if let Ok(parsed) = "about:blank".parse::<url::Url>() {
         let _ = webview.navigate(parsed);
