@@ -24,13 +24,14 @@ export interface NebulaNotification {
 
 export interface NativeSiteNotification {
   id: string
+  sequence: number
+  source: 'webview2' | 'content-adapter' | 'title-fallback'
   tabLabel: string
   origin: string
   title: string
   body: string
   iconUrl: string
   timestampMs: number
-  requiresNativeToast?: boolean
 }
 
 export interface NativeNotificationActivation {
@@ -120,8 +121,17 @@ export function listenSiteNotifications(
   onNotification: (notification: NativeSiteNotification) => void,
 ): Promise<UnlistenFn> {
   if (!isTauri) return Promise.resolve(() => {})
-  return listen<NativeSiteNotification>('nebula-site-notification', ({ payload }) => {
+  return listen<NativeSiteNotification>('nebula-notification-broker', ({ payload }) => {
     onNotification(payload)
+  })
+}
+
+export async function replaySiteNotifications(
+  afterSequence: number | null = null,
+): Promise<NativeSiteNotification[]> {
+  if (!isTauri) return []
+  return invoke<NativeSiteNotification[]>('notification_broker_replay', {
+    afterSequence,
   })
 }
 

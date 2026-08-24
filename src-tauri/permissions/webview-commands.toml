@@ -7,6 +7,8 @@ commands.allow = [
   "browser_reparent_tab",
   "write_transition_log",
   "show_native_notification",
+  "notification_broker_replay",
+  "notification_broker_diagnostics",
   "webview_set_shortcut_bindings",
   "webview_navigate",
   "webview_close_tab",

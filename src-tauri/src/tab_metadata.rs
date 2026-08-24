@@ -3,7 +3,7 @@ mod imp {
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::sync::{LazyLock, Mutex};
-    use std::time::{Instant, SystemTime, UNIX_EPOCH};
+    use std::time::Instant;
 
     use serde::Serialize;
     use tauri::{AppHandle, Emitter, Manager};
@@ -41,9 +41,6 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static LAST_SOCIAL_UNREAD_COUNTS: LazyLock<Mutex<HashMap<String, u64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
-    static LAST_CONTENT_NOTIFICATIONS: LazyLock<Mutex<HashMap<String, Instant>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-
     #[derive(Clone, Serialize)]
     struct TabSnapshotPayload {
         label: String,
@@ -65,19 +62,6 @@ mod imp {
         url: String,
         duration_ms: u128,
         success: bool,
-    }
-
-    #[derive(Clone, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct SiteNotificationPayload {
-        id: String,
-        tab_label: String,
-        origin: String,
-        title: String,
-        body: String,
-        icon_url: String,
-        timestamp_ms: u64,
-        requires_native_toast: bool,
     }
 
     unsafe fn take_webview_string(
@@ -136,20 +120,6 @@ mod imp {
         })
     }
 
-    pub fn record_content_notification(label: &str) {
-        if let Ok(mut notifications) = LAST_CONTENT_NOTIFICATIONS.lock() {
-            notifications.insert(label.to_string(), Instant::now());
-        }
-    }
-
-    fn content_notification_was_recent(label: &str) -> bool {
-        LAST_CONTENT_NOTIFICATIONS
-            .lock()
-            .ok()
-            .and_then(|notifications| notifications.get(label).copied())
-            .is_some_and(|sent_at| sent_at.elapsed() < std::time::Duration::from_secs(2))
-    }
-
     fn emit_social_unread_notification(app: &AppHandle, label: &str, url: &str, title: &str) {
         let Some((origin, site_name)) = social_site(url) else {
             if let Ok(mut counts) = LAST_SOCIAL_UNREAD_COUNTS.lock() {
@@ -165,9 +135,7 @@ mod imp {
         if previous.map_or(true, |previous| count <= previous) {
             return;
         }
-        if !app_is_backgrounded(app)
-            || !crate::webview_privacy::title_unread_notification_allowed(label, &origin)
-        {
+        if !app_is_backgrounded(app) {
             return;
         }
         let notification_app = app.clone();
@@ -181,31 +149,18 @@ mod imp {
                 .ok()
                 .and_then(|counts| counts.get(&notification_label).copied())
                 == Some(count);
-            if !count_is_current
-                || content_notification_was_recent(&notification_label)
-                || !app_is_backgrounded(&notification_app)
-                || !crate::webview_privacy::title_unread_notification_allowed(
-                    &notification_label,
-                    &notification_origin,
-                )
-            {
+            if !count_is_current || !app_is_backgrounded(&notification_app) {
                 return;
             }
-            let timestamp_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let _ = notification_app.emit(
-                "nebula-site-notification",
-                SiteNotificationPayload {
-                    id: format!("site-title-unread-{timestamp_ms}-{notification_label}-{count}"),
+            crate::notification_broker::submit(
+                &notification_app,
+                crate::notification_broker::NotificationSource::TitleFallback,
+                crate::notification_broker::NotificationCandidate {
                     tab_label: notification_label,
                     origin: notification_origin,
                     title: notification_title,
                     body: String::new(),
                     icon_url: String::new(),
-                    timestamp_ms,
-                    requires_native_toast: true,
                 },
             );
         });
@@ -471,9 +426,6 @@ mod imp {
         if let Ok(mut counts) = LAST_SOCIAL_UNREAD_COUNTS.lock() {
             counts.remove(label);
         }
-        if let Ok(mut notifications) = LAST_CONTENT_NOTIFICATIONS.lock() {
-            notifications.remove(label);
-        }
         if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
             starts.remove(label);
         }
@@ -481,9 +433,7 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{
-    app_is_backgrounded, record_content_notification, setup_tab_metadata, teardown_tab_metadata,
-};
+pub use imp::{app_is_backgrounded, setup_tab_metadata, teardown_tab_metadata};
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_metadata(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
@@ -497,6 +447,3 @@ pub fn teardown_tab_metadata(_app: &tauri::AppHandle, _label: &str) {}
 pub fn app_is_backgrounded(_app: &tauri::AppHandle) -> bool {
     false
 }
-
-#[cfg(not(target_os = "windows"))]
-pub fn record_content_notification(_label: &str) {}

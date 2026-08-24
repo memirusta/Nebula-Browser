@@ -4,7 +4,7 @@ mod imp {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{LazyLock, Mutex};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     use serde::{Deserialize, Serialize};
     use tauri::{AppHandle, Emitter, Manager};
@@ -42,7 +42,6 @@ mod imp {
     const SENSITIVE_FEATURE_USAGE_EVENT: &str = "nebula-sensitive-feature-usage";
     const SITE_PRINT_REQUEST_EVENT: &str = "nebula-site-print-request";
     const SITE_ZOOM_REQUEST_EVENT: &str = "nebula-site-zoom-request";
-    const SITE_NOTIFICATION_EVENT: &str = "nebula-site-notification";
     const PASSWORD_STEP_EVENT: &str = "nebula-password-step";
     const SITE_UI_TIMEOUT: Duration = Duration::from_secs(60);
     const POPUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -195,19 +194,6 @@ mod imp {
         url: String,
         username: String,
         password: String,
-    }
-
-    #[derive(Clone, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct SiteNotificationPayload {
-        id: String,
-        tab_label: String,
-        origin: String,
-        title: String,
-        body: String,
-        icon_url: String,
-        timestamp_ms: u64,
-        requires_native_toast: bool,
     }
 
     #[derive(Clone, Serialize)]
@@ -1557,45 +1543,16 @@ mod imp {
                                     && !body.is_empty()
                                     && body.chars().count() <= 500
                                     && crate::tab_metadata::app_is_backgrounded(&protocol_app)
-                                    && crate::webview_privacy::title_unread_notification_allowed(
-                                        &protocol_label,
-                                        &source_origin,
-                                    )
                                 {
-                                    crate::tab_metadata::record_content_notification(
-                                        &protocol_label,
-                                    );
-                                    let show_content =
-                                        crate::webview_privacy::notification_content_preview_allowed(
-                                            &protocol_label,
-                                        );
-                                    let timestamp_ms = SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis()
-                                        as u64;
-                                    let _ = protocol_app.emit(
-                                        SITE_NOTIFICATION_EVENT,
-                                        SiteNotificationPayload {
-                                            id: format!(
-                                                "site-content-{timestamp_ms}-{}",
-                                                protocol_label
-                                            ),
+                                    crate::notification_broker::submit(
+                                        &protocol_app,
+                                        crate::notification_broker::NotificationSource::ContentAdapter,
+                                        crate::notification_broker::NotificationCandidate {
                                             tab_label: protocol_label.clone(),
                                             origin: source_origin,
-                                            title: if show_content {
-                                                title.to_string()
-                                            } else {
-                                                String::new()
-                                            },
-                                            body: if show_content {
-                                                body.to_string()
-                                            } else {
-                                                String::new()
-                                            },
+                                            title: title.to_string(),
+                                            body: body.to_string(),
                                             icon_url: String::new(),
-                                            timestamp_ms,
-                                            requires_native_toast: true,
                                         },
                                     );
                                 }

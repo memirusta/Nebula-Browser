@@ -9,6 +9,7 @@ mod external_open;
 mod google_oauth;
 mod google_sync;
 mod native_notification;
+mod notification_broker;
 mod password_webview;
 mod secure_password_vault;
 mod site_fullscreen_window;
@@ -168,6 +169,21 @@ async fn show_native_notification(
         icon_url,
     )
     .await
+}
+
+#[tauri::command]
+fn notification_broker_replay(
+    app: tauri::AppHandle,
+    after_sequence: Option<u64>,
+) -> Vec<notification_broker::BrokerNotification> {
+    notification_broker::replay(&app, after_sequence)
+}
+
+#[tauri::command]
+fn notification_broker_diagnostics(
+    limit: Option<usize>,
+) -> Vec<notification_broker::NotificationDiagnostic> {
+    notification_broker::diagnostics(limit)
 }
 
 #[tauri::command]
@@ -1391,6 +1407,8 @@ pub fn run() {
             browser_reparent_tab,
             external_open::take_pending_open_urls,
             show_native_notification,
+            notification_broker_replay,
+            notification_broker_diagnostics,
             write_transition_log,
             search_suggestions,
             webview_set_shortcut_bindings,

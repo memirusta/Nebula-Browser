@@ -36,6 +36,7 @@ test('remembered notification choices feed the background keep-alive policy', ()
 
 test('allowed site notifications use Nebula-owned Windows toasts for activation routing', () => {
   const privacy = read('src-tauri/src/webview_privacy.rs')
+  const broker = read('src-tauri/src/notification_broker.rs')
   const handlerStart = privacy.indexOf('NotificationReceivedEventHandler::create')
   const handlerEnd = privacy.indexOf('let mut notification_token', handlerStart)
 
@@ -43,15 +44,11 @@ test('allowed site notifications use Nebula-owned Windows toasts for activation 
   assert.ok(handlerEnd > handlerStart)
 
   const handler = privacy.slice(handlerStart, handlerEnd)
-  const blockedBranch = handler.indexOf('!current.site_notifications')
-  const emit = handler.indexOf('.emit(SITE_NOTIFICATION_EVENT')
-
-  assert.ok(blockedBranch >= 0)
-  assert.ok(emit > blockedBranch)
-  assert.match(handler.slice(blockedBranch, emit), /args\.SetHandled\(true\)/)
-  assert.match(handler, /let notification = args\.Notification\(\)\?[\s\S]*?args\.SetHandled\(true\)\?[\s\S]*?notification\.ReportShown\(\)/)
-  assert.match(handler, /requires_native_toast: true/)
-  assert.match(handler, /record_content_notification\(&handler_label\)/)
+  assert.match(handler, /args\.SetHandled\(true\)\?/)
+  assert.match(handler, /permission_allows\([\s\S]*?NotificationSource::Webview2/)
+  assert.match(handler, /if allowed[\s\S]*?ReportShown\(\)[\s\S]*?ReportClosed\(\)/)
+  assert.match(handler, /notification_broker::submit\([\s\S]*?NotificationSource::Webview2/)
+  assert.match(broker, /native_notification::show\([\s\S]*?event\.tab_label[\s\S]*?event\.origin/)
 })
 
 test('notification content preview is a global setting and redacts native site toasts', () => {
@@ -60,18 +57,19 @@ test('notification content preview is a global setting and redacts native site t
   const browserShell = read('src/components/BrowserShell/BrowserShell.tsx')
   const notifications = read('src/hooks/useNotifications.ts')
   const privacy = read('src-tauri/src/webview_privacy.rs')
-  const siteUi = read('src-tauri/src/site_ui.rs')
+  const broker = read('src-tauri/src/notification_broker.rs')
+  const errorPage = read('src-tauri/src/tab_error_page.rs')
 
   assert.match(settings, /showNotificationContent: boolean/)
   assert.match(settings, /showNotificationContent: true/)
   assert.match(settingsPanel, /label=\{t\('showNotificationContent'\)\}/)
   assert.match(browserShell, /showNotificationContent:\s*notifications\.showNotificationContent/)
-  assert.match(notifications, /showNotificationContentRef\.current[\s\S]*?notificationHost\(origin\)/)
+  assert.doesNotMatch(notifications, /showNotificationContentRef|requiresNativeToast/)
   assert.match(privacy, /show_notification_content: bool/)
-  assert.match(privacy, /args\.SetHandled\(true\)\?[\s\S]*?notification\.ReportShown\(\)/)
-  assert.match(privacy, /requires_native_toast: true/)
-  assert.match(siteUi, /notification_content_preview_allowed/)
-  assert.match(siteUi, /title: if show_content[\s\S]*?body: if show_content/)
+  assert.match(privacy, /NotificationDeliveryPolicy[\s\S]*?show_content/)
+  assert.match(broker, /let title = if show_content[\s\S]*?let body = if show_content/)
+  assert.match(errorPage, /Yeni bir mesajın veya bildirimin var\./)
+  assert.match(errorPage, /You have a new message or notification\./)
 })
 
 test('Instagram message nodes are not marked seen before their delayed text arrives', () => {
@@ -115,8 +113,8 @@ test('site notification permissions live in Settings instead of the notification
 
 test('clicking a native Windows toast foregrounds Nebula and routes to its live tab', () => {
   const native = read('src-tauri/src/native_notification.rs')
+  const broker = read('src-tauri/src/notification_broker.rs')
   const core = read('src/core/notification.ts')
-  const hook = read('src/hooks/useNotifications.ts')
   const shell = read('src/components/BrowserShell/BrowserShell.tsx')
 
   assert.match(native, /toast[\s\S]*?\.Activated\(&activated\)/)
@@ -124,18 +122,18 @@ test('clicking a native Windows toast foregrounds Nebula and routes to its live 
   assert.match(native, /nebula-native-notification-activated/)
   assert.match(core, /listenNativeNotificationActivations/)
   assert.match(core, /show_native_notification'[\s\S]*?tabLabel[\s\S]*?origin/)
-  assert.match(hook, /showNativeNotification\([\s\S]*?nativeTitle,[\s\S]*?nativeBody,[\s\S]*?payload\.tabLabel,[\s\S]*?origin/)
+  assert.match(broker, /native_notification::show\([\s\S]*?Some\(event\.tab_label\.clone\(\)\)[\s\S]*?Some\(event\.origin\.clone\(\)\)/)
+  assert.match(native, /record_click_routing/)
   assert.match(shell, /listenNativeNotificationActivations[\s\S]*?switchToExistingBrowseTab\(shortcutId\)[\s\S]*?openShortcutByUrl/)
 })
 
 test('native site toasts use a cached site favicon with a safe Nebula fallback', () => {
-  const core = read('src/core/notification.ts')
-  const hook = read('src/hooks/useNotifications.ts')
+  const broker = read('src-tauri/src/notification_broker.rs')
   const native = read('src-tauri/src/native_notification.rs')
   const lib = read('src-tauri/src/lib.rs')
 
-  assert.match(core, /showNativeNotification\([\s\S]*?iconUrl\?: string \| null[\s\S]*?iconUrl,/)
-  assert.match(hook, /showNativeNotification\([\s\S]*?faviconForUrl\(origin\)/)
+  assert.match(broker, /favicon_url[\s\S]*?https:\/\/www\.google\.com\/s2\/favicons/)
+  assert.match(broker, /native_notification::show\([\s\S]*?favicon_url\(&event\.origin\)/)
   assert.match(lib, /show_native_notification\([\s\S]*?icon_url: Option<String>[\s\S]*?native_notification::show[\s\S]*?\.await/)
   assert.match(native, /validated_site_icon_url[\s\S]*?www\.google\.com[\s\S]*?\/s2\/favicons/)
   assert.match(native, /MAX_SITE_ICON_BYTES[\s\S]*?content_length\(\)[\s\S]*?response\.bytes\(\)/)
@@ -188,6 +186,7 @@ test('persistent social notifications fall back to unread title counts while bac
   const metadata = read('src-tauri/src/tab_metadata.rs')
   const privacy = read('src-tauri/src/webview_privacy.rs')
   const siteUi = read('src-tauri/src/site_ui.rs')
+  const broker = read('src-tauri/src/notification_broker.rs')
   const notification = read('src/core/notification.ts')
   const permissions = read('src-tauri/permissions/webview-commands.toml')
 
@@ -196,19 +195,19 @@ test('persistent social notifications fall back to unread title counts while bac
   assert.match(metadata, /GetForegroundWindow/)
   assert.match(metadata, /GetAncestor\(hwnd, GA_ROOT\)/)
   assert.doesNotMatch(metadata, /is_focused\(\)/)
-  assert.match(metadata, /title_unread_notification_allowed/)
-  assert.match(metadata, /requires_native_toast: true/)
-  assert.match(metadata, /content_notification_was_recent/)
   assert.match(metadata, /from_millis\(700\)/)
+  assert.match(metadata, /NotificationSource::TitleFallback/)
   assert.match(privacy, /notification_allowed_sites/)
   assert.match(siteUi, /nebula-site-notification-content/)
   assert.match(siteUi, /MutationObserver/)
   assert.match(siteUi, /rect\.left \+ rect\.width \/ 2 >= composerRect\.left/)
   assert.match(siteUi, /validated_web_message_source\(&sender, &args\)/)
   assert.match(siteUi, /source_has_content_adapter/)
-  assert.match(siteUi, /record_content_notification/)
-  assert.match(notification, /show_native_notification/)
-  assert.match(permissions, /"show_native_notification"/)
+  assert.match(siteUi, /NotificationSource::ContentAdapter/)
+  assert.match(broker, /recent-webview2-authority/)
+  assert.match(broker, /recent-higher-authority-source/)
+  assert.match(notification, /nebula-notification-broker/)
+  assert.match(permissions, /"notification_broker_replay"/)
 })
 
 test('WhatsApp content bridge accepts incoming messages only from its exact HTTPS origin', () => {
@@ -225,18 +224,19 @@ test('WhatsApp content bridge accepts incoming messages only from its exact HTTP
 })
 
 test('WhatsApp native toasts identify the service before sender and message content', () => {
-  const notifications = read('src/hooks/useNotifications.ts')
+  const broker = read('src-tauri/src/notification_broker.rs')
 
-  assert.match(notifications, /hostname\.toLowerCase\(\) === 'web\.whatsapp\.com'/)
-  assert.match(notifications, /const nativeTitle = isWhatsApp \? 'WhatsApp' : title/)
-  assert.match(notifications, /\[title, body\]\.filter\(Boolean\)\.join\('\\n'\)/)
-  assert.match(notifications, /showNativeNotification\([\s\S]*?nativeTitle,[\s\S]*?nativeBody/)
+  assert.match(broker, /notification_host\(&event\.origin\) == "web\.whatsapp\.com"/)
+  assert.match(broker, /"WhatsApp"\.to_string\(\)/)
+  assert.match(broker, /event\.title\.as_str\(\)[\s\S]*?event\.body\.as_str\(\)[\s\S]*?join\("\\n"\)/)
+  assert.match(broker, /native_notification::show\([\s\S]*?toast_title[\s\S]*?toast_body/)
 })
 
 test('notification delivery deduplicates site events and routes completed downloads', () => {
   const settings = read('src/core/nebulaSettings.ts')
   const settingsPanel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   const notifications = read('src/hooks/useNotifications.ts')
+  const broker = read('src-tauri/src/notification_broker.rs')
   const panel = read('src/components/NotificationPanel/NotificationPanel.tsx')
   const shell = read('src/components/BrowserShell/BrowserShell.tsx')
   const native = read('src-tauri/src/native_notification.rs')
@@ -244,8 +244,15 @@ test('notification delivery deduplicates site events and routes completed downlo
   assert.doesNotMatch(settings, /focusModeAlerts/)
   assert.match(settings, /downloadNotifications: boolean/)
   assert.match(settingsPanel, /downloadNotifications/)
-  assert.match(notifications, /recentSiteNotificationsRef/)
-  assert.match(notifications, /previousTimestamp[\s\S]*?2_500/)
+  assert.doesNotMatch(notifications, /recentSiteNotificationsRef|previousTimestamp/)
+  assert.match(broker, /NotificationSource::Webview2 => None/)
+  assert.match(broker, /MAX_REPLAY_EVENTS: usize = 200/)
+  assert.match(broker, /MAX_DIAGNOSTICS: usize = 200/)
+  assert.match(broker, /MAX_DIAGNOSTIC_LOG_BYTES: u64 = 1024 \* 1024/)
+  assert.match(broker, /notification-broker\.jsonl/)
+  assert.match(broker, /site-broker-\{\}-\{sequence\}/)
+  assert.match(broker, /fn diagnostic_origin[\s\S]*?normalized_origin/)
+  assert.match(notifications, /replaySiteNotifications[\s\S]*?\}, \[add\]\)/)
   assert.match(notifications, /nativeDownloadToastIdsRef/)
   assert.match(notifications, /download\.requiresConfirmation/)
   assert.match(

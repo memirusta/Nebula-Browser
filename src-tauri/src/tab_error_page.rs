@@ -73,6 +73,14 @@ mod imp {
             .unwrap_or_else(|_| "en".to_string())
     }
 
+    pub fn notification_activity_body() -> String {
+        if current_ui_locale() == "tr" {
+            "Yeni bir mesajın veya bildirimin var.".to_string()
+        } else {
+            "You have a new message or notification.".to_string()
+        }
+    }
+
     pub(crate) fn note_browser_verification_request(label: &str) {
         let now = Instant::now();
         if let Ok(mut states) = VERIFICATION_STATES.lock() {
@@ -653,13 +661,20 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{set_ui_locale, setup_tab_error_page, teardown_tab_error_page};
+pub use imp::{
+    notification_activity_body, set_ui_locale, setup_tab_error_page, teardown_tab_error_page,
+};
 
 #[cfg(target_os = "windows")]
 pub(crate) use imp::{note_browser_verification_request, note_external_uri_navigation};
 
 #[cfg(not(target_os = "windows"))]
 pub fn set_ui_locale(_locale: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn notification_activity_body() -> String {
+    "You have a new message or notification.".to_string()
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_error_page(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {

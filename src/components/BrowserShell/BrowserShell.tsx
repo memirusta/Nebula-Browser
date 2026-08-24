@@ -621,7 +621,6 @@ export function BrowserShell() {
       downloads.items,
       settings.notifications
         .siteNotifications,
-      settings.notifications.showNotificationContent,
       settings.notifications.downloadNotifications,
     )
   const setSiteNotificationPermission =

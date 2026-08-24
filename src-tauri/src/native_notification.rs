@@ -148,14 +148,24 @@ mod imp {
             if let Some(window) = activation_app.get_window(&target_label) {
                 crate::external_open::activate_main_window(&window);
             }
-            let _ = activation_app.emit_to(
-                target_label,
+            let result = activation_app.emit_to(
+                target_label.clone(),
                 ACTIVATED_EVENT,
                 ActivatedPayload {
                     tab_label: tab_label.clone(),
                     origin: origin.clone(),
                     download_id: download_id.clone(),
                 },
+            );
+            crate::notification_broker::record_click_routing(
+                tab_label.as_deref(),
+                origin.as_deref(),
+                &target_label,
+                result.is_ok(),
+                &result
+                    .err()
+                    .map(|error| error.to_string())
+                    .unwrap_or_default(),
             );
             Ok(())
         });
