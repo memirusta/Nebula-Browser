@@ -3,17 +3,26 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../../platform/runtime'
 import { useLocale } from '../../hooks/useLocale'
 import {
-  isWindowMaximized,
+  getWindowPresentationState,
   toggleWindowMaximize,
+  type WindowPresentationState,
 } from '../../platform/windowMaximize'
 
 interface WindowControlsProps {
   buttonClassName: string
 }
 
+const DEFAULT_PRESENTATION: WindowPresentationState = {
+  browserFullscreen: false,
+  siteFullscreen: false,
+  maximized: false,
+  focused: false,
+}
+
 export function WindowControls({ buttonClassName }: WindowControlsProps) {
   const { t } = useLocale()
-  const [maximized, setMaximized] = useState(false)
+  const [presentation, setPresentation] =
+    useState<WindowPresentationState>(DEFAULT_PRESENTATION)
 
   useEffect(() => {
     if (!isTauri) return
@@ -21,15 +30,16 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
     const appWindow = getCurrentWindow()
     let disposed = false
     let unlistenResize: (() => void) | undefined
+    let unlistenFocus: (() => void) | undefined
 
-    const syncMaximized = async () => {
-      if (disposed) return
-      setMaximized(await isWindowMaximized())
+    const syncPresentation = async () => {
+      const next = await getWindowPresentationState()
+      if (!disposed) setPresentation(next)
     }
 
-    void syncMaximized()
+    void syncPresentation()
     void appWindow.onResized(() => {
-      void syncMaximized()
+      void syncPresentation()
     }).then((unlisten) => {
       if (disposed) {
         unlisten()
@@ -37,16 +47,28 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
       }
       unlistenResize = unlisten
     })
+    void appWindow.onFocusChanged(() => {
+      void syncPresentation()
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten()
+        return
+      }
+      unlistenFocus = unlisten
+    })
 
     return () => {
       disposed = true
       unlistenResize?.()
+      unlistenFocus?.()
     }
   }, [])
 
   if (!isTauri) return null
 
   const appWindow = getCurrentWindow()
+  const maximizeLocked =
+    presentation.browserFullscreen || presentation.siteFullscreen
 
   const stop = (event: MouseEvent) => {
     event.stopPropagation()
@@ -78,14 +100,17 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
         type="button"
         className={buttonClassName}
         onMouseDown={stopDrag}
+        aria-disabled={maximizeLocked}
         onClick={(event) => {
           stop(event)
-          void toggleWindowMaximize().then(setMaximized)
+          void toggleWindowMaximize().then(() =>
+            getWindowPresentationState().then(setPresentation),
+          )
         }}
-        aria-label={maximized ? t('titleRestore') : t('titleMaximize')}
-        title={maximized ? t('titleRestore') : t('titleMaximize')}
+        aria-label={presentation.maximized ? t('titleRestore') : t('titleMaximize')}
+        title={presentation.maximized ? t('titleRestore') : t('titleMaximize')}
       >
-        {maximized ? (
+        {presentation.maximized ? (
           <svg viewBox="0 0 10 10" aria-hidden="true">
             <path
               fill="none"

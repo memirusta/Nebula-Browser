@@ -5,6 +5,7 @@ import {
   type BrowserTab,
 } from './browserTab.ts'
 import type { Shortcut } from './types.ts'
+import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
 import {
   applyTabHistoryTarget,
   recordTabNavigation,
@@ -36,6 +37,7 @@ export type BrowserTabsAction =
       shortcutId: string
       url: string
       title: string | null
+      favicon?: string | null
       historyTargetIndex?: number
     }
   | { type: 'navigate-history'; shortcutId: string; targetIndex: number }
@@ -111,9 +113,15 @@ export function browserTabsReducer(
 
     case 'apply-snapshot': {
       const nextTitle = action.title?.trim() || titleFromUrl(action.url)
-      const nextFavicon = faviconForUrl(action.url)
       const current = state.tabs.find((tab) => tab.shortcutId === action.shortcutId)
       if (!current) return state
+      const observedFavicon = action.favicon?.trim()
+      const nextFavicon = observedFavicon || (
+        current.url === action.url &&
+        !isLowResolutionInlineFavicon(current.favicon)
+          ? current.favicon
+          : faviconForUrl(action.url)
+      )
       const navigation = action.historyTargetIndex === undefined
         ? recordTabNavigation(current.navigation, action.url, nextTitle, nextFavicon)
         : applyTabHistoryTarget(

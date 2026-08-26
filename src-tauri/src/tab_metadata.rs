@@ -1,5 +1,6 @@
 #[cfg(target_os = "windows")]
 mod imp {
+    use base64::Engine as _;
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::sync::{LazyLock, Mutex};
@@ -9,35 +10,52 @@ mod imp {
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2DocumentTitleChangedEventHandler,
-        ICoreWebView2NavigationCompletedEventHandler, ICoreWebView2NavigationStartingEventHandler,
-        ICoreWebView2SourceChangedEventHandler,
+        ICoreWebView2FaviconChangedEventHandler, ICoreWebView2NavigationCompletedEventHandler,
+        ICoreWebView2NavigationStartingEventHandler, ICoreWebView2SourceChangedEventHandler,
+        ICoreWebView2_15, COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG,
     };
     use webview2_com::{
-        DocumentTitleChangedEventHandler, NavigationCompletedEventHandler,
-        NavigationStartingEventHandler, SourceChangedEventHandler,
+        DocumentTitleChangedEventHandler, FaviconChangedEventHandler, GetFaviconCompletedHandler,
+        NavigationCompletedEventHandler, NavigationStartingEventHandler, SourceChangedEventHandler,
     };
     use windows::core::PWSTR;
-    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::System::Com::{
+        CoTaskMemFree, IStream, STATFLAG_NONAME, STATSTG, STREAM_SEEK_SET,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
-    use windows_core::BOOL;
+    use windows_core::{Interface, BOOL};
 
-    type HandlerTokens = (i64, i64, i64, i64);
+    type HandlerTokens = (i64, i64, i64, i64, Option<i64>);
+    type TabMetadataHandlers = (
+        ICoreWebView2SourceChangedEventHandler,
+        ICoreWebView2DocumentTitleChangedEventHandler,
+        ICoreWebView2NavigationStartingEventHandler,
+        ICoreWebView2NavigationCompletedEventHandler,
+        Option<ICoreWebView2FaviconChangedEventHandler>,
+    );
+
+    type TabSnapshotState = (String, String, Option<String>);
 
     static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
+
     static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, HandlerTokens>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+
     static NAVIGATION_STARTED_AT: LazyLock<Mutex<HashMap<String, Instant>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+
     thread_local! {
-        static HANDLERS: RefCell<HashMap<String, (
-            ICoreWebView2SourceChangedEventHandler,
-            ICoreWebView2DocumentTitleChangedEventHandler,
-            ICoreWebView2NavigationStartingEventHandler,
-            ICoreWebView2NavigationCompletedEventHandler,
-        )>> = RefCell::new(HashMap::new());
+        static HANDLERS: RefCell<HashMap<String, TabMetadataHandlers>> =
+            RefCell::new(HashMap::new());
     }
-    static LAST_SNAPSHOTS: LazyLock<Mutex<HashMap<String, (String, String)>>> =
+
+    static LAST_SNAPSHOTS: LazyLock<Mutex<HashMap<String, TabSnapshotState>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    static FAVICON_CACHE: LazyLock<Mutex<HashMap<String, (String, String)>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static FAVICON_REQUEST_EPOCHS: LazyLock<Mutex<HashMap<String, u64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static LAST_SOCIAL_UNREAD_COUNTS: LazyLock<Mutex<HashMap<String, u64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -46,6 +64,7 @@ mod imp {
         label: String,
         url: String,
         title: String,
+        favicon: Option<String>,
     }
 
     #[derive(Clone, Serialize)]
@@ -77,6 +96,78 @@ mod imp {
             CoTaskMemFree(Some(value.as_ptr().cast()));
         }
         text
+    }
+
+    unsafe fn read_favicon_stream(stream: &IStream) -> Result<Vec<u8>, String> {
+        const MAX_FAVICON_BYTES: usize = 64 * 1024;
+
+        let mut stat = STATSTG::default();
+        stream
+            .Stat(&mut stat, STATFLAG_NONAME)
+            .map_err(|error| error.to_string())?;
+        let size =
+            usize::try_from(stat.cbSize).map_err(|_| "favicon image is too large".to_string())?;
+        if size == 0 || size > MAX_FAVICON_BYTES {
+            return Err("favicon image is empty or exceeds 64 KB".to_string());
+        }
+
+        stream
+            .Seek(0, STREAM_SEEK_SET, None)
+            .map_err(|error| error.to_string())?;
+        let mut bytes = vec![0u8; size];
+        let mut offset = 0usize;
+        while offset < bytes.len() {
+            let chunk_size = (bytes.len() - offset).min(u32::MAX as usize) as u32;
+            let mut read = 0u32;
+            stream
+                .Read(
+                    bytes[offset..].as_mut_ptr().cast(),
+                    chunk_size,
+                    Some(&mut read),
+                )
+                .ok()
+                .map_err(|error| error.to_string())?;
+            if read == 0 {
+                break;
+            }
+            offset += read as usize;
+        }
+        bytes.truncate(offset);
+        if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
+            Ok(bytes)
+        } else {
+            Err("WebView2 returned invalid favicon image data".to_string())
+        }
+    }
+
+    fn usable_favicon_uri(value: &str) -> Option<String> {
+        const MAX_REMOTE_URI_LENGTH: usize = 4_096;
+        const MAX_INLINE_URI_LENGTH: usize = 90_000;
+
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+        if value.starts_with("data:") {
+            let prefix = value
+                .split_once(',')
+                .map(|(prefix, _)| prefix.to_ascii_lowercase())?;
+            let safe_image = [
+                "data:image/png;base64",
+                "data:image/jpeg;base64",
+                "data:image/gif;base64",
+                "data:image/webp;base64",
+                "data:image/x-icon;base64",
+                "data:image/vnd.microsoft.icon;base64",
+            ]
+            .contains(&prefix.as_str());
+            return (safe_image && value.len() <= MAX_INLINE_URI_LENGTH).then(|| value.to_string());
+        }
+        if value.len() > MAX_REMOTE_URI_LENGTH {
+            return None;
+        }
+        let parsed = url::Url::parse(value).ok()?;
+        matches!(parsed.scheme(), "http" | "https").then(|| parsed.to_string())
     }
 
     fn social_site(url: &str) -> Option<(String, &'static str)> {
@@ -173,8 +264,14 @@ mod imp {
                 take_webview_string(|value| webview.DocumentTitle(value)),
             )
         };
+        let favicon = FAVICON_CACHE.lock().ok().and_then(|cache| {
+            cache
+                .get(label)
+                .filter(|(favicon_url, _)| favicon_url == &url)
+                .map(|(_, favicon)| favicon.clone())
+        });
         if let Ok(mut snapshots) = LAST_SNAPSHOTS.lock() {
-            let next = (url.clone(), title.clone());
+            let next = (url.clone(), title.clone(), favicon.clone());
             if snapshots.get(label) == Some(&next) {
                 return;
             }
@@ -187,8 +284,85 @@ mod imp {
                 label: label.to_string(),
                 url,
                 title,
+                favicon,
             },
         );
+    }
+
+    fn request_favicon(app: &AppHandle, label: &str, webview: &ICoreWebView2) {
+        let expected_url = unsafe { take_webview_string(|value| webview.Source(value)) };
+        if expected_url.is_empty() || expected_url == "about:blank" {
+            return;
+        }
+
+        let Ok(favicon_webview) = webview.cast::<ICoreWebView2_15>() else {
+            return;
+        };
+        let favicon_uri = unsafe { take_webview_string(|value| favicon_webview.FaviconUri(value)) };
+        let source_after_uri = unsafe { take_webview_string(|value| webview.Source(value)) };
+        if source_after_uri == expected_url {
+            if let Some(favicon_uri) = usable_favicon_uri(&favicon_uri) {
+                if let Ok(mut cache) = FAVICON_CACHE.lock() {
+                    cache.insert(label.to_string(), (expected_url, favicon_uri));
+                }
+                emit_snapshot(app, label, webview);
+                return;
+            }
+        }
+
+        // WebView2's decoded PNG is intentionally only a fallback. It is often
+        // a 16 px tab-strip bitmap and becomes visibly soft in Nebula's larger
+        // shortcut surfaces; FaviconUri keeps the site's original ICO/SVG/PNG.
+        let request_epoch = FAVICON_REQUEST_EPOCHS
+            .lock()
+            .ok()
+            .map(|mut epochs| {
+                let epoch = epochs.entry(label.to_string()).or_default();
+                *epoch = epoch.wrapping_add(1);
+                *epoch
+            })
+            .unwrap_or_default();
+        let callback_app = app.clone();
+        let callback_label = label.to_string();
+        let callback_webview = webview.clone();
+        let handler = GetFaviconCompletedHandler::create(Box::new(move |result, stream| {
+            if result.is_err() {
+                return Ok(());
+            }
+            let Some(stream) = stream else {
+                return Ok(());
+            };
+            let Ok(bytes) = (unsafe { read_favicon_stream(&stream) }) else {
+                return Ok(());
+            };
+            let current_url =
+                unsafe { take_webview_string(|value| callback_webview.Source(value)) };
+            if current_url != expected_url {
+                return Ok(());
+            }
+            let request_is_current = FAVICON_REQUEST_EPOCHS
+                .lock()
+                .ok()
+                .and_then(|epochs| epochs.get(&callback_label).copied())
+                == Some(request_epoch);
+            if !request_is_current {
+                return Ok(());
+            }
+
+            let favicon = format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes),
+            );
+            if let Ok(mut cache) = FAVICON_CACHE.lock() {
+                cache.insert(callback_label.clone(), (current_url, favicon));
+            }
+            emit_snapshot(&callback_app, &callback_label, &callback_webview);
+            Ok(())
+        }));
+
+        unsafe {
+            let _ = favicon_webview.GetFavicon(COREWEBVIEW2_FAVICON_IMAGE_FORMAT_PNG, &handler);
+        }
     }
 
     fn emit_navigation_performance(
@@ -244,6 +418,8 @@ mod imp {
         let navigation_start_label = label.to_string();
         let navigation_complete_label = label.to_string();
         let navigation_complete_app = app.clone();
+        let favicon_label = label.to_string();
+        let favicon_app = app.clone();
         let initial_app = app.clone();
         let label_for_store = label.to_string();
 
@@ -305,6 +481,18 @@ mod imp {
                             &webview,
                             success,
                         );
+                        request_favicon(
+                            &navigation_complete_app,
+                            &navigation_complete_label,
+                            &webview,
+                        );
+                        Ok(())
+                    }));
+                let favicon_handler =
+                    FaviconChangedEventHandler::create(Box::new(move |sender, _args| {
+                        if let Some(webview) = sender {
+                            request_favicon(&favicon_app, &favicon_label, &webview);
+                        }
                         Ok(())
                     }));
                 let mut source_token = 0i64;
@@ -345,6 +533,20 @@ mod imp {
                     return;
                 }
 
+                let mut registered_favicon_handler = None;
+                let favicon_token = core.cast::<ICoreWebView2_15>().ok().and_then(|core15| {
+                    let mut token = 0i64;
+                    if core15
+                        .add_FaviconChanged(&favicon_handler, &mut token)
+                        .is_ok()
+                    {
+                        registered_favicon_handler = Some(favicon_handler);
+                        Some(token)
+                    } else {
+                        None
+                    }
+                });
+
                 if let Ok(mut tokens) = HANDLER_TOKENS.lock() {
                     tokens.insert(
                         label_for_store.clone(),
@@ -353,6 +555,7 @@ mod imp {
                             title_token,
                             navigation_start_token,
                             navigation_complete_token,
+                            favicon_token,
                         ),
                     );
                 }
@@ -364,11 +567,13 @@ mod imp {
                             title_handler,
                             navigation_start_handler,
                             navigation_complete_handler,
+                            registered_favicon_handler,
                         ),
                     );
                 });
 
                 emit_snapshot(&initial_app, &label_for_store, &core);
+                request_favicon(&initial_app, &label_for_store, &core);
             })
             .map_err(|error| error.to_string())?;
 
@@ -404,6 +609,7 @@ mod imp {
                         title_token,
                         navigation_start_token,
                         navigation_complete_token,
+                        favicon_token,
                     )),
                 ) = (inner.controller().CoreWebView2(), tokens)
                 {
@@ -411,6 +617,11 @@ mod imp {
                     let _ = core.remove_DocumentTitleChanged(title_token);
                     let _ = core.remove_NavigationStarting(navigation_start_token);
                     let _ = core.remove_NavigationCompleted(navigation_complete_token);
+                    if let (Some(token), Ok(core15)) =
+                        (favicon_token, core.cast::<ICoreWebView2_15>())
+                    {
+                        let _ = core15.remove_FaviconChanged(token);
+                    }
                 }
                 HANDLERS.with(|handlers| {
                     handlers.borrow_mut().remove(&label_for_handler);
@@ -423,11 +634,37 @@ mod imp {
         if let Ok(mut snapshots) = LAST_SNAPSHOTS.lock() {
             snapshots.remove(label);
         }
+        if let Ok(mut favicons) = FAVICON_CACHE.lock() {
+            favicons.remove(label);
+        }
+        if let Ok(mut epochs) = FAVICON_REQUEST_EPOCHS.lock() {
+            epochs.remove(label);
+        }
         if let Ok(mut counts) = LAST_SOCIAL_UNREAD_COUNTS.lock() {
             counts.remove(label);
         }
         if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
             starts.remove(label);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::usable_favicon_uri;
+
+        #[test]
+        fn favicon_uri_accepts_web_images_and_rejects_active_or_local_schemes() {
+            assert_eq!(
+                usable_favicon_uri("https://cdn.example/icon.svg").as_deref(),
+                Some("https://cdn.example/icon.svg")
+            );
+            assert_eq!(
+                usable_favicon_uri("http://example.test/favicon.ico").as_deref(),
+                Some("http://example.test/favicon.ico")
+            );
+            assert!(usable_favicon_uri("javascript:alert(1)").is_none());
+            assert!(usable_favicon_uri("file:///C:/secret.png").is_none());
+            assert!(usable_favicon_uri("data:text/html;base64,PGgxPkJvb208L2gxPg==").is_none());
         }
     }
 }

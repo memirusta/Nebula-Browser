@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { listen } from '@tauri-apps/api/event'
 import {
   matchBrowserShortcut,
   shouldIgnoreShellShortcut,
   type BrowserShortcutBindings,
   type BrowserShortcutId,
 } from '../core/browserShortcuts'
+import { listenBrowserShortcutActions } from '../core/nebulaBridge'
 import { isTauri } from '../platform/runtime'
 
 export interface BrowserShortcutHandlers {
@@ -43,9 +43,7 @@ export function useBrowserShortcuts({
     let cancelled = false
     let unlisten: (() => void) | undefined
     if (isTauri) {
-      void listen<BrowserShortcutId>('nebula-browser-shortcut', (event) => {
-        dispatch(event.payload)
-      }).then((dispose) => {
+      void listenBrowserShortcutActions(dispatch).then((dispose) => {
         if (cancelled) dispose()
         else unlisten = dispose
       })

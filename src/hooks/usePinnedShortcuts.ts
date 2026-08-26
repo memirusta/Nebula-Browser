@@ -14,6 +14,7 @@ import {
   removePinnedShortcut,
   serializePinnedShortcuts,
   shortcutFromPinnedShortcut,
+  updatePinnedShortcutFavicon,
   type PinnedShortcutsSnapshot,
 } from '../core/pinnedShortcuts'
 
@@ -96,6 +97,21 @@ export function usePinnedShortcuts(allShortcuts: Shortcut[]) {
     [isPinned, pinShortcut, unpinShortcut],
   )
 
+  const refreshPinnedFavicon = useCallback(
+    (id: string, currentUrl: string, favicon: string) => {
+      setSnapshot((prev) => {
+        const pins = updatePinnedShortcutFavicon(
+          prev.pins,
+          id,
+          currentUrl,
+          favicon,
+        )
+        return pins === prev.pins ? prev : { ...prev, pins }
+      })
+    },
+    [],
+  )
+
   const reorderPins = useCallback((fromIndex: number, toIndex: number) => {
     setSnapshot((prev) => {
       if (
@@ -142,6 +158,7 @@ export function usePinnedShortcuts(allShortcuts: Shortcut[]) {
     pinShortcut,
     unpinShortcut,
     togglePin,
+    refreshPinnedFavicon,
     reorderPins,
     resetPins,
     pinShortcuts,

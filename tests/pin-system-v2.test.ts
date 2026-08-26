@@ -9,6 +9,7 @@ import {
   PINNED_SHORTCUTS_SCHEMA_VERSION,
   removePinnedShortcut,
   serializePinnedShortcuts,
+  updatePinnedShortcutFavicon,
   type PinnedShortcutsSnapshot,
 } from '../src/core/pinnedShortcuts.ts'
 import {
@@ -141,6 +142,24 @@ test('explicit unpin removes the owned pin record', () => {
 
   assert.deepEqual(removePinnedShortcut(pins, first.id).map((pin) => pin.id), [second.id])
   assert.equal(removePinnedShortcut(pins, 'unrelated'), pins)
+})
+
+test('live favicon refresh preserves pin identity, path, title, and ordering', () => {
+  const first = shortcut('first', 'https://first.example/deep/path', 'First title')
+  const second = shortcut('second', 'https://second.example/', 'Second title')
+  const pins = snapshotWith(first, second).pins
+
+  const next = updatePinnedShortcutFavicon(
+    pins,
+    first.id,
+    'https://first.example/redirected/path',
+    'data:image/png;base64,new-icon',
+  )
+
+  assert.deepEqual(next.map((pin) => pin.id), [first.id, second.id])
+  assert.equal(next[0]?.url, first.url)
+  assert.equal(next[0]?.title, first.label)
+  assert.equal(next[0]?.favicon, 'data:image/png;base64,new-icon')
 })
 
 test('legacy id pins migrate when metadata exists and remain pending otherwise', () => {

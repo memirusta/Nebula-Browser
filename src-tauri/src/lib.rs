@@ -1306,8 +1306,24 @@ fn restore_browsing_webview_layout(
 }
 
 #[tauri::command]
+fn window_presentation_state(
+    app: tauri::AppHandle,
+    window_label: String,
+) -> Result<site_fullscreen_window::WindowPresentationState, String> {
+    site_fullscreen_window::window_presentation_state(&app, &window_label)
+}
+
+#[tauri::command]
 fn window_enter_site_fullscreen(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
     site_fullscreen_window::enter_site_fullscreen_window(&app, &window_label)
+}
+
+#[tauri::command]
+fn window_reassert_site_fullscreen(
+    app: tauri::AppHandle,
+    window_label: String,
+) -> Result<bool, String> {
+    site_fullscreen_window::reassert_site_fullscreen_window(&app, &window_label)
 }
 
 #[tauri::command]
@@ -1470,7 +1486,9 @@ pub fn run() {
             webview_raise_chrome,
             webview_set_chrome_bounds,
             webview_raise_tab_fullscreen,
+            window_presentation_state,
             window_enter_site_fullscreen,
+            window_reassert_site_fullscreen,
             window_exit_site_fullscreen,
             window_toggle_browser_fullscreen,
             webview_restore_browsing_layout,

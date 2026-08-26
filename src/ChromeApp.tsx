@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { emit } from '@tauri-apps/api/event'
 import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { TabSearch } from './components/TabSearch/TabSearch'
 import { SiteInfoPanel } from './components/SiteInfoPanel/SiteInfoPanel'
@@ -12,6 +11,7 @@ import { DEFAULT_SHORTCUTS } from './core/constants'
 import { controlDownload } from './core/download'
 import { registerListenerGroup } from './core/listenerGroup'
 import {
+  emitBrowserShortcut,
   emitChromeAction,
   listenActiveUrl,
   listenDownloadUiState,
@@ -26,16 +26,15 @@ import {
   type SiteInfoStatePayload,
 } from './core/nebulaBridge'
 import {
-  shortcutFromTab,
   shortcutIdForTabWebviewLabel,
   type BrowserTab,
 } from './core/browserTab'
+import { buildSemiLunarShortcutCatalog } from './core/semiLunarCatalog'
 import {
   listenSensitiveFeatureUsage,
   type SensitiveFeatureUsage,
 } from './core/sensitiveFeatureUsage'
 import { computeAdaptiveLunarSize } from './core/lunarSizing'
-import type { Shortcut } from './core/types'
 import { useBrowseSessions } from './hooks/useBrowseSessions'
 import { useBrowserShortcutBindings } from './hooks/useBrowserShortcutBindings'
 import { useNebulaSettings } from './hooks/useNebulaSettings'
@@ -73,16 +72,6 @@ export function ChromeApp() {
     isPinned,
     canPinMore,
   } = usePinnedShortcuts(allShortcuts)
-
-  const {
-    dockItemIds,
-    folders,
-    createFolderFromShortcuts,
-    addShortcutToFolder,
-    removeShortcutFromFolders,
-    removeMemberFromFolder,
-    renameFolder,
-  } = useShortcutFolders(visibleShortcuts, settings.browsing.restoreTabsOnStartup)
 
   const { getSession } = useBrowseSessions()
 
@@ -207,7 +196,7 @@ export function ChromeApp() {
       const action = matchBrowserShortcut(event, browserShortcutBindings)
       if (!action) return
       event.preventDefault()
-      void emit('nebula-browser-shortcut', action)
+      void emitBrowserShortcut(action)
     }
 
     // Capture phase is intentional: folder portals and focused controls must
@@ -365,27 +354,22 @@ export function ChromeApp() {
   )
 
   const semiLunarShortcuts = useMemo(() => {
-    const byId = new Map<string, Shortcut>(
-      visibleShortcuts.map((shortcut) => [shortcut.id, shortcut]),
-    )
-
-    for (const tab of catalog.tabs) {
-      const existing = byId.get(tab.shortcutId)
-      byId.set(
-        tab.shortcutId,
-        existing
-          ? {
-              ...existing,
-              label: tab.title,
-              url: tab.url,
-              favicon: tab.favicon,
-            }
-          : shortcutFromTab(tab),
-      )
-    }
-
-    return [...byId.values()]
+    return buildSemiLunarShortcutCatalog(visibleShortcuts, catalog.tabs)
   }, [visibleShortcuts, catalog.tabs])
+
+  const {
+    dockItemIds,
+    folders,
+    createFolderFromShortcuts,
+    addShortcutToFolder,
+    removeShortcutFromFolders,
+    removeMemberFromFolder,
+    renameFolder,
+  } = useShortcutFolders(
+    visibleShortcuts,
+    settings.browsing.restoreTabsOnStartup,
+    semiLunarShortcuts,
+  )
 
   const adaptiveLunar = useMemo(
     () =>
@@ -560,7 +544,7 @@ export function ChromeApp() {
             className={styles.zoomIndicatorButton}
             title="Uzaklaştır"
             aria-label="Uzaklaştır"
-            onClick={() => void emit('nebula-browser-shortcut', 'zoom-out')}
+            onClick={() => void emitBrowserShortcut('zoom-out')}
           >
             −
           </button>
@@ -573,7 +557,7 @@ export function ChromeApp() {
             className={styles.zoomIndicatorValue}
             title="%100'e sıfırla"
             aria-label={`Yakınlaştırmayı sıfırla: ${zoomIndicatorPercent}%`}
-            onClick={() => void emit('nebula-browser-shortcut', 'zoom-reset')}
+            onClick={() => void emitBrowserShortcut('zoom-reset')}
           >
             {zoomIndicatorPercent}%
           </button>
@@ -582,7 +566,7 @@ export function ChromeApp() {
             className={styles.zoomIndicatorButton}
             title="Yakınlaştır"
             aria-label="Yakınlaştır"
-            onClick={() => void emit('nebula-browser-shortcut', 'zoom-in')}
+            onClick={() => void emitBrowserShortcut('zoom-in')}
           >
             +
           </button>

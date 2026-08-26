@@ -2,7 +2,10 @@ import type { MouseEvent } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../../platform/runtime'
 import { useLocale } from '../../hooks/useLocale'
-import { toggleWindowMaximize } from '../../platform/windowMaximize'
+import {
+  isWindowInteractionLocked,
+  toggleWindowMaximize,
+} from '../../platform/windowMaximize'
 
 interface LunarWindowDragProps {
   className?: string
@@ -26,9 +29,16 @@ export function LunarWindowDrag({
 
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0) return
+
     event.preventDefault()
     event.stopPropagation()
-    void appWindow.startDragging()
+
+    void (async () => {
+      // The Chrome WebView cannot infer custom F11/site fullscreen from Tauri's
+      // isMaximized/isFullscreen flags. Ask the Rust window owner instead.
+      if (await isWindowInteractionLocked()) return
+      await appWindow.startDragging()
+    })().catch(() => undefined)
   }
 
   const onDoubleClick = (event: MouseEvent) => {

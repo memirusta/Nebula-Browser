@@ -64,6 +64,29 @@ test('Ctrl+N is the default new-window browser shortcut', () => {
   assert.match(shortcuts, /'new-window': \['Ctrl\+N'\]/)
 })
 
+test('browser shortcut events are isolated to their owning window', () => {
+  const bridge = readFileSync('src/core/nebulaBridge.ts', 'utf8')
+  const chrome = readFileSync('src/ChromeApp.tsx', 'utf8')
+  const shellHook = readFileSync('src/hooks/useBrowserShortcuts.ts', 'utf8')
+  const native = readFileSync('src-tauri/src/tab_shortcuts.rs', 'utf8')
+
+  assert.match(
+    bridge,
+    /emit\(scoped\(BROWSER_SHORTCUT_EVENT\), action\)/,
+  )
+  assert.match(
+    bridge,
+    /listen<BrowserShortcutId>\(\s*scoped\(BROWSER_SHORTCUT_EVENT\)/,
+  )
+  assert.match(chrome, /emitBrowserShortcut\(action\)/)
+  assert.doesNotMatch(chrome, /emit\(['"]nebula-browser-shortcut['"]/)
+  assert.match(shellHook, /listenBrowserShortcutActions\(dispatch\)/)
+  assert.match(
+    native,
+    /format!\("nebula-browser-shortcut:\{target\}"\)/,
+  )
+})
+
 test('browser workspace keeps independent tab collections and active tabs', () => {
   const first = browserWindow('main', [tab('alpha')])
   const second = browserWindow('nebula-window-two', [tab('beta')])

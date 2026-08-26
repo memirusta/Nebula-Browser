@@ -4,7 +4,7 @@ import { Webview, getCurrentWebview, type WebviewOptions } from '@tauri-apps/api
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 import { debounce } from './debounce'
-import { getActiveBrowseTabId, syncTauriBrowserBounds } from './tauriBrowser'
+import { getActiveBrowseTabId } from './tauriBrowser'
 import { isChromeShell } from '../core/nebulaBridge'
 import {
   BROWSER_WINDOW_ID_QUERY,
@@ -12,10 +12,7 @@ import {
   currentChromeWebviewLabel,
 } from './browserWindowScope'
 import { isTauri } from './runtime'
-import {
-  scheduleStackBrowsingChromeAboveBrowser,
-  stackBrowsingChromeAboveBrowser,
-} from './tauriWebviewStack'
+import { stackBrowsingChromeAboveBrowser } from './tauriWebviewStack'
 import { windowClientPhysicalSize } from './windowClientBounds'
 
 
@@ -150,12 +147,9 @@ async function bindChromeResize(webview: Webview): Promise<void> {
   chromeBoundsListenerBound = true
 
   const onLayoutChange = debounce(() => {
-    void syncChromeBounds(webview).then(async (changed) => {
-      if (!changed) return
-      await syncTauriBrowserBounds()
-      scheduleStackBrowsingChromeAboveBrowser(getActiveBrowseTabId())
-    })
-  }, LAYOUT_DEBOUNCE_MS)
+  lastChromeBoundsKey = null
+  void syncChromeBounds(webview)
+}, LAYOUT_DEBOUNCE_MS)
 
   await syncChromeBounds(webview)
 
@@ -222,10 +216,7 @@ export async function setChromeOverlayLogicalBounds(
     await bindChromeResize(webview)
   }
 
-  const changed = await syncChromeBounds(webview)
-  if (changed) {
-    scheduleStackBrowsingChromeAboveBrowser(getActiveBrowseTabId(), 0)
-  }
+  await syncChromeBounds(webview)
 }
 
 export async function syncChromeWebviewBounds(): Promise<void> {
@@ -237,11 +228,7 @@ export async function syncChromeWebviewBounds(): Promise<void> {
   const webview = await getChromeWebview()
   if (!webview) return
 
-  const changed = await syncChromeBounds(webview)
-  if (changed) {
-    await syncTauriBrowserBounds()
-    scheduleStackBrowsingChromeAboveBrowser(getActiveBrowseTabId())
-  }
+  await syncChromeBounds(webview)
 }
 
 export async function getChromeWebview(): Promise<Webview | null> {

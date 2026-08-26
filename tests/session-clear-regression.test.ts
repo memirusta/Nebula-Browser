@@ -52,7 +52,7 @@ test('restore-session UI owns tabs, folders, and Semi-Lunar layout', () => {
 
   assert.match(
     chromeSource,
-    /useShortcutFolders\(visibleShortcuts, settings\.browsing\.restoreTabsOnStartup\)/,
+    /useShortcutFolders\([\s\S]{0,180}visibleShortcuts,[\s\S]{0,120}settings\.browsing\.restoreTabsOnStartup,[\s\S]{0,80}semiLunarShortcuts/,
   )
   assert.match(
     chromeSource,
