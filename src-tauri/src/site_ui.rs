@@ -1652,6 +1652,31 @@ mod imp {
                                         .get("mutationObserved")
                                         .and_then(serde_json::Value::as_bool)
                                         .unwrap_or(false);
+                                    let theme_reason = value
+                                        .get("themeReason")
+                                        .and_then(serde_json::Value::as_str)
+                                        .filter(|reason| {
+                                            matches!(
+                                                *reason,
+                                                "uniform-dark"
+                                                    | "visible-light-surfaces"
+                                                    | "insufficient-dark-coverage"
+                                                    | "algorithm-already-active"
+                                            )
+                                        })
+                                        .map(str::to_string);
+                                    let dark_sample_ratio = value
+                                        .get("darkSampleRatio")
+                                        .and_then(serde_json::Value::as_f64)
+                                        .filter(|ratio| (0.0..=1.0).contains(ratio));
+                                    let light_sample_ratio = value
+                                        .get("lightSampleRatio")
+                                        .and_then(serde_json::Value::as_f64)
+                                        .filter(|ratio| (0.0..=1.0).contains(ratio));
+                                    let theme_sample_count = value
+                                        .get("themeSampleCount")
+                                        .and_then(serde_json::Value::as_u64)
+                                        .filter(|count| *count <= 63);
                                     let log_app = protocol_app.clone();
                                     let log_label = protocol_label.clone();
                                     let log_origin = source_origin.clone();
@@ -1667,6 +1692,10 @@ mod imp {
                                                 "mode": log_mode,
                                                 "mediaProtected": media_protected,
                                                 "mutationObserved": mutation_observed,
+                                                "themeReason": theme_reason,
+                                                "darkSampleRatio": dark_sample_ratio,
+                                                "lightSampleRatio": light_sample_ratio,
+                                                "themeSampleCount": theme_sample_count,
                                             }),
                                         );
                                     });

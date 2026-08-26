@@ -1,4 +1,6 @@
 import type { Shortcut } from './types'
+import { faviconForUrl } from './browserTab.ts'
+import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
 
 export const PINNED_SHORTCUTS_KEY = 'nebula-pinned-shortcuts-v5'
 export const MAX_PINNED_SHORTCUTS = 12
@@ -62,7 +64,10 @@ export function pinnedShortcutFromShortcut(shortcut: Shortcut): PinnedShortcut |
   if (!id || !url) return null
 
   const title = shortcut.label.trim() || fallbackTitle(url)
-  const favicon = shortcut.favicon?.trim()
+  const shortcutFavicon = shortcut.favicon?.trim()
+  const favicon = shortcutFavicon && !isLowResolutionInlineFavicon(shortcutFavicon)
+    ? shortcutFavicon
+    : faviconForUrl(url)
   return {
     id,
     url,
@@ -154,6 +159,41 @@ export function removePinnedShortcut(
 ): PinnedShortcut[] {
   const next = pins.filter((pin) => pin.id !== id)
   return next.length === pins.length ? pins : next
+}
+
+export function updatePinnedShortcutFavicon(
+  pins: PinnedShortcut[],
+  id: string,
+  currentUrl: string,
+  favicon: string,
+): PinnedShortcut[] {
+  const trimmedFavicon = favicon.trim()
+  if (!trimmedFavicon) return pins
+
+  let currentOrigin: string
+  try {
+    currentOrigin = new URL(currentUrl).origin
+  } catch {
+    return pins
+  }
+
+  const index = pins.findIndex((pin) => pin.id === id)
+  const pin = pins[index]
+  if (!pin) return pins
+
+  let pinOrigin: string
+  try {
+    pinOrigin = new URL(pin.url).origin
+  } catch {
+    return pins
+  }
+  if (pinOrigin !== currentOrigin || pin.favicon === trimmedFavicon) {
+    return pins
+  }
+
+  const next = [...pins]
+  next[index] = { ...pin, favicon: trimmedFavicon }
+  return next
 }
 
 function sanitizePins(values: unknown[]): PinnedShortcut[] {

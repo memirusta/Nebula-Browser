@@ -244,8 +244,8 @@ mod imp {
                             let _ = args.SetHandled(true);
                             if let Some(webview) = app_handle.get_webview(&label_for_event) {
                                 let target = webview.window().label().to_string();
-                                let _ =
-                                    app_handle.emit_to(target, "nebula-browser-shortcut", action);
+                                let event_name = format!("nebula-browser-shortcut:{target}");
+                                let _ = app_handle.emit_to(&target, &event_name, action);
                             }
                         }
                         Ok(())

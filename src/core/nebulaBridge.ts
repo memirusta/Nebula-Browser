@@ -1,5 +1,6 @@
 import { emit, listen } from '@tauri-apps/api/event'
 import type { BrowserTab } from './browserTab'
+import type { BrowserShortcutId } from './browserShortcuts'
 import type { DownloadItem } from './download'
 import type { Shortcut } from './types'
 import { isTauri } from '../platform/runtime'
@@ -85,6 +86,7 @@ const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
 const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
 const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
+const BROWSER_SHORTCUT_EVENT = 'nebula-browser-shortcut'
 
 function scoped(event: string): string {
   return scopedBrowserEvent(event)
@@ -92,6 +94,26 @@ function scoped(event: string): string {
 
 export function isChromeShell(): boolean {
   return window.location.hash === '#chrome'
+}
+
+export async function emitBrowserShortcut(
+  action: BrowserShortcutId,
+): Promise<void> {
+  if (!isTauri) return
+  await emit(scoped(BROWSER_SHORTCUT_EVENT), action)
+}
+
+export function listenBrowserShortcutActions(
+  handler: (action: BrowserShortcutId) => void,
+): Promise<() => void> {
+  if (!isTauri) {
+    return Promise.resolve(() => {})
+  }
+
+  return listen<BrowserShortcutId>(
+    scoped(BROWSER_SHORTCUT_EVENT),
+    (event) => handler(event.payload),
+  )
 }
 
 export async function emitChromeAction(action: ChromeShellAction): Promise<void> {

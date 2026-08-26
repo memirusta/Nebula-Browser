@@ -7,6 +7,7 @@ import {
   browserTabWebviewLabel,
   browserWindowIdFromRuntime,
 } from './browserWorkspace.ts'
+import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
@@ -62,10 +63,10 @@ export function shortcutIdForTabWebviewLabel(label: string): string | null {
 
 export function faviconForUrl(url: string): string {
   try {
-    const host = new URL(url).hostname.replace(/^www\./, '')
-    return `https://www.google.com/s2/favicons?domain=${host}&sz=64`
+    const pageUrl = new URL(url)
+    return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(pageUrl.href)}&sz=128`
   } catch {
-    return 'https://www.google.com/s2/favicons?domain=google.com&sz=64'
+    return 'https://www.google.com/s2/favicons?domain_url=https%3A%2F%2Fgoogle.com%2F&sz=128'
   }
 }
 
@@ -85,7 +86,10 @@ export function createBrowserTab(
     navigation?: TabNavigationState
   },
 ): BrowserTab {
-  const favicon = shortcut.favicon ?? faviconForUrl(shortcut.url)
+  const shortcutFavicon = shortcut.favicon?.trim()
+  const favicon = shortcutFavicon && !isLowResolutionInlineFavicon(shortcutFavicon)
+    ? shortcutFavicon
+    : faviconForUrl(shortcut.url)
   return {
     id: options?.tabId ?? shortcut.id,
     shortcutId: shortcut.id,

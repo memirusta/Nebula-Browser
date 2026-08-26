@@ -61,6 +61,38 @@ test('Ctrl+H opens history through the overlay and widgets keep a compact scroll
   assert.match(widgetGrid, /scrollbar-color:\s*rgba\(255, 255, 255, 0\.18\) transparent/)
 })
 
+test('every widget header dot follows the selected accent color', () => {
+  const widgetChrome = read('src/components/SpatialGrid/GridCell.module.css')
+
+  assert.match(
+    widgetChrome,
+    /\.tabDot\s*\{[\s\S]*?background:\s*var\(--nebula-accent\)/,
+  )
+  assert.doesNotMatch(
+    widgetChrome,
+    /\.tabDot\s*\{[\s\S]*?background:\s*var\(--nebula-text-muted\)/,
+  )
+  assert.match(
+    widgetChrome,
+    /\.tabDot\[data-active='true'\]\s*\{[\s\S]*?box-shadow:\s*0 0 8px var\(--nebula-accent-glow\)/,
+  )
+})
+
+test('network connectivity dot is green online and red offline', () => {
+  const tokens = read('src/styles/tokens.css')
+  const widgets = read('src/components/widgets/widgets.module.css')
+
+  assert.match(tokens, /--nebula-success:\s*#4ade80/)
+  assert.match(
+    widgets,
+    /\.networkDot\s*\{[\s\S]*?background:\s*var\(--nebula-danger\)/,
+  )
+  assert.match(
+    widgets,
+    /\.networkStatus\[data-online='true'\] \.networkDot\s*\{[\s\S]*?background:\s*var\(--nebula-success\)/,
+  )
+})
+
 test('settings search indexes every settings surface and notifications are grouped by site', () => {
   const settings = read('src/components/SettingsPanel/SettingsPanel.tsx')
   const notifications = read('src/components/NotificationPanel/NotificationPanel.tsx')

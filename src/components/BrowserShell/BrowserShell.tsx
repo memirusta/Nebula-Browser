@@ -147,6 +147,7 @@ import {
   titleFromUrl,
   type BrowserTab,
 } from '../../core/browserTab'
+import { buildSemiLunarShortcutCatalog } from '../../core/semiLunarCatalog'
 import {
   rememberSiteZoom,
   siteZoomFactor,
@@ -364,11 +365,34 @@ export function BrowserShell() {
   )
 
   const {
+    tabs,
+    activeTab,
+    activeTabId,
+    openTabIds,
+    activeTabIdRef,
+    tabsRef,
+    openOrSwitchTab,
+    closeTab,
+    detachTab,
+    applyTabSnapshot,
+    updateTabMeta,
+    getTab,
+    setActiveTabId,
+    navigateTabHistory,
+  } = useBrowserTabs()
+
+  const semiLunarShortcuts = useMemo(
+    () => buildSemiLunarShortcutCatalog(visibleShortcuts, tabs),
+    [visibleShortcuts, tabs],
+  )
+
+  const {
     pinnedShortcuts:
       pinnedShortcutList,
     isPinned,
     canPinMore,
     togglePin,
+    refreshPinnedFavicon,
     unpinShortcut,
     reorderPins,
     resetPins,
@@ -389,6 +413,7 @@ export function BrowserShell() {
   } = useShortcutFolders(
     visibleShortcuts,
     settings.browsing.restoreTabsOnStartup,
+    semiLunarShortcuts,
   )
 
   const {
@@ -461,23 +486,6 @@ export function BrowserShell() {
     })
     return () => unlisten?.()
   }, [])
-
-  const {
-    tabs,
-    activeTab,
-    activeTabId,
-    openTabIds,
-    activeTabIdRef,
-    tabsRef,
-    openOrSwitchTab,
-    closeTab,
-    detachTab,
-    applyTabSnapshot,
-    updateTabMeta,
-    getTab,
-    setActiveTabId,
-    navigateTabHistory,
-  } = useBrowserTabs()
 
   const navigationTargetIndexByTabRef =
     useRef(
@@ -2128,8 +2136,19 @@ export function BrowserShell() {
           snapshot.shortcutId,
           snapshot.url,
           snapshot.title,
-          historyTargetIndex,
+          {
+            favicon: snapshot.favicon,
+            historyTargetIndex,
+          },
         )
+
+        if (snapshot.favicon) {
+          refreshPinnedFavicon(
+            snapshot.shortcutId,
+            snapshot.url,
+            snapshot.favicon,
+          )
+        }
 
         if (
           activeTabIdRef.current !==
@@ -2182,6 +2201,7 @@ export function BrowserShell() {
     applyTabSnapshot,
     dismissGoogleSessionHelperTab,
     recordHistoryVisit,
+    refreshPinnedFavicon,
     tabsRef,
   ])
 
@@ -6286,58 +6306,6 @@ export function BrowserShell() {
     rememberLayout:
       settings.browsing.restoreTabsOnStartup,
   }
-
-  const semiLunarShortcuts =
-    useMemo(() => {
-      const byId =
-        new Map<
-          string,
-          Shortcut
-        >(
-          visibleShortcuts.map(
-            (
-              shortcut,
-            ) => [
-              shortcut.id,
-              shortcut,
-            ],
-          ),
-        )
-
-      for (
-        const tab of
-        tabs
-      ) {
-        const existing =
-          byId.get(
-            tab.shortcutId,
-          )
-
-        byId.set(
-          tab.shortcutId,
-          existing
-            ? {
-                ...existing,
-                label:
-                  tab.title,
-                url:
-                  tab.url,
-                favicon:
-                  tab.favicon,
-              }
-            : shortcutFromTab(
-                tab,
-              ),
-        )
-      }
-
-      return [
-        ...byId.values(),
-      ]
-    }, [
-      visibleShortcuts,
-      tabs,
-    ])
 
   const handleSemiLunarNavigate =
     useCallback(

@@ -50,9 +50,11 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--nebula-text-muted);
+  background: var(--nebula-accent);
   flex-shrink: 0;
-  transition: background var(--duration-fast);
+  transition:
+    background var(--duration-fast),
+    box-shadow var(--duration-fast);
 }
 
 .tabDot[data-active='true'] {

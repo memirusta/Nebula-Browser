@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { fitContextMenuPosition } from '../../core/contextMenuPosition'
 import type { Shortcut } from '../../core/types'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './ShortcutContextMenu.module.css'
 
 interface ShortcutContextMenuProps {
+  requestId: number
   x: number
   y: number
   shortcut: Shortcut
@@ -23,6 +25,7 @@ interface ShortcutContextMenuProps {
 }
 
 export function ShortcutContextMenu({
+  requestId,
   x,
   y,
   shortcut,
@@ -41,6 +44,8 @@ export function ShortcutContextMenu({
 }: ShortcutContextMenuProps) {
   const { locale, t, tf } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState({ left: x, top: y })
+  const [positioned, setPositioned] = useState(false)
   let host = ''
   try {
     host = new URL(shortcut.url).hostname
@@ -50,6 +55,10 @@ export function ShortcutContextMenu({
 
   useEffect(() => {
     const handlePointerDown = (e: PointerEvent) => {
+      // A second right-click owns the next contextmenu request. Closing during
+      // pointerdown would briefly unmount the menu and compact the native
+      // chrome WebView before that replacement request can be positioned.
+      if (e.button === 2) return
       if (menuRef.current?.contains(e.target as Node)) return
       onClose()
     }
@@ -80,30 +89,76 @@ export function ShortcutContextMenu({
     }
   }, [onClose])
 
+  const positionMenu = useCallback(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const bounds = menu.getBoundingClientRect()
+    const viewport = window.visualViewport
+    const next = fitContextMenuPosition({
+      anchorX: x,
+      anchorY: y,
+      menuWidth: bounds.width,
+      menuHeight: bounds.height,
+      viewportLeft: viewport?.offsetLeft ?? 0,
+      viewportTop: viewport?.offsetTop ?? 0,
+      viewportWidth: viewport?.width ?? window.innerWidth,
+      viewportHeight: viewport?.height ?? window.innerHeight,
+    })
+
+    setPosition((current) =>
+      current.left === next.left && current.top === next.top ? current : next,
+    )
+    setPositioned(true)
+    onLayout?.(new DOMRect(next.left, next.top, bounds.width, bounds.height))
+  }, [x, y, onLayout])
+
+  useEffect(() => {
+    setPositioned(false)
+    setPosition({ left: x, top: y })
+
+    let firstFrame = 0
+    let secondFrame = 0
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        positionMenu()
+        menuRef.current
+          ?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+          ?.focus()
+      })
+    })
+
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [requestId, x, y, positionMenu])
+
   useEffect(() => {
     const menu = menuRef.current
     if (!menu) return
-    const rect = menu.getBoundingClientRect()
-    const pad = 8
-    let left = x
-    let top = y
-    if (left + rect.width > window.innerWidth - pad) {
-      left = window.innerWidth - rect.width - pad
+
+    const resizeObserver = new ResizeObserver(positionMenu)
+    const viewport = window.visualViewport
+    resizeObserver.observe(menu)
+    window.addEventListener('resize', positionMenu)
+    viewport?.addEventListener('resize', positionMenu)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', positionMenu)
+      viewport?.removeEventListener('resize', positionMenu)
     }
-    if (top + rect.height > window.innerHeight - pad) {
-      top = window.innerHeight - rect.height - pad
-    }
-    menu.style.left = `${Math.max(pad, left)}px`
-    menu.style.top = `${Math.max(pad, top)}px`
-    onLayout?.(menu.getBoundingClientRect())
-    menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
-  }, [x, y, onLayout])
+  }, [positionMenu])
 
   return createPortal(
     <div
       ref={menuRef}
       className={styles.menu}
-      style={{ left: x, top: y }}
+      style={{
+        left: position.left,
+        top: position.top,
+        visibility: positioned ? 'visible' : 'hidden',
+      }}
       role="menu"
       aria-label={tf('shortcutMenuAria', { label: shortcut.label })}
       data-semi-lunar-safe=""

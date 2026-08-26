@@ -62,7 +62,10 @@ export function useBrowserTabs() {
       shortcutId: string,
       url: string | null,
       title: string | null,
-      historyTargetIndex?: number,
+      options?: {
+        favicon?: string | null
+        historyTargetIndex?: number
+      },
     ) => {
       if (url) {
         dispatch({
@@ -70,7 +73,8 @@ export function useBrowserTabs() {
           shortcutId,
           url,
           title,
-          historyTargetIndex,
+          favicon: options?.favicon,
+          historyTargetIndex: options?.historyTargetIndex,
         })
       }
     },

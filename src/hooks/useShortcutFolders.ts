@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Shortcut, ShortcutFolder } from '../core/types'
 import { folderDockId } from '../core/types'
+import { canCreateShortcutFolder } from '../core/semiLunarCatalog'
 import { persistLocalStorage, useStorageSync } from '../core/storageSync'
 import { useLocale } from './useLocale'
 
@@ -31,6 +32,7 @@ export type RemoveMemberResult =
 export function useShortcutFolders(
   visibleShortcuts: Shortcut[],
   restorePersisted = true,
+  folderableShortcuts: Shortcut[] = visibleShortcuts,
 ) {
   const { t } = useLocale()
   const [folders, setFolders] = useState<ShortcutFolder[]>(() =>
@@ -51,8 +53,8 @@ export function useShortcutFolders(
   }, [folders])
 
   const visibleIds = useMemo(
-    () => new Set(visibleShortcuts.map((s) => s.id)),
-    [visibleShortcuts],
+    () => new Set(folderableShortcuts.map((s) => s.id)),
+    [folderableShortcuts],
   )
 
   const memberIds = useMemo(() => {
@@ -77,9 +79,9 @@ export function useShortcutFolders(
 
   const shortcutById = useMemo(() => {
     const map = new Map<string, Shortcut>()
-    for (const s of visibleShortcuts) map.set(s.id, s)
+    for (const s of folderableShortcuts) map.set(s.id, s)
     return map
-  }, [visibleShortcuts])
+  }, [folderableShortcuts])
 
   const folderById = useMemo(() => {
     const map = new Map<string, ShortcutFolder>()
@@ -89,9 +91,9 @@ export function useShortcutFolders(
 
   const createFolderFromShortcuts = useCallback(
     (sourceId: string, targetId: string, name?: string): string | null => {
-      if (sourceId === targetId) return null
-      if (!visibleIds.has(sourceId) || !visibleIds.has(targetId)) return null
-      if (memberIds.has(sourceId) || memberIds.has(targetId)) return null
+      if (!canCreateShortcutFolder(sourceId, targetId, visibleIds, memberIds)) {
+        return null
+      }
 
       const folderId = newFolderId()
       const labelA = shortcutById.get(targetId)?.label ?? t('folderDefaultName')

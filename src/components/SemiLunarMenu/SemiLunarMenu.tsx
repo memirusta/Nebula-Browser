@@ -31,7 +31,11 @@ import type { ShellViewMode } from '../../core/nebulaBridge'
 import { isTauri } from '../../platform/runtime'
 import { debounce } from '../../platform/debounce'
 import { expandShellHitRegionToFitBottom, syncChromeShellLayout } from '../../platform/tauriShell'
-import { siteFullscreenExitEvent } from '../../platform/tauriSiteFullscreen'
+import {
+  browserFullscreenChangedEvent,
+  siteFullscreenExitEvent,
+} from '../../platform/tauriSiteFullscreen'
+import { getWindowPresentationState } from '../../platform/windowMaximize'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useLocale } from '../../hooks/useLocale'
@@ -157,6 +161,8 @@ export function SemiLunarMenu({
   const [stage, setStage] = useState<MenuStage>(
     isHome && homeAlwaysOpen ? 'expanded' : 'closed',
   )
+  const [browserFullscreenActive, setBrowserFullscreenActive] = useState(false)
+  const [semiLunarRenderEpoch, setSemiLunarRenderEpoch] = useState(0)
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
   const [previewTabId, setPreviewTabId] = useState<string | null>(null)
   const [openFolderId, setOpenFolderId] = useState<string | null>(null)
@@ -174,6 +180,7 @@ export function SemiLunarMenu({
   const [dragHover, setDragHover] = useState<{ id: string; x: number; y: number } | null>(null)
   const [mergeReady, setMergeReady] = useState<{ sourceId: string; targetId: string } | null>(null)
   const [contextMenu, setContextMenu] = useState<{
+  requestId: number
   shortcut: Shortcut
   x: number
   y: number
@@ -190,6 +197,7 @@ export function SemiLunarMenu({
   const positionsRef = useRef<ShortcutPosition[]>([])
   const isDraggingRef = useRef(false)
   const contextMenuOpenRef = useRef(false)
+  const contextMenuRequestIdRef = useRef(0)
   const contextMenuHoverRef = useRef(false)
   const folderPanelHoverRef = useRef(false)
   const folderOpenRef = useRef(false)
@@ -452,11 +460,13 @@ export function SemiLunarMenu({
     openIntentRef.current = false
     clearTimers()
     clearMergeHoldTimer()
+
     folderOpenRef.current = false
     folderPanelHoverRef.current = false
     contextMenuOpenRef.current = false
     contextMenuHoverRef.current = false
     isDraggingRef.current = false
+
     setOpenFolderId(null)
     setContextMenu(null)
     setPreviewShortcut(null)
@@ -487,18 +497,36 @@ const shouldDeferClose = useCallback(() => {
     if (isBrowsing && shellViewMode === 'overlay') return
     if (isHome && homeAlwaysOpen) return
     if (shouldDeferClose()) return
+
     openIntentRef.current = false
     clearTimers()
+
     closeTimer.current = setTimeout(() => {
       closeTimer.current = null
-      if (folderPanelHoverRef.current || contextMenuHoverRef.current) return
+
+      if (
+        folderPanelHoverRef.current ||
+        contextMenuHoverRef.current
+      ) {
+        return
+      }
+
       if (folderOpenRef.current) {
         folderOpenRef.current = false
         setOpenFolderId(null)
       }
+
       setStage('closed')
     }, closeDelayMs)
-  }, [shellViewMode, clearTimers, closeDelayMs, homeAlwaysOpen, isHome, isBrowsing, shouldDeferClose])
+  }, [
+    shellViewMode,
+    clearTimers,
+    closeDelayMs,
+    homeAlwaysOpen,
+    isHome,
+    isBrowsing,
+    shouldDeferClose,
+  ])
 
 const handleContextMenuOpen = useCallback(
   (
@@ -508,9 +536,16 @@ const handleContextMenuOpen = useCallback(
     folderId?: string,
   ) => {
     contextMenuOpenRef.current = true
+    contextMenuRequestIdRef.current += 1
     clearTimers()
     setStage('expanded')
-    setContextMenu({ shortcut, x, y, folderId })
+    setContextMenu({
+      requestId: contextMenuRequestIdRef.current,
+      shortcut,
+      x,
+      y,
+      folderId,
+    })
   },
   [clearTimers],
 )
@@ -841,6 +876,121 @@ const handleFolderMemberClose = useCallback(
   }
 
   useEffect(() => {
+    if (!shouldManageNativeChrome || !isTauri) return
+
+    let disposed = false
+
+    void getWindowPresentationState().then((presentation) => {
+      if (disposed) return
+      setBrowserFullscreenActive(presentation.browserFullscreen)
+      if (presentation.browserFullscreen) {
+        const nextExpanded = isHome && homeAlwaysOpen
+        clearTimers()
+        openIntentRef.current = nextExpanded
+        setStage(nextExpanded ? 'expanded' : 'closed')
+
+        void syncChromeShellLayout(
+          nextExpanded,
+          lunarHeightPx,
+          false,
+          false,
+          lunarWidthPx,
+        )
+      }
+    })
+
+    return () => {
+      disposed = true
+    }
+  }, [
+    clearTimers,
+    homeAlwaysOpen,
+    isHome,
+    lunarHeightPx,
+    lunarWidthPx,
+    shouldManageNativeChrome,
+  ])
+
+
+  useEffect(() => {
+    if (!shouldManageNativeChrome || !isTauri) return
+
+    let unlisten: (() => void) | undefined
+    let cancelled = false
+
+    const applyBrowserFullscreenLayout = (active: boolean) => {
+      clearTimers()
+      setPreviewShortcut(null)
+      setPreviewTabId(null)
+      setContextMenu(null)
+      contextMenuOpenRef.current = false
+      contextMenuHoverRef.current = false
+      folderOpenRef.current = false
+      setOpenFolderId(null)
+      setBrowserFullscreenActive(active)
+
+      // F11 changes the parent presentation, not the menu's open policy.
+      // Semi-Lunar stays permanently expanded only on Home.
+      const nextExpanded = isHome && homeAlwaysOpen
+
+      openIntentRef.current = nextExpanded
+      setStage(nextExpanded ? 'expanded' : 'closed')
+      window.requestAnimationFrame(() => {
+        setSemiLunarRenderEpoch((epoch) => epoch + 1)
+      })
+      const sync = () => {
+        void syncChromeShellLayout(
+          nextExpanded,
+          lunarHeightPx,
+          false,
+          false,
+          lunarWidthPx,
+        )
+      }
+
+      sync()
+      window.requestAnimationFrame(sync)
+      window.setTimeout(sync, 80)
+    }
+
+    void listen<{ active?: boolean }>(
+      browserFullscreenChangedEvent(),
+      ({ payload }) => {
+        const active = payload?.active === true
+
+        if (active) {
+          // WebView2 can retain a stale/clipped Chrome surface after the
+          // native parent HWND enters F11 fullscreen. Reloading this dedicated
+          // Chrome WebView recreates its compositor surface without touching
+          // browser tabs or native fullscreen state.
+          window.location.reload()
+          return
+        }
+
+        applyBrowserFullscreenLayout(false)
+      },
+    ).then((dispose) => {
+      if (cancelled) {
+        dispose()
+        return
+      }
+      unlisten = dispose
+    })
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [
+    clearTimers,
+    homeAlwaysOpen,
+    isHome,
+    lunarHeightPx,
+    lunarWidthPx,
+    shouldManageNativeChrome,
+  ])
+
+  useEffect(() => {
     if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
 
     let disposed = false
@@ -874,6 +1024,29 @@ const handleFolderMemberClose = useCallback(
     void listen(siteFullscreenExitEvent(), () => {
       setPreviewShortcut(null)
       setPreviewTabId(null)
+
+      if (browserFullscreenActive) {
+        const nextExpanded = isHome && homeAlwaysOpen
+        clearTimers()
+        openIntentRef.current = nextExpanded
+        setStage(nextExpanded ? 'expanded' : 'closed')
+
+        const syncF11Layout = () => {
+          void syncChromeShellLayout(
+            nextExpanded,
+            lunarHeightPx,
+            false,
+            false,
+            lunarWidthPx,
+          )
+        }
+
+        syncF11Layout()
+        window.requestAnimationFrame(syncF11Layout)
+        window.setTimeout(syncF11Layout, 80)
+        return
+      }
+
       shellBoundedLayoutResyncRef.current()
       window.requestAnimationFrame(() => {
         shellBoundedLayoutResyncRef.current()
@@ -893,11 +1066,19 @@ const handleFolderMemberClose = useCallback(
       cancelled = true
       unlisten?.()
     }
-  }, [shouldManageNativeChrome])
+  }, [
+    browserFullscreenActive,
+    clearTimers,
+    homeAlwaysOpen,
+    isHome,
+    lunarHeightPx,
+    lunarWidthPx,
+    shouldManageNativeChrome,
+  ])
 
   const handleContextMenuLayout = useCallback(
     (rect: DOMRect) => {
-      if (!contextMenu || !shouldManageNativeChrome || !isTauri) return
+      if (!contextMenuOpenRef.current || !shouldManageNativeChrome || !isTauri) return
       void expandShellHitRegionToFitBottom(
         rect.bottom,
         isExpanded,
@@ -907,7 +1088,6 @@ const handleFolderMemberClose = useCallback(
       )
     },
     [
-      contextMenu,
       downloadPanelOpen,
       isExpanded,
       lunarHeightPx,
@@ -930,15 +1110,6 @@ const handleFolderMemberClose = useCallback(
       lunarWidthPx,
     )
 
-    return () => {
-      void syncChromeShellLayout(
-        isExpanded,
-        lunarHeightPx,
-        Boolean(openFolderId) || downloadPanelOpen,
-        previewShortcut !== null,
-        lunarWidthPx,
-      )
-    }
   }, [
     contextMenu,
     downloadPanelOpen,
@@ -947,7 +1118,6 @@ const handleFolderMemberClose = useCallback(
     lunarHeightPx,
     lunarWidthPx,
     openFolderId,
-    previewShortcut,
     shouldManageNativeChrome,
   ])
 
@@ -1033,6 +1203,7 @@ const handleFolderMemberClose = useCallback(
 
   const nav = (
     <nav
+      key={semiLunarRenderEpoch}
       className={rootClass}
       aria-label={t('quickAccess')}
       style={
@@ -1432,6 +1603,7 @@ const members = memberIds
 
       {contextMenu && (
         <ShortcutContextMenu
+          requestId={contextMenu.requestId}
           x={contextMenu.x}
           y={contextMenu.y}
           shortcut={contextMenu.shortcut}

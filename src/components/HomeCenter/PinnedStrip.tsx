@@ -90,6 +90,7 @@ export function PinnedStrip({
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [contextMenu, setContextMenu] = useState<{
+    requestId: number
     shortcut: Shortcut
     x: number
     y: number
@@ -109,6 +110,7 @@ export function PinnedStrip({
   const dropTargetRef = useRef<number | null>(null)
   const pointerCaptureRef = useRef<HTMLButtonElement | null>(null)
   const capturedPointerIdRef = useRef<number | null>(null)
+  const contextMenuRequestIdRef = useRef(0)
 
   const clearPreviewTimer = useCallback(() => {
     if (previewTimerRef.current) {
@@ -314,11 +316,17 @@ export function PinnedStrip({
     (shortcut: Shortcut, e: React.MouseEvent) => {
       if (editMode) return
       e.preventDefault()
-    e.stopPropagation()
-    setContextMenu({ shortcut, x: e.clientX, y: e.clientY })
-  },
-  [editMode],
-)
+      e.stopPropagation()
+      contextMenuRequestIdRef.current += 1
+      setContextMenu({
+        requestId: contextMenuRequestIdRef.current,
+        shortcut,
+        x: e.clientX,
+        y: e.clientY,
+      })
+    },
+    [editMode],
+  )
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -494,6 +502,7 @@ export function PinnedStrip({
 
       {contextMenu && (
         <ShortcutContextMenu
+          requestId={contextMenu.requestId}
           x={contextMenu.x}
           y={contextMenu.y}
           shortcut={contextMenu.shortcut}

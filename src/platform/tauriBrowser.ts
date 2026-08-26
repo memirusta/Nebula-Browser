@@ -15,6 +15,7 @@ import {
   prewarmProfileMatches,
 } from '../core/prewarmProfile'
 import { debounce } from './debounce'
+import { normalizePageFavicon } from '../core/pageFavicon'
 import { isTauri } from './runtime'
 import {
   currentBrowserWindowId,
@@ -439,12 +440,14 @@ interface NativeTabSnapshotPayload {
   label: string
   url: string
   title: string
+  favicon?: string | null
 }
 
 export interface TabWebviewSnapshot {
   shortcutId: string
   url: string
   title: string | null
+  favicon: string | null
 }
 
 interface NativeTabLoadingPayload {
@@ -518,6 +521,7 @@ export function listenTabWebviewSnapshots(
         shortcutId,
         url: payload.url,
         title: payload.title.trim() || null,
+        favicon: normalizePageFavicon(payload.favicon),
       })
     },
   )
@@ -854,13 +858,28 @@ async function bindBrowserResize(
 
       if (!visible) return
 
+      // HTML5/site fullscreen exclusively owns parent->tab geometry while
+      // active. Do not copy a transient Windows work-area resize (for example
+      // 1920x1032 after Alt+Tab) into the fullscreen child WebView.
+      if (siteFullscreenBounds) {
+        await writeTransitionLog(
+          'browser.bounds.resize-skipped-site-fullscreen',
+          'info',
+          {
+            traceId: resizeTraceId,
+            label: webview.label,
+          },
+        )
+        return
+      }
+
       const changed =
         await syncBrowserBounds(
           webview,
           resizeTraceId,
         )
 
-      if (!changed || siteFullscreenBounds) return
+      if (!changed) return
 
       scheduleStackBrowsingChromeAboveBrowser(
         activeTabId,
@@ -3736,7 +3755,8 @@ async function prepareBrowseTabInBackgroundQueued(
 export async function syncTauriBrowserBounds(): Promise<void> {
   if (
     !isTauri ||
-    !activeWebview
+    !activeWebview ||
+    siteFullscreenBounds
   ) {
     return
   }

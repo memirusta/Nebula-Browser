@@ -428,12 +428,16 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--nebula-text-muted);
+  background: var(--nebula-danger);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--nebula-danger) 65%, transparent);
+  transition:
+    background var(--duration-fast),
+    box-shadow var(--duration-fast);
 }
 
 .networkStatus[data-online='true'] .networkDot {
-  background: var(--nebula-accent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--nebula-accent) 65%, transparent);
+  background: var(--nebula-success);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--nebula-success) 65%, transparent);
 }
 
 .networkRows {

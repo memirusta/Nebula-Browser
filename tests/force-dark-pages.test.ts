@@ -44,7 +44,13 @@ test('webpage darkening persists Off, Auto, Always, and bounded per-site overrid
 test('force dark prefers native site theming before algorithmic DOM darkening', () => {
   assert.match(native, /Emulation\.setEmulatedMedia/)
   assert.match(native, /prefers-color-scheme/)
-  assert.match(native, /nativeDarkPage\(\)/)
+  assert.match(native, /nativeDarkPage\(assessment\)/)
+  assert.match(native, /document\.elementFromPoint\(x, y\)/)
+  assert.match(native, /darkRatio >= 0\.65 && lightRatio <= 0\.08/)
+  assert.match(native, /algorithm-already-active/)
+  assert.match(native, /nativeObserver = new MutationObserver/)
+  assert.match(native, /Math\.max\(120, 1000 - elapsed\)/)
+  assert.match(native, /data-nebula-dark-gradient/)
   assert.match(native, /data-nebula-force-dark=\"algorithm\"/)
   assert.match(native, /new MutationObserver/)
   assert.doesNotMatch(native, /filter:\s*invert/)
@@ -55,6 +61,16 @@ test('force dark prefers native site theming before algorithmic DOM darkening', 
   assert.match(native, /const postToHost = canReportToHost &&/)
   assert.match(siteUi, /claimed_origin == source_origin/)
   assert.match(siteUi, /"stage": "force-dark\.result"/)
+  assert.match(siteUi, /"themeReason": theme_reason/)
+  assert.match(siteUi, /"lightSampleRatio": light_sample_ratio/)
+})
+
+test('embedded force-dark runtime remains valid JavaScript', () => {
+  const runtime = native.match(
+    /const FORCE_DARK_RUNTIME: &str = r###"([\s\S]*?)"###;/,
+  )?.[1]
+  assert.ok(runtime)
+  assert.doesNotThrow(() => new Function(runtime))
 })
 
 test('force dark follows each tab navigation and cleans its native handlers', () => {
