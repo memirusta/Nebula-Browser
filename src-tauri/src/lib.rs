@@ -137,6 +137,7 @@ fn sanitize_transition_log_value(value: serde_json::Value, key: Option<&str>) ->
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn show_native_notification(
     app: tauri::AppHandle,

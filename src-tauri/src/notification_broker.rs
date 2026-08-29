@@ -122,15 +122,23 @@ impl Default for BrokerState {
         }
     }
 }
-static WHATSAPP_REPLY_HINTS: LazyLock<Mutex<HashMap<(String, String, String, String), Instant>>> =
+type WhatsAppReplyHintKey = (String, String, String, String);
+type SenderIdentityKey = (String, String, String);
+
+static WHATSAPP_REPLY_HINTS: LazyLock<Mutex<HashMap<WhatsAppReplyHintKey, Instant>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
 static BROKER: LazyLock<Mutex<BrokerState>> = LazyLock::new(|| Mutex::new(BrokerState::default()));
-static SENDER_AVATARS: LazyLock<Mutex<HashMap<(String, String, String), SenderAvatar>>> =
+
+static SENDER_AVATARS: LazyLock<Mutex<HashMap<SenderIdentityKey, SenderAvatar>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-static SENDER_MESSAGES: LazyLock<Mutex<HashMap<(String, String, String), SenderMessage>>> =
+
+static SENDER_MESSAGES: LazyLock<Mutex<HashMap<SenderIdentityKey, SenderMessage>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
 static TOAST_THREADS: LazyLock<Mutex<HashMap<String, ToastThread>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
 static DIAGNOSTIC_APP: OnceLock<AppHandle> = OnceLock::new();
 static DIAGNOSTIC_LOG: Mutex<()> = Mutex::new(());
 

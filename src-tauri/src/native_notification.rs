@@ -185,9 +185,11 @@ mod imp {
     ) -> Result<NotificationData, String> {
         let data = NotificationData::new().map_err(|error| error.to_string())?;
         let values = data.Values().map_err(|error| error.to_string())?;
-        let counter = (additional_message_count > 0)
-            .then(|| additional_messages_label(additional_message_count))
-            .unwrap_or_default();
+        let counter = if additional_message_count > 0 {
+            additional_messages_label(additional_message_count)
+        } else {
+            String::default()
+        };
         for (key, value) in [
             ("nebulaHeading", heading),
             ("nebulaBody", body),
@@ -253,7 +255,7 @@ mod imp {
             ToastUpdateOutcome::NotFound
         }
     }
-
+    #[allow(clippy::too_many_arguments)]
     pub async fn show(
         app: &AppHandle,
         title: &str,
@@ -346,9 +348,11 @@ mod imp {
                 return Ok(());
             }
         }
-        let footer = (!footer_text.is_empty())
-            .then_some("<text placement=\"attribution\">{nebulaFooter}</text>")
-            .unwrap_or_default();
+        let footer = if !footer_text.is_empty() {
+            "<text placement=\"attribution\">{nebulaFooter}</text>"
+        } else {
+            ""
+        };
         document
             .LoadXml(&HSTRING::from(format!(
                 "<toast><visual><binding template=\"ToastGeneric\">{}<text hint-maxLines=\"1\">{{nebulaHeading}}</text><text>{{nebulaBody}}</text><text>{{nebulaCounter}}</text>{}</binding></visual></toast>",
