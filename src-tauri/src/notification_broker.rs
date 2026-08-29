@@ -122,9 +122,8 @@ impl Default for BrokerState {
         }
     }
 }
-static WHATSAPP_REPLY_HINTS: LazyLock<
-    Mutex<HashMap<(String, String, String, String), Instant>>
-> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static WHATSAPP_REPLY_HINTS: LazyLock<Mutex<HashMap<(String, String, String, String), Instant>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 static BROKER: LazyLock<Mutex<BrokerState>> = LazyLock::new(|| Mutex::new(BrokerState::default()));
 static SENDER_AVATARS: LazyLock<Mutex<HashMap<(String, String, String), SenderAvatar>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -160,12 +159,7 @@ fn whatsapp_message_key(value: &str) -> String {
         .to_lowercase()
 }
 
-pub fn remember_whatsapp_reply_hint(
-    tab_label: &str,
-    origin: &str,
-    sender_name: &str,
-    body: &str,
-) {
+pub fn remember_whatsapp_reply_hint(tab_label: &str, origin: &str, sender_name: &str, body: &str) {
     let Some(origin) = whatsapp_origin(origin) else {
         return;
     };
@@ -180,23 +174,13 @@ pub fn remember_whatsapp_reply_hint(
     if let Ok(mut hints) = WHATSAPP_REPLY_HINTS.lock() {
         let now = Instant::now();
 
-        hints.retain(|_, observed_at| {
-            now.duration_since(*observed_at) <= Duration::from_secs(3)
-        });
+        hints.retain(|_, observed_at| now.duration_since(*observed_at) <= Duration::from_secs(3));
 
-        hints.insert(
-            (tab_label.to_string(), origin, sender, body),
-            now,
-        );
+        hints.insert((tab_label.to_string(), origin, sender, body), now);
     }
 }
 
-fn take_whatsapp_reply_hint(
-    tab_label: &str,
-    origin: &str,
-    sender_name: &str,
-    body: &str,
-) -> bool {
+fn take_whatsapp_reply_hint(tab_label: &str, origin: &str, sender_name: &str, body: &str) -> bool {
     let sender = sender_identity_key(sender_name);
     let body = whatsapp_message_key(body);
 
@@ -206,17 +190,10 @@ fn take_whatsapp_reply_hint(
 
     let now = Instant::now();
 
-    hints.retain(|_, observed_at| {
-        now.duration_since(*observed_at) <= Duration::from_secs(3)
-    });
+    hints.retain(|_, observed_at| now.duration_since(*observed_at) <= Duration::from_secs(3));
 
     hints
-        .remove(&(
-            tab_label.to_string(),
-            origin.to_string(),
-            sender,
-            body,
-        ))
+        .remove(&(tab_label.to_string(), origin.to_string(), sender, body))
         .is_some()
 }
 fn timestamp_ms() -> u64 {
@@ -320,9 +297,8 @@ fn whatsapp_origin(origin: &str) -> Option<String> {
     let parsed = url::Url::parse(&origin).ok()?;
     let host = parsed.host_str()?.to_ascii_lowercase();
 
-    (parsed.scheme() == "https"
-        && (host == "web.whatsapp.com" || host.ends_with(".whatsapp.com")))
-    .then_some(origin)
+    (parsed.scheme() == "https" && (host == "web.whatsapp.com" || host.ends_with(".whatsapp.com")))
+        .then_some(origin)
 }
 
 pub fn remember_sender_message(tab_label: &str, origin: &str, sender_name: &str, body: &str) {
@@ -1029,19 +1005,19 @@ fn notification_presentation(
 
     let mut event_kind = notification_event_kind(notification_type, body);
 
-if event_kind == "notification"
-    && whatsapp_origin(origin).is_some()
-    && !sender_name.is_empty()
-    && !body.trim().is_empty()
-{
-    event_kind = "message".to_string();
-}
+    if event_kind == "notification"
+        && whatsapp_origin(origin).is_some()
+        && !sender_name.is_empty()
+        && !body.trim().is_empty()
+    {
+        event_kind = "message".to_string();
+    }
 
-NotificationPresentation {
-    site_name,
-    sender_name,
-    event_kind,
-}
+    NotificationPresentation {
+        site_name,
+        sender_name,
+        event_kind,
+    }
 }
 
 fn favicon_url(origin: &str) -> Option<String> {
@@ -1072,8 +1048,7 @@ fn process_candidate(
     source: NotificationSource,
     candidate: NotificationCandidate,
 ) {
-    if !candidate.tab_label.starts_with("nebula-tab-")
-        || candidate.tab_label.chars().count() > 240
+    if !candidate.tab_label.starts_with("nebula-tab-") || candidate.tab_label.chars().count() > 240
     {
         record_diagnostic(
             Some(source),
@@ -1162,7 +1137,7 @@ fn process_candidate(
         &notification_type,
         notification_data.as_ref(),
     );
-       if show_content {
+    if show_content {
         let sender_name_hint = truncate(&candidate.sender_name_hint, 120);
         if !sender_name_hint.is_empty() {
             presentation.sender_name = sender_name_hint;
@@ -1172,15 +1147,14 @@ fn process_candidate(
             presentation.event_kind = event_kind_hint;
         }
 
-        let whatsapp_reply_hint =
-            source == NotificationSource::Webview2
-                && whatsapp_origin(&origin).is_some()
-                && take_whatsapp_reply_hint(
-                    &candidate.tab_label,
-                    &origin,
-                    &presentation.sender_name,
-                    &body,
-                );
+        let whatsapp_reply_hint = source == NotificationSource::Webview2
+            && whatsapp_origin(&origin).is_some()
+            && take_whatsapp_reply_hint(
+                &candidate.tab_label,
+                &origin,
+                &presentation.sender_name,
+                &body,
+            );
 
         if whatsapp_reply_hint {
             let reply_text = body.clone();
@@ -1206,26 +1180,12 @@ fn process_candidate(
         if presentation.event_kind == "reply" && !whatsapp_reply_hint {
             let content_hint = notification_data
                 .as_ref()
-                .and_then(|data| {
-                    find_metadata_message(
-                        data,
-                        &body,
-                        &presentation.sender_name,
-                    )
-                })
+                .and_then(|data| find_metadata_message(data, &body, &presentation.sender_name))
                 .or_else(|| {
-                    sender_message_hint(
-                        &candidate.tab_label,
-                        &origin,
-                        &presentation.sender_name,
-                    )
+                    sender_message_hint(&candidate.tab_label, &origin, &presentation.sender_name)
                 });
 
-            body = reply_display_body(
-                &body,
-                &presentation.sender_name,
-                content_hint,
-            );
+            body = reply_display_body(&body, &presentation.sender_name, content_hint);
         }
     }
 
@@ -1398,32 +1358,32 @@ pub fn submit(app: &AppHandle, source: NotificationSource, candidate: Notificati
         "",
     );
     let is_instagram = instagram_origin(&candidate.origin).is_some();
-let is_whatsapp = whatsapp_origin(&candidate.origin).is_some();
+    let is_whatsapp = whatsapp_origin(&candidate.origin).is_some();
 
-let delay_ms = if source == NotificationSource::ContentAdapter
-    && candidate.adapter_kind != Some(ContentAdapterKind::ServiceWorkerSnapshot)
-{
-    if is_instagram {
-        Some(INSTAGRAM_DOM_FALLBACK_DELAY_MS)
-    } else if is_whatsapp {
-        // WhatsApp DOM carries sender/message/reply semantics.
-        // Let it become authoritative before the native WebView2 event.
-        None
+    let delay_ms = if source == NotificationSource::ContentAdapter
+        && candidate.adapter_kind != Some(ContentAdapterKind::ServiceWorkerSnapshot)
+    {
+        if is_instagram {
+            Some(INSTAGRAM_DOM_FALLBACK_DELAY_MS)
+        } else if is_whatsapp {
+            // WhatsApp DOM carries sender/message/reply semantics.
+            // Let it become authoritative before the native WebView2 event.
+            None
+        } else {
+            Some(CONTENT_ADAPTER_DELAY_MS)
+        }
+    } else if source == NotificationSource::Webview2 {
+        if is_instagram {
+            Some(WEBVIEW2_ENRICHMENT_DELAY_MS)
+        } else if is_whatsapp {
+            // Give the rich DOM observer a short head start.
+            Some(400)
+        } else {
+            None
+        }
     } else {
-        Some(CONTENT_ADAPTER_DELAY_MS)
-    }
-} else if source == NotificationSource::Webview2 {
-    if is_instagram {
-        Some(WEBVIEW2_ENRICHMENT_DELAY_MS)
-    } else if is_whatsapp {
-        // Give the rich DOM observer a short head start.
-        Some(400)
-    } else {
         None
-    }
-} else {
-    None
-};
+    };
     if let Some(delay_ms) = delay_ms {
         let delayed_app = app.clone();
         tauri::async_runtime::spawn(async move {

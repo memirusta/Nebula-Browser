@@ -2039,7 +2039,6 @@ if (container) queueCandidate(container);
             },
         ))
     }
-
     fn has_pending_capacity<'a>(
         labels: impl Iterator<Item = &'a str>,
         tab_label: &str,
@@ -2469,7 +2468,7 @@ if (container) queueCandidate(container);
                                 }
                                 return Ok(());
                             }
-                            
+
                             if value.get("type").and_then(serde_json::Value::as_str)
     == Some("nebula-whatsapp-reply-hint")
 {
