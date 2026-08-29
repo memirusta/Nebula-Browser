@@ -1,6 +1,23 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import {
+  clearSemiLunarFullscreenReload,
+  markSemiLunarFullscreenReload,
+  shouldRestoreSemiLunarLayout,
+  type SemiLunarSessionStorage,
+} from '../src/core/semiLunarFullscreenReload.ts'
+
+function memorySessionStorage(): SemiLunarSessionStorage {
+  const values = new Map<string, string>()
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => {
+      values.delete(key)
+    },
+  }
+}
 
 test('custom fullscreen state is owned natively and guards Semi-Lunar window interactions', () => {
   const native = readFileSync('src-tauri/src/site_fullscreen_window.rs', 'utf8')
@@ -119,7 +136,11 @@ test('F11 keeps Semi-Lunar expanded only on Home while ChromeApp owns its bounds
   assert.doesNotMatch(menu, /const nextExpanded = !active/)
   assert.match(
     menu,
-    /if \(active\) \{[\s\S]{0,320}window\.location\.reload\(\)/,
+    /if \(active\) \{[\s\S]{0,420}markSemiLunarFullscreenReload\(\)[\s\S]{0,120}window\.location\.reload\(\)/,
+  )
+  assert.match(
+    menu,
+    /useShortcutPositions\([\s\S]{0,180}restoreShortcutLayout/,
   )
 
   const closeImmediately = menu.slice(
@@ -136,4 +157,103 @@ test('F11 keeps Semi-Lunar expanded only on Home while ChromeApp owns its bounds
     menu,
     /syncChromeShellLayout\([\s\S]{0,100}nextExpanded/,
   )
+})
+
+test('F11 Chrome reload restores the live Semi-Lunar layout exactly once', () => {
+  const storage = memorySessionStorage()
+
+  assert.equal(shouldRestoreSemiLunarLayout(false, storage), false)
+  markSemiLunarFullscreenReload(storage)
+  assert.equal(shouldRestoreSemiLunarLayout(false, storage), true)
+
+  clearSemiLunarFullscreenReload(storage)
+  assert.equal(shouldRestoreSemiLunarLayout(false, storage), false)
+  assert.equal(shouldRestoreSemiLunarLayout(true, storage), true)
+})
+
+test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', () => {
+  const menu = readFileSync(
+    'src/components/SemiLunarMenu/SemiLunarMenu.tsx',
+    'utf8',
+  )
+  const chrome = readFileSync('src/platform/tauriChromeWebview.ts', 'utf8')
+  const permissions = readFileSync(
+    'src-tauri/permissions/webview-commands.toml',
+    'utf8',
+  )
+
+  const delayedOpen = menu.slice(
+    menu.indexOf('const requestOpen'),
+    menu.indexOf('const handleEnter'),
+  )
+  const staleHoverReject = menu.slice(
+    menu.indexOf('const rejectStaleBrowsingHover'),
+    menu.indexOf('const isPointerOverSemiLunar'),
+  )
+  const triggerHitTest = chrome.slice(
+    chrome.indexOf('export async function isCursorInsideSemiLunarNativeTrigger'),
+    chrome.indexOf('export async function isCursorInsideSemiLunarNativeShape'),
+  )
+
+  assert.match(delayedOpen, /const requestId = \+\+openRequestIdRef\.current/)
+  assert.match(delayedOpen, /isCursorInsideSemiLunarNativeTrigger\(\)/)
+  assert.match(
+    delayedOpen,
+    /requestId !== openRequestIdRef\.current[\s\S]*rejectStaleBrowsingHover\(\)/,
+  )
+  assert.match(staleHoverReject, /clearTimers\(\)[\s\S]*setStage\('closed'\)/)
+  assert.match(
+    menu,
+    /consecutiveNativeMisses >= 2[\s\S]{0,120}closeFromLostHover\(\)/,
+  )
+  assert.match(triggerHitTest, /SEMI_LUNAR_HIT_ZONE_HEIGHT \* scaleFactor/)
+  assert.doesNotMatch(triggerHitTest, /chromeOverlayLogicalHeight/)
+  assert.match(permissions, /"window_cursor_in_client_rect"/)
+  assert.match(permissions, /"window_cursor_in_client_lunar_shape"/)
+  assert.match(
+    menu,
+    /setNativeHoverRecoveryArmed\(true\)[\s\S]{0,160}setStage\('closed'\)/,
+  )
+  assert.match(
+    menu,
+    /nativeHoverRecoveryArmed[\s\S]{0,900}isCursorInsideSemiLunarNativeTrigger\(\)[\s\S]{0,400}requestOpen\(false\)/,
+  )
+
+  const nativeLayoutEffect = menu.slice(
+    menu.indexOf("if (shellViewMode === 'overlay') {"),
+    menu.indexOf("if (mode === 'overlay' || !shouldManageNativeChrome"),
+  )
+  assert.match(
+    nativeLayoutEffect,
+    /if \(shellViewMode === 'overlay'\) \{[\s\S]*clearTimers\(\)/,
+  )
+  assert.doesNotMatch(
+    nativeLayoutEffect,
+    /}\s*clearTimers\(\)\s*void syncChromeShellLayout/,
+  )
+
+  const expandedEnter = menu.slice(
+    menu.indexOf('const handleExpandedEnter'),
+    menu.indexOf('const handleMenuClick'),
+  )
+  assert.match(expandedEnter, /isCursorInsideSemiLunarNativeShape/)
+  assert.match(
+    expandedEnter,
+    /nativeInside === false[\s\S]*rejectStaleBrowsingHover\(\)/,
+  )
+  assert.match(
+    menu,
+    /isExpanded\s*\? handleExpandedEnter\s*:\s*handleEnter/,
+  )
+  assert.doesNotMatch(
+    menu,
+    /isBrowsing && !isExpanded \? handleEnter : handleEnterImmediate/,
+  )
+
+  const controlCounts = menu.slice(
+    menu.indexOf('const lunarControlCounts'),
+    menu.indexOf('const innerRimPath'),
+  )
+  assert.doesNotMatch(controlCounts, /isExpanded/)
+  assert.match(controlCounts, /right: isTauri \? 3 : 0/)
 })

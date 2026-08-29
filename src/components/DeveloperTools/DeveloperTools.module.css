@@ -62,7 +62,8 @@
 
 .closeButton,
 .secondaryButton,
-.smallButton {
+.smallButton,
+.smallButtonActive {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.045);
@@ -91,6 +92,16 @@
   white-space: nowrap;
 }
 
+.smallButtonActive {
+  min-height: 29px;
+  padding: 5px 9px;
+  border-color: rgba(104, 154, 255, 0.55);
+  background: rgba(85, 131, 255, 0.2);
+  color: #fff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .closeButton:hover {
   border-color: rgba(255, 90, 90, 0.35);
   background: rgba(215, 54, 54, 0.82);
@@ -98,14 +109,16 @@
 }
 
 .secondaryButton:hover,
-.smallButton:hover {
+.smallButton:hover,
+.smallButtonActive:hover {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.085);
   color: #fff;
 }
 
 .secondaryButton:disabled,
-.smallButton:disabled {
+.smallButton:disabled,
+.smallButtonActive:disabled {
   opacity: 0.36;
   cursor: not-allowed;
 }
@@ -389,6 +402,64 @@
   background: rgba(0, 0, 0, 0.08);
 }
 
+.paneToolbar > strong {
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.searchToolbar,
+.inlineActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.searchToolbar {
+  min-height: 40px;
+  padding: 6px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.searchToolbar > input,
+.attributeEditor input,
+.storageEditor input,
+.storageEditor select,
+.compactSelect {
+  min-width: 0;
+  height: 29px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  outline: none;
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+  font-size: 10px;
+}
+
+.searchToolbar > input {
+  flex: 1;
+}
+
+.compactSelect {
+  max-width: 120px;
+}
+
+.toggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 9px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toggleLabel input {
+  accent-color: #6d91ff;
+}
+
 .filterRow {
   min-width: 120px;
   flex: 1;
@@ -475,6 +546,82 @@
   flex: 1;
   overflow: auto;
   padding: 11px;
+}
+
+.inspectorTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inspectorTitleRow > div {
+  display: flex;
+  gap: 6px;
+}
+
+.editorBlock {
+  display: grid;
+  gap: 7px;
+}
+
+.editorBlock textarea {
+  width: 100%;
+  min-height: 180px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px;
+  outline: none;
+  border: 1px solid rgba(115, 153, 255, 0.25);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(235, 240, 248, 0.88);
+  font: 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.attributeEditor {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(120px, 1fr) auto;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.attributeList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attributeRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.6fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 7px;
+  font-size: 9px;
+}
+
+.attributeRow code {
+  color: rgba(132, 182, 255, 0.94);
+}
+
+.attributeRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.attributeRow button,
+.rowDeleteButton {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 130, 130, 0.7);
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
 }
 
 .nodeInspector h3,
@@ -582,6 +729,10 @@
   background: rgba(255, 190, 70, 0.04);
 }
 
+.consoleBlocked {
+  background: rgba(91, 135, 255, 0.055);
+}
+
 .consoleLevel {
   color: rgba(139, 181, 255, 0.85);
   text-transform: uppercase;
@@ -594,6 +745,22 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: rgba(240, 243, 248, 0.82);
+}
+
+.consoleContent {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.consoleSource {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(132, 176, 255, 0.55);
+  font-size: 8px;
 }
 
 .consoleTime {
@@ -619,10 +786,18 @@
   font-weight: 700;
 }
 
-.networkTable {
-  min-width: 780px;
+.networkWorkspace {
+  min-width: 0;
   min-height: 0;
   flex: 1;
+  display: grid;
+  grid-template-columns: minmax(520px, 1.25fr) minmax(320px, 0.75fr);
+  overflow: hidden;
+}
+
+.networkTable {
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 9px;
@@ -631,7 +806,7 @@
 .networkHead,
 .networkRow {
   display: grid;
-  grid-template-columns: 55px 55px 78px minmax(260px, 1fr) 70px 70px;
+  grid-template-columns: 70px 55px 78px minmax(245px, 1fr) 70px 70px;
   gap: 8px;
   align-items: center;
   padding: 0 9px;
@@ -649,8 +824,14 @@
 
 .networkRow {
   min-height: 30px;
+  width: 100%;
+  border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  background: transparent;
   color: rgba(255, 255, 255, 0.67);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .networkRow code {
@@ -668,6 +849,106 @@
 .networkFailed {
   color: rgba(255, 130, 130, 0.9);
   background: rgba(255, 65, 65, 0.035);
+}
+
+.networkBlocked {
+  color: rgba(139, 181, 255, 0.88);
+  background: rgba(91, 135, 255, 0.045);
+}
+
+.networkRowSelected {
+  background: rgba(91, 135, 255, 0.16);
+  box-shadow: inset 2px 0 rgba(112, 154, 255, 0.9);
+}
+
+.recordButton,
+.recordButtonActive {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+
+.recordButtonActive {
+  border-color: rgba(255, 88, 88, 0.38);
+  color: #ff6464;
+}
+
+.networkDetails {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(255, 255, 255, 0.075);
+  overflow: hidden;
+}
+
+.networkDetailsBody {
+  min-height: 0;
+  flex: 1;
+  padding: 9px;
+  overflow: auto;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: 65px minmax(0, 1fr);
+  gap: 6px 9px;
+  margin-bottom: 10px;
+  font-size: 9px;
+}
+
+.detailGrid span {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.detailGrid code {
+  overflow-wrap: anywhere;
+  color: rgba(230, 236, 248, 0.82);
+}
+
+.detailSection {
+  margin-bottom: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.detailSection summary {
+  padding: 8px;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.detailSection h4 {
+  margin: 6px 8px;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.detailSection pre {
+  max-height: 230px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+  background: rgba(0, 0, 0, 0.15);
+  color: rgba(225, 232, 244, 0.78);
+  font: 9px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detailSection small {
+  display: block;
+  padding: 5px 8px;
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .storageColumns {
@@ -745,7 +1026,287 @@
 }
 
 .cookieRow {
-  grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1.4fr) minmax(80px, 0.6fr);
+  grid-template-columns: minmax(100px, 0.65fr) minmax(130px, 1fr) minmax(110px, 0.8fr) minmax(90px, 0.6fr) auto;
+}
+
+.cookieValue,
+.cookieValueRevealed {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(225, 232, 246, 0.62);
+  font: 9px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.cookieValue {
+  letter-spacing: 0.08em;
+}
+
+.cookieValueRevealed {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: rgba(235, 240, 250, 0.9);
+}
+
+.cookieActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.storageEditor {
+  display: grid;
+  grid-template-columns: 125px minmax(90px, 0.6fr) minmax(120px, 1fr) auto;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.keyValueList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.keyValueRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.keyValueRow > button:first-child {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(95px, 0.5fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.keyValueRow code,
+.keyValueRow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+}
+
+.keyValueRow code {
+  color: rgba(137, 181, 255, 0.88);
+}
+
+.keyValueRow span {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.storageMetadataGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.storageMetadataGrid > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+}
+
+.storageMetadataGrid code,
+.storageMetadataGrid span {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: rgba(225, 232, 245, 0.67);
+  font-size: 8px;
+}
+
+.sourcesWorkspace {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.35fr) minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.sourcesSidebar,
+.sourceViewer {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sourcesSidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.sourceList {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.sourceGroup {
+  display: block;
+}
+
+.sourceGroupHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 25px;
+  padding: 0 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(18, 22, 28, 0.97);
+  color: rgba(174, 197, 243, 0.65);
+  font: 8px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.sourceGroupHeader span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceGroupHeader small {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.sourceRow,
+.sourceRowSelected {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr) 50px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sourceRow:hover,
+.sourceRowSelected {
+  background: rgba(91, 135, 255, 0.12);
+}
+
+.sourceRow span,
+.sourceRowSelected span {
+  color: rgba(126, 169, 255, 0.8);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.sourceRow code,
+.sourceRowSelected code,
+.sourceRow small,
+.sourceRowSelected small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 9px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.sourceRow small,
+.sourceRowSelected small {
+  color: rgba(255, 255, 255, 0.3);
+  text-align: right;
+}
+
+.sourcePath {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.36);
+  font: 9px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.sourceCode {
+  min-height: 0;
+  flex: 1;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.16);
+  color: rgba(231, 237, 246, 0.83);
+  font: 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  tab-size: 2;
+}
+
+.accessibilityList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.accessibilityToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.accessibilityRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 90px minmax(130px, 0.7fr) minmax(0, 1fr) 90px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.7);
+  text-align: left;
+  cursor: pointer;
+}
+
+.accessibilityRow:hover:not(:disabled) {
+  border-color: rgba(112, 154, 255, 0.22);
+  background: rgba(100, 142, 255, 0.07);
+}
+
+.accessibilityRow:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.accessibilityRow span,
+.accessibilityRow small,
+.accessibilityRow code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+}
+
+.accessibilityRow span,
+.accessibilityRow code {
+  color: rgba(130, 176, 255, 0.75);
 }
 
 .permissionGrid {
@@ -809,12 +1370,16 @@
   }
 
   .splitSection,
-  .storageColumns {
+  .storageColumns,
+  .sourcesWorkspace,
+  .networkWorkspace {
     grid-template-columns: 1fr;
   }
 
   .splitPane:first-child,
-  .storageColumns > .section:first-child {
+  .storageColumns > .section:first-child,
+  .sourcesSidebar,
+  .networkTable {
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   }
@@ -825,5 +1390,34 @@
 
   .splitPane {
     min-height: 360px;
+  }
+
+  .networkTable,
+  .sourcesSidebar {
+    min-height: 320px;
+  }
+
+  .networkDetails {
+    min-height: 360px;
+    border-left: 0;
+  }
+
+  .storageEditor,
+  .attributeEditor,
+  .storageMetadataGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .cookieRow {
+    grid-template-columns: 1fr;
+  }
+
+  .cookieActions {
+    justify-content: flex-start;
+  }
+
+  .accessibilityToolbar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

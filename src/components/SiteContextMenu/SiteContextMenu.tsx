@@ -1,14 +1,18 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type {
-  SiteContextMenuItem,
-  SiteContextMenuRequest,
+import {
+  NEBULA_INSPECT_COMMAND_ID,
+  type SiteContextMenuItem,
+  type SiteContextMenuRequest,
 } from '../../platform/tauriContextMenu'
+// Nebula owns Inspect instead of depending on WebView2's developer-menu
+// entry, which is absent in some release configurations.
 import { useLocale } from '../../hooks/useLocale'
 import styles from './SiteContextMenu.module.css'
 
@@ -65,6 +69,37 @@ export function SiteContextMenu({
 }: SiteContextMenuProps) {
   const { t } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const menuItems = useMemo(() => {
+    if (request.items.some((item) => item.commandId === NEBULA_INSPECT_COMMAND_ID)) {
+      return request.items
+    }
+
+    const items = request.items.slice()
+    if (items.length > 0 && items.at(-1)?.kind !== 'separator') {
+      items.push({
+        commandId: -1,
+        label: '',
+        name: 'nebula-separator',
+        shortcut: '',
+        kind: 'separator',
+        enabled: false,
+        checked: false,
+        children: [],
+      })
+    }
+    items.push({
+      commandId: NEBULA_INSPECT_COMMAND_ID,
+      label: t('contextInspect'),
+      name: 'inspect',
+      shortcut: '',
+      kind: 'command',
+      enabled: true,
+      checked: false,
+      children: [],
+    })
+    return items
+  }, [request.items, t])
 
   const [position, setPosition] = useState({
     x: 0,
@@ -280,9 +315,9 @@ export function SiteContextMenu({
               : 'hidden',
         }}
       >
-        {request.items.length > 0 ? (
+        {menuItems.length > 0 ? (
           <MenuItems
-            items={request.items}
+            items={menuItems}
             onSelect={(commandId) =>
               onSelect(commandId)
             }

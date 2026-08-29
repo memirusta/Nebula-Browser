@@ -11,7 +11,14 @@ export const ICON_SIZE = 44
 export const ICON_GAP = 10
 export const DRAG_THRESHOLD = 4
 export const SHORTCUT_POSITIONS_KEY = 'nebula-shortcut-positions-v10'
-export const LUNAR_CHROME_SAFE_BOTTOM = 52
+export const SHORTCUT_HOVER_SCALE = 1.12
+
+const LUNAR_CONTROL_SIZE = 36
+const LUNAR_CONTROL_GAP = 6
+const LUNAR_CONTROL_EDGE_OFFSET = 62
+const LUNAR_CONTROL_TOP = 14
+const LUNAR_CONTROL_CLEARANCE = 3
+const LUNAR_FILL_RADIUS_SCALE = 1.1
 
 export interface ShortcutPosition {
   id: string
@@ -74,55 +81,19 @@ export function scalePositionsToMetrics(
   }))
 }
 
-type RowSpec = { count: number; inset: number; yBias: number }
-
-function layoutRow(
-  shortcutIds: string[],
-  startIdx: number,
-  row: RowSpec,
-  metrics: LunarMetrics,
-): ShortcutPosition[] {
-  const positions: ShortcutPosition[] = []
-  for (let i = 0; i < row.count; i++) {
-    const t = row.count <= 1 ? 0.5 : 0.04 + (0.92 * i) / (row.count - 1)
-    const p = pointOnLunarEllipse(t, row.inset, metrics)
-    positions.push({
-      id: shortcutIds[startIdx + i],
-      x: p.x,
-      y: p.y + row.yBias,
-    })
-  }
-  return positions
-}
-
 export function buildDefaultPositions(
   shortcutIds: string[],
   metrics: LunarMetrics = DEFAULT_LUNAR_METRICS,
   iconSizePx: number = ICON_SIZE,
 ): ShortcutPosition[] {
-  const n = shortcutIds.length
-  const row1Count = Math.min(7, n)
-  const row2Count = Math.min(8, Math.max(0, n - row1Count))
-  const row3Count = Math.max(0, n - row1Count - row2Count)
-
-  const rows: RowSpec[] = [
-    { count: row1Count, inset: 1, yBias: 4 },
-    { count: row2Count, inset: 0.9, yBias: 12 },
-    { count: row3Count, inset: 0.78, yBias: 22 },
-  ]
-
-  let idx = 0
   const positions: ShortcutPosition[] = []
-  for (const row of rows) {
-    if (row.count === 0) continue
-    positions.push(...layoutRow(shortcutIds, idx, row, metrics))
-    idx += row.count
+  for (const id of shortcutIds) {
+    positions.push({
+      id,
+      ...findVacantAcrossLunarDome(positions, id, iconSizePx, metrics),
+    })
   }
-
-  return positions.map((p) => {
-    const c = clampToBounds(p.x, p.y, iconSizePx, metrics)
-    return { ...p, ...c }
-  })
+  return positions
 }
 
 function centerSpawnPosition(
@@ -147,33 +118,105 @@ function collidesAt(
   })
 }
 
-/** Find the center spawn, or the nearest free slot alternating right / left. */
-function findVacantNearCenter(
+interface LunarVacancyCandidate {
+  x: number
+  y: number
+}
+
+/** Build a centered hex grid containing only complete icon discs inside the dome. */
+function lunarVacancyCandidates(
+  iconSizePx: number,
+  metrics: LunarMetrics,
+): LunarVacancyCandidate[] {
+  const radius = iconSizePx / 2
+  const step = getMinCenterDist(iconSizePx)
+  const rowStep = step * (Math.sqrt(3) / 2)
+  const usableHeight = Math.max(0, metrics.h - radius * 2)
+  const rowIntervals = Math.max(0, Math.floor(usableHeight / rowStep))
+  const yRemainder = usableHeight - rowIntervals * rowStep
+  const yStart = radius + yRemainder / 2
+  const halfColumns = Math.ceil(metrics.w / (step * 2)) + 1
+  const candidates: LunarVacancyCandidate[] = []
+
+  for (let row = 0; row <= rowIntervals; row += 1) {
+    const y = yStart + row * rowStep
+    const rowOffset = row % 2 === 0 ? 0 : step / 2
+
+    for (let column = -halfColumns; column <= halfColumns; column += 1) {
+      const x = metrics.cx + rowOffset + column * step
+      if (!isIconDiscInsideLunarDome(x, y, radius, metrics)) continue
+
+      candidates.push({ x, y })
+    }
+  }
+
+  return candidates
+}
+
+/** Fill outward from the center spawn while keeping every icon collision-free. */
+function findVacantAcrossLunarDome(
   existing: ShortcutPosition[],
   id: string,
   iconSizePx: number,
   metrics: LunarMetrics,
 ): { x: number; y: number } {
   const spawn = centerSpawnPosition(metrics, iconSizePx)
+  if (!collidesAt(spawn.x, spawn.y, existing, id, iconSizePx)) return spawn
 
-  const tryAt = (x: number, y: number) => {
-    const c = clampToBounds(x, y, iconSizePx, metrics)
-    return collidesAt(c.x, c.y, existing, id, iconSizePx) ? null : c
+  const minimumCenterDistance = getMinCenterDist(iconSizePx)
+  const minimumSafeDistanceSq = (minimumCenterDistance - 1) ** 2
+  const neighborCount = existing.filter((position) => position.id !== id).length
+  const preferredSpawnDistance =
+    minimumCenterDistance * Math.sqrt(neighborCount) * LUNAR_FILL_RADIUS_SCALE
+  type ScoredCandidate = LunarVacancyCandidate & {
+    nearestDistanceSq: number
+    spawnDistanceSq: number
+    preferredDistanceDelta: number
+  }
+  let bestFree: ScoredCandidate | null = null
+  let bestFallback: ScoredCandidate | null = null
+
+  for (const candidate of lunarVacancyCandidates(iconSizePx, metrics)) {
+    let nearestDistanceSq = Number.POSITIVE_INFINITY
+    for (const position of existing) {
+      if (position.id === id) continue
+      const distanceSq = (candidate.x - position.x) ** 2 + (candidate.y - position.y) ** 2
+      nearestDistanceSq = Math.min(nearestDistanceSq, distanceSq)
+    }
+
+    const spawnDistanceSq =
+      (candidate.x - spawn.x) ** 2 + (candidate.y - spawn.y) ** 2
+    const preferredDistanceDelta = Math.abs(
+      Math.sqrt(spawnDistanceSq) - preferredSpawnDistance,
+    )
+    const scored = {
+      ...candidate,
+      nearestDistanceSq,
+      spawnDistanceSq,
+      preferredDistanceDelta,
+    }
+
+    const isBetterFallback =
+      !bestFallback ||
+      nearestDistanceSq > bestFallback.nearestDistanceSq + 0.01 ||
+      (Math.abs(nearestDistanceSq - bestFallback.nearestDistanceSq) <= 0.01 &&
+        spawnDistanceSq < bestFallback.spawnDistanceSq)
+    if (isBetterFallback) bestFallback = scored
+
+    if (nearestDistanceSq >= minimumSafeDistanceSq) {
+      const isBetterFree =
+        !bestFree ||
+        preferredDistanceDelta < bestFree.preferredDistanceDelta - 0.01 ||
+        (Math.abs(preferredDistanceDelta - bestFree.preferredDistanceDelta) <= 0.01 &&
+          (nearestDistanceSq > bestFree.nearestDistanceSq + 0.01 ||
+            (Math.abs(nearestDistanceSq - bestFree.nearestDistanceSq) <= 0.01 &&
+              spawnDistanceSq < bestFree.spawnDistanceSq)))
+      if (isBetterFree) bestFree = scored
+    }
   }
 
-  const atCenter = tryAt(spawn.x, spawn.y)
-  if (atCenter) return atCenter
-
-  const step = getMinCenterDist(iconSizePx)
-  for (let ring = 1; ring <= 24; ring++) {
-    const offset = ring * step
-    const right = tryAt(spawn.x + offset, spawn.y)
-    if (right) return right
-    const left = tryAt(spawn.x - offset, spawn.y)
-    if (left) return left
-  }
-
-  return spawn
+  const best = bestFree ?? bestFallback
+  return best ? { x: best.x, y: best.y } : spawn
 }
 
 function fixOverlappingPositions(
@@ -192,7 +235,7 @@ function fixOverlappingPositions(
     )
     if (!overlaps) continue
 
-    const vacant = findVacantNearCenter(prior, current.id, iconSizePx, metrics)
+    const vacant = findVacantAcrossLunarDome(prior, current.id, iconSizePx, metrics)
     current.x = vacant.x
     current.y = vacant.y
   }
@@ -200,7 +243,7 @@ function fixOverlappingPositions(
   return result
 }
 
-/** Place shortcuts: keep stored positions; new items spawn at center then shift aside if taken. */
+/** Keep stored positions and place new or overlapping items near the center cluster. */
 export function mergeShortcutPositions(
   shortcutIds: string[],
   stored: ShortcutPosition[],
@@ -221,7 +264,7 @@ export function mergeShortcutPositions(
   }
 
   if (stored.length === 0) {
-    return buildDefaultPositions(shortcutIds, metrics)
+    return buildDefaultPositions(shortcutIds, metrics, iconSizePx)
   }
 
   const placed: ShortcutPosition[] = []
@@ -232,7 +275,7 @@ export function mergeShortcutPositions(
       placed.push({ id, ...clampToBounds(saved.x, saved.y, iconSizePx, metrics) })
       continue
     }
-    const vacant = findVacantNearCenter(placed, id, iconSizePx, metrics)
+    const vacant = findVacantAcrossLunarDome(placed, id, iconSizePx, metrics)
     placed.push({ id, ...vacant })
   }
 
@@ -293,30 +336,124 @@ export function clampToBounds(
   return clampToLunarDome(x, y, iconSizePx / 2, metrics)
 }
 
-/** Keep shortcuts below Tauri's drag strip and window-control rows. */
-export function clampBelowLunarChrome(
+export interface LunarChromeControlCounts {
+  left: number
+  right: number
+}
+
+export interface LunarChromeControlCenter {
+  x: number
+  y: number
+}
+
+export function lunarChromeControlCenters(
+  metrics: LunarMetrics,
+  counts: LunarChromeControlCounts,
+): LunarChromeControlCenter[] {
+  const radius = LUNAR_CONTROL_SIZE / 2
+  const step = LUNAR_CONTROL_SIZE + LUNAR_CONTROL_GAP
+  const centerY = LUNAR_CONTROL_TOP + radius
+  const controls: LunarChromeControlCenter[] = []
+
+  for (let index = 0; index < counts.left; index += 1) {
+    controls.push({
+      x: LUNAR_CONTROL_EDGE_OFFSET + radius + index * step,
+      y: centerY,
+    })
+  }
+
+  for (let index = 0; index < counts.right; index += 1) {
+    controls.push({
+      x:
+        metrics.w -
+        LUNAR_CONTROL_EDGE_OFFSET -
+        radius -
+        (counts.right - index - 1) * step,
+      y: centerY,
+    })
+  }
+
+  return controls
+}
+
+function overlapsLunarControl(
+  point: { x: number; y: number },
+  control: LunarChromeControlCenter,
+  minimumDistance: number,
+): boolean {
+  return Math.hypot(point.x - control.x, point.y - control.y) < minimumDistance - 0.01
+}
+
+/**
+ * Keep the complete visual shortcut disc inside the adaptive lunar ellipse.
+ * Only the actual left/right Nebula controls are excluded; the middle no
+ * longer inherits a fake full-width bottom edge.
+ */
+export function clampToLunarChromeSafeArea(
   x: number,
   y: number,
   iconSizePx: number = ICON_SIZE,
   metrics: LunarMetrics = DEFAULT_LUNAR_METRICS,
+  controlCounts: LunarChromeControlCounts = { left: 0, right: 0 },
 ): { x: number; y: number } {
   const radius = iconSizePx / 2
-  const minCenterY = Math.min(
-    metrics.h - radius,
-    LUNAR_CHROME_SAFE_BOTTOM + radius,
-  )
-  const clamped = clampToBounds(x, y, iconSizePx, metrics)
-  if (clamped.y >= minCenterY) return clamped
+  const controlRadius = LUNAR_CONTROL_SIZE / 2
+  const minimumDistance = radius + controlRadius + LUNAR_CONTROL_CLEARANCE
+  const controls = lunarChromeControlCenters(metrics, controlCounts)
+  let point = clampToBounds(x, y, iconSizePx, metrics)
 
-  let safeX = clamped.x
-  for (let attempt = 0; attempt < 32; attempt += 1) {
-    if (isIconDiscInsideLunarDome(safeX, minCenterY, radius, metrics)) {
-      return { x: safeX, y: minCenterY }
+  for (let pass = 0; pass < 12; pass += 1) {
+    const collision = controls.find((control) =>
+      overlapsLunarControl(point, control, minimumDistance),
+    )
+    if (!collision) return point
+
+    let dx = point.x - collision.x
+    let dy = point.y - collision.y
+    let distance = Math.hypot(dx, dy)
+    if (distance < 0.01) {
+      dx = collision.x < metrics.cx ? 1 : -1
+      dy = 0
+      distance = 1
     }
-    safeX = metrics.cx + (safeX - metrics.cx) * 0.9
+
+    const push = minimumDistance - distance + 0.05
+    point = clampToBounds(
+      point.x + (dx / distance) * push,
+      point.y + (dy / distance) * push,
+      iconSizePx,
+      metrics,
+    )
   }
 
-  return { x: metrics.cx, y: minCenterY }
+  // The ellipse can redirect a push back into a button near a sharp edge.
+  // Sample the small obstacle perimeter and choose the nearest valid point.
+  let best: { x: number; y: number; score: number } | null = null
+  for (const control of controls) {
+    for (let sample = 0; sample < 48; sample += 1) {
+      const angle = (Math.PI * 2 * sample) / 48
+      const candidate = clampToBounds(
+        control.x + Math.cos(angle) * minimumDistance,
+        control.y + Math.sin(angle) * minimumDistance,
+        iconSizePx,
+        metrics,
+      )
+      if (
+        controls.some((entry) =>
+          overlapsLunarControl(candidate, entry, minimumDistance),
+        )
+      ) {
+        continue
+      }
+
+      const score = (candidate.x - x) ** 2 + (candidate.y - y) ** 2
+      if (!best || score < best.score) {
+        best = { ...candidate, score }
+      }
+    }
+  }
+
+  return best ? { x: best.x, y: best.y } : point
 }
 
 export { createLunarMetrics, type LunarMetrics }

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { isTauri } from './runtime'
 
 export const NEBULA_PRINT_COMMAND_ID = -10_001
+export const NEBULA_INSPECT_COMMAND_ID = -10_002
 
 export type SiteContextMenuItemKind = 'command' | 'check' | 'radio' | 'separator' | 'submenu'
 

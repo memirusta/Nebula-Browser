@@ -89,6 +89,139 @@ async function chromePhysicalBounds(): Promise<{
   }
 }
 
+/**
+ * Conservative native hit-test bounds for Semi-Lunar itself.
+ *
+ * Deliberately ignores chromeOverlayFullHeight and the transient minimum height:
+ * previews can temporarily make the chrome WebView full-client, but that must
+ * not make the whole browser window count as "hovering Semi-Lunar".
+ */
+async function semiLunarPhysicalBounds(): Promise<{
+  position: PhysicalPosition
+  size: PhysicalSize
+}> {
+  const windowSize = await windowClientPhysicalSize()
+  const scaleFactor = await getCurrentWindow().scaleFactor()
+  const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1100)
+  const requestedPhysicalWidth = Math.ceil(
+    (requestedLogicalWidth + CHROME_OVERLAY_WIDTH_GUTTER) * scaleFactor,
+  )
+  const requestedPhysicalHeight = Math.ceil(
+    Math.max(1, chromeOverlayLogicalHeight) * scaleFactor,
+  )
+
+  const width = Math.max(1, Math.min(windowSize.width, requestedPhysicalWidth))
+  const height = Math.max(1, Math.min(windowSize.height, requestedPhysicalHeight))
+  const x = Math.max(0, Math.round((windowSize.width - width) / 2))
+
+  return {
+    position: new PhysicalPosition(x, 0),
+    size: new PhysicalSize(width, height),
+  }
+}
+
+/**
+ * Ask Windows whether the real OS cursor is still inside Semi-Lunar's native
+ * child-WebView rectangle. null means "native check unavailable"; callers
+ * should then keep their normal DOM hover behavior.
+ */
+export async function isCursorInsideSemiLunarNativeBounds(): Promise<boolean | null> {
+  if (!isTauri || !isChromeShell()) return null
+
+  try {
+    const { position, size } = await semiLunarPhysicalBounds()
+    const windowLabel = getCurrentWindow().label
+
+    return await invoke<boolean>('window_cursor_in_client_rect', {
+      windowLabel,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+    })
+  } catch (error) {
+    console.warn('[nebula] native Semi-Lunar cursor hit-test failed', error)
+    return null
+  }
+}
+
+/**
+ * Ask Windows whether the real cursor is still inside the collapsed 10px
+ * activation strip. This deliberately ignores the last synced chrome height:
+ * during a rapid open/close resize that height can still describe the expanded
+ * dome and would incorrectly turn a brief edge crossing into an open request.
+ */
+export async function isCursorInsideSemiLunarNativeTrigger(): Promise<boolean | null> {
+  if (!isTauri || !isChromeShell()) return null
+
+  try {
+    const [{ position, size }, scaleFactor] = await Promise.all([
+      semiLunarPhysicalBounds(),
+      getCurrentWindow().scaleFactor(),
+    ])
+    const height = Math.max(1, Math.ceil(SEMI_LUNAR_HIT_ZONE_HEIGHT * scaleFactor))
+    const windowLabel = getCurrentWindow().label
+
+    return await invoke<boolean>('window_cursor_in_client_rect', {
+      windowLabel,
+      x: position.x,
+      y: 0,
+      width: size.width,
+      height,
+    })
+  } catch (error) {
+    console.warn('[nebula] native Semi-Lunar trigger hit-test failed', error)
+    return null
+  }
+}
+
+/**
+ * Ask Windows whether the real OS cursor is inside the *visible* Semi-Lunar
+ * dome rather than merely inside the transparent rectangular Chrome WebView.
+ *
+ * The browsing dome uses `ellipse(50% 100% at 50% 0%)`, so pass its actual
+ * logical lunar dimensions and let Rust perform the hit-test in the same
+ * physical client coordinate space as GetCursorPos/ScreenToClient.
+ */
+export async function isCursorInsideSemiLunarNativeShape(
+  lunarWidthPx: number,
+  lunarHeightPx: number,
+): Promise<boolean | null> {
+  if (!isTauri || !isChromeShell()) return null
+  if (!Number.isFinite(lunarWidthPx) || !Number.isFinite(lunarHeightPx)) return null
+
+  try {
+    const currentWindow = getCurrentWindow()
+    const [windowSize, scaleFactor] = await Promise.all([
+      windowClientPhysicalSize(),
+      currentWindow.scaleFactor(),
+    ])
+
+    const width = Math.max(
+      1,
+      Math.min(windowSize.width, Math.ceil(Math.max(1, lunarWidthPx) * scaleFactor)),
+    )
+    const height = Math.max(
+      1,
+      Math.min(windowSize.height, Math.ceil(Math.max(1, lunarHeightPx) * scaleFactor)),
+    )
+    const x = Math.max(0, Math.round((windowSize.width - width) / 2))
+    const tolerance = Math.max(2, Math.ceil(8 * scaleFactor))
+
+    return await invoke<boolean>('window_cursor_in_client_lunar_shape', {
+      windowLabel: currentWindow.label,
+      x,
+      y: 0,
+      width,
+      height,
+      tolerance,
+    })
+  } catch (error) {
+    console.warn('[nebula] native Semi-Lunar shape hit-test failed', error)
+    return null
+  }
+}
+
 async function syncChromeBounds(webview: Webview): Promise<boolean> {
   let changed = false
 

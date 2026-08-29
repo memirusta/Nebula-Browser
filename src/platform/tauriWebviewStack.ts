@@ -4,6 +4,7 @@ import { isTauri } from './runtime'
 import { currentBrowserWindowLabel } from './browserWindowScope'
 
 let stackTimer: ReturnType<typeof setTimeout> | null = null
+let pendingStackActiveTabId: string | null = null
 let browsingChromeExpected = false
 let overlayModeActive = false
 
@@ -15,21 +16,33 @@ export function setBrowsingChromeExpected(expected: boolean): void {
   browsingChromeExpected = expected
 }
 
-/** Coalesce rapid z-order fixes so scroll/input is not interrupted. */
+/**
+ * Coalesce rapid z-order fixes so scroll/input is not interrupted.
+ *
+ * Always retain the newest active-tab request. Keeping the first tab id while
+ * a timer is pending is unsafe during a cross-window transfer: that tab may be
+ * reparented before the timer fires, letting the old source window restack a
+ * WebView that now belongs to another window.
+ */
 export function scheduleStackBrowsingChromeAboveBrowser(
   activeTabId?: string | null,
   delayMs = 250,
 ): void {
   if (!isTauri) return
+
+  pendingStackActiveTabId = activeTabId ?? null
   if (stackTimer) return
 
   stackTimer = setTimeout(() => {
     stackTimer = null
-    void stackBrowsingChromeAboveBrowser(activeTabId)
+    const latestActiveTabId = pendingStackActiveTabId
+    pendingStackActiveTabId = null
+    void stackBrowsingChromeAboveBrowser(latestActiveTabId)
   }, delayMs)
 }
 
 export function cancelScheduledStack(): void {
+  pendingStackActiveTabId = null
   if (!stackTimer) return
   clearTimeout(stackTimer)
   stackTimer = null

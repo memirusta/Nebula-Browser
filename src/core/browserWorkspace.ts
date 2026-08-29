@@ -26,7 +26,7 @@ export interface BrowserTabTransfer {
   tab: PersistedBrowserTab
   webviewLabel: string
   createdAt: number
-  state: 'pending' | 'ready' | 'claimed' | 'cancelled'
+  state: 'pending' | 'target-ready' | 'ready' | 'claimed' | 'cancelled'
 }
 
 export function browserWindowLabel(windowId: string): string {

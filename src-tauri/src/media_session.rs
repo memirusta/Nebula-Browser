@@ -747,6 +747,27 @@ mod imp {
 pub use imp::{setup, teardown};
 
 #[cfg(target_os = "windows")]
+pub fn configure_webview_environment() {
+    const KEY: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+    const FEATURE: &str = "HardwareMediaKeyHandling";
+
+    let mut arguments = std::env::var(KEY).unwrap_or_default();
+    let already_disabled = arguments.split_whitespace().any(|argument| {
+        argument
+            .strip_prefix("--disable-features=")
+            .is_some_and(|features| features.split(',').any(|feature| feature == FEATURE))
+    });
+    if already_disabled {
+        return;
+    }
+    if !arguments.is_empty() {
+        arguments.push(' ');
+    }
+    arguments.push_str("--disable-features=HardwareMediaKeyHandling");
+    std::env::set_var(KEY, arguments);
+}
+
+#[cfg(target_os = "windows")]
 pub fn initialize_process_identity() -> Result<(), String> {
     use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
     use windows_core::PCWSTR;
@@ -763,6 +784,9 @@ pub fn setup(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn configure_webview_environment() {}
 
 #[cfg(not(target_os = "windows"))]
 pub fn initialize_process_identity() -> Result<(), String> {

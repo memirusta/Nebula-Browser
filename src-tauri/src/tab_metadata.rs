@@ -59,6 +59,8 @@ mod imp {
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static LAST_SOCIAL_UNREAD_COUNTS: LazyLock<Mutex<HashMap<String, u64>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    static ACTIVE_TAB_LABELS: LazyLock<Mutex<HashMap<String, Option<String>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
     #[derive(Clone, Serialize)]
     struct TabSnapshotPayload {
         label: String,
@@ -199,16 +201,60 @@ mod imp {
             .unwrap_or(0)
     }
 
-    pub fn app_is_backgrounded(app: &AppHandle) -> bool {
+    fn foreground_nebula_window_label(app: &AppHandle) -> Result<Option<String>, ()> {
         let foreground = unsafe { GetForegroundWindow() };
         if foreground.is_invalid() {
-            return false;
+            return Err(());
         }
-        !app.windows().values().any(|window| {
-            window.hwnd().is_ok_and(|hwnd| {
-                hwnd == foreground || unsafe { GetAncestor(hwnd, GA_ROOT) } == foreground
-            })
-        })
+        Ok(app.windows().into_iter().find_map(|(label, window)| {
+            window
+                .hwnd()
+                .is_ok_and(|hwnd| {
+                    hwnd == foreground || unsafe { GetAncestor(hwnd, GA_ROOT) } == foreground
+                })
+                .then_some(label)
+        }))
+    }
+
+    pub fn set_active_tab_for_window(window_label: &str, active_tab_label: Option<&str>) {
+        if let Ok(mut active_tabs) = ACTIVE_TAB_LABELS.lock() {
+            active_tabs.insert(
+                window_label.to_string(),
+                active_tab_label.map(str::to_owned),
+            );
+        }
+    }
+
+    pub fn notification_should_surface(app: &AppHandle, source_tab_label: &str) -> bool {
+        let foreground_window = match foreground_nebula_window_label(app) {
+            Ok(Some(label)) => label,
+            Ok(None) => return true,
+            Err(()) => return false,
+        };
+        let Ok(active_tabs) = ACTIVE_TAB_LABELS.lock() else {
+            return false;
+        };
+        source_tab_is_hidden(active_tabs.get(&foreground_window), source_tab_label)
+    }
+
+    fn source_tab_is_hidden(active_tab: Option<&Option<String>>, source_tab_label: &str) -> bool {
+        match active_tab {
+            Some(Some(active_label)) => active_label != source_tab_label,
+            Some(None) => true,
+            None => false,
+        }
+    }
+
+    fn source_tab_is_actively_visible(app: &AppHandle, source_tab_label: &str) -> bool {
+        let Ok(Some(foreground_window)) = foreground_nebula_window_label(app) else {
+            return false;
+        };
+        ACTIVE_TAB_LABELS
+            .lock()
+            .ok()
+            .and_then(|active_tabs| active_tabs.get(&foreground_window).cloned())
+            .flatten()
+            .is_some_and(|active_label| active_label == source_tab_label)
     }
 
     fn emit_social_unread_notification(app: &AppHandle, label: &str, url: &str, title: &str) {
@@ -223,10 +269,18 @@ mod imp {
             .lock()
             .ok()
             .and_then(|mut counts| counts.insert(label.to_string(), count));
+        if (count == 0 || previous.is_some_and(|previous| count < previous))
+            && source_tab_is_actively_visible(app, label)
+        {
+            // Instagram can transiently clear its badge while Nebula is in the
+            // background. Treat it as read only when the user can actually see
+            // this exact tab in the foreground.
+            crate::notification_broker::reset_toast_threads_for_tab(label);
+        }
         if previous.map_or(true, |previous| count <= previous) {
             return;
         }
-        if !app_is_backgrounded(app) {
+        if !notification_should_surface(app, label) {
             return;
         }
         let notification_app = app.clone();
@@ -240,7 +294,9 @@ mod imp {
                 .ok()
                 .and_then(|counts| counts.get(&notification_label).copied())
                 == Some(count);
-            if !count_is_current || !app_is_backgrounded(&notification_app) {
+            if !count_is_current
+                || !notification_should_surface(&notification_app, &notification_label)
+            {
                 return;
             }
             crate::notification_broker::submit(
@@ -252,6 +308,15 @@ mod imp {
                     title: notification_title,
                     body: String::new(),
                     icon_url: String::new(),
+                    adapter_kind: None,
+                    notification_tag: String::new(),
+                    notification_type: String::new(),
+                    sender_name_hint: String::new(),
+                    event_kind_hint: String::new(),
+                    target_url: String::new(),
+                    notification_data: None,
+                    timestamp_ms: None,
+                    show_native_toast: true,
                 },
             );
         });
@@ -646,11 +711,18 @@ mod imp {
         if let Ok(mut starts) = NAVIGATION_STARTED_AT.lock() {
             starts.remove(label);
         }
+        if let Ok(mut active_tabs) = ACTIVE_TAB_LABELS.lock() {
+            for active_label in active_tabs.values_mut() {
+                if active_label.as_deref() == Some(label) {
+                    *active_label = None;
+                }
+            }
+        }
     }
 
     #[cfg(test)]
     mod tests {
-        use super::usable_favicon_uri;
+        use super::{source_tab_is_hidden, usable_favicon_uri};
 
         #[test]
         fn favicon_uri_accepts_web_images_and_rejects_active_or_local_schemes() {
@@ -666,11 +738,25 @@ mod imp {
             assert!(usable_favicon_uri("file:///C:/secret.png").is_none());
             assert!(usable_favicon_uri("data:text/html;base64,PGgxPkJvb208L2gxPg==").is_none());
         }
+
+        #[test]
+        fn notifications_surface_only_when_the_source_tab_is_hidden() {
+            let visible = Some("tab-a".to_string());
+            let home = None;
+
+            assert!(!source_tab_is_hidden(Some(&visible), "tab-a"));
+            assert!(source_tab_is_hidden(Some(&visible), "tab-b"));
+            assert!(source_tab_is_hidden(Some(&home), "tab-a"));
+            assert!(!source_tab_is_hidden(None, "tab-a"));
+        }
     }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{app_is_backgrounded, setup_tab_metadata, teardown_tab_metadata};
+pub use imp::{
+    notification_should_surface, set_active_tab_for_window, setup_tab_metadata,
+    teardown_tab_metadata,
+};
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_metadata(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {
@@ -681,6 +767,9 @@ pub fn setup_tab_metadata(_app: &tauri::AppHandle, _label: &str) -> Result<(), S
 pub fn teardown_tab_metadata(_app: &tauri::AppHandle, _label: &str) {}
 
 #[cfg(not(target_os = "windows"))]
-pub fn app_is_backgrounded(_app: &tauri::AppHandle) -> bool {
+pub fn set_active_tab_for_window(_window_label: &str, _active_tab_label: Option<&str>) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn notification_should_surface(_app: &tauri::AppHandle, _source_tab_label: &str) -> bool {
     false
 }
