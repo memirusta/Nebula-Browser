@@ -207,6 +207,7 @@ catShortcutsDesc: {
   untitledPage: { tr: 'Adsız sayfa', en: 'Untitled page' },
   genericBrowser: { tr: 'Tarayıcı', en: 'Browser' },
   contextNoActions: { tr: 'Kullanılabilir işlem yok', en: 'No actions available' },
+  contextInspect: { tr: 'İncele', en: 'Inspect' },
   historyTitle: { tr: 'Geçmiş', en: 'History' },
   historyEyebrow: { tr: 'Tarama', en: 'Browsing' },
   historySearchPlaceholder: { tr: 'Geçmişte ara…', en: 'Search history…' },

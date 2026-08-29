@@ -1241,6 +1241,15 @@ mod imp {
                                         title: take_string(|value| notification.Title(value)),
                                         body: take_string(|value| notification.Body(value)),
                                         icon_url: take_string(|value| notification.IconUri(value)),
+                                        adapter_kind: None,
+                                        notification_tag: take_string(|value| notification.Tag(value)),
+                                        notification_type: String::new(),
+                                        sender_name_hint: String::new(),
+                                        event_kind_hint: String::new(),
+                                        target_url: String::new(),
+                                        notification_data: None,
+                                        timestamp_ms: None,
+                                        show_native_toast: true,
                                     },
                                 );
                                 Ok(())

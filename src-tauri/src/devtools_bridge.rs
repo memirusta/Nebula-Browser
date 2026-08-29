@@ -28,7 +28,19 @@ mod imp {
         "Network.loadingFinished",
         "Page.domContentEventFired",
         "Page.loadEventFired",
+        "Page.frameNavigated",
         "Security.securityStateChanged",
+        "DOM.documentUpdated",
+        "Overlay.inspectNodeRequested",
+        "Debugger.scriptParsed",
+        "Debugger.paused",
+        "Debugger.resumed",
+        "Runtime.executionContextCreated",
+        "Runtime.executionContextDestroyed",
+        "Network.webSocketCreated",
+        "Network.webSocketClosed",
+        "Network.webSocketFrameReceived",
+        "Network.webSocketFrameSent",
     ];
 
     struct Subscription {

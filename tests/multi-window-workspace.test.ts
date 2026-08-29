@@ -18,9 +18,10 @@ import {
 } from '../src/core/browserWorkspace.ts'
 import { createTabNavigationState } from '../src/core/tabNavigation.ts'
 import {
-  LUNAR_CHROME_SAFE_BOTTOM,
-  clampBelowLunarChrome,
+  SHORTCUT_HOVER_SCALE,
+  clampToLunarChromeSafeArea,
   createLunarMetrics,
+  lunarChromeControlCenters,
 } from '../src/core/shortcutLayout.ts'
 import { isIconDiscInsideLunarDome } from '../src/core/lunarShape.ts'
 
@@ -127,15 +128,54 @@ test('dropping onto the source window cancels without changing workspace state',
   )
 })
 
-test('saved tab positions migrate below native window controls', () => {
-  const metrics = createLunarMetrics(1100, 152)
-  const iconSize = 44
-  const safe = clampBelowLunarChrome(1016.82, 23, iconSize, metrics)
+test('top-center tab follows the adaptive lunar shape without a full-width snap line', () => {
+  const visualIconSize = 44 * SHORTCUT_HOVER_SCALE
 
-  assert.ok(safe.y - iconSize / 2 >= LUNAR_CHROME_SAFE_BOTTOM)
-  assert.ok(safe.x < 1016.82)
+  for (const [width, height] of [
+    [1100, 152],
+    [1200, 174],
+    [1260, 200],
+  ] as const) {
+    const metrics = createLunarMetrics(width, height)
+    const safe = clampToLunarChromeSafeArea(
+      metrics.cx,
+      -40,
+      visualIconSize,
+      metrics,
+      { left: 3, right: 3 },
+    )
+
+    assert.ok(Math.abs(safe.x - metrics.cx) < 0.01)
+    assert.ok(Math.abs(safe.y - visualIconSize / 2) < 0.01)
+    assert.equal(
+      isIconDiscInsideLunarDome(safe.x, safe.y, visualIconSize / 2, metrics),
+      true,
+    )
+  }
+})
+
+test('tab boundary follows the ellipse while excluding only real lunar controls', () => {
+  const metrics = createLunarMetrics(1100, 152)
+  const visualIconSize = 44 * SHORTCUT_HOVER_SCALE
+  const counts = { left: 3, right: 3 }
+  const controls = lunarChromeControlCenters(metrics, counts)
+  const closeControl = controls.at(-1)!
+  const safe = clampToLunarChromeSafeArea(
+    closeControl.x,
+    closeControl.y,
+    visualIconSize,
+    metrics,
+    counts,
+  )
+
+  for (const control of controls) {
+    assert.ok(
+      Math.hypot(safe.x - control.x, safe.y - control.y) >=
+        visualIconSize / 2 + 18 + 3 - 0.01,
+    )
+  }
   assert.equal(
-    isIconDiscInsideLunarDome(safe.x, safe.y, iconSize / 2, metrics),
+    isIconDiscInsideLunarDome(safe.x, safe.y, visualIconSize / 2, metrics),
     true,
   )
 })

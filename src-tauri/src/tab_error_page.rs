@@ -66,7 +66,7 @@ mod imp {
         }
     }
 
-    fn current_ui_locale() -> String {
+    pub fn current_ui_locale() -> String {
         UI_LOCALE
             .lock()
             .map(|locale| locale.clone())
@@ -662,7 +662,8 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::{
-    notification_activity_body, set_ui_locale, setup_tab_error_page, teardown_tab_error_page,
+    current_ui_locale, notification_activity_body, set_ui_locale, setup_tab_error_page,
+    teardown_tab_error_page,
 };
 
 #[cfg(target_os = "windows")]
@@ -670,6 +671,11 @@ pub(crate) use imp::{note_browser_verification_request, note_external_uri_naviga
 
 #[cfg(not(target_os = "windows"))]
 pub fn set_ui_locale(_locale: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn current_ui_locale() -> String {
+    "en".to_string()
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn notification_activity_body() -> String {

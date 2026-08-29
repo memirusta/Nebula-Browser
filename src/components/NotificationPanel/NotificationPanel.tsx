@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
 import {
   notificationHost,
+  notificationSiteName,
   type NebulaNotification,
 } from '../../core/notification'
 import { useLocale } from '../../hooks/useLocale'
@@ -15,7 +16,11 @@ interface NotificationPanelProps {
   onMarkAllRead: () => void
   onRemove: (id: string) => void
   onClear: () => void
-  onOpenOrigin: (origin: string, tabLabel: string | null) => void
+  onOpenOrigin: (
+    origin: string,
+    tabLabel: string | null,
+    targetUrl: string | null,
+  ) => void
   onOpenDownload: (downloadId: string) => void
   onClose: () => void
 }
@@ -34,6 +39,34 @@ function DownloadGlyph() {
       <path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
+}
+
+function notificationTypeLabel(
+  eventKind: string | null,
+  type: string | null,
+  locale: string,
+): string | null {
+  const normalized = (eventKind || type || '').toLocaleLowerCase()
+  if (!normalized) return null
+  const tr = locale.toLocaleLowerCase().startsWith('tr')
+  if (normalized === 'reply') return tr ? 'Yanıt' : 'Reply'
+  if (normalized === 'reaction' || normalized.includes('reaction') || normalized.endsWith('_like')) {
+    return tr ? 'Tepki' : 'Reaction'
+  }
+  if (normalized === 'mention' || normalized.includes('mention')) return tr ? 'Bahsetme' : 'Mention'
+  if (normalized === 'message' || normalized.startsWith('direct_v2')) return tr ? 'Mesaj' : 'Message'
+  if (normalized === 'live' || normalized.includes('live_broadcast')) return tr ? 'Canlı yayın' : 'Live'
+  if (normalized === 'call' || normalized.includes('rtc')) return tr ? 'Arama' : 'Call'
+  if (normalized === 'post') return tr ? 'Gönderi' : 'Post'
+  if (normalized === 'download') return tr ? 'İndirme tamamlandı' : 'Download complete'
+  return null
+}
+
+function siteGlyphClass(origin: string | null): string {
+  const host = origin ? notificationHost(origin) : ''
+  if (host === 'instagram.com' || host.endsWith('.instagram.com')) return styles.instagramGlyph
+  if (host === 'web.whatsapp.com' || host.endsWith('.whatsapp.com')) return styles.whatsappGlyph
+  return ''
 }
 
 export function NotificationPanel({
@@ -66,7 +99,7 @@ export function NotificationPanel({
     for (const item of items) {
       const key = item.origin ?? `kind:${item.kind}`
       const title = item.origin
-        ? notificationHost(item.origin)
+        ? item.siteName || notificationSiteName(item.origin)
         : locale === 'tr' ? 'İndirmeler' : 'Downloads'
       const group = groups.get(key) ?? { key, title, items: [], unreadCount: 0 }
       group.items.push(item)
@@ -136,51 +169,88 @@ export function NotificationPanel({
                     )}
                   </span>
                 </header>
-                {group.items.map((item) => (
-              <article
-                key={item.id}
-                className={[styles.item, item.read ? styles.itemRead : styles.itemUnread].join(' ')}
-              >
-                <button
-                  type="button"
-                  className={styles.itemMain}
-                  disabled={!item.origin && !item.downloadId}
-                  onClick={() => {
-                    onMarkRead(item.id)
-                    if (item.origin) onOpenOrigin(item.origin, item.tabLabel)
-                    else if (item.downloadId) onOpenDownload(item.downloadId)
-                  }}
-                >
-                  <span className={[styles.glyph, item.kind === 'download' ? styles.downloadGlyph : ''].filter(Boolean).join(' ')}>
-                    {item.kind === 'download' ? <DownloadGlyph /> : <BellGlyph />}
-                  </span>
-                  <span className={styles.itemBody}>
-                    <span className={styles.itemTitle}>{item.title}</span>
-                    {item.body && <span className={styles.itemMessage}>{item.body}</span>}
-                    <span className={styles.meta}>
-                      {item.origin ? notificationHost(item.origin) : t('notificationDownloadSource')}
-                      <span>•</span>
-                      {timeFormatter.format(item.createdAtMs)}
-                    </span>
-                  </span>
-                </button>
-                <div className={styles.itemActions}>
-                  <button
-                    type="button"
-                    onClick={() => onMarkRead(item.id, !item.read)}
-                    title={item.read ? t('notificationMarkUnread') : t('notificationMarkRead')}
-                    aria-label={item.read ? t('notificationMarkUnread') : t('notificationMarkRead')}
-                  >
-                    <span className={item.read ? styles.readDot : styles.unreadDot} />
-                  </button>
-                  <button type="button" onClick={() => onRemove(item.id)} title={t('notificationRemove')} aria-label={t('notificationRemove')}>
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="m7 7 10 10m0-10L7 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    </svg>
-                  </button>
-                </div>
-              </article>
-                ))}
+                {group.items.map((item) => {
+                  const siteName = item.siteName || (item.origin
+                    ? notificationSiteName(item.origin)
+                    : 'Nebula')
+                  const typeLabel = notificationTypeLabel(
+                    item.eventKind,
+                    item.notificationType,
+                    locale,
+                  )
+                  const headline = item.senderName || (
+                    item.title && item.title.toLocaleLowerCase() !== siteName.toLocaleLowerCase()
+                      ? item.title
+                      : siteName
+                  )
+                  return (
+                    <article
+                      key={item.id}
+                      className={[styles.item, item.read ? styles.itemRead : styles.itemUnread].join(' ')}
+                    >
+                      <button
+                        type="button"
+                        className={styles.itemMain}
+                        disabled={!item.origin && !item.downloadId}
+                        onClick={() => {
+                          onMarkRead(item.id)
+                          if (item.origin) onOpenOrigin(item.origin, item.tabLabel, item.targetUrl)
+                          else if (item.downloadId) onOpenDownload(item.downloadId)
+                        }}
+                      >
+                        <span
+                          className={[
+                            styles.glyph,
+                            item.kind === 'download' ? styles.downloadGlyph : siteGlyphClass(item.origin),
+                          ].filter(Boolean).join(' ')}
+                        >
+                          {item.kind === 'download'
+                            ? <DownloadGlyph />
+                            : <span className={styles.siteInitial}>{siteName.slice(0, 1)}</span>}
+                          {item.iconUrl && (
+                            <img
+                              className={styles.avatar}
+                              src={item.iconUrl}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              onError={(event) => { event.currentTarget.style.display = 'none' }}
+                            />
+                          )}
+                        </span>
+                        <span className={styles.itemBody}>
+                          <span className={styles.itemTopline}>
+                            <span className={styles.siteName}>{siteName}</span>
+                            {typeLabel && <span className={styles.kindBadge}>{typeLabel}</span>}
+                            <span className={styles.itemTime}>{timeFormatter.format(item.createdAtMs)}</span>
+                          </span>
+                          <span className={styles.itemTitle}>{headline}</span>
+                          {item.body && <span className={styles.itemMessage}>{item.body}</span>}
+                          <span className={styles.meta}>
+                            {item.origin ? notificationHost(item.origin) : t('notificationDownloadSource')}
+                            {item.targetUrl && (
+                              <><span>•</span>{locale.startsWith('tr') ? 'İlgili içeriği aç' : 'Open related content'}</>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                      <div className={styles.itemActions}>
+                        <button
+                          type="button"
+                          onClick={() => onMarkRead(item.id, !item.read)}
+                          title={item.read ? t('notificationMarkUnread') : t('notificationMarkRead')}
+                          aria-label={item.read ? t('notificationMarkUnread') : t('notificationMarkRead')}
+                        >
+                          <span className={item.read ? styles.readDot : styles.unreadDot} />
+                        </button>
+                        <button type="button" onClick={() => onRemove(item.id)} title={t('notificationRemove')} aria-label={t('notificationRemove')}>
+                          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="m7 7 10 10m0-10L7 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
               </section>
             ))
           )}

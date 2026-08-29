@@ -10,17 +10,39 @@ export interface NebulaDevToolsEvent {
   timestampMs: number
 }
 
+const devToolsLifecycleQueues = new Map<string, Promise<void>>()
+
+function queueDevToolsLifecycle(
+  shortcutId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const previous = devToolsLifecycleQueues.get(shortcutId) ?? Promise.resolve()
+  const next = previous.catch(() => {}).then(operation)
+  devToolsLifecycleQueues.set(shortcutId, next)
+  void next.finally(() => {
+    if (devToolsLifecycleQueues.get(shortcutId) === next) {
+      devToolsLifecycleQueues.delete(shortcutId)
+    }
+  }).catch(() => {})
+  return next
+}
+
 export async function callTabDevTools<T = unknown>(
   shortcutId: string,
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<T> {
   if (!isTauri) return {} as T
-  const raw = await invoke<string>('webview_devtools_call', {
-    label: tabWebviewLabel(shortcutId),
-    method,
-    paramsJson: JSON.stringify(params),
-  })
+  let raw: string
+  try {
+    raw = await invoke<string>('webview_devtools_call', {
+      label: tabWebviewLabel(shortcutId),
+      method,
+      paramsJson: JSON.stringify(params),
+    })
+  } catch (error) {
+    throw new Error(`${method}: ${String(error)}`)
+  }
   try {
     return JSON.parse(raw) as T
   } catch {
@@ -30,15 +52,26 @@ export async function callTabDevTools<T = unknown>(
 
 export async function subscribeTabDevTools(shortcutId: string): Promise<void> {
   if (!isTauri) return
-  await invoke('webview_devtools_subscribe', {
-    label: tabWebviewLabel(shortcutId),
+  await queueDevToolsLifecycle(shortcutId, async () => {
+    await invoke('webview_devtools_subscribe', {
+      label: tabWebviewLabel(shortcutId),
+    })
   })
 }
 
 export async function unsubscribeTabDevTools(shortcutId: string): Promise<void> {
   if (!isTauri) return
-  await invoke('webview_devtools_unsubscribe', {
-    label: tabWebviewLabel(shortcutId),
+  await queueDevToolsLifecycle(shortcutId, async () => {
+    // Closing and immediately reopening Inspector used to let these detached
+    // cleanup calls race the next subscription/domain setup. Keep the full
+    // teardown ordered per tab so a stale close cannot disable a fresh picker.
+    await callTabDevTools(shortcutId, 'Overlay.setInspectMode', {
+      mode: 'none',
+    }).catch(() => {})
+    await callTabDevTools(shortcutId, 'Overlay.hideHighlight').catch(() => {})
+    await invoke('webview_devtools_unsubscribe', {
+      label: tabWebviewLabel(shortcutId),
+    })
   })
 }
 
@@ -70,9 +103,14 @@ export async function getInspectorAudioState(shortcutId: string): Promise<boolea
 }
 
 export async function enableInspectorDomains(shortcutId: string): Promise<void> {
-  // Keep F12 attach intentionally tiny. Expensive domains are enabled lazily
-  // by the panel that needs them so Inspector UI becomes interactive first.
-  for (const method of ['Runtime.enable', 'Performance.enable']) {
+  for (const method of [
+    'Runtime.enable',
+    'Log.enable',
+    'Page.enable',
+    'Security.enable',
+    'Network.enable',
+    'Performance.enable',
+  ]) {
     try {
       await callTabDevTools(shortcutId, method)
     } catch {
@@ -83,12 +121,16 @@ export async function enableInspectorDomains(shortcutId: string): Promise<void> 
 
 export async function enableInspectorSectionDomains(
   shortcutId: string,
-  section: 'elements' | 'storage' | 'network',
+  section: 'elements' | 'storage' | 'network' | 'sources' | 'accessibility',
 ): Promise<void> {
   const domains =
     section === 'elements'
       ? ['DOM.enable', 'CSS.enable', 'Overlay.enable']
-      : ['Network.enable']
+      : section === 'sources'
+        ? ['Debugger.enable']
+        : section === 'accessibility'
+          ? ['Accessibility.enable']
+          : ['Network.enable']
 
   for (const method of domains) {
     try {

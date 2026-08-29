@@ -428,7 +428,7 @@
 .iconAnchor {
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: 7;
   pointer-events: none;
   clip-path: ellipse(50% 112% at 50% -16%);
   overflow: hidden;

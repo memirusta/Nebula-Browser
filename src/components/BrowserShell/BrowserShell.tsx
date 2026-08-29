@@ -85,6 +85,7 @@ import {
   listenSiteContextMenuCancelled,
   listenSiteContextMenus,
   respondToSiteContextMenu,
+  NEBULA_INSPECT_COMMAND_ID,
   NEBULA_PRINT_COMMAND_ID,
   type SiteContextMenuRequest,
 } from '../../platform/tauriContextMenu'
@@ -187,18 +188,24 @@ import {
 } from '../../core/browserSessionSnapshot'
 import { tabHistoryTarget } from '../../core/tabNavigation'
 import {
+  browserTabTransferIdsForTarget,
   browserWindowAtScreenPoint,
   clearBrowserTabTransfer,
   createBrowserTabTransfer,
   createBrowserWindowId,
   createNebulaBrowserWindow,
+  listenBrowserTabTransferReady,
   loadBrowserTabTransfer,
+  markBrowserTabTransferTargetReady,
+  pruneBrowserTabTransfers,
   markBrowserWindowActive,
   reparentBrowserTab,
   reparentBrowserTabToWindow,
   saveBrowserTabTransfer,
   updateBrowserTabTransfer,
   waitForBrowserTabTransferClaim,
+  waitForBrowserTabTransferReady,
+  waitForBrowserTabTransferTargetReady,
 } from '../../platform/tauriBrowserWorkspace'
 import {
   currentBrowserWindowId,
@@ -1322,6 +1329,16 @@ export function BrowserShell() {
     developerToolsOpen,
     setDeveloperToolsOpen,
   ] = useState(false)
+
+  const [
+    developerToolsInspectRequest,
+    setDeveloperToolsInspectRequest,
+  ] = useState<{
+    tabId: string
+    x: number
+    y: number
+    token: number
+  } | null>(null)
 
   const developerToolsPreviousModeRef =
     useRef<ViewMode>(
@@ -3029,11 +3046,14 @@ export function BrowserShell() {
   useEffect(() => {
     if (!isTauri) return
     const claimed = new Set<string>()
+    const readyWatchController = new AbortController()
+    let disposed = false
+    let unlistenTransferReady: (() => void) | undefined
 
     const tryClaim = async (
       transferId: string,
     ) => {
-      if (claimed.has(transferId)) return
+      if (disposed || claimed.has(transferId)) return
       const transfer = loadBrowserTabTransfer(transferId)
       if (
         !transfer ||
@@ -3061,11 +3081,13 @@ export function BrowserShell() {
         }
       }
 
+      let adopted = false
       try {
         await adoptReparentedBrowseTab(
           shortcutId,
           transfer.webviewLabel,
         )
+        adopted = true
         const restoredTab = {
           ...transfer.tab,
           shortcutId,
@@ -3091,6 +3113,10 @@ export function BrowserShell() {
           5_000,
         )
       } catch (error) {
+        // adoptReparentedBrowseTab cleans up its own partial state if native
+        // configuration fails. If something after a successful adoption
+        // throws, release the target-side ownership before source rollback.
+        if (adopted) relinquishBrowseTabOwnership(shortcutId)
         claimed.delete(transferId)
         updateBrowserTabTransfer(transfer, 'cancelled')
         void writeTransitionLog('workspace.transfer.claim', 'error', {
@@ -3108,16 +3134,93 @@ export function BrowserShell() {
       }
     }
 
+    const watchedTransfers = new Set<string>()
+    const watchTransfer = (transferId: string) => {
+      if (disposed || watchedTransfers.has(transferId)) return
+      const transfer = loadBrowserTabTransfer(transferId)
+      if (
+        !transfer ||
+        transfer.targetWindowId !== browserWindowIdRef.current ||
+        (
+          transfer.state !== 'pending' &&
+          transfer.state !== 'target-ready' &&
+          transfer.state !== 'ready'
+        )
+      ) {
+        return
+      }
+
+      watchedTransfers.add(transferId)
+      void waitForBrowserTabTransferReady(
+        transferId,
+        browserWindowIdRef.current,
+        12_000,
+        readyWatchController.signal,
+      )
+        .then(() => tryClaim(transferId))
+        .catch((error) => {
+          watchedTransfers.delete(transferId)
+          if (readyWatchController.signal.aborted) return
+          void writeTransitionLog('workspace.transfer.ready-wait', 'error', {
+            transferId,
+            targetWindowId: browserWindowIdRef.current,
+            ...transitionErrorDetails(error),
+          })
+          console.error(
+            '[nebula workspace] Transferred tab did not become ready for the target window.',
+            error,
+          )
+        })
+    }
+
+    const registerTargetTransfer = (transferId: string) => {
+      // browser_create_window() returning only means the native window exists.
+      // It does not mean this BrowserShell has mounted yet. Explicitly publish
+      // receiver readiness before the source is allowed to reparent the live
+      // webview into a newly-created window.
+      markBrowserTabTransferTargetReady(
+        transferId,
+        browserWindowIdRef.current,
+      )
+      watchTransfer(transferId)
+    }
+
     const requestedTransferId = currentTransferId()
-    if (requestedTransferId) void tryClaim(requestedTransferId)
+    pruneBrowserTabTransfers()
+    if (requestedTransferId) registerTargetTransfer(requestedTransferId)
+
+    // Also discover by destination in case the startup query/event was lost.
+    for (const transferId of browserTabTransferIdsForTarget(
+      browserWindowIdRef.current,
+    )) {
+      registerTargetTransfer(transferId)
+    }
+
+    void listenBrowserTabTransferReady((transferId) => {
+      registerTargetTransfer(transferId)
+      void tryClaim(transferId)
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten()
+        return
+      }
+      unlistenTransferReady = unlisten
+    })
 
     const onStorage = (event: StorageEvent) => {
       const prefix = 'nebula-browser-tab-transfer-v1:'
       if (!event.key?.startsWith(prefix)) return
-      void tryClaim(event.key.slice(prefix.length))
+      const transferId = event.key.slice(prefix.length)
+      registerTargetTransfer(transferId)
+      void tryClaim(transferId)
     }
     window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    return () => {
+      disposed = true
+      readyWatchController.abort()
+      unlistenTransferReady?.()
+      window.removeEventListener('storage', onStorage)
+    }
   }, [openHistoryTab, tabsRef])
 
   const moveTabBetweenWindows =
@@ -3169,6 +3272,16 @@ export function BrowserShell() {
               transferId: transfer.id,
               targetWindowId,
             })
+
+            await waitForBrowserTabTransferTargetReady(
+              transfer.id,
+              targetWindowId,
+              8_000,
+            )
+            void writeTransitionLog('workspace.transfer.target-ready', 'ok', {
+              transferId: transfer.id,
+              targetWindowId,
+            })
           }
           await reparentBrowserTab(transfer)
           void writeTransitionLog('workspace.transfer.reparent', 'ok', {
@@ -3177,10 +3290,19 @@ export function BrowserShell() {
             targetWindowId,
             webviewLabel: transfer.webviewLabel,
           })
-          await waitForBrowserTabTransferClaim(transfer.id)
+          await waitForBrowserTabTransferClaim(
+            transfer.id,
+            8_000,
+            targetWindowId,
+          )
+          clearBrowserTabTransfer(transfer.id)
         } catch (error) {
           try {
             await reparentBrowserTabToWindow(transfer, sourceWindowId)
+            await adoptReparentedBrowseTab(
+              shortcutId,
+              transfer.webviewLabel,
+            )
             await applyTauriViewModeNow('browsing', {
               tabId: shortcutId,
               url: tab.url,
@@ -3205,6 +3327,10 @@ export function BrowserShell() {
             )
           }
           updateBrowserTabTransfer(transfer, 'cancelled')
+          // Keep a newly-created target window alive on transfer failure.
+          // Closing it here caused a visible create -> close bounce and made
+          // recovery harder to reason about. The source tab remains the
+          // authoritative fallback after rollback.
           void writeTransitionLog('workspace.transfer', 'error', {
             transferId: transfer.id,
             sourceWindowId,
@@ -3220,6 +3346,10 @@ export function BrowserShell() {
           return
         }
 
+        const sourceWillBeEmpty =
+          tabsRef.current.length === 1 &&
+          tabsRef.current[0]?.shortcutId === shortcutId
+
         relinquishBrowseTabOwnership(shortcutId)
         detachTab(shortcutId)
         historyUrlByTabRef.current.delete(shortcutId)
@@ -3227,20 +3357,26 @@ export function BrowserShell() {
         setTabSwitchHistory((history) =>
           history.filter((id) => id !== shortcutId),
         )
+
+        if (sourceWillBeEmpty) {
+          setOverlayModeActive(false)
+          setActiveUrl(null)
+          setViewMode('home')
+          tabSwitchCursorRef.current = null
+          delete document.documentElement.dataset.nebulaBrowsingTauri
+          delete document.documentElement.dataset.nebulaOverlayTauri
+          await applyTauriViewModeNow('home', null)
+        }
+
         void writeTransitionLog('workspace.transfer', 'ok', {
           transferId: transfer.id,
           sourceWindowId,
           targetWindowId,
           shortcutId,
           webviewLabel: transfer.webviewLabel,
+          sourceView: sourceWillBeEmpty ? 'home' : 'browsing',
         })
 
-        const remaining = tabsRef.current.filter(
-          (entry) => entry.shortcutId !== shortcutId,
-        )
-        if (remaining.length === 0) {
-          await getCurrentWindow().close()
-        }
       },
       [detachTab, tabsRef],
     )
@@ -4306,6 +4442,23 @@ export function BrowserShell() {
                 shortcutId,
               )
             }
+          } else if (
+            commandId ===
+              NEBULA_INSPECT_COMMAND_ID
+          ) {
+            const shortcutId =
+              shortcutIdForTabWebviewLabel(
+                request.tabLabel,
+              )
+
+            if (shortcutId) {
+              setDeveloperToolsInspectRequest({
+                tabId: shortcutId,
+                x: request.x,
+                y: request.y,
+                token: Date.now(),
+              })
+            }
           }
         } catch (error) {
           if (import.meta.env.DEV) {
@@ -5046,6 +5199,14 @@ export function BrowserShell() {
       developerToolsOpen,
     ])
 
+  useEffect(() => {
+    if (!developerToolsInspectRequest) return
+    openDeveloperTools()
+  }, [
+    developerToolsInspectRequest,
+    openDeveloperTools,
+  ])
+
   const closeDeveloperTools =
     useCallback(() => {
       const previousMode =
@@ -5109,6 +5270,17 @@ export function BrowserShell() {
     }, [
       activeTabIdRef,
     ])
+
+  const setDeveloperToolsElementPickerMode =
+    useCallback((active: boolean) => {
+      if (!developerToolsOpen) return
+
+      if (isTauri) {
+        setOverlayModeActive(!active)
+      }
+
+      setViewMode(active ? 'browsing' : 'overlay')
+    }, [developerToolsOpen])
 
   const toggleDeveloperTools =
     useCallback(() => {
@@ -7011,6 +7183,7 @@ export function BrowserShell() {
             onOpenOrigin={(
               origin,
               tabLabel,
+              targetUrl,
             ) => {
               closeNotificationPanel()
 
@@ -7024,11 +7197,14 @@ export function BrowserShell() {
                 )
               ) {
                 switchToExistingBrowseTab(shortcutId)
+                if (targetUrl) {
+                  void navigateBrowseTab(shortcutId, targetUrl).catch(() => undefined)
+                }
                 return
               }
 
               openShortcutByUrl(
-                origin,
+                targetUrl ?? origin,
                 {
                   forceTargetUrl:
                     true,
@@ -7314,8 +7490,30 @@ export function BrowserShell() {
           sourceViewMode={
             developerToolsPreviousModeRef.current
           }
+          privacyState={{
+            strictCookies:
+              settings.privacy.strictCookies,
+            trackingLevel:
+              settings.privacy.trackingLevel,
+            blockTrackers:
+              settings.privacy.blockTrackers,
+          }}
+          inspectRequest={
+            developerToolsInspectRequest?.tabId === activeTabId
+              ? developerToolsInspectRequest
+              : null
+          }
+          onInspectRequestHandled={() =>
+            setDeveloperToolsInspectRequest(null)
+          }
+          onElementPickerModeChange={
+            setDeveloperToolsElementPickerMode
+          }
           onClose={
-            closeDeveloperTools
+            () => {
+              setDeveloperToolsInspectRequest(null)
+              closeDeveloperTools()
+            }
           }
         />
       )}

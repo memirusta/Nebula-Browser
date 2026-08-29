@@ -11,7 +11,8 @@ import {
 } from '../../core/lunarShape'
 import {
   DRAG_THRESHOLD,
-  clampBelowLunarChrome,
+  SHORTCUT_HOVER_SCALE,
+  clampToLunarChromeSafeArea,
   clampToBounds,
   type ShortcutPosition,
 } from '../../core/shortcutLayout'
@@ -28,9 +29,18 @@ import { shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
 import { isChromeShell } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
+import {
+  clearSemiLunarFullscreenReload,
+  markSemiLunarFullscreenReload,
+  shouldRestoreSemiLunarLayout,
+} from '../../core/semiLunarFullscreenReload'
 import { isTauri } from '../../platform/runtime'
 import { debounce } from '../../platform/debounce'
 import { expandShellHitRegionToFitBottom, syncChromeShellLayout } from '../../platform/tauriShell'
+import {
+  isCursorInsideSemiLunarNativeShape,
+  isCursorInsideSemiLunarNativeTrigger,
+} from '../../platform/tauriChromeWebview'
 import {
   browserFullscreenChangedEvent,
   siteFullscreenExitEvent,
@@ -161,8 +171,13 @@ export function SemiLunarMenu({
   const [stage, setStage] = useState<MenuStage>(
     isHome && homeAlwaysOpen ? 'expanded' : 'closed',
   )
+  const isExpanded =
+    forceOpen ||
+    stage === 'expanded' ||
+    (isHome && homeAlwaysOpen)
   const [browserFullscreenActive, setBrowserFullscreenActive] = useState(false)
   const [semiLunarRenderEpoch, setSemiLunarRenderEpoch] = useState(0)
+  const [nativeHoverRecoveryArmed, setNativeHoverRecoveryArmed] = useState(false)
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
   const [previewTabId, setPreviewTabId] = useState<string | null>(null)
   const [openFolderId, setOpenFolderId] = useState<string | null>(null)
@@ -190,6 +205,7 @@ export function SemiLunarMenu({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openIntentRef = useRef(false)
+  const openRequestIdRef = useRef(0)
   const mergeHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mergeHoldTargetRef = useRef<string | null>(null)
   const mergeStartedRef = useRef(false)
@@ -201,6 +217,8 @@ export function SemiLunarMenu({
   const contextMenuHoverRef = useRef(false)
   const folderPanelHoverRef = useRef(false)
   const folderOpenRef = useRef(false)
+  const menuHoverRef = useRef(false)
+  const browsingHoverSurfaceRef = useRef<HTMLDivElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const shellLayoutResyncRef = useRef<() => void>(() => {})
   const shellBoundedLayoutResyncRef = useRef<() => void>(() => {})
@@ -208,6 +226,35 @@ export function SemiLunarMenu({
   const lunarMetrics = useMemo(
     () => createLunarMetrics(lunarWidthPx, lunarHeightPx),
     [lunarWidthPx, lunarHeightPx],
+  )
+  const restoreShortcutLayout = useMemo(
+    () => shouldRestoreSemiLunarLayout(rememberLayout),
+    [rememberLayout],
+  )
+  const boundaryIconSizePx = iconSizePx * SHORTCUT_HOVER_SCALE
+  const lunarControlCounts = useMemo(
+    () => ({
+      left:
+        onHomeClick
+          ? 1 +
+            Number(isBrowsing && Boolean(onBackClick)) +
+            Number(isBrowsing && downloadCount > 0 && Boolean(onDownloadsClick)) +
+            Number(isBrowsing && Boolean(activeUrl) && Boolean(onSiteInfoClick))
+          : 0,
+      // Persist positions against the eventual expanded layout even while the
+      // menu is collapsed. Toggling these exclusions with the open state moved
+      // every shortcut during hover and generated synthetic enter/leave events.
+      right: isTauri ? 3 : 0,
+    }),
+    [
+      activeUrl,
+      downloadCount,
+      isBrowsing,
+      onBackClick,
+      onDownloadsClick,
+      onHomeClick,
+      onSiteInfoClick,
+    ],
   )
   const innerRimPath = useMemo(
     () => buildParallelRimPath(LUNAR_INNER_RIM_OFFSET, 48, 2, lunarMetrics),
@@ -239,22 +286,26 @@ export function SemiLunarMenu({
       iconSizePx,
       lunarWidthPx,
       lunarHeightPx,
-      rememberLayout,
+      restoreShortcutLayout,
     )
 
   useEffect(() => {
-    if (!isTauri) return
+    clearSemiLunarFullscreenReload()
+  }, [])
+
+  useEffect(() => {
     for (const position of positions) {
-      const safe = clampBelowLunarChrome(
+      const safe = clampToLunarChromeSafeArea(
         position.x,
         position.y,
-        iconSizePx,
+        boundaryIconSizePx,
         lunarMetrics,
+        lunarControlCounts,
       )
       if (safe.x === position.x && safe.y === position.y) continue
       setPosition(position.id, safe.x, safe.y)
     }
-  }, [iconSizePx, lunarMetrics, positions, setPosition])
+  }, [boundaryIconSizePx, lunarControlCounts, lunarMetrics, positions, setPosition])
 
   dragHoverRef.current = dragHover
   positionsRef.current = positions
@@ -417,35 +468,152 @@ export function SemiLunarMenu({
     }
   }, [])
 
+  const shouldDeferClose = useCallback(() => {
+    if (isDraggingRef.current) return true
+    if (contextMenuOpenRef.current || contextMenuHoverRef.current) return true
+    if (folderOpenRef.current || folderPanelHoverRef.current) return true
+
+    return false
+  }, [])
+
+  const rejectStaleBrowsingHover = useCallback(() => {
+    openRequestIdRef.current += 1
+    openIntentRef.current = false
+    menuHoverRef.current = false
+
+    if (shouldDeferClose()) return
+
+    // WebView2 may keep :hover latched after a fast edge flick. Once native
+    // cursor sampling closes that stale state, briefly watch for a real return
+    // to the collapsed trigger because another DOM mouseenter may not fire.
+    setNativeHoverRecoveryArmed(true)
+    clearTimers()
+    setStage('closed')
+  }, [clearTimers, shouldDeferClose])
+
+  const isPointerOverSemiLunar = useCallback(() => {
+    if (!isBrowsing) {
+      return menuHoverRef.current
+    }
+
+    const surface = browsingHoverSurfaceRef.current
+
+    if (!surface) {
+      return menuHoverRef.current
+    }
+
+    return surface.matches(':hover')
+  }, [isBrowsing])
+
   const requestOpen = useCallback(
     (immediate = false) => {
       if (isBrowsing && !browsingHoverOpen) return
+      const requestId = ++openRequestIdRef.current
       openIntentRef.current = true
       clearTimers()
 
       if (isBrowsing && !immediate && browsingOpenDelayMs > 0) {
         openTimer.current = setTimeout(() => {
           openTimer.current = null
-          if (!openIntentRef.current) return
-          setStage('expanded')
+
+          void (async () => {
+            if (
+              !openIntentRef.current ||
+              requestId !== openRequestIdRef.current
+            ) return
+
+            // WebView2 can miss the leave entirely when the pointer is flicked
+            // from the tiny collapsed strip into the site in a single frame.
+            // Before honoring the delayed open, verify that the real OS cursor
+            // is still in that strip, not merely somewhere inside bounds left
+            // over from the previously expanded chrome surface.
+            if (isTauri) {
+              const nativeInside =
+                await isCursorInsideSemiLunarNativeTrigger()
+
+              // The pointer may have re-entered/left while the IPC request was
+              // in flight, so re-check the intent before mutating menu state.
+              if (
+                !openIntentRef.current ||
+                requestId !== openRequestIdRef.current
+              ) return
+
+              if (nativeInside === false) {
+                rejectStaleBrowsingHover()
+                return
+              }
+            }
+
+            if (!isPointerOverSemiLunar()) {
+              rejectStaleBrowsingHover()
+              return
+            }
+
+            menuHoverRef.current = true
+            setStage('expanded')
+          })()
         }, browsingOpenDelayMs)
         return
       }
-
       setStage('expanded')
     },
-    [browsingHoverOpen, browsingOpenDelayMs, clearTimers, isBrowsing],
+    [
+      browsingHoverOpen,
+      browsingOpenDelayMs,
+      clearTimers,
+      isBrowsing,
+      isPointerOverSemiLunar,
+      rejectStaleBrowsingHover,
+    ],
   )
 
   const handleEnter = useCallback(() => {
+    setNativeHoverRecoveryArmed(false)
+    menuHoverRef.current = true
     requestOpen(false)
   }, [requestOpen])
 
   const handleEnterImmediate = useCallback(() => {
+    setNativeHoverRecoveryArmed(false)
+    menuHoverRef.current = true
     requestOpen(true)
   }, [requestOpen])
 
+  const handleExpandedEnter = useCallback(() => {
+    menuHoverRef.current = true
+
+    if (!isBrowsing || !isTauri) {
+      clearTimers()
+      return
+    }
+
+    const requestId = ++openRequestIdRef.current
+
+    // Resizing the dedicated WebView can synthesize mouseenter while the real
+    // cursor is already outside the visible dome. Do not let that event cancel
+    // a pending close until Windows confirms the cursor is actually inside.
+    void isCursorInsideSemiLunarNativeShape(lunarWidthPx, lunarHeightPx).then(
+      (nativeInside) => {
+        if (requestId !== openRequestIdRef.current) return
+
+        if (nativeInside === false) {
+          rejectStaleBrowsingHover()
+          return
+        }
+
+        clearTimers()
+      },
+    )
+  }, [
+    clearTimers,
+    isBrowsing,
+    lunarHeightPx,
+    lunarWidthPx,
+    rejectStaleBrowsingHover,
+  ])
+
   const handleMenuClick = useCallback(() => {
+    openRequestIdRef.current += 1
     openIntentRef.current = false
     clearTimers()
     folderOpenRef.current = false
@@ -457,6 +625,7 @@ export function SemiLunarMenu({
   }, [clearTimers, onHomeClick])
 
   const closeMenuImmediately = useCallback(() => {
+    openRequestIdRef.current += 1
     openIntentRef.current = false
     clearTimers()
     clearMergeHoldTimer()
@@ -485,19 +654,12 @@ export function SemiLunarMenu({
     [closeMenuImmediately, onNavigate],
   )
 
-const shouldDeferClose = useCallback(() => {
-  if (isDraggingRef.current) return true
-  if (contextMenuOpenRef.current || contextMenuHoverRef.current) return true
-  if (folderOpenRef.current || folderPanelHoverRef.current) return true
-
-  return false
-}, [])
-
   const scheduleClose = useCallback(() => {
     if (isBrowsing && shellViewMode === 'overlay') return
     if (isHome && homeAlwaysOpen) return
     if (shouldDeferClose()) return
 
+    openRequestIdRef.current += 1
     openIntentRef.current = false
     clearTimers()
 
@@ -525,6 +687,162 @@ const shouldDeferClose = useCallback(() => {
     homeAlwaysOpen,
     isHome,
     isBrowsing,
+    shouldDeferClose,
+  ])
+
+  const handleMenuLeave = useCallback(() => {
+    menuHoverRef.current = false
+    scheduleClose()
+  }, [scheduleClose])
+
+  useEffect(() => {
+    if (
+      !nativeHoverRecoveryArmed ||
+      !isBrowsing ||
+      isExpanded ||
+      !browsingHoverOpen ||
+      shellViewMode === 'overlay' ||
+      !isTauri
+    ) {
+      return
+    }
+
+    let disposed = false
+    let nativeCheckInFlight = false
+
+    const sampleCollapsedTrigger = () => {
+      const surface = browsingHoverSurfaceRef.current
+
+      // Once DOM hover recovers, normal mouseenter handling owns the next open
+      // again and there is no reason to keep polling Windows.
+      if (!surface?.matches(':hover')) {
+        setNativeHoverRecoveryArmed(false)
+        return
+      }
+
+      if (nativeCheckInFlight) return
+      nativeCheckInFlight = true
+
+      void isCursorInsideSemiLunarNativeTrigger()
+        .then((nativeInside) => {
+          if (disposed || nativeInside !== true) return
+
+          setNativeHoverRecoveryArmed(false)
+          menuHoverRef.current = true
+          requestOpen(false)
+        })
+        .finally(() => {
+          nativeCheckInFlight = false
+        })
+    }
+
+    sampleCollapsedTrigger()
+    const interval = window.setInterval(sampleCollapsedTrigger, 80)
+
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+    }
+  }, [
+    browsingHoverOpen,
+    isBrowsing,
+    isExpanded,
+    nativeHoverRecoveryArmed,
+    requestOpen,
+    shellViewMode,
+  ])
+
+  useEffect(() => {
+    if (
+      !isBrowsing ||
+      !isExpanded ||
+      shellViewMode === 'overlay'
+    ) {
+      return
+    }
+
+    let disposed = false
+    let consecutiveDomMisses = 0
+    let consecutiveNativeMisses = 0
+    let nativeCheckInFlight = false
+
+    const closeFromLostHover = () => {
+      // Two consecutive native misses are definitive. Close synchronously so
+      // a stale/synthetic WebView2 mouseenter cannot cancel another timer and
+      // leave the expanded chrome surface pinned open.
+      rejectStaleBrowsingHover()
+    }
+
+    const interval = window.setInterval(() => {
+      if (shouldDeferClose()) {
+        consecutiveDomMisses = 0
+        consecutiveNativeMisses = 0
+        return
+      }
+
+      const hovering =
+        browsingHoverSurfaceRef.current?.matches(':hover') ??
+        false
+
+      // Keep the existing DOM behavior exactly as before. It handles normal
+      // exits and transparent-shape boundaries with the current UX.
+      if (!hovering) {
+        consecutiveDomMisses += 1
+        consecutiveNativeMisses = 0
+
+        // Ignore brief hover loss while WebView2 is resizing/recompositing.
+        if (consecutiveDomMisses >= 3) {
+          closeFromLostHover()
+        }
+        return
+      }
+
+      consecutiveDomMisses = 0
+      menuHoverRef.current = true
+
+      // The only remaining failure mode is a stale WebView2 :hover state after
+      // an extremely fast downward flick. Native checking is therefore only a
+      // fail-safe while DOM still claims the pointer is inside.
+      if (!isTauri || nativeCheckInFlight) return
+
+      nativeCheckInFlight = true
+
+      void isCursorInsideSemiLunarNativeShape(
+        lunarWidthPx,
+        lunarHeightPx,
+      )
+        .then((nativeInside) => {
+          if (disposed) return
+
+          if (nativeInside !== false) {
+            consecutiveNativeMisses = 0
+            return
+          }
+
+          consecutiveNativeMisses += 1
+
+          // Require two native misses so one resize/compositor frame cannot
+          // collapse a menu that the pointer is actually using.
+          if (consecutiveNativeMisses >= 2) {
+            closeFromLostHover()
+          }
+        })
+        .finally(() => {
+          nativeCheckInFlight = false
+        })
+    }, 60)
+
+    return () => {
+      disposed = true
+      window.clearInterval(interval)
+    }
+  }, [
+    isBrowsing,
+    isExpanded,
+    lunarHeightPx,
+    lunarWidthPx,
+    rejectStaleBrowsingHover,
+    shellViewMode,
     shouldDeferClose,
   ])
 
@@ -662,7 +980,12 @@ const handleContextMenuOpen = useCallback(
     mergeStartedRef.current = false
     setDragHover(null)
     setIsAnyDragging(false)
-  }, [clearMergeHoldTimer])
+
+    // Mouse leave can happen while the pointer-captured tab is still dragging.
+    // scheduleClose deliberately ignores that leave, so retry after releasing
+    // the drag when the pointer actually finished outside the Semi-Lunar.
+    if (!menuHoverRef.current) scheduleClose()
+  }, [clearMergeHoldTimer, scheduleClose])
 
   const getPosition = (id: string) => {
     const direct = positions.find((p) => p.id === id)
@@ -846,11 +1169,6 @@ const handleFolderMemberClose = useCallback(
     }
   }, [])
 
-  const isExpanded =
-    forceOpen ||
-    stage === 'expanded' ||
-    (isHome && homeAlwaysOpen)
-
   shellBoundedLayoutResyncRef.current = () => {
     if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
     if (contextMenu) return
@@ -962,7 +1280,9 @@ const handleFolderMemberClose = useCallback(
           // WebView2 can retain a stale/clipped Chrome surface after the
           // native parent HWND enters F11 fullscreen. Reloading this dedicated
           // Chrome WebView recreates its compositor surface without touching
-          // browser tabs or native fullscreen state.
+          // browser tabs or native fullscreen state. Mark this as an internal
+          // reload so it cannot reset the live Semi-Lunar icon layout.
+          markSemiLunarFullscreenReload()
           window.location.reload()
           return
         }
@@ -1132,7 +1452,9 @@ const handleFolderMemberClose = useCallback(
       return
     }
 
-    clearTimers()
+    // Layout synchronization must not own hover timers. Preview/folder state
+    // changes also run this effect; clearing here used to silently cancel a
+    // pending mouse-leave close and leave Semi-Lunar pinned open.
     void syncChromeShellLayout(
       isExpanded,
       lunarHeightPx,
@@ -1212,8 +1534,14 @@ const handleFolderMemberClose = useCallback(
           '--lunar-height': `${lunarHeightPx}px`,
         } as React.CSSProperties
       }
-      onMouseEnter={isBrowsing && !isExpanded ? handleEnter : handleEnterImmediate}
-      onMouseLeave={scheduleClose}
+      onMouseEnter={
+        isBrowsing
+          ? isExpanded
+            ? handleExpandedEnter
+            : handleEnter
+          : handleEnterImmediate
+      }
+      onMouseLeave={handleMenuLeave}
     >
         <div
           className={[styles.triggerZone, isBrowsing ? styles.triggerZoneBrowsing : '']
@@ -1730,6 +2058,7 @@ const members = memberIds
     return (
       <>
         <div
+          ref={browsingHoverSurfaceRef}
           className={browsingChromeClass}
           style={
             {
@@ -1743,7 +2072,7 @@ const members = memberIds
               className={styles.lunarHoverCapCollapsed}
               aria-hidden="true"
               onMouseEnter={handleEnter}
-              onMouseLeave={scheduleClose}
+              onMouseLeave={handleMenuLeave}
               onClick={handleEnterImmediate}
             />
           ) : !isTauri ? (
@@ -1753,7 +2082,7 @@ const members = memberIds
                 .join(' ')}
               aria-hidden="true"
               onMouseEnter={handleEnter}
-              onMouseLeave={scheduleClose}
+              onMouseLeave={handleMenuLeave}
               onClick={handleEnterImmediate}
             />
           ) : null}
@@ -2140,7 +2469,7 @@ function DraggableShortcut({
   const resolvedTitle = displayTitle ?? item.label
   const resolvedHoverTitle = hoverTitle ?? item.label
 
-  const scale = isShortcutHovered && !isDragging ? 1.12 : 1
+  const scale = isShortcutHovered && !isDragging ? SHORTCUT_HOVER_SCALE : 1
   const visualX = isDragging ? dragPos.x : x
   const visualY = isDragging ? dragPos.y : y
 

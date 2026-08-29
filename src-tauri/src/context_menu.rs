@@ -20,6 +20,7 @@ mod imp {
     const CONTEXT_MENU_EVENT: &str = "nebula-site-context-menu";
     const CONTEXT_MENU_CANCELLED_EVENT: &str = "nebula-site-context-menu-cancelled";
     const NEBULA_PRINT_COMMAND_ID: i32 = -10_001;
+    const NEBULA_INSPECT_COMMAND_ID: i32 = -10_002;
     const CONTEXT_MENU_TIMEOUT: Duration = Duration::from_secs(15);
     const MAX_PENDING_CONTEXT_MENUS_PER_TAB: usize = 1;
 
@@ -233,9 +234,9 @@ mod imp {
 
             let mut payload = item_payload(&item, depth)?;
 
-            // Nebula has its own inspector.
+            // Route WebView2's native Inspect entry into Nebula Inspector.
             if payload.name == "inspect" {
-                continue;
+                payload.command_id = NEBULA_INSPECT_COMMAND_ID;
             }
 
             // Route Print through Nebula's native

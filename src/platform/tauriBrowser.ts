@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { Webview, type WebviewOptions } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -27,6 +28,7 @@ import {
   writeTransitionLog,
 } from './tauriTransitionLog'
 import {
+  cancelScheduledStack,
   scheduleStackBrowsingChromeAboveBrowser,
   stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
@@ -660,6 +662,38 @@ function boundsKey(
   return `${x},${y},${width},${height}`
 }
 
+async function applyBrowserBounds(
+  webview: Webview,
+  position: PhysicalPosition,
+  size: PhysicalSize,
+): Promise<void> {
+  try {
+    await invoke('webview_set_browser_bounds', {
+      label: webview.label,
+      windowLabel: currentBrowserWindowLabel(),
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+    })
+    return
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[nebula] atomic browser bounds failed; using ordered Webview fallback',
+        error,
+      )
+    }
+  }
+
+  // Size first, position last. After a Windows reparent Wry 0.55 may map the
+  // current rectangle through the old parent while handling each split call.
+  // Finishing with position guarantees the final origin even on an older
+  // native binary where the atomic command is unavailable during HMR.
+  await webview.setSize(size)
+  await webview.setPosition(position)
+}
+
 async function syncBrowserBounds(
   webview: Webview,
   traceId = 'background-layout',
@@ -697,24 +731,15 @@ async function syncBrowserBounds(
 
   await traceTransitionCall(
     traceId,
-    'browser.bounds.set-position',
+    'browser.bounds.set',
     {
       label: webview.label,
       x: position.x,
       y: position.y,
-    },
-    () => webview.setPosition(position),
-  )
-
-  await traceTransitionCall(
-    traceId,
-    'browser.bounds.set-size',
-    {
-      label: webview.label,
       width: size.width,
       height: size.height,
     },
-    () => webview.setSize(size),
+    () => applyBrowserBounds(webview, position, size),
   )
 
   await traceTransitionCall(
@@ -4169,13 +4194,29 @@ export async function adoptReparentedBrowseTab(
   if (!isTauri) return
   const webview = await Webview.getByLabel(label)
   if (!webview) throw new Error(`Transferred webview '${label}' was not found.`)
+
   assignTabWebviewLabel(shortcutId, label)
   webviewCache.set(shortcutId, webview)
   createdTabs.add(shortcutId)
-  await configureTabWebview(
-    label,
-    `transfer-adopt-${Date.now()}`,
-  )
+
+  try {
+    await configureTabWebview(
+      label,
+      `transfer-adopt-${Date.now()}`,
+    )
+  } catch (error) {
+    // Adoption must be atomic. A failed configuration used to leave this
+    // window holding a stale cache/label mapping for a webview that the
+    // source would subsequently reparent back. Later Home/lifecycle work in
+    // this window could then hide the rolled-back tab in its real owner.
+    webviewCache.delete(shortcutId)
+    createdTabs.delete(shortcutId)
+    configuredWebviews.delete(label)
+    privacyApplyRunner.invalidate(label)
+    forceDarkApplyRunner.invalidate(label)
+    releaseTabWebviewLabel(shortcutId)
+    throw error
+  }
 }
 
 export function relinquishBrowseTabOwnership(shortcutId: string): void {
@@ -4192,6 +4233,10 @@ export function relinquishBrowseTabOwnership(shortcutId: string): void {
   forceDarkApplyRunner.invalidate(label)
   releaseTabWebviewLabel(shortcutId)
   if (activeTabId === shortcutId) {
+    // A delayed z-order repair may still have captured this tab while it
+    // belonged to the source window. Cancel it before the WebView can be
+    // restacked from the wrong window after native reparenting.
+    cancelScheduledStack()
     activeTabId = null
     activeWebview = null
     unbindResizeListeners()
@@ -4472,11 +4517,9 @@ export async function syncTabWebviewFullscreenBounds(
       size.height,
     )
 
-  await webview.setPosition(
+  await applyBrowserBounds(
+    webview,
     position,
-  )
-
-  await webview.setSize(
     size,
   )
 

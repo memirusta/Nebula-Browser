@@ -137,11 +137,15 @@ fn sanitize_transition_log_value(value: serde_json::Value, key: Option<&str>) ->
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn show_native_notification(
     app: tauri::AppHandle,
     title: String,
     body: String,
+    site_name: Option<String>,
+    sender_name: Option<String>,
+    event_kind: Option<String>,
     tab_label: Option<String>,
     origin: Option<String>,
     download_id: Option<String>,
@@ -163,14 +167,28 @@ async fn show_native_notification(
     let download_id =
         download_id.filter(|value| value.starts_with("download-") && value.chars().count() <= 180);
     let icon_url = icon_url.filter(|value| value.chars().count() <= 2048);
+    let site_name = site_name.map(|value| value.trim().chars().take(80).collect::<String>());
+    let sender_name = sender_name.map(|value| value.trim().chars().take(120).collect::<String>());
+    let event_kind = event_kind.filter(|value| {
+        matches!(
+            value.as_str(),
+            "message" | "reply" | "reaction" | "mention" | "live" | "call" | "post" | "download"
+        )
+    });
     native_notification::show(
         &app,
         &title,
         &body,
+        site_name,
+        sender_name,
+        event_kind,
         tab_label,
         origin,
         download_id,
         icon_url,
+        None,
+        None,
+        0,
     )
     .await
 }
@@ -604,6 +622,7 @@ fn webview_teardown_popup_target(app: tauri::AppHandle, label: String) -> Result
 
     context_menu::teardown(&app, &label);
     site_ui::teardown(&app, &label);
+    media_session::teardown(&app, &label);
     force_dark_pages::teardown(&app, &label);
     download_manager::teardown_tab_downloads(&app, &label);
     webview_privacy::teardown(&app, &label);
@@ -753,7 +772,6 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
     devtools_bridge::teardown(&app, &label);
     context_menu::teardown(&app, &label);
     site_ui::teardown(&app, &label);
-    media_session::teardown(&app, &label);
     force_dark_pages::teardown(&app, &label);
     download_manager::teardown_tab_downloads(&app, &label);
     webview_privacy::teardown(&app, &label);
@@ -1232,6 +1250,176 @@ fn webview_set_chrome_bounds(
     }
 }
 
+/// Return whether the OS cursor is inside a physical rectangle in the parent
+/// window's client coordinate space.
+///
+/// Semi-Lunar lives in a dedicated child WebView. WebView2 can occasionally
+/// miss a DOM mouseleave when the pointer crosses that child surface very
+/// quickly, so the chrome UI uses this only as a conservative native fallback.
+#[tauri::command]
+fn window_cursor_in_client_rect(
+    app: tauri::AppHandle,
+    window_label: String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<bool, String> {
+    if width < 1 || height < 1 {
+        return Err("cursor hit-test bounds must be positive".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::Graphics::Gdi::ScreenToClient;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+        let window = app
+            .get_window(&window_label)
+            .ok_or_else(|| format!("window '{window_label}' not found ({})", debug_labels(&app)))?;
+        let parent_hwnd = window.hwnd().map_err(|error| error.to_string())?;
+
+        let mut point = POINT::default();
+
+        unsafe {
+            GetCursorPos(&mut point).map_err(|error| error.to_string())?;
+            if !ScreenToClient(parent_hwnd, &mut point).as_bool() {
+                return Err("ScreenToClient failed for cursor hit-test".to_string());
+            }
+        }
+
+        let right = x.saturating_add(width);
+        let bottom = y.saturating_add(height);
+
+        Ok(point.x >= x && point.x < right && point.y >= y && point.y < bottom)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, window_label, x, y, width, height);
+        Ok(false)
+    }
+}
+
+/// Return whether the OS cursor is inside Semi-Lunar's visible lower-half
+/// ellipse in the parent window's client coordinate space.
+///
+/// `x`, `y`, `width`, and `height` describe the physical bounding box whose
+/// ellipse is centered at the top-middle (`50% 0%`) with radii `50% 100%`,
+/// matching the browsing Semi-Lunar clip-path. A small physical-pixel
+/// tolerance keeps edge rounding/compositor jitter from causing false exits.
+#[tauri::command]
+fn window_cursor_in_client_lunar_shape(
+    app: tauri::AppHandle,
+    window_label: String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    tolerance: i32,
+) -> Result<bool, String> {
+    if width < 1 || height < 1 {
+        return Err("cursor lunar hit-test bounds must be positive".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::Graphics::Gdi::ScreenToClient;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+        let window = app
+            .get_window(&window_label)
+            .ok_or_else(|| format!("window '{window_label}' not found ({})", debug_labels(&app)))?;
+        let parent_hwnd = window.hwnd().map_err(|error| error.to_string())?;
+
+        let mut point = POINT::default();
+
+        unsafe {
+            GetCursorPos(&mut point).map_err(|error| error.to_string())?;
+            if !ScreenToClient(parent_hwnd, &mut point).as_bool() {
+                return Err("ScreenToClient failed for lunar cursor hit-test".to_string());
+            }
+        }
+
+        let tolerance = tolerance.clamp(0, 256) as f64;
+        let x = x as f64;
+        let y = y as f64;
+        let width = width as f64;
+        let height = height as f64;
+        let px = point.x as f64;
+        let py = point.y as f64;
+
+        // CSS: ellipse(50% 100% at 50% 0%). Only the lower half is visible.
+        // Keep a small vertical tolerance around the top/bottom edge.
+        if py < y - tolerance || py > y + height + tolerance {
+            return Ok(false);
+        }
+
+        let cx = x + width / 2.0;
+        let cy = y;
+        let rx = width / 2.0 + tolerance;
+        let ry = height + tolerance;
+        let dx = (px - cx) / rx;
+        let dy = (py - cy) / ry;
+
+        Ok(dx * dx + dy * dy <= 1.0)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, window_label, x, y, width, height, tolerance);
+        Ok(false)
+    }
+}
+
+/// Apply a tab WebView's position and size in one runtime message.
+///
+/// Wry 0.55 keeps a child WebView's original parent reference after a Windows
+/// reparent. Its separate `set_position` / `set_size` handlers each read the
+/// current bounds first, so the second call can restore a source-to-target
+/// window offset. Supplying the complete rectangle avoids that stale-parent
+/// read and keeps transferred tabs anchored to the target client origin.
+#[tauri::command]
+fn webview_set_browser_bounds(
+    app: tauri::AppHandle,
+    label: String,
+    window_label: String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    if !label.starts_with("nebula-tab-") || label.len() > 240 {
+        return Err("invalid Nebula tab label".to_string());
+    }
+    if width < 1 || height < 1 {
+        return Err("browser bounds must be positive".to_string());
+    }
+
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let actual_window_label = webview.window().label().to_string();
+    if actual_window_label != window_label {
+        return Err(format!(
+            "webview '{label}' belongs to '{actual_window_label}', not '{window_label}'"
+        ));
+    }
+
+    webview
+        .set_bounds(tauri::Rect {
+            position: tauri::PhysicalPosition::new(x, y).into(),
+            size: tauri::PhysicalSize::new(width as u32, height as u32).into(),
+        })
+        .map_err(|error| error.to_string())
+}
+
 /// Raise a tab webview above shell/chrome for HTML5 fullscreen video.
 #[cfg(target_os = "windows")]
 fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), String> {
@@ -1390,6 +1578,7 @@ fn webview_raise_chrome(
     window_label: String,
     active_tab_label: Option<String>,
 ) -> Result<(), String> {
+    tab_metadata::set_active_tab_for_window(&window_label, active_tab_label.as_deref());
     #[cfg(target_os = "windows")]
     {
         stack_chrome_above_browser(&app, &window_label, active_tab_label.as_deref())
@@ -1417,6 +1606,7 @@ fn load_runtime_env() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    media_session::configure_webview_environment();
     if let Err(error) = media_session::initialize_process_identity() {
         eprintln!("media.session identity-error: {error}");
     }
@@ -1438,8 +1628,13 @@ pub fn run() {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             external_open::capture_startup_args();
 
-            webview_branding::setup_webview_branding(app.handle(), "main")
-                .map_err(std::io::Error::other)?;
+            // WebView2 can queue the freshly-created main WebView callback just
+            // past this setup hook. The settings callback still runs, so do not
+            // turn that transient "not configured yet" state into an app-start
+            // panic. Site WebViews keep their stricter setup/identity handshake.
+            if let Err(error) = webview_branding::setup_webview_branding(app.handle(), "main") {
+                eprintln!("[nebula startup] main branding setup deferred: {error}");
+            }
 
             tab_error_page::setup_tab_error_page(app.handle(), "main")
                 .map_err(std::io::Error::other)?;
@@ -1485,6 +1680,9 @@ pub fn run() {
             webview_raise_overlay,
             webview_raise_chrome,
             webview_set_chrome_bounds,
+            window_cursor_in_client_rect,
+            window_cursor_in_client_lunar_shape,
+            webview_set_browser_bounds,
             webview_raise_tab_fullscreen,
             window_presentation_state,
             window_enter_site_fullscreen,

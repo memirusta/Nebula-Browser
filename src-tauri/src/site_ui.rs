@@ -715,6 +715,127 @@ mod imp {
 
   installSensitiveFeatureUsageObserver();
 
+  function installInstagramAvatarObserver() {
+    const hostname = String(window.location.hostname || '').toLowerCase();
+    if (hostname !== 'instagram.com' && !hostname.endsWith('.instagram.com')) return;
+    if (window.__nebulaInstagramAvatarObserverInstalled) return;
+    window.__nebulaInstagramAvatarObserverInstalled = true;
+
+    const hints = window.__nebulaInstagramAvatarHints instanceof Map
+      ? window.__nebulaInstagramAvatarHints
+      : new Map();
+    window.__nebulaInstagramAvatarHints = hints;
+    const reported = new Set();
+
+    function senderKey(value) {
+      return String(value || '')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]/gu, '')
+        .slice(0, 80);
+    }
+
+    function trustedImageUrl(value) {
+      try {
+        const url = new URL(String(value || ''), window.location.href);
+        const host = String(url.hostname || '').toLowerCase();
+        const trusted = [
+          'instagram.com',
+          'cdninstagram.com',
+          'fbcdn.net',
+          'facebook.com'
+        ].some(function (domain) {
+          return host === domain || host.endsWith('.' + domain);
+        });
+        return url.protocol === 'https:' && trusted ? url.href.slice(0, 2048) : '';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function senderNames(image) {
+      const names = [];
+      const anchor = image.closest && image.closest('a[href]');
+      if (anchor) {
+        try {
+          const path = new URL(anchor.href, window.location.href).pathname;
+          const match = path.match(/^\/([A-Za-z0-9._]{1,30})\/?$/);
+          const reserved = new Set(['accounts', 'direct', 'explore', 'reels', 'stories']);
+          if (match && !reserved.has(match[1].toLowerCase())) names.push(match[1]);
+        } catch (_) {}
+      }
+
+      const alt = String(image.getAttribute('alt') || '').trim();
+      const patterns = [
+        /^(.{1,120}?)(?:'s|’s) profile picture$/i,
+        /^profile picture of (.{1,120})$/i,
+        /^(.{1,120}?) adlı kullanıcının profil resmi$/i,
+        /^(.{1,120}?) profil resmi$/i
+      ];
+      for (let index = 0; index < patterns.length; index += 1) {
+        const match = alt.match(patterns[index]);
+        if (match && match[1]) names.push(match[1].trim());
+      }
+      return Array.from(new Set(names.filter(Boolean)));
+    }
+
+    function reportImage(image) {
+      if (!(image instanceof HTMLImageElement)) return;
+      const iconUrl = trustedImageUrl(image.currentSrc || image.src);
+      if (!iconUrl) return;
+      const names = senderNames(image);
+      for (let index = 0; index < names.length; index += 1) {
+        const senderName = names[index];
+        const key = senderKey(senderName);
+        if (!key) continue;
+        hints.set(key, iconUrl);
+        const reportKey = key + '\u0000' + iconUrl;
+        if (reported.has(reportKey)) continue;
+        if (reported.size >= 512) reported.clear();
+        reported.add(reportKey);
+        try {
+          bridge.postMessage(JSON.stringify({
+            type: 'nebula-site-avatar-hint',
+            origin: window.location.origin,
+            senderName: senderName.slice(0, 120),
+            iconUrl: iconUrl
+          }));
+        } catch (_) {}
+      }
+    }
+
+    function scan(root) {
+      if (!root) return;
+      if (root instanceof HTMLImageElement) reportImage(root);
+      if (!root.querySelectorAll) return;
+      const images = root.querySelectorAll('img[src]');
+      for (let index = 0; index < images.length; index += 1) reportImage(images[index]);
+    }
+
+    function arm() {
+      if (!document.body) {
+        window.setTimeout(arm, 250);
+        return;
+      }
+      scan(document.body);
+      new MutationObserver(function (mutations) {
+        for (let index = 0; index < mutations.length; index += 1) {
+          const mutation = mutations[index];
+          if (mutation.type === 'attributes') reportImage(mutation.target);
+          for (let addedIndex = 0; addedIndex < mutation.addedNodes.length; addedIndex += 1) {
+            scan(mutation.addedNodes[addedIndex]);
+          }
+        }
+      }).observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'alt']
+      });
+    }
+
+    arm();
+  }
+
   function installInstagramMessageObserver() {
     const hostname = String(window.location.hostname || '').toLowerCase();
     if (hostname !== 'instagram.com' && !hostname.endsWith('.instagram.com')) return;
@@ -722,6 +843,8 @@ mod imp {
     window.__nebulaInstagramMessageObserverInstalled = true;
 
     const seen = new WeakSet();
+    const attempts = new WeakMap();
+    const queued = new WeakSet();
     let observer = null;
     let lastMessageKey = '';
     let lastMessageAt = 0;
@@ -763,6 +886,112 @@ mod imp {
       return 'Instagram';
     }
 
+    function conversationAvatar(composerRect, title) {
+      const titleKey = String(title || '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+      if (!titleKey || titleKey === 'instagram') return '';
+
+      function trustedAvatar(image) {
+        if (!(image instanceof HTMLImageElement)) return '';
+        const rect = image.getBoundingClientRect();
+        if (
+          rect.width < 16 || rect.width > 96 || rect.height < 16 || rect.height > 96 ||
+          rect.bottom >= composerRect.top || rect.width <= 0 || rect.height <= 0
+        ) return '';
+        try {
+          const url = new URL(image.currentSrc || image.src, window.location.href);
+          const host = String(url.hostname || '').toLowerCase();
+          const trusted = ['instagram.com', 'cdninstagram.com', 'fbcdn.net', 'facebook.com']
+            .some(function (domain) { return host === domain || host.endsWith('.' + domain); });
+          return url.protocol === 'https:' && trusted ? url.href.slice(0, 2048) : '';
+        } catch (_) {
+          return '';
+        }
+      }
+
+      const headings = document.querySelectorAll('main h1, main h2, main [role="heading"]');
+      for (let index = 0; index < headings.length; index += 1) {
+        const heading = headings[index];
+        const headingKey = String(heading.textContent || '')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]/gu, '');
+        if (headingKey !== titleKey) continue;
+        let container = heading.parentElement;
+        for (let depth = 0; container && depth < 5; depth += 1) {
+          const images = container.querySelectorAll('img[src]');
+          for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+            const avatar = trustedAvatar(images[imageIndex]);
+            if (avatar) return avatar;
+          }
+          if (container.matches('main')) break;
+          container = container.parentElement;
+        }
+      }
+
+      const images = document.querySelectorAll('main img[src][alt]');
+      for (let index = 0; index < images.length; index += 1) {
+        const altKey = String(images[index].getAttribute('alt') || '')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}]/gu, '');
+        if (!altKey.includes(titleKey)) continue;
+        const avatar = trustedAvatar(images[index]);
+        if (avatar) return avatar;
+      }
+      return '';
+    }
+
+    function messageDetailsFromCandidate(candidate, composerRect) {
+      let container = candidate;
+      let parent = candidate.parentElement;
+      for (let depth = 0; parent && depth < 6; depth += 1) {
+        const rect = parent.getBoundingClientRect();
+        const text = String(parent.textContent || '').replace(/\s+/g, ' ').trim();
+        const messageNodes = parent.querySelectorAll('[dir="auto"]');
+        if (
+          !text || text.length > 1200 || rect.width <= 0 || rect.height <= 0 ||
+          rect.height > 260 || rect.top < 64 || rect.bottom >= composerRect.top ||
+          messageNodes.length === 0 || messageNodes.length > 12
+        ) break;
+        container = parent;
+        parent = parent.parentElement;
+      }
+
+      const nodes = [];
+      if (container.matches && container.matches('[dir="auto"]')) nodes.push(container);
+      if (container.querySelectorAll) {
+        const descendants = container.querySelectorAll('[dir="auto"]');
+        for (let index = 0; index < descendants.length; index += 1) nodes.push(descendants[index]);
+      }
+      const entries = [];
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        if (node.querySelector && node.querySelector('[dir="auto"]')) continue;
+        const rect = node.getBoundingClientRect();
+        const text = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+        if (
+          !text || text.length > 500 || rect.width <= 0 || rect.height <= 0 ||
+          rect.bottom >= composerRect.top || rect.top < 64 ||
+          rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2 ||
+          /^(seen|new messages|just now|liked a message|\d+[smhd])$/i.test(text)
+        ) continue;
+        if (entries.length === 0 || entries[entries.length - 1].text !== text) {
+          entries.push({ node: node, rect: rect, text: text });
+        }
+      }
+      const fallbackText = String(candidate.textContent || '').replace(/\s+/g, ' ').trim();
+      if (entries.length === 0) return { text: fallbackText, isReply: false };
+      const actual = entries[entries.length - 1];
+      const hasReplyLabel = /repl(?:y|ied)|yan[ıi]t|cevap/i.test(
+        String(container.textContent || '')
+      );
+      const hasQuotedPreview = entries.slice(0, -1).some(function (entry) {
+        const verticalGap = actual.rect.top - entry.rect.bottom;
+        return entry.text !== actual.text &&
+          entry.node.parentElement !== actual.node.parentElement &&
+          verticalGap >= -4 && verticalGap <= 72;
+      });
+      return { text: actual.text, isReply: hasReplyLabel || hasQuotedPreview };
+    }
+
     function reportCandidate(candidate) {
       if (!candidate || seen.has(candidate)) return;
       if (candidate.closest('button, a, input, textarea')) return;
@@ -771,7 +1000,8 @@ mod imp {
       if (!composer || !window.location.pathname.startsWith('/direct/t/')) return;
       const composerRect = composer.getBoundingClientRect();
       const rect = candidate.getBoundingClientRect();
-      const text = String(candidate.textContent || '').replace(/\s+/g, ' ').trim();
+      const details = messageDetailsFromCandidate(candidate, composerRect);
+      const text = details.text;
       if (!text || text.length > 500 || rect.width <= 0 || rect.height <= 0) return;
       // Instagram can attach an empty message node and fill its text in a later
       // mutation. Mark it seen only after it has become measurable and readable.
@@ -787,14 +1017,61 @@ mod imp {
       if (key === lastMessageKey && now - lastMessageAt < 5000) return;
       lastMessageKey = key;
       lastMessageAt = now;
+      const avatarHints = window.__nebulaInstagramAvatarHints;
+      const avatarKey = title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '').slice(0, 80);
+      const iconUrl = conversationAvatar(composerRect, title) ||
+        (avatarHints instanceof Map ? String(avatarHints.get(avatarKey) || '') : '');
+      if (iconUrl) {
+        if (avatarHints instanceof Map) avatarHints.set(avatarKey, iconUrl);
+        try {
+          bridge.postMessage(JSON.stringify({
+            type: 'nebula-site-avatar-hint',
+            origin: window.location.origin,
+            senderName: title,
+            iconUrl: iconUrl
+          }));
+        } catch (_) {}
+      }
       try {
+        const visibleBody = details.isReply ? title + ' replied to you' : text;
         bridge.postMessage(JSON.stringify({
           type: 'nebula-site-notification-content',
           origin: window.location.origin,
           title: title,
-          body: text
+          body: visibleBody,
+          iconUrl: iconUrl,
+          notificationType: details.isReply ? 'reply' : 'message',
+          notificationData: details.isReply ? { replyText: text } : null,
+          siteName: 'Instagram',
+          senderName: title,
+          eventKind: details.isReply ? 'reply' : 'message'
         }));
       } catch (_) {}
+    }
+
+    function queueCandidate(candidate) {
+      if (!candidate || seen.has(candidate) || queued.has(candidate)) return;
+
+      queued.add(candidate);
+
+      window.setTimeout(function () {
+        queued.delete(candidate);
+        if (seen.has(candidate)) return;
+
+        // Instagram hydrates both normal and replied messages over multiple
+        // mutations. Let its own classifier inspect every incoming candidate;
+        // reportCandidate marks it seen only after readable text exists and
+        // already rejects outgoing/non-message nodes geometrically.
+        reportCandidate(candidate);
+
+        if (!seen.has(candidate)) {
+          const attempt = attempts.get(candidate) || 0;
+          if (attempt < 2) {
+            attempts.set(candidate, attempt + 1);
+            queueCandidate(candidate);
+          }
+        }
+      }, 80);
     }
 
     function inspectNode(node) {
@@ -802,11 +1079,11 @@ mod imp {
         ? node
         : node && node.parentElement;
       if (!element) return;
-      if (element.matches && element.matches('[dir="auto"]')) reportCandidate(element);
+      if (element.matches && element.matches('[dir="auto"]')) queueCandidate(element);
       if (element.querySelectorAll) {
         const candidates = element.querySelectorAll('[dir="auto"]');
         for (let index = 0; index < candidates.length; index += 1) {
-          reportCandidate(candidates[index]);
+          queueCandidate(candidates[index]);
         }
       }
     }
@@ -839,14 +1116,404 @@ mod imp {
     window.setTimeout(arm, 300);
   }
 
+  function installInstagramPersistentNotificationObserver() {
+    const hostname = String(window.location.hostname || '').toLowerCase();
+    if (hostname !== 'instagram.com' && !hostname.endsWith('.instagram.com')) return;
+    if (!navigator.serviceWorker || window.__nebulaInstagramPersistentNotificationObserverInstalled) return;
+    window.__nebulaInstagramPersistentNotificationObserverInstalled = true;
+
+    const observerStartedAt = Date.now();
+    const seen = new Set();
+    const pendingUpgrades = new Map();
+    let initialized = false;
+    let polling = false;
+    let nextUpgradeToken = 1;
+
+    if (typeof bridge.addEventListener === 'function') {
+      bridge.addEventListener('message', function (event) {
+        let value = event && event.data;
+        if (typeof value === 'string') {
+          try { value = JSON.parse(value); } catch (_) { return; }
+        }
+        if (!value || value.type !== 'nebula-upgrade-persistent-notification') return;
+        const token = String(value.token || '');
+        const pending = pendingUpgrades.get(token);
+        if (!pending) return;
+        pendingUpgrades.delete(token);
+        void upgradePersistentNotification(
+          pending.registration,
+          pending.notification,
+          pending.data,
+          pending.presentation
+        );
+      });
+    }
+
+    function boundedNotificationData(value) {
+      try {
+        const serialized = JSON.stringify(value == null ? null : value);
+        if (!serialized || serialized.length > 8192) return null;
+        return JSON.parse(serialized);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function metadataString(value, acceptedKeys, depth) {
+      if (!value || typeof value !== 'object' || depth > 4) return '';
+      const entries = Array.isArray(value) ? value.map(function (item, index) {
+        return [String(index), item];
+      }) : Object.entries(value);
+      for (let index = 0; index < entries.length; index += 1) {
+        const key = entries[index][0].replace(/[^a-z0-9]/gi, '').toLowerCase();
+        const candidate = entries[index][1];
+        if (
+          acceptedKeys.indexOf(key) >= 0 &&
+          typeof candidate === 'string' &&
+          candidate.trim()
+        ) {
+          return candidate.trim().slice(0, 120);
+        }
+      }
+      for (let index = 0; index < entries.length; index += 1) {
+        const nested = metadataString(entries[index][1], acceptedKeys, depth + 1);
+        if (nested) return nested;
+      }
+      return '';
+    }
+
+    function trustedInstagramImageUrl(value) {
+      try {
+        const url = new URL(String(value || ''), window.location.href);
+        const host = String(url.hostname || '').toLowerCase();
+        const trusted = ['instagram.com', 'cdninstagram.com', 'fbcdn.net', 'facebook.com']
+          .some(function (domain) { return host === domain || host.endsWith('.' + domain); });
+        return url.protocol === 'https:' && trusted ? url.href.slice(0, 2048) : '';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function metadataImageUrl(value, depth) {
+      if (!value || typeof value !== 'object' || depth > 4) return '';
+      const acceptedKeys = [
+        'senderprofilepictureurl',
+        'senderprofilepicurl',
+        'senderavatarurl',
+        'senderimageurl',
+        'profilepictureurl',
+        'profilepicurl',
+        'avatarurl'
+      ];
+      const entries = Array.isArray(value) ? value.map(function (item, index) {
+        return [String(index), item];
+      }) : Object.entries(value);
+      for (let index = 0; index < entries.length; index += 1) {
+        const key = entries[index][0].replace(/[^a-z0-9]/gi, '').toLowerCase();
+        if (acceptedKeys.indexOf(key) < 0 || typeof entries[index][1] !== 'string') continue;
+        const imageUrl = trustedInstagramImageUrl(entries[index][1]);
+        if (imageUrl) return imageUrl;
+      }
+      for (let index = 0; index < entries.length; index += 1) {
+        const nested = metadataImageUrl(entries[index][1], depth + 1);
+        if (nested) return nested;
+      }
+      return '';
+    }
+
+    function metadataMessageText(value, notificationBody, senderName) {
+      const keyScores = {
+        replytext: 100,
+        replymessage: 100,
+        itemtext: 90,
+        directmessage: 90,
+        messagetext: 80,
+        content: 70,
+        text: 70,
+        preview: 50,
+        previewtext: 50,
+        messagepreview: 50,
+        message: 10
+      };
+      const candidates = [];
+      function visit(current, depth) {
+        if (current == null || depth > 6) return;
+        if (typeof current === 'string') {
+          const serialized = current.trim();
+          if (
+            serialized.length <= 8192 &&
+            (serialized.startsWith('{') || serialized.startsWith('['))
+          ) {
+            try { visit(JSON.parse(serialized), depth + 1); } catch (_) {}
+          }
+          return;
+        }
+        if (typeof current !== 'object') return;
+        const entries = Array.isArray(current) ? current.map(function (item, index) {
+          return [String(index), item];
+        }) : Object.entries(current);
+        for (let index = 0; index < entries.length; index += 1) {
+          const key = entries[index][0].replace(/[^a-z0-9]/gi, '').toLowerCase();
+          const candidate = entries[index][1];
+          const text = typeof candidate === 'string' ? candidate.trim() : '';
+          if (
+            keyScores[key] && text && text.length <= 500 &&
+            !/^https?:\/\//i.test(text) && !text.startsWith('{') && !text.startsWith('[')
+          ) {
+            candidates.push({ text: text, score: keyScores[key] + Math.min(depth, 6) * 5 });
+          }
+        }
+        for (let index = 0; index < entries.length; index += 1) {
+          visit(entries[index][1], depth + 1);
+        }
+      }
+      visit(value, 0);
+      const body = String(notificationBody || '').trim();
+      const bodyWithoutSender = senderName && body.startsWith(senderName)
+        ? body.slice(senderName.length).trim()
+        : body;
+      const filtered = candidates.filter(function (candidate) {
+        const text = candidate.text.toLocaleLowerCase();
+        return candidate.text.toLocaleLowerCase() !== body.toLocaleLowerCase() &&
+          candidate.text.toLocaleLowerCase() !== bodyWithoutSender.toLocaleLowerCase() &&
+          ['replied to you', 'replied to your message', 'yanıtladı', 'yanitladi'].indexOf(text) < 0;
+      });
+      filtered.sort(function (left, right) { return right.score - left.score; });
+      return filtered.length > 0 ? filtered[0].text : '';
+    }
+
+    function eventKind(notificationType, body) {
+      const type = String(notificationType || '').toLowerCase();
+      const text = String(body || '').toLowerCase();
+      if (/repl(?:y|ied)|yan[ıi]t|cevap/.test(text)) return 'reply';
+      if (type.indexOf('reaction') >= 0 || type.endsWith('_like')) return 'reaction';
+      if (type.indexOf('mention') >= 0) return 'mention';
+      if (type.startsWith('direct_v2')) return 'message';
+      if (type.indexOf('live_broadcast') >= 0) return 'live';
+      if (type.indexOf('rtc') >= 0 || type.indexOf('call') >= 0) return 'call';
+      if (type === 'post') return 'post';
+      return 'notification';
+    }
+
+    function eventKindLabel(kind) {
+      const language = String(document.documentElement.lang || navigator.language || '').toLowerCase();
+      const turkish = language.startsWith('tr');
+      const labels = turkish
+        ? { message: 'Mesaj', reply: 'Yanıt', reaction: 'Tepki', mention: 'Bahsetme', live: 'Canlı yayın', call: 'Arama', post: 'Gönderi' }
+        : { message: 'Message', reply: 'Reply', reaction: 'Reaction', mention: 'Mention', live: 'Live', call: 'Call', post: 'Post' };
+      return labels[kind] || '';
+    }
+
+    function notificationPresentation(notification, data, notificationType) {
+      const body = String(notification.body || '').trim();
+      let senderName = metadataString(
+        data,
+        ['sendername', 'senderusername', 'username', 'actorname', 'fromname', 'displayname', 'profilename'],
+        0
+      );
+      if (!senderName) {
+        const separator = body.indexOf(':');
+        const prefix = separator > 0 && separator <= 80 ? body.slice(0, separator).trim() : '';
+        if (prefix && /[a-zA-ZÀ-ž]/.test(prefix) && prefix.indexOf('//') < 0) senderName = prefix;
+      }
+      if (!senderName) {
+        const actor = body.match(
+          /^(.{1,80}?)\s+(?:sent you|repl(?:y|ied)|reacted|liked|sana|hikayene|mesaj[ıi]na)/i
+        );
+        if (actor && actor[1]) senderName = actor[1].trim();
+      }
+      const avatarHints = window.__nebulaInstagramAvatarHints;
+      const avatarKey = senderName.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '').slice(0, 80);
+      const cachedAvatar = avatarHints instanceof Map
+        ? trustedInstagramImageUrl(avatarHints.get(avatarKey))
+        : '';
+      const profileImageUrl = metadataImageUrl(data, 0) || cachedAvatar;
+      const kind = eventKind(notificationType, body);
+      const messageText = metadataMessageText(data, body, senderName);
+      return {
+        siteName: 'Instagram',
+        senderName: senderName,
+        eventKind: kind,
+        eventLabel: eventKindLabel(kind),
+        profileImageUrl: profileImageUrl,
+        messageText: messageText,
+        body: body
+      };
+    }
+
+    async function upgradePersistentNotification(registration, notification, data, presentation) {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+      if (data.__nebulaPresentationVersion === 1) return;
+      const tag = String(notification.tag || '');
+      if (!tag || typeof registration.showNotification !== 'function') return;
+      const visibleBody = presentation.eventKind === 'reply' && presentation.messageText
+        ? presentation.messageText
+        : presentation.body;
+      const options = {
+        body: [presentation.eventLabel, visibleBody].filter(Boolean).join('\n'),
+        data: Object.assign({}, data, { __nebulaPresentationVersion: 1 }),
+        tag: tag,
+        silent: true,
+        renotify: false,
+        requireInteraction: notification.requireInteraction === true
+      };
+      const icon = String(presentation.profileImageUrl || notification.icon || '');
+      const badge = String(notification.badge || '');
+      const image = String(notification.image || '');
+      const timestamp = Number(notification.timestamp) || 0;
+      if (icon) options.icon = icon;
+      if (badge) options.badge = badge;
+      if (image) options.image = image;
+      if (timestamp > 0) options.timestamp = timestamp;
+      const title = presentation.senderName
+        ? presentation.senderName + ' • ' + presentation.siteName
+        : presentation.siteName;
+      try {
+        // Reusing Instagram's tag replaces the existing persistent toast in
+        // place. Its original data stays intact, so Instagram's own click
+        // handler still owns navigation and analytics.
+        await registration.showNotification(title, options);
+      } catch (_) {}
+    }
+
+    function notificationIdentity(notification, serializedData) {
+      return [
+        String(notification.tag || ''),
+        String(Number(notification.timestamp) || 0),
+        String(notification.title || ''),
+        String(notification.body || ''),
+        String(notification.icon || ''),
+        serializedData
+      ].join('\u0000');
+    }
+
+    async function pollPersistentNotifications() {
+      if (polling) return;
+      polling = true;
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const snapshots = await Promise.all(registrations.map(async function (registration) {
+          if (typeof registration.getNotifications !== 'function') {
+            return { registration: registration, notifications: [] };
+          }
+          try {
+            return { registration: registration, notifications: await registration.getNotifications() };
+          } catch (_) {
+            return { registration: registration, notifications: [] };
+          }
+        }));
+        const current = new Set();
+
+        for (let snapshotIndex = 0; snapshotIndex < snapshots.length; snapshotIndex += 1) {
+          const registration = snapshots[snapshotIndex].registration;
+          const notifications = snapshots[snapshotIndex].notifications;
+          for (let index = 0; index < notifications.length; index += 1) {
+            const notification = notifications[index];
+            const data = boundedNotificationData(notification.data);
+            const serializedData = data == null ? '' : JSON.stringify(data);
+            const identity = notificationIdentity(notification, serializedData);
+            current.add(identity);
+            if (seen.has(identity)) continue;
+            if (data && data.__nebulaPresentationVersion === 1) continue;
+
+            const timestampMs = Number(notification.timestamp) || 0;
+            // Do not replay an old Windows notification merely because the page
+            // or Nebula restarted. A notification created during adapter startup
+            // is still new and must not fall through to the title-only fallback.
+            const isFreshAtStartup = timestampMs >= observerStartedAt - 5000;
+            if (initialized || isFreshAtStartup) {
+              const notificationType = data && typeof data.notifType === 'string'
+                ? data.notifType
+                : '';
+              const targetUrl = data && typeof data.uri === 'string'
+                ? data.uri
+                : typeof notification.navigate === 'string'
+                  ? notification.navigate
+                  : '';
+              const presentation = notificationPresentation(notification, data, notificationType);
+              let replacementToken = '';
+              if (
+                data &&
+                typeof data === 'object' &&
+                !Array.isArray(data) &&
+                String(notification.tag || '')
+              ) {
+                replacementToken = String(Date.now()) + '-' + String(nextUpgradeToken++);
+                pendingUpgrades.set(replacementToken, {
+                  registration: registration,
+                  notification: notification,
+                  data: data,
+                  presentation: presentation
+                });
+                window.setTimeout(function () {
+                  pendingUpgrades.delete(replacementToken);
+                }, 5000);
+              }
+              try {
+                bridge.postMessage(JSON.stringify({
+                  type: 'nebula-site-notification-content',
+                  adapter: 'service-worker-snapshot',
+                  origin: window.location.origin,
+                  title: String(notification.title || 'Instagram'),
+                  body: String(notification.body || ''),
+                  iconUrl: String(presentation.profileImageUrl || notification.icon || ''),
+                  notificationTag: String(notification.tag || ''),
+                  notificationType: notificationType,
+                  targetUrl: targetUrl,
+                  notificationData: data,
+                  siteName: presentation.siteName,
+                  senderName: presentation.senderName,
+                  eventKind: presentation.eventKind,
+                  replacementToken: replacementToken,
+                  timestampMs: timestampMs
+                }));
+              } catch (_) {
+                if (replacementToken) pendingUpgrades.delete(replacementToken);
+              }
+            }
+          }
+        }
+
+        seen.clear();
+        current.forEach(function (identity) { seen.add(identity); });
+        initialized = true;
+      } catch (_) {
+        // The DOM adapter and title fallback remain available when the
+        // persistent Notifications API is unavailable or temporarily fails.
+      } finally {
+        polling = false;
+      }
+    }
+
+    window.__nebulaPollInstagramPersistentNotifications = pollPersistentNotifications;
+    void pollPersistentNotifications();
+    window.setInterval(pollPersistentNotifications, 1000);
+    document.addEventListener('visibilitychange', pollPersistentNotifications, true);
+    navigator.serviceWorker.addEventListener('controllerchange', pollPersistentNotifications);
+
+    function observeTitle() {
+      const title = document.querySelector('title');
+      if (!title) {
+        window.setTimeout(observeTitle, 250);
+        return;
+      }
+      new MutationObserver(pollPersistentNotifications).observe(title, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+    observeTitle();
+  }
+
   function installWhatsAppMessageObserver() {
     if (String(window.location.hostname || '').toLowerCase() !== 'web.whatsapp.com') return;
     if (window.__nebulaWhatsAppMessageObserverInstalled) return;
     window.__nebulaWhatsAppMessageObserverInstalled = true;
 
     const seen = new WeakSet();
-    let lastMessageKey = '';
-    let lastMessageAt = 0;
+    const queued = new WeakSet();
+    const attempts = new WeakMap(); 
 
     function conversationName(candidate) {
       const copyable = candidate.querySelector('[data-pre-plain-text]');
@@ -858,52 +1525,110 @@ mod imp {
       );
       return String(titled?.getAttribute('title') || titled?.textContent || 'WhatsApp').trim();
     }
+    
 
     function reportIncoming(candidate) {
-      if (!candidate || seen.has(candidate)) return;
-      const textNode = candidate.querySelector('.selectable-text');
-      const text = String(textNode?.innerText || textNode?.textContent || '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (!text || text.length > 500) return;
-      seen.add(candidate);
-      const title = conversationName(candidate).slice(0, 80) || 'WhatsApp';
-      const now = Date.now();
-      const key = title + '\u0000' + text;
-      if (key === lastMessageKey && now - lastMessageAt < 5000) return;
-      lastMessageKey = key;
-      lastMessageAt = now;
-      try {
-        bridge.postMessage(JSON.stringify({
-          type: 'nebula-site-notification-content',
-          origin: window.location.origin,
-          title: title,
-          body: text
-        }));
-      } catch (_) {}
+  if (!candidate || seen.has(candidate)) return;
+
+  if (candidate.querySelector('[data-testid="tail-out"]')) {
+    seen.add(candidate);
+    return;
+  }
+
+  const quotedMessage =
+    candidate.querySelector('[data-testid="quoted-message"]');
+
+  if (!quotedMessage) return;
+
+  const textNodes = Array.from(
+    candidate.querySelectorAll('[data-testid="selectable-text"], .selectable-text')
+  );
+
+  if (textNodes.length === 0) return;
+
+  const actualNode = textNodes[textNodes.length - 1];
+
+  const text = String(actualNode?.innerText || actualNode?.textContent || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text || text.length > 500) return;
+
+  const senderName =
+    conversationName(candidate).slice(0, 80) || 'WhatsApp';
+
+  seen.add(candidate);
+
+  try {
+    bridge.postMessage(JSON.stringify({
+      type: 'nebula-whatsapp-reply-hint',
+      origin: window.location.origin,
+      senderName: senderName,
+      body: text
+    }));
+  } catch (_) {}
+}
+
+function queueCandidate(candidate) {
+  if (!candidate || seen.has(candidate) || queued.has(candidate)) return;
+
+  queued.add(candidate);
+
+  window.setTimeout(function () {
+    queued.delete(candidate);
+
+    if (seen.has(candidate)) return;
+
+    const incoming =
+      candidate.querySelector('[data-testid="tail-in"]');
+
+    const quoted =
+      candidate.querySelector('[data-testid="quoted-message"]');
+
+    if (!incoming || !quoted) {
+      const attempt = attempts.get(candidate) || 0;
+
+      if (attempt < 2) {
+        attempts.set(candidate, attempt + 1);
+        queueCandidate(candidate);
+      } else {
+        // Normal message veya yeterince hydrate olmadı.
+        // Normal notification zaten WebView2 tarafından gelecek.
+        seen.add(candidate);
+      }
+
+      return;
     }
 
+    reportIncoming(candidate);
+  }, 80);
+}
     function inspectNode(node) {
-      const element = node && node.nodeType === Node.ELEMENT_NODE
-        ? node
-        : node && node.parentElement;
-      if (!element) return;
-      const incoming = element.matches?.('.message-in')
-        ? element
-        : element.closest?.('.message-in');
-      if (incoming) reportIncoming(incoming);
-      const descendants = element.querySelectorAll?.('.message-in') || [];
-      for (let index = 0; index < descendants.length; index += 1) {
-        reportIncoming(descendants[index]);
-      }
-    }
+  const element = node && node.nodeType === Node.ELEMENT_NODE
+    ? node
+    : node && node.parentElement;
+
+  if (!element) return;
+
+  const container = element.matches?.('[data-testid="msg-container"]')
+    ? element
+    : element.closest?.('[data-testid="msg-container"]');
+
+if (container) queueCandidate(container);
+  const descendants =
+    element.querySelectorAll?.('[data-testid="msg-container"]') || [];
+
+  for (let index = 0; index < descendants.length; index += 1) {
+  queueCandidate(descendants[index]);
+}
+}
 
     function arm() {
       if (!document.body) {
         window.setTimeout(arm, 500);
         return;
       }
-      const existing = document.querySelectorAll('.message-in');
+      const existing = document.querySelectorAll('[data-testid="msg-container"]');
       for (let index = 0; index < existing.length; index += 1) seen.add(existing[index]);
       const observer = new MutationObserver(function (mutations) {
         for (let index = 0; index < mutations.length; index += 1) {
@@ -920,6 +1645,8 @@ mod imp {
     window.setTimeout(arm, 300);
   }
 
+  if (canReportSitePointerDown) installInstagramAvatarObserver();
+  if (canReportSitePointerDown) installInstagramPersistentNotificationObserver();
   if (canReportSitePointerDown) installInstagramMessageObserver();
   if (canReportSitePointerDown) installWhatsAppMessageObserver();
 
@@ -1312,7 +2039,6 @@ mod imp {
             },
         ))
     }
-
     fn has_pending_capacity<'a>(
         labels: impl Iterator<Item = &'a str>,
         tab_label: &str,
@@ -1704,6 +2430,90 @@ mod imp {
                             }
 
                             if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-site-avatar-hint")
+                            {
+                                let host = source_url.host_str().unwrap_or_default();
+                                let claimed_origin = value
+                                    .get("origin")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let sender_name = value
+                                    .get("senderName")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .trim();
+                                let icon_url = value
+                                    .get("iconUrl")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .trim();
+                                let instagram_source = source_url.scheme() == "https"
+                                    && (host.eq_ignore_ascii_case("instagram.com")
+                                        || host
+                                            .to_ascii_lowercase()
+                                            .ends_with(".instagram.com"));
+                                if instagram_source
+                                    && source_origin == claimed_origin
+                                    && !sender_name.is_empty()
+                                    && sender_name.chars().count() <= 120
+                                    && !icon_url.is_empty()
+                                    && icon_url.chars().count() <= 2_048
+                                {
+                                    crate::notification_broker::remember_sender_avatar(
+                                        &protocol_label,
+                                        &source_origin,
+                                        sender_name,
+                                        icon_url,
+                                    );
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+    == Some("nebula-whatsapp-reply-hint")
+{
+    let host = source_url.host_str().unwrap_or_default();
+
+    let whatsapp_source =
+        source_url.scheme() == "https"
+            && host.eq_ignore_ascii_case("web.whatsapp.com");
+
+    let claimed_origin = value
+        .get("origin")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+
+    let sender_name = value
+        .get("senderName")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+
+    let body = value
+        .get("body")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+
+    if whatsapp_source
+        && source_origin == claimed_origin
+        && !sender_name.is_empty()
+        && sender_name.chars().count() <= 120
+        && !body.is_empty()
+        && body.chars().count() <= 500
+    {
+        crate::notification_broker::remember_whatsapp_reply_hint(
+            &protocol_label,
+            &source_origin,
+            sender_name,
+            body,
+        );
+    }
+
+    return Ok(());
+}
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
                                 == Some("nebula-site-notification-content")
                             {
                                 let host = source_url.host_str().unwrap_or_default();
@@ -1725,26 +2535,170 @@ mod imp {
                                     .and_then(serde_json::Value::as_str)
                                     .unwrap_or_default()
                                     .trim();
+                                let adapter = value
+                                    .get("adapter")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let is_service_worker_snapshot =
+                                    adapter == "service-worker-snapshot";
+                                let adapter_is_valid = adapter.is_empty()
+                                    || (is_service_worker_snapshot
+                                        && (host.eq_ignore_ascii_case("instagram.com")
+                                            || host
+                                                .to_ascii_lowercase()
+                                                .ends_with(".instagram.com")));
+                                let icon_url = value
+                                    .get("iconUrl")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .trim();
+                                let icon_is_valid = icon_url.is_empty()
+                                    || url::Url::parse(icon_url).is_ok_and(|url| {
+                                        let icon_host = url
+                                            .host_str()
+                                            .unwrap_or_default()
+                                            .to_ascii_lowercase();
+                                        url.scheme() == "https"
+                                            && (icon_host == "instagram.com"
+                                                || icon_host.ends_with(".instagram.com")
+                                                || icon_host == "cdninstagram.com"
+                                                || icon_host.ends_with(".cdninstagram.com")
+                                                || icon_host == "fbcdn.net"
+                                                || icon_host.ends_with(".fbcdn.net")
+                                                || icon_host == "facebook.com"
+                                                || icon_host.ends_with(".facebook.com"))
+                                    });
+                                let notification_tag = value
+                                    .get("notificationTag")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let notification_type = value
+                                    .get("notificationType")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let sender_name_hint = value
+                                    .get("senderName")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let event_kind_hint = value
+                                    .get("eventKind")
+                                    .and_then(serde_json::Value::as_str)
+                                    .filter(|kind| {
+                                        matches!(
+                                            *kind,
+                                            "message"
+                                                | "reply"
+                                                | "reaction"
+                                                | "mention"
+                                                | "live"
+                                                | "call"
+                                                | "post"
+                                        )
+                                    })
+                                    .unwrap_or_default();
+                                let target_url = value
+                                    .get("targetUrl")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let replacement_token = value
+                                    .get("replacementToken")
+                                    .and_then(serde_json::Value::as_str)
+                                    .filter(|token| {
+                                        !token.is_empty()
+                                            && token.len() <= 80
+                                            && token.chars().all(|character| {
+                                                character.is_ascii_digit() || character == '-'
+                                            })
+                                    })
+                                    .unwrap_or_default();
+                                let notification_data = value.get("notificationData").cloned();
+                                let timestamp_ms = value
+                                    .get("timestampMs")
+                                    .and_then(serde_json::Value::as_u64);
 
                                 if source_has_content_adapter
                                     && source_origin == claimed_origin
+                                    && adapter_is_valid
+                                    && icon_is_valid
                                     && !title.is_empty()
                                     && title.chars().count() <= 80
                                     && !body.is_empty()
                                     && body.chars().count() <= 500
-                                    && crate::tab_metadata::app_is_backgrounded(&protocol_app)
+                                    && sender_name_hint.chars().count() <= 120
+                                    && crate::tab_metadata::notification_should_surface(
+                                        &protocol_app,
+                                        &protocol_label,
+                                    )
                                 {
+                                    let instagram_dom_message = !is_service_worker_snapshot
+                                        && (host.eq_ignore_ascii_case("instagram.com")
+                                            || host
+                                                .to_ascii_lowercase()
+                                                .ends_with(".instagram.com"));
+                                    if instagram_dom_message && !sender_name_hint.is_empty() {
+                                        let remembered_body = notification_data
+                                            .as_ref()
+                                            .and_then(|data| data.get("replyText"))
+                                            .and_then(serde_json::Value::as_str)
+                                            .unwrap_or(body);
+                                        crate::notification_broker::remember_sender_message(
+                                            &protocol_label,
+                                            &source_origin,
+                                            sender_name_hint,
+                                            remembered_body,
+                                        );
+                                        if !icon_url.is_empty() {
+                                            crate::notification_broker::remember_sender_avatar(
+                                                &protocol_label,
+                                                &source_origin,
+                                                sender_name_hint,
+                                                icon_url,
+                                            );
+                                        }
+                                    }
+                                    let upgrade_persistent_notification =
+                                        is_service_worker_snapshot
+                                            && !replacement_token.is_empty()
+                                            && crate::notification_broker::permission_allows_rich_content(
+                                                crate::notification_broker::NotificationSource::ContentAdapter,
+                                                &protocol_label,
+                                                &source_origin,
+                                            );
                                     crate::notification_broker::submit(
                                         &protocol_app,
                                         crate::notification_broker::NotificationSource::ContentAdapter,
                                         crate::notification_broker::NotificationCandidate {
                                             tab_label: protocol_label.clone(),
-                                            origin: source_origin,
+                                            origin: source_origin.clone(),
                                             title: title.to_string(),
                                             body: body.to_string(),
-                                            icon_url: String::new(),
+                                            icon_url: icon_url.to_string(),
+                                            adapter_kind: Some(if is_service_worker_snapshot {
+                                                crate::notification_broker::ContentAdapterKind::ServiceWorkerSnapshot
+                                            } else {
+                                                crate::notification_broker::ContentAdapterKind::Dom
+                                            }),
+                                            notification_tag: notification_tag.to_string(),
+                                            notification_type: notification_type.to_string(),
+                                            sender_name_hint: sender_name_hint.to_string(),
+                                            event_kind_hint: event_kind_hint.to_string(),
+                                            target_url: target_url.to_string(),
+                                            notification_data,
+                                            timestamp_ms,
+                                            // The page adapter updates persistent notifications in
+                                            // place using the original tag. The broker adds the same
+                                            // event to Nebula's center without creating a second toast.
+                                            show_native_toast: !is_service_worker_snapshot,
                                         },
                                     );
+                                    if upgrade_persistent_notification {
+                                        let response = serde_json::json!({
+                                            "type": "nebula-upgrade-persistent-notification",
+                                            "token": replacement_token,
+                                        })
+                                        .to_string();
+                                        let _ = sender.PostWebMessageAsJson(&HSTRING::from(response));
+                                    }
                                 }
                                 return Ok(());
                             }
