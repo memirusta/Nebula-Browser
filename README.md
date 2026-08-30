@@ -224,24 +224,6 @@ WebView2 remains the rendering engine while Nebula owns the visible browser expe
 
 ---
 
-### 🛠 Nebula Inspector
-
-Press **F12** to open Nebula's built-in browser inspector.
-
-It includes:
-
-- DOM and element inspection
-- computed styles
-- JavaScript console and evaluation
-- performance and memory metrics
-- local and session storage inspection
-- cookie and site information
-- permission and security diagnostics
-
-The inspector is built directly into Nebula rather than relying on the standard WebView2 DevTools interface.
-
----
-
 ## 🎬 Demo
 
 Watch the full Nebula Browser showcase:
