@@ -52,8 +52,6 @@ Nebula takes a different approach.
 
 The interface stays out of the way while you browse and appears when you need it. Tabs, shortcuts, folders, previews, search, and navigation are brought together through the **Semi-Lunar interface** — a floating workspace designed to keep browsing fast without permanently filling the screen with controls.
 
-> **Nebula does not try to redesign the web. It redesigns the space around it.**
-
 ---
 
 ## ✨ Highlights
@@ -223,24 +221,6 @@ This includes:
 - integrated site notifications
 
 WebView2 remains the rendering engine while Nebula owns the visible browser experience.
-
----
-
-### 🛠 Nebula Inspector
-
-Press **F12** to open Nebula's built-in browser inspector.
-
-It includes:
-
-- DOM and element inspection
-- computed styles
-- JavaScript console and evaluation
-- performance and memory metrics
-- local and session storage inspection
-- cookie and site information
-- permission and security diagnostics
-
-The inspector is built directly into Nebula rather than relying on the standard WebView2 DevTools interface.
 
 ---
 
