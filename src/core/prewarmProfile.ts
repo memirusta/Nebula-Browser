@@ -16,3 +16,14 @@ export function prewarmCreationIsCurrent(
     prewarmProfileMatches(createdPrivateMode, requestedPrivateMode)
   )
 }
+
+export const PREWARM_MEMORY_PRESSURE_LIMIT_PERCENT = 85
+
+export function shouldKeepPrewarmedWebview(
+  memoryPressurePercent: number,
+): boolean {
+  return (
+    Number.isFinite(memoryPressurePercent) &&
+    memoryPressurePercent < PREWARM_MEMORY_PRESSURE_LIMIT_PERCENT
+  )
+}

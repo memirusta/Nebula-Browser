@@ -57,6 +57,8 @@ let fullscreenTabId: string | null = null
 let listenerStarted = false
 let fullscreenResizeUnlisten: (() => void) | undefined
 let fullscreenScaleUnlisten: (() => void) | undefined
+let fullscreenResizeDebounceCancel: (() => void) | undefined
+let fullscreenResizeGeneration = 0
 let transitionChain: Promise<void> = Promise.resolve()
 let tabSwitchHandoffPending = false
 
@@ -162,6 +164,9 @@ async function waitForWindowLayoutSettle(appWindow: Window): Promise<void> {
 }
 
 function clearFullscreenResizeListener(): void {
+  fullscreenResizeGeneration += 1
+  fullscreenResizeDebounceCancel?.()
+  fullscreenResizeDebounceCancel = undefined
   fullscreenResizeUnlisten?.()
   fullscreenResizeUnlisten = undefined
   fullscreenScaleUnlisten?.()
@@ -250,6 +255,7 @@ function bindSiteFullscreenLayoutRepair(
   shortcutId: string,
 ): void {
   clearFullscreenResizeListener()
+  const generation = fullscreenResizeGeneration
 
   const onLayoutChange = debounce(() => {
     if (
@@ -264,27 +270,30 @@ function bindSiteFullscreenLayoutRepair(
     )
   }, 80)
 
-  void appWindow.onResized(onLayoutChange).then((unlisten) => {
-    if (
-      !siteFullscreenActive ||
-      fullscreenTabId !== shortcutId
-    ) {
-      unlisten()
-      return
-    }
-    fullscreenResizeUnlisten = unlisten
-  })
-
-  void appWindow.onScaleChanged(onLayoutChange).then((unlisten) => {
-    if (
-      !siteFullscreenActive ||
-      fullscreenTabId !== shortcutId
-    ) {
-      unlisten()
-      return
-    }
-    fullscreenScaleUnlisten = unlisten
-  })
+  void registerListenerGroup([
+    () => appWindow.onResized(onLayoutChange),
+    () => appWindow.onScaleChanged(onLayoutChange),
+  ])
+    .then((unlisten) => {
+      if (
+        generation !== fullscreenResizeGeneration ||
+        !siteFullscreenActive ||
+        fullscreenTabId !== shortcutId
+      ) {
+        onLayoutChange.cancel()
+        unlisten()
+        return
+      }
+      fullscreenResizeUnlisten = unlisten
+      fullscreenScaleUnlisten = undefined
+      fullscreenResizeDebounceCancel = onLayoutChange.cancel
+    })
+    .catch((error) => {
+      onLayoutChange.cancel()
+      if (import.meta.env.DEV) {
+        console.warn('[nebula] fullscreen resize listeners failed to register', error)
+      }
+    })
 }
 
 async function enterSiteFullscreen(shortcutId: string): Promise<void> {

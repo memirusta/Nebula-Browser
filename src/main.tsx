@@ -9,7 +9,10 @@ import { applyDocumentLocale } from './core/locale'
 import { LocaleProvider } from './hooks/useLocale'
 import { isTauri } from './platform/runtime'
 import { syncTauriViewMode } from './platform/tauriBrowsingMode'
-import { prewarmBrowseWebview, prewarmUblockProfile } from './platform/tauriBrowser'
+import {
+  prewarmUblockProfile,
+  scheduleInitialBrowseWebviewPrewarm,
+} from './platform/tauriBrowser'
 import { writeTransitionLog } from './platform/tauriTransitionLog'
 
 const chromeShell = isChromeShell()
@@ -30,7 +33,7 @@ if (chromeShell) {
 if (isTauri && !chromeShell) {
   syncTauriViewMode('home', null)
   void prewarmUblockProfile()
-    .then(() => prewarmBrowseWebview())
+    .then(() => scheduleInitialBrowseWebviewPrewarm())
     .catch(() => undefined)
 }
 

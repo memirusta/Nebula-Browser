@@ -4,6 +4,7 @@ import { Webview, getCurrentWebview, type WebviewOptions } from '@tauri-apps/api
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 import { debounce } from './debounce'
+import { waitForTauriCreated } from './tauriCreationWait'
 import { getActiveBrowseTabId } from './tauriBrowser'
 import { isChromeShell } from '../core/nebulaBridge'
 import {
@@ -30,6 +31,7 @@ interface ShowChromeWebviewOptions {
 let activeChromeWebview: Webview | null = null
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
+let resizeDebounceCancel: (() => void) | null = null
 let lastChromeBoundsKey: string | null = null
 // Physical Semi-Lunar bounds are owned only by the #chrome context. The main
 // WebView creates/shows the child, but must not keep a competing resize listener.
@@ -192,29 +194,10 @@ export async function isCursorInsideSemiLunarNativeShape(
 
   try {
     const currentWindow = getCurrentWindow()
-    const [windowSize, scaleFactor] = await Promise.all([
-      windowClientPhysicalSize(),
-      currentWindow.scaleFactor(),
-    ])
-
-    const width = Math.max(
-      1,
-      Math.min(windowSize.width, Math.ceil(Math.max(1, lunarWidthPx) * scaleFactor)),
-    )
-    const height = Math.max(
-      1,
-      Math.min(windowSize.height, Math.ceil(Math.max(1, lunarHeightPx) * scaleFactor)),
-    )
-    const x = Math.max(0, Math.round((windowSize.width - width) / 2))
-    const tolerance = Math.max(2, Math.ceil(8 * scaleFactor))
-
     return await invoke<boolean>('window_cursor_in_client_lunar_shape', {
       windowLabel: currentWindow.label,
-      x,
-      y: 0,
-      width,
-      height,
-      tolerance,
+      lunarWidthPx: Math.max(1, lunarWidthPx),
+      lunarHeightPx: Math.max(1, lunarHeightPx),
     })
   } catch (error) {
     console.warn('[nebula] native Semi-Lunar shape hit-test failed', error)
@@ -266,6 +249,8 @@ async function syncChromeBounds(webview: Webview): Promise<boolean> {
 }
 
 function unbindResizeListeners(): void {
+  resizeDebounceCancel?.()
+  resizeDebounceCancel = null
   resizeUnlisten?.()
   resizeUnlisten = null
   scaleUnlisten?.()
@@ -287,27 +272,23 @@ async function bindChromeResize(webview: Webview): Promise<void> {
   await syncChromeBounds(webview)
 
   const appWindow = getCurrentWindow()
-  resizeUnlisten = await appWindow.onResized(onLayoutChange)
-  scaleUnlisten = await appWindow.onScaleChanged(onLayoutChange)
+  let nextResizeUnlisten: (() => void) | null = null
+  try {
+    nextResizeUnlisten = await appWindow.onResized(onLayoutChange)
+    const nextScaleUnlisten = await appWindow.onScaleChanged(onLayoutChange)
+    resizeUnlisten = nextResizeUnlisten
+    scaleUnlisten = nextScaleUnlisten
+    resizeDebounceCancel = onLayoutChange.cancel
+  } catch (error) {
+    onLayoutChange.cancel()
+    nextResizeUnlisten?.()
+    chromeBoundsListenerBound = false
+    throw error
+  }
 }
 
 async function waitForWebviewCreated(webview: Webview): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('chrome webview create timeout'))
-    }, 10_000)
-
-    const done = () => clearTimeout(timeout)
-
-    webview.once('tauri://created', () => {
-      done()
-      resolve()
-    })
-    webview.once('tauri://error', (event) => {
-      done()
-      reject(event)
-    })
-  })
+  await waitForTauriCreated(webview, 'chrome webview', 10_000)
 }
 
 export function setChromeWebviewHeight(logicalHeight: number): void {

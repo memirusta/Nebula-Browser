@@ -82,8 +82,9 @@ function loadInitialPositions(
 
 function activePositionsMatch(a: ShortcutPosition[], b: ShortcutPosition[]) {
   if (a.length !== b.length) return false
+  const positionsById = new Map(b.map((position) => [position.id, position]))
   return a.every((position) => {
-    const other = b.find((entry) => entry.id === position.id)
+    const other = positionsById.get(position.id)
     return other && other.x === position.x && other.y === position.y
   })
 }
@@ -96,7 +97,8 @@ function mergePositionsFromStorage(
 ): ShortcutPosition[] {
   const stored = loadStoredPositions(metrics)
   const merged = mergeShortcutPositions(shortcutIds, stored, iconSizePx, metrics)
-  const prevActive = prev.filter((position) => shortcutIds.includes(position.id))
+  const activeIds = new Set(shortcutIds)
+  const prevActive = prev.filter((position) => activeIds.has(position.id))
 
   if (activePositionsMatch(merged, prevActive) && prev.length === prevActive.length) {
     return prev

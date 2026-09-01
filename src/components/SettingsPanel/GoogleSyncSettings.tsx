@@ -19,6 +19,7 @@ import {
   getGoogleClientId,
 } from '../../core/googleSignIn'
 import { showAppConfirmation } from '../../core/appDialog'
+import { getIntlLocale } from '../../core/locale'
 import { loadPasswordVault} from '../../core/passwordVault'
 import { useLocale } from '../../hooks/useLocale'
 import {
@@ -206,7 +207,7 @@ const now =
   if (!isTauri) return null
 
   const lastSyncText = lastSuccess
-    ? new Intl.DateTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', {
+    ? new Intl.DateTimeFormat(getIntlLocale(locale), {
         dateStyle: 'medium',
         timeStyle: 'short',
       }).format(new Date(lastSuccess))

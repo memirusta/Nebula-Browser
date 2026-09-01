@@ -12,6 +12,7 @@ const root = resolve(process.cwd())
 const distDir = join(root, 'dist')
 const timeoutMs = Number(process.env.NEBULA_E2E_TIMEOUT_MS || 20_000)
 let fatalBrowserError = null
+let browserDiagnostics = ''
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -216,6 +217,12 @@ async function run() {
 
     const browserArgs = [
       '--headless=new',
+      // Chrome 151+ can terminate the headless process when GPU startup is
+      // unavailable on a Windows desktop session. The smoke suite exercises
+      // application behavior, not GPU composition, so keep the harness on the
+      // deterministic software path.
+      '--disable-gpu',
+      '--disable-software-rasterizer',
       `--remote-debugging-port=${debugPort}`,
       `--user-data-dir=${profileDir}`,
       '--no-first-run',
@@ -223,6 +230,7 @@ async function run() {
       '--disable-background-networking',
       '--disable-component-update',
       '--disable-sync',
+      '--host-resolver-rules=MAP example.com 0.0.0.0,MAP example.org 0.0.0.0,MAP example.net 0.0.0.0',
       '--window-size=1440,1000',
       appUrl,
     ]
@@ -235,8 +243,21 @@ async function run() {
       browserArgs.splice(1, 0, '--no-sandbox')
     }
 
+    if (process.platform === 'win32') {
+      // The managed Windows test host already runs Chrome inside a restricted
+      // job. A second nested Chromium sandbox can terminate its GPU/renderer
+      // children with STATUS_ACCESS_DENIED. This process loads only the local
+      // test server and uses a disposable profile.
+      browserArgs.splice(2, 0, '--no-sandbox')
+    }
+
     browser = spawn(browserPath, browserArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+
+    browser.stderr?.setEncoding('utf8')
+    browser.stderr?.on('data', (chunk) => {
+      browserDiagnostics = `${browserDiagnostics}${chunk}`.slice(-12_000)
     })
 
     browser.on('error', (error) => {
@@ -969,5 +990,9 @@ console.log('✓ Keyboard shortcuts reference')
 run().catch((error) => {
   console.error('\nNebula UI/E2E smoke: FAIL')
   console.error(error?.stack || error)
+  if (browserDiagnostics.trim()) {
+    console.error('\nBrowser diagnostics:')
+    console.error(browserDiagnostics.trim())
+  }
   process.exitCode = 1
 })

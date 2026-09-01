@@ -3,6 +3,7 @@ import type {
   SiteInfoStatePayload,
   SitePermissionState,
 } from '../../core/nebulaBridge'
+import { getLocaleCopy } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import styles from './SiteInfoPanel.module.css'
@@ -28,6 +29,297 @@ interface SiteInfoPanelProps {
 }
 
 type PermissionName = 'camera' | 'microphone' | 'location' | 'screen'
+
+const COPY = {
+  tr: {
+    inUse: 'Şu anda kullanılıyor',
+    allowed: 'İzin verildi',
+    blocked: 'Engellendi',
+    ask: 'Sorulacak',
+    unsupported: 'Desteklenmiyor',
+    camera: 'Kamera',
+    microphone: 'Mikrofon',
+    location: 'Konum',
+    screenSharing: 'Ekran paylaşımı',
+    subtitle: 'Site bilgileri ve izinler',
+    close: 'Kapat',
+    secure: 'Bağlantı güvenli',
+    notSecure: 'Bağlantı güvenli değil',
+    protection: 'Site koruması',
+    off: 'Kapalı',
+    on: 'Açık',
+    enableProtection: 'Bu sitede korumaları aç',
+    disableProtection: 'Bu sitede korumaları kapat',
+    protectionHint: 'Takipçi, çerez bannerı ve gizlilik korumaları',
+    darkening: 'Sayfa koyulaştırma',
+    default: 'Varsayılan',
+    always: 'Her zaman',
+    permissions: 'İzinler',
+    canAsk: 'Sorabilir',
+    notifications: 'Bildirimler',
+    allow: 'İzin ver',
+    block: 'Engelle',
+    resetPermissions: 'İzinleri sıfırla',
+    clearDataConfirm: 'Tekrar tıkla: verileri temizle',
+    clearSiteData: 'Site verilerini temizle',
+  },
+  en: {
+    inUse: 'In use now',
+    allowed: 'Allowed',
+    blocked: 'Blocked',
+    ask: 'Ask',
+    unsupported: 'Unsupported',
+    camera: 'Camera',
+    microphone: 'Microphone',
+    location: 'Location',
+    screenSharing: 'Screen sharing',
+    subtitle: 'Site information and permissions',
+    close: 'Close',
+    secure: 'Connection is secure',
+    notSecure: 'Connection is not secure',
+    protection: 'Site protection',
+    off: 'Off',
+    on: 'On',
+    enableProtection: 'Enable protections on this site',
+    disableProtection: 'Disable protections on this site',
+    protectionHint: 'Tracker, cookie banner, and privacy protections',
+    darkening: 'Page darkening',
+    default: 'Default',
+    always: 'Always',
+    permissions: 'Permissions',
+    canAsk: 'Can ask',
+    notifications: 'Notifications',
+    allow: 'Allow',
+    block: 'Block',
+    resetPermissions: 'Reset permissions',
+    clearDataConfirm: 'Click again to clear data',
+    clearSiteData: 'Clear site data',
+  },
+  es: {
+    inUse: 'En uso ahora',
+    allowed: 'Permitido',
+    blocked: 'Bloqueado',
+    ask: 'Preguntar',
+    unsupported: 'No compatible',
+    camera: 'Cámara',
+    microphone: 'Micrófono',
+    location: 'Ubicación',
+    screenSharing: 'Compartir pantalla',
+    subtitle: 'Información y permisos del sitio',
+    close: 'Cerrar',
+    secure: 'La conexión es segura',
+    notSecure: 'La conexión no es segura',
+    protection: 'Protección del sitio',
+    off: 'Desactivado',
+    on: 'Activado',
+    enableProtection: 'Activar las protecciones en este sitio',
+    disableProtection: 'Desactivar las protecciones en este sitio',
+    protectionHint: 'Protecciones contra rastreadores, banners de cookies y riesgos de privacidad',
+    darkening: 'Oscurecimiento de páginas',
+    default: 'Predeterminado',
+    always: 'Siempre',
+    permissions: 'Permisos',
+    canAsk: 'Puede preguntar',
+    notifications: 'Notificaciones',
+    allow: 'Permitir',
+    block: 'Bloquear',
+    resetPermissions: 'Restablecer permisos',
+    clearDataConfirm: 'Haz clic de nuevo para borrar los datos',
+    clearSiteData: 'Borrar datos del sitio',
+  },
+  de: {
+    inUse: 'Wird gerade verwendet',
+    allowed: 'Zugelassen',
+    blocked: 'Blockiert',
+    ask: 'Nachfragen',
+    unsupported: 'Nicht unterstützt',
+    camera: 'Kamera',
+    microphone: 'Mikrofon',
+    location: 'Standort',
+    screenSharing: 'Bildschirmfreigabe',
+    subtitle: 'Websiteinformationen und Berechtigungen',
+    close: 'Schließen',
+    secure: 'Verbindung ist sicher',
+    notSecure: 'Verbindung ist nicht sicher',
+    protection: 'Website-Schutz',
+    off: 'Aus',
+    on: 'Ein',
+    enableProtection: 'Schutz auf dieser Website aktivieren',
+    disableProtection: 'Schutz auf dieser Website deaktivieren',
+    protectionHint: 'Tracker-, Cookie-Banner- und Datenschutzschutz',
+    darkening: 'Seite abdunkeln',
+    default: 'Standard',
+    always: 'Immer',
+    permissions: 'Berechtigungen',
+    canAsk: 'Kann nachfragen',
+    notifications: 'Benachrichtigungen',
+    allow: 'Zulassen',
+    block: 'Blockieren',
+    resetPermissions: 'Berechtigungen zurücksetzen',
+    clearDataConfirm: 'Zum Löschen der Daten erneut klicken',
+    clearSiteData: 'Websitedaten löschen',
+  },
+  fr: {
+    inUse: 'Utilisé actuellement',
+    allowed: 'Autorisé',
+    blocked: 'Bloqué',
+    ask: 'Demander',
+    unsupported: 'Non pris en charge',
+    camera: 'Caméra',
+    microphone: 'Microphone',
+    location: 'Localisation',
+    screenSharing: 'Partage d’écran',
+    subtitle: 'Informations et autorisations du site',
+    close: 'Fermer',
+    secure: 'La connexion est sécurisée',
+    notSecure: 'La connexion n’est pas sécurisée',
+    protection: 'Protection du site',
+    off: 'Désactivée',
+    on: 'Activée',
+    enableProtection: 'Activer les protections sur ce site',
+    disableProtection: 'Désactiver les protections sur ce site',
+    protectionHint: 'Protections contre les traqueurs, les bannières de cookies et les atteintes à la vie privée',
+    darkening: 'Assombrissement de la page',
+    default: 'Par défaut',
+    always: 'Toujours',
+    permissions: 'Autorisations',
+    canAsk: 'Peut demander',
+    notifications: 'Notifications',
+    allow: 'Autoriser',
+    block: 'Bloquer',
+    resetPermissions: 'Réinitialiser les autorisations',
+    clearDataConfirm: 'Cliquez à nouveau pour effacer les données',
+    clearSiteData: 'Effacer les données du site',
+  },
+  id: {
+    inUse: 'Sedang digunakan',
+    allowed: 'Diizinkan',
+    blocked: 'Diblokir',
+    ask: 'Tanya',
+    unsupported: 'Tidak didukung',
+    camera: 'Kamera',
+    microphone: 'Mikrofon',
+    location: 'Lokasi',
+    screenSharing: 'Berbagi layar',
+    subtitle: 'Informasi dan izin situs',
+    close: 'Tutup',
+    secure: 'Koneksi aman',
+    notSecure: 'Koneksi tidak aman',
+    protection: 'Perlindungan situs',
+    off: 'Nonaktif',
+    on: 'Aktif',
+    enableProtection: 'Aktifkan perlindungan di situs ini',
+    disableProtection: 'Nonaktifkan perlindungan di situs ini',
+    protectionHint: 'Perlindungan pelacak, banner cookie, dan privasi',
+    darkening: 'Penggelapan halaman',
+    default: 'Bawaan',
+    always: 'Selalu',
+    permissions: 'Izin',
+    canAsk: 'Dapat meminta',
+    notifications: 'Notifikasi',
+    allow: 'Izinkan',
+    block: 'Blokir',
+    resetPermissions: 'Atur ulang izin',
+    clearDataConfirm: 'Klik lagi untuk menghapus data',
+    clearSiteData: 'Hapus data situs',
+  },
+  ru: {
+    inUse: 'Используется сейчас',
+    allowed: 'Разрешено',
+    blocked: 'Заблокировано',
+    ask: 'Спрашивать',
+    unsupported: 'Не поддерживается',
+    camera: 'Камера',
+    microphone: 'Микрофон',
+    location: 'Местоположение',
+    screenSharing: 'Демонстрация экрана',
+    subtitle: 'Сведения о сайте и разрешения',
+    close: 'Закрыть',
+    secure: 'Соединение защищено',
+    notSecure: 'Соединение не защищено',
+    protection: 'Защита сайта',
+    off: 'Выкл.',
+    on: 'Вкл.',
+    enableProtection: 'Включить защиту на этом сайте',
+    disableProtection: 'Отключить защиту на этом сайте',
+    protectionHint: 'Защита от трекеров, баннеров cookie и угроз конфиденциальности',
+    darkening: 'Затемнение страницы',
+    default: 'По умолчанию',
+    always: 'Всегда',
+    permissions: 'Разрешения',
+    canAsk: 'Может запросить',
+    notifications: 'Уведомления',
+    allow: 'Разрешить',
+    block: 'Блокировать',
+    resetPermissions: 'Сбросить разрешения',
+    clearDataConfirm: 'Нажмите ещё раз, чтобы удалить данные',
+    clearSiteData: 'Удалить данные сайта',
+  },
+  it: {
+    inUse: 'In uso ora',
+    allowed: 'Consentito',
+    blocked: 'Bloccato',
+    ask: 'Chiedi',
+    unsupported: 'Non supportato',
+    camera: 'Fotocamera',
+    microphone: 'Microfono',
+    location: 'Posizione',
+    screenSharing: 'Condivisione schermo',
+    subtitle: 'Informazioni e autorizzazioni del sito',
+    close: 'Chiudi',
+    secure: 'Connessione sicura',
+    notSecure: 'Connessione non sicura',
+    protection: 'Protezione sito',
+    off: 'Disattivata',
+    on: 'Attiva',
+    enableProtection: 'Attiva le protezioni su questo sito',
+    disableProtection: 'Disattiva le protezioni su questo sito',
+    protectionHint: 'Protezione da tracker, banner dei cookie e rischi per la privacy',
+    darkening: 'Oscuramento pagina',
+    default: 'Predefinito',
+    always: 'Sempre',
+    permissions: 'Autorizzazioni',
+    canAsk: 'Può chiedere',
+    notifications: 'Notifiche',
+    allow: 'Consenti',
+    block: 'Blocca',
+    resetPermissions: 'Reimposta autorizzazioni',
+    clearDataConfirm: 'Fai di nuovo clic per cancellare i dati',
+    clearSiteData: 'Cancella dati del sito',
+  },
+  ja: {
+    inUse: '現在使用中',
+    allowed: '許可済み',
+    blocked: 'ブロック済み',
+    ask: '確認する',
+    unsupported: '未対応',
+    camera: 'カメラ',
+    microphone: 'マイク',
+    location: '位置情報',
+    screenSharing: '画面共有',
+    subtitle: 'サイト情報と権限',
+    close: '閉じる',
+    secure: '接続は保護されています',
+    notSecure: '接続は保護されていません',
+    protection: 'サイト保護',
+    off: 'オフ',
+    on: 'オン',
+    enableProtection: 'このサイトで保護を有効にする',
+    disableProtection: 'このサイトで保護を無効にする',
+    protectionHint: 'トラッカー、Cookie バナー、プライバシー保護',
+    darkening: 'ページを暗くする',
+    default: '既定',
+    always: '常に',
+    permissions: '権限',
+    canAsk: '確認可能',
+    notifications: '通知',
+    allow: '許可',
+    block: 'ブロック',
+    resetPermissions: '権限をリセット',
+    clearDataConfirm: 'もう一度クリックしてデータを消去',
+    clearSiteData: 'サイトデータを消去',
+  },
+} as const
 
 function PermissionIcon({ name }: { name: PermissionName }) {
   if (name === 'camera') {
@@ -74,11 +366,11 @@ export function SiteInfoPanel({
   onClearSiteData,
 }: SiteInfoPanelProps) {
   const { locale } = useLocale()
+  const copy = getLocaleCopy(COPY, locale)
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [resolvedTop, setResolvedTop] = useState(top)
-  const tr = locale === 'tr'
   const secure = state.url?.startsWith('https://') === true
   useModalFocusTrap(panelRef, true)
   
@@ -151,18 +443,18 @@ export function SiteInfoPanel({
     name: PermissionName,
     stateValue: SitePermissionState,
   ) => {
-    if (usage[name]) return tr ? 'Şu anda kullanılıyor' : 'In use now'
-    if (stateValue === 'granted') return tr ? 'İzin verildi' : 'Allowed'
-    if (stateValue === 'denied') return tr ? 'Engellendi' : 'Blocked'
-    if (stateValue === 'prompt') return tr ? 'Sorulacak' : 'Ask'
-    return tr ? 'Desteklenmiyor' : 'Unsupported'
+    if (usage[name]) return copy.inUse
+    if (stateValue === 'granted') return copy.allowed
+    if (stateValue === 'denied') return copy.blocked
+    if (stateValue === 'prompt') return copy.ask
+    return copy.unsupported
   }
 
   const permissions: Array<[PermissionName, string, SitePermissionState]> = [
-    ['camera', tr ? 'Kamera' : 'Camera', state.permissions.camera],
-    ['microphone', tr ? 'Mikrofon' : 'Microphone', state.permissions.microphone],
-    ['location', tr ? 'Konum' : 'Location', state.permissions.location],
-    ['screen', tr ? 'Ekran paylaşımı' : 'Screen sharing', 'prompt'],
+    ['camera', copy.camera, state.permissions.camera],
+    ['microphone', copy.microphone, state.permissions.microphone],
+    ['location', copy.location, state.permissions.location],
+    ['screen', copy.screenSharing, 'prompt'],
   ]
 
   return (
@@ -180,14 +472,14 @@ export function SiteInfoPanel({
         </span>
         <span className={styles.identity}>
           <strong id="nebula-site-info-title">{state.hostname}</strong>
-          <span>{tr ? 'Site bilgileri ve izinler' : 'Site information and permissions'}</span>
+          <span>{copy.subtitle}</span>
         </span>
         <button
           ref={closeRef}
           type="button"
           className={styles.close}
           onClick={onClose}
-          aria-label={tr ? 'Kapat' : 'Close'}
+          aria-label={copy.close}
         >
           ×
         </button>
@@ -201,20 +493,16 @@ export function SiteInfoPanel({
         </span>
         <span>
           <strong>
-            {secure
-              ? tr ? 'Bağlantı güvenli' : 'Connection is secure'
-              : tr ? 'Bağlantı güvenli değil' : 'Connection is not secure'}
+            {secure ? copy.secure : copy.notSecure}
           </strong>
           <small>{secure ? 'HTTPS' : 'HTTP'}</small>
         </span>
       </div>
 
       <div className={styles.sectionHeader}>
-        <span>{tr ? 'Site koruması' : 'Site protection'}</span>
+        <span>{copy.protection}</span>
         <span className={state.protectionDisabled ? styles.warning : styles.good}>
-          {state.protectionDisabled
-            ? tr ? 'Kapalı' : 'Off'
-            : tr ? 'Açık' : 'On'}
+          {state.protectionDisabled ? copy.off : copy.on}
         </span>
       </div>
       <button
@@ -227,25 +515,21 @@ export function SiteInfoPanel({
         </span>
         <span>
           <strong>
-            {state.protectionDisabled
-              ? tr ? 'Bu sitede korumaları aç' : 'Enable protections on this site'
-              : tr ? 'Bu sitede korumaları kapat' : 'Disable protections on this site'}
+            {state.protectionDisabled ? copy.enableProtection : copy.disableProtection}
           </strong>
           <small>
-            {tr
-              ? 'Takipçi, çerez bannerı ve gizlilik korumaları'
-              : 'Tracker, cookie banner, and privacy protections'}
+            {copy.protectionHint}
           </small>
         </span>
       </button>
 
       <div className={styles.notificationRow}>
-        <span>{tr ? 'Sayfa koyulaştırma' : 'Page darkening'}</span>
+        <span>{copy.darkening}</span>
         <div className={styles.segmented}>
           {([
-            ['default', tr ? 'Varsayılan' : 'Default'],
-            ['off', tr ? 'Kapalı' : 'Off'],
-            ['always', tr ? 'Her zaman' : 'Always'],
+            ['default', copy.default],
+            ['off', copy.off],
+            ['always', copy.always],
           ] as const).map(([value, label]) => (
             <button
               type="button"
@@ -260,8 +544,8 @@ export function SiteInfoPanel({
       </div>
 
       <div className={styles.sectionHeader}>
-        <span>{tr ? 'İzinler' : 'Permissions'}</span>
-        <span>{state.permissionPromptsAllowed ? (tr ? 'Sorabilir' : 'Can ask') : (tr ? 'Engelli' : 'Blocked')}</span>
+        <span>{copy.permissions}</span>
+        <span>{state.permissionPromptsAllowed ? copy.canAsk : copy.blocked}</span>
       </div>
       <div className={styles.permissionList}>
         {permissions.map(([name, label, value]) => (
@@ -278,12 +562,12 @@ export function SiteInfoPanel({
       </div>
 
       <div className={styles.notificationRow}>
-        <span>{tr ? 'Bildirimler' : 'Notifications'}</span>
+        <span>{copy.notifications}</span>
         <div className={styles.segmented}>
           {([
-            [null, tr ? 'Varsayılan' : 'Default'],
-            ['allow', tr ? 'İzin ver' : 'Allow'],
-            ['block', tr ? 'Engelle' : 'Block'],
+            [null, copy.default],
+            ['allow', copy.allow],
+            ['block', copy.block],
           ] as const).map(([value, label]) => (
             <button
               type="button"
@@ -299,7 +583,7 @@ export function SiteInfoPanel({
 
       <footer className={styles.footer}>
         <button type="button" className={styles.secondary} onClick={onResetPermissions}>
-          {tr ? 'İzinleri sıfırla' : 'Reset permissions'}
+          {copy.resetPermissions}
         </button>
         <button
           type="button"
@@ -314,9 +598,7 @@ export function SiteInfoPanel({
           }}
           onBlur={() => setConfirmClear(false)}
         >
-          {confirmClear
-            ? tr ? 'Tekrar tıkla: verileri temizle' : 'Click again to clear data'
-            : tr ? 'Site verilerini temizle' : 'Clear site data'}
+          {confirmClear ? copy.clearDataConfirm : copy.clearSiteData}
         </button>
       </footer>
     </section>

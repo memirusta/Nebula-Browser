@@ -31,7 +31,7 @@ export function TabSearch({
   onToggleMute,
   onClose,
 }: TabSearchProps) {
-  const { locale } = useLocale()
+  const { t } = useLocale()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const panelRef = useRef<HTMLElement>(null)
@@ -65,14 +65,14 @@ export function TabSearch({
         type="button"
         className={styles.backdrop}
         onClick={onClose}
-        aria-label={locale === 'tr' ? 'Sekme aramasını kapat' : 'Close tab search'}
+        aria-label={t('tabSearchClose')}
       />
       <section
         ref={panelRef}
         className={styles.panel}
         role="dialog"
         aria-modal="true"
-        aria-label={locale === 'tr' ? 'Sekmelerde ara' : 'Search tabs'}
+        aria-label={t('tabSearchTitle')}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' && filteredTabs.length > 0) {
             event.preventDefault()
@@ -93,8 +93,8 @@ export function TabSearch({
       >
         <header className={styles.header}>
           <div>
-            <span className={styles.eyebrow}>NEBULA TABS</span>
-            <h2>{locale === 'tr' ? 'Sekmelerde ara' : 'Search tabs'}</h2>
+            <span className={styles.eyebrow}>NEBULA · {t('tabSearchTitle')}</span>
+            <h2>{t('tabSearchTitle')}</h2>
           </div>
           <kbd>Ctrl Shift A</kbd>
         </header>
@@ -108,15 +108,15 @@ export function TabSearch({
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={locale === 'tr' ? 'Başlık veya adres ara…' : 'Search title or address…'}
-            aria-label={locale === 'tr' ? 'Sekme ara' : 'Search tabs'}
+            placeholder={t('tabSearchPlaceholder')}
+            aria-label={t('tabSearchAria')}
           />
         </label>
 
         <div className={styles.results} role="listbox">
           {filteredTabs.length === 0 ? (
             <div className={styles.empty}>
-              {locale === 'tr' ? 'Eşleşen açık sekme yok.' : 'No matching open tabs.'}
+              {t('tabSearchEmpty')}
             </div>
           ) : (
             filteredTabs.map((tab, index) => (
@@ -145,7 +145,7 @@ export function TabSearch({
                   </span>
                   {tab.shortcutId === activeTabId && (
                     <span className={styles.activeBadge}>
-                      {locale === 'tr' ? 'Açık' : 'Active'}
+                      {t('tabSearchActive')}
                     </span>
                   )}
                 </button>
@@ -155,19 +155,19 @@ export function TabSearch({
                     className={tab.isMuted ? styles.muted : ''}
                     onClick={() => onToggleMute(tab.shortcutId)}
                     title={tab.isMuted
-                      ? locale === 'tr' ? 'Sesi aç' : 'Unmute'
-                      : locale === 'tr' ? 'Sekmeyi sustur' : 'Mute tab'}
+                      ? t('tabSearchUnmute')
+                      : t('tabSearchMute')}
                     aria-label={tab.isMuted
-                      ? locale === 'tr' ? 'Sesi aç' : 'Unmute'
-                      : locale === 'tr' ? 'Sekmeyi sustur' : 'Mute tab'}
+                      ? t('tabSearchUnmute')
+                      : t('tabSearchMute')}
                   >
                     {tab.isMuted ? '🔇' : '🔊'}
                   </button>
                   <button
                     type="button"
                     onClick={() => onCloseTab(tab.shortcutId)}
-                    title={locale === 'tr' ? 'Sekmeyi kapat' : 'Close tab'}
-                    aria-label={locale === 'tr' ? 'Sekmeyi kapat' : 'Close tab'}
+                    title={t('tabSearchCloseTab')}
+                    aria-label={t('tabSearchCloseTab')}
                   >
                     ×
                   </button>

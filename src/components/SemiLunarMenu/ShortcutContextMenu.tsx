@@ -42,7 +42,7 @@ export function ShortcutContextMenu({
   onMouseLeave,
   onLayout,
 }: ShortcutContextMenuProps) {
-  const { locale, t, tf } = useLocale()
+  const { t, tf } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({ left: x, top: y })
   const [positioned, setPositioned] = useState(false)
@@ -181,8 +181,8 @@ export function ShortcutContextMenu({
         {isTabOpen && (
           <span className={styles.liveBadge}>
             {isMuted
-              ? locale === 'tr' ? 'Sessiz' : 'Muted'
-              : locale === 'tr' ? 'Açık' : 'Live'}
+              ? t('shortcutStatusMuted')
+              : t('shortcutStatusLive')}
           </span>
         )}
       </div>

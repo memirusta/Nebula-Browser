@@ -10,13 +10,17 @@ import {
 } from 'react'
 import {
   loadLocale,
+  isNebulaLocale,
   saveLocale,
   t as translate,
   tf as translateFormat,
   type LocaleMessageKey,
   type NebulaLocale,
 } from '../core/locale'
-import { syncNativeUiLocale } from '../platform/tauriLocale'
+import {
+  listenUiLocaleChanges,
+  syncNativeUiLocale,
+} from '../platform/tauriLocale'
 
 interface LocaleContextValue {
   locale: NebulaLocale
@@ -29,6 +33,34 @@ const LocaleContext = createContext<LocaleContextValue | null>(null)
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<NebulaLocale>(() => loadLocale())
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten: (() => void) | undefined
+
+    void listenUiLocaleChanges((next) => {
+      if (disposed || !isNebulaLocale(next)) return
+      saveLocale(next)
+      setLocaleState((current) => (current === next ? current : next))
+    })
+      .then((dispose) => {
+        if (disposed) {
+          dispose()
+          return
+        }
+        unlisten = dispose
+      })
+      .catch((error: unknown) => {
+        if (import.meta.env.DEV) {
+          console.warn('[nebula] Failed to listen for UI locale changes', error)
+        }
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
 
   useEffect(() => {
     document.documentElement.lang = locale

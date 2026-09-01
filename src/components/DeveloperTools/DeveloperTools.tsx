@@ -10,8 +10,11 @@ import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import { tabWebviewLabel } from '../../core/browserTab'
 import { SHORTCUT_POSITIONS_KEY } from '../../core/shortcutLayout'
 import { removeLocalStorage } from '../../core/storageSync'
+import { getIntlLocale, getLocaleCopy, type NebulaLocale } from '../../core/locale'
 import { RequestEpoch, type RequestEpochSnapshot } from '../../core/requestEpoch'
 import { SHORTCUT_FOLDERS_KEY } from '../../hooks/useShortcutFolders'
+import { ADDITIONAL_DEVELOPER_COPY } from './DeveloperTools.copy.additional'
+import { ITALIAN_JAPANESE_DEVELOPER_COPY } from './DeveloperTools.copy.it-ja'
 import {
   clearBrowseData,
   reloadBrowseTab,
@@ -301,6 +304,16 @@ const COPY = {
     computedStyles: 'Hesaplanan stiller',
     selectNode: 'HTML ve hesaplanan stilleri incelemek için bir DOM düğümü seç.',
     filterConsole: 'Konsolu filtrele…',
+    allLevels: 'Tüm düzeyler',
+    edit: 'Düzenle',
+    command: 'Komut',
+    result: 'Sonuç',
+    protocol: 'Protokol',
+    remote: 'Uzak adres',
+    cache: 'Önbellek',
+    request: 'İstek',
+    initiatorSecurity: 'Başlatan / Güvenlik',
+    cdpMetrics: 'CDP metrikleri',
     clear: 'Temizle',
     consoleQuiet: 'Konsol sessiz.',
     evalPlaceholder: 'Aktif sayfada JavaScript değerlendir…',
@@ -415,10 +428,452 @@ const COPY = {
     titleAria: 'Nebula Developer Tools', inspector: 'Nebula Inspector', noActiveWebview: 'No active WebView', noActiveUrl: 'No active URL', closeAria: 'Close developer tools', closeTitle: 'Close (F12 / Esc)',
     overview: 'Overview', elements: 'Elements', console: 'Console', network: 'Network', performance: 'Performance', storage: 'Storage', site: 'Site', sources: 'Sources', accessibility: 'Accessibility', events: 'Events', openTabHint: 'Open a browser tab to attach the Nebula inspector.', overviewLead: 'Live state for the active native WebView.', refresh: 'Refresh',
     activeTab: 'Active tab', openTabs: 'Open tabs', memoryPressure: 'Memory pressure', audio: 'Audio', playing: 'Playing', silent: 'Silent', security: 'Security', consoleErrors: 'Console errors', requests: 'Requests', failedRequests: 'Failed requests', blockedRequests: 'Blocked requests', currentUrl: 'Current URL', reload: 'Reload', reloadHint: 'Reload active WebView', clearCache: 'Clear cache', clearCacheHint: 'Clear active tab cache', clearBuffers: 'Clear inspector buffers', clearBuffersHint: 'Console, network and event history', buffersCleared: 'Inspector buffers cleared.',
-    dom: 'DOM', loading: 'Loading…', noDom: 'No DOM snapshot yet.', nodeDetails: 'Node details', clearHighlight: 'Clear highlight', inspectElement: 'Select element from page', stopInspecting: 'Stop selecting', inspectHint: 'Hover the page and click the element you want to inspect.', outerHtml: 'Outer HTML', editHtml: 'Edit HTML', apply: 'Apply', cancel: 'Cancel', copy: 'Copy', attributeName: 'Attribute name', attributeValue: 'Attribute value', setAttribute: 'Add / update', removeAttribute: 'Remove', searchDom: 'Search CSS selector, XPath or text…', search: 'Search', previousMatch: 'Previous', nextMatch: 'Next', noMatches: 'No matches', filterStyles: 'Filter computed styles…', computedStyles: 'Computed styles', selectNode: 'Select a DOM node to inspect HTML and computed styles.', filterConsole: 'Filter console…', clear: 'Clear', consoleQuiet: 'Console is quiet.', evalPlaceholder: 'Evaluate JavaScript in the active page…', run: 'Run', filterNetwork: 'Filter URL, method, status, type…', failed: 'failed', blocked: 'blocked', status: 'Status', method: 'Method', type: 'Type', time: 'Time', size: 'Size', other: 'Other', noRequests: 'No requests captured since the inspector opened.', recording: 'Recording', preserveLog: 'Preserve log', disableCache: 'Disable cache', requestDetails: 'Request details', headers: 'Headers', payload: 'Request payload', response: 'Response', preview: 'Preview', copyUrl: 'Copy URL', copyCurl: 'Copy as cURL', noResponseBody: 'No response body or it is not ready yet.',
+    dom: 'DOM', loading: 'Loading…', noDom: 'No DOM snapshot yet.', nodeDetails: 'Node details', clearHighlight: 'Clear highlight', inspectElement: 'Select element from page', stopInspecting: 'Stop selecting', inspectHint: 'Hover the page and click the element you want to inspect.', outerHtml: 'Outer HTML', editHtml: 'Edit HTML', apply: 'Apply', cancel: 'Cancel', copy: 'Copy', attributeName: 'Attribute name', attributeValue: 'Attribute value', setAttribute: 'Add / update', removeAttribute: 'Remove', searchDom: 'Search CSS selector, XPath or text…', search: 'Search', previousMatch: 'Previous', nextMatch: 'Next', noMatches: 'No matches', filterStyles: 'Filter computed styles…', computedStyles: 'Computed styles', selectNode: 'Select a DOM node to inspect HTML and computed styles.', filterConsole: 'Filter console…', allLevels: 'All levels', edit: 'Edit', command: 'Command', result: 'Result', protocol: 'Protocol', remote: 'Remote', cache: 'Cache', request: 'Request', initiatorSecurity: 'Initiator / Security', cdpMetrics: 'CDP metrics', clear: 'Clear', consoleQuiet: 'Console is quiet.', evalPlaceholder: 'Evaluate JavaScript in the active page…', run: 'Run', filterNetwork: 'Filter URL, method, status, type…', failed: 'failed', blocked: 'blocked', status: 'Status', method: 'Method', type: 'Type', time: 'Time', size: 'Size', other: 'Other', noRequests: 'No requests captured since the inspector opened.', recording: 'Recording', preserveLog: 'Preserve log', disableCache: 'Disable cache', requestDetails: 'Request details', headers: 'Headers', payload: 'Request payload', response: 'Response', preview: 'Preview', copyUrl: 'Copy URL', copyCurl: 'Copy as cURL', noResponseBody: 'No response body or it is not ready yet.',
     performanceLead: 'CDP performance counters and V8 heap usage.', heapUsed: 'JS heap used', heapTotal: 'JS heap total', capturedMetrics: 'Captured metrics', pageDomNodes: 'Page DOM nodes', resourceTimingEntries: 'Resource Timing entries', resourceTimingTransfer: 'Resource Timing transfer', resourceTimingDecoded: 'Resource Timing decoded body', autoRefresh: 'Auto refresh', pageSummary: 'Page summary', nebulaStorage: 'Nebula storage', nebulaStorageLead: 'Browser shell localStorage state.', clearFolderCache: 'Clear folder cache', clearLayout: 'Clear layout', delete: 'Delete', noNebulaStorage: 'No Nebula localStorage entries.', pageStorage: 'Page storage', pageStorageLead: "Active site's local/session storage and cookie metadata.", noPageStorage: 'No page storage snapshot.', storageArea: 'Area', storageKey: 'Key', storageValue: 'Value', setStorageValue: 'Save', cacheStorage: 'Cache Storage', indexedDb: 'IndexedDB', serviceWorkers: 'Service Workers', deleteCookie: 'Delete cookie', cookieValue: 'Cookie value', showCookieValue: 'Show value', hideCookieValue: 'Hide value', unspecified: 'Unspecified', clearCurrentSite: 'Clear current site data', clearCurrentSiteHint: 'Cookies, storage, cache data for the current origin',
     siteLead: 'Page identity, security and permission state.', readyState: 'Ready state', visibility: 'Visibility', online: 'Online', cookies: 'Cookies', cookieApi: 'Cookie API', cookieApiAvailable: 'Available', cookieApiUnavailable: 'Unavailable', siteCookies: 'Site cookies', nebulaCookiePolicy: 'Nebula cross-site cookie policy', strictPolicy: 'Strict · cookie sending blocked', standardPolicy: 'Standard · no extra Nebula filter', trackingPrevention: 'Tracking prevention', trackerBlocking: 'Tracker blocking', trackingNone: 'Off', trackingBalanced: 'Balanced', trackingStrict: 'Strict', historyLength: 'History length', yes: 'Yes', no: 'No', enabled: 'Enabled', disabled: 'Disabled', title: 'Title', origin: 'Origin', language: 'Language', charset: 'Charset', referrer: 'Referrer', viewport: 'Viewport', permissions: 'Permissions', filterSources: 'Filter script URLs…', showAnonymousSources: 'Show anonymous scripts', anonymousScripts: 'Anonymous scripts', inlineScripts: 'Inline / virtual scripts', noSources: 'No scripts captured yet.', noSourceMatches: 'No scripts match the filter and visibility settings.', selectSource: 'Select a script on the left to view its source.', sourceCode: 'Source code', accessibilityLead: 'Accessibility tree and DOM matches for the active page.', filterAccessibility: 'Filter by role, name, description or DOM id…', showAccessibilityNoise: 'Show ignored and empty nodes', noAccessibility: 'No accessibility nodes found.', noAccessibilityMatches: 'No accessibility nodes match the filter.', filterEvents: 'Filter CDP events…', buffered: 'buffered', noEvents: 'No matching CDP event.', closeFooter: 'F12 / Esc to close', cdpInspector: 'CDP-backed Nebula inspector', waitingTab: 'Waiting for a tab',
   },
+  es: {
+    empty: '— vacío —',
+    uncaughtException: 'Excepción no capturada',
+    logEntry: 'Entrada de registro',
+    requestFailed: 'Solicitud fallida',
+    performanceRefreshFailed: 'No se pudo actualizar el rendimiento',
+    domRefreshed: 'Instantánea del DOM actualizada.',
+    domRefreshFailed: 'No se pudo actualizar el DOM',
+    nodeInspectFailed: 'No se pudo inspeccionar el nodo',
+    storageRefreshFailed: 'No se pudo actualizar el almacenamiento del sitio',
+    siteInfoRefreshFailed: 'No se pudo actualizar la información del sitio',
+    inspectorAttached: 'Inspector conectado · eventos en directo activados.',
+    inspectorAttachFailed: 'No se pudo conectar el inspector',
+    evaluationFailed: 'La evaluación falló',
+    actionProgress: (label: string) => `${label}…`,
+    actionComplete: (label: string) => `${label} completado.`,
+    actionFailed: (label: string) => `${label} falló`,
+    clearedSiteStorage: (origin: string) => `Se borraron los datos del sitio para ${origin}.`,
+    clearSiteStorageFailed: 'No se pudieron borrar los datos del sitio',
+    titleAria: 'Herramientas para desarrolladores de Nebula',
+    inspector: 'Inspector de Nebula',
+    noActiveWebview: 'No hay una WebView activa',
+    noActiveUrl: 'No hay una URL activa',
+    closeAria: 'Cerrar las herramientas para desarrolladores',
+    closeTitle: 'Cerrar (F12 / Esc)',
+    overview: 'Resumen',
+    elements: 'Elementos',
+    console: 'Consola',
+    network: 'Red',
+    performance: 'Rendimiento',
+    storage: 'Almacenamiento',
+    site: 'Sitio',
+    sources: 'Fuentes',
+    accessibility: 'Accesibilidad',
+    events: 'Eventos',
+    openTabHint: 'Abre una pestaña para conectar el inspector de Nebula.',
+    overviewLead: 'Estado en directo de la WebView nativa activa.',
+    refresh: 'Actualizar',
+    activeTab: 'Pestaña activa',
+    openTabs: 'Pestañas abiertas',
+    memoryPressure: 'Presión de memoria',
+    audio: 'Audio',
+    playing: 'Reproduciendo',
+    silent: 'Silencio',
+    security: 'Seguridad',
+    consoleErrors: 'Errores de consola',
+    requests: 'Solicitudes',
+    failedRequests: 'Solicitudes fallidas',
+    blockedRequests: 'Solicitudes bloqueadas',
+    currentUrl: 'URL actual',
+    reload: 'Recargar',
+    reloadHint: 'Recargar la WebView activa',
+    clearCache: 'Borrar caché',
+    clearCacheHint: 'Borrar la caché de la pestaña activa',
+    clearBuffers: 'Borrar búferes del inspector',
+    clearBuffersHint: 'Historial de consola, red y eventos',
+    buffersCleared: 'Se borraron los búferes del inspector.',
+    dom: 'DOM',
+    loading: 'Cargando…',
+    noDom: 'Todavía no hay una instantánea del DOM.',
+    nodeDetails: 'Detalles del nodo',
+    clearHighlight: 'Quitar resaltado',
+    inspectElement: 'Seleccionar elemento de la página',
+    stopInspecting: 'Detener selección',
+    inspectHint: 'Pasa el cursor por la página y haz clic en el elemento que quieras inspeccionar.',
+    outerHtml: 'HTML externo',
+    editHtml: 'Editar HTML',
+    apply: 'Aplicar',
+    cancel: 'Cancelar',
+    copy: 'Copiar',
+    attributeName: 'Nombre del atributo',
+    attributeValue: 'Valor del atributo',
+    setAttribute: 'Añadir / actualizar',
+    removeAttribute: 'Eliminar',
+    searchDom: 'Buscar selector CSS, XPath o texto…',
+    search: 'Buscar',
+    previousMatch: 'Anterior',
+    nextMatch: 'Siguiente',
+    noMatches: 'Sin coincidencias',
+    filterStyles: 'Filtrar estilos calculados…',
+    computedStyles: 'Estilos calculados',
+    selectNode: 'Selecciona un nodo DOM para inspeccionar su HTML y sus estilos calculados.',
+    filterConsole: 'Filtrar consola…',
+    allLevels: 'Todos los niveles',
+    edit: 'Editar',
+    command: 'Comando',
+    result: 'Resultado',
+    protocol: 'Protocolo',
+    remote: 'Dirección remota',
+    cache: 'Caché',
+    request: 'Solicitud',
+    initiatorSecurity: 'Iniciador / Seguridad',
+    cdpMetrics: 'Métricas de CDP',
+    clear: 'Borrar',
+    consoleQuiet: 'La consola está vacía.',
+    evalPlaceholder: 'Evaluar JavaScript en la página activa…',
+    run: 'Ejecutar',
+    filterNetwork: 'Filtrar por URL, método, estado o tipo…',
+    failed: 'fallidas',
+    blocked: 'bloqueadas',
+    status: 'Estado',
+    method: 'Método',
+    type: 'Tipo',
+    time: 'Tiempo',
+    size: 'Tamaño',
+    other: 'Otro',
+    noRequests: 'No se capturaron solicitudes desde que se abrió el inspector.',
+    recording: 'Grabando',
+    preserveLog: 'Conservar registro',
+    disableCache: 'Desactivar caché',
+    requestDetails: 'Detalles de la solicitud',
+    headers: 'Encabezados',
+    payload: 'Carga útil',
+    response: 'Respuesta',
+    preview: 'Vista previa',
+    copyUrl: 'Copiar URL',
+    copyCurl: 'Copiar como cURL',
+    noResponseBody: 'El cuerpo de la respuesta no existe o todavía no está disponible.',
+    performanceLead: 'Contadores de rendimiento de CDP y uso del heap de V8.',
+    heapUsed: 'Heap de JS usado',
+    heapTotal: 'Heap de JS total',
+    capturedMetrics: 'Métricas capturadas',
+    pageDomNodes: 'Nodos DOM de la página',
+    resourceTimingEntries: 'Entradas de Resource Timing',
+    resourceTimingTransfer: 'Transferencia de Resource Timing',
+    resourceTimingDecoded: 'Cuerpo decodificado de Resource Timing',
+    autoRefresh: 'Actualización automática',
+    pageSummary: 'Resumen de la página',
+    nebulaStorage: 'Almacenamiento de Nebula',
+    nebulaStorageLead: 'Estado de localStorage de la interfaz del navegador.',
+    clearFolderCache: 'Borrar caché de carpetas',
+    clearLayout: 'Borrar disposición',
+    delete: 'Eliminar',
+    noNebulaStorage: 'No hay entradas en el localStorage de Nebula.',
+    pageStorage: 'Almacenamiento de la página',
+    pageStorageLead: 'Almacenamiento local/de sesión y metadatos de cookies del sitio activo.',
+    noPageStorage: 'No hay una instantánea del almacenamiento de la página.',
+    storageArea: 'Área',
+    storageKey: 'Clave',
+    storageValue: 'Valor',
+    setStorageValue: 'Guardar',
+    cacheStorage: 'Cache Storage',
+    indexedDb: 'IndexedDB',
+    serviceWorkers: 'Service Workers',
+    deleteCookie: 'Eliminar cookie',
+    cookieValue: 'Valor de la cookie',
+    showCookieValue: 'Mostrar valor',
+    hideCookieValue: 'Ocultar valor',
+    unspecified: 'Sin especificar',
+    clearCurrentSite: 'Borrar datos del sitio actual',
+    clearCurrentSiteHint: 'Cookies, almacenamiento y caché del origen actual',
+    siteLead: 'Identidad, seguridad y permisos de la página.',
+    readyState: 'Estado de carga',
+    visibility: 'Visibilidad',
+    online: 'En línea',
+    cookies: 'Cookies',
+    cookieApi: 'API de cookies',
+    cookieApiAvailable: 'Disponible',
+    cookieApiUnavailable: 'No disponible',
+    siteCookies: 'Cookies del sitio',
+    nebulaCookiePolicy: 'Política de cookies entre sitios de Nebula',
+    strictPolicy: 'Estricto · envío de cookies bloqueado',
+    standardPolicy: 'Estándar · sin filtro adicional de Nebula',
+    trackingPrevention: 'Prevención de seguimiento',
+    trackerBlocking: 'Bloqueo de rastreadores',
+    trackingNone: 'Desactivado',
+    trackingBalanced: 'Equilibrado',
+    trackingStrict: 'Estricto',
+    historyLength: 'Longitud del historial',
+    yes: 'Sí',
+    no: 'No',
+    enabled: 'Activado',
+    disabled: 'Desactivado',
+    title: 'Título',
+    origin: 'Origen',
+    language: 'Idioma',
+    charset: 'Juego de caracteres',
+    referrer: 'Referente',
+    viewport: 'Área visible',
+    permissions: 'Permisos',
+    filterSources: 'Filtrar URL de scripts…',
+    showAnonymousSources: 'Mostrar scripts anónimos',
+    anonymousScripts: 'Scripts anónimos',
+    inlineScripts: 'Scripts en línea / virtuales',
+    noSources: 'Todavía no se capturaron scripts.',
+    noSourceMatches: 'Ningún script coincide con el filtro y la configuración de visibilidad.',
+    selectSource: 'Selecciona un script de la izquierda para ver su código.',
+    sourceCode: 'Código fuente',
+    accessibilityLead: 'Árbol de accesibilidad y coincidencias DOM de la página activa.',
+    filterAccessibility: 'Filtrar por rol, nombre, descripción o id. de DOM…',
+    showAccessibilityNoise: 'Mostrar nodos ignorados y vacíos',
+    noAccessibility: 'No se encontraron nodos de accesibilidad.',
+    noAccessibilityMatches: 'Ningún nodo de accesibilidad coincide con el filtro.',
+    filterEvents: 'Filtrar eventos de CDP…',
+    buffered: 'en el búfer',
+    noEvents: 'No hay eventos de CDP coincidentes.',
+    closeFooter: 'F12 / Esc para cerrar',
+    cdpInspector: 'Inspector de Nebula basado en CDP',
+    waitingTab: 'Esperando una pestaña',
+  },
+  de: {
+    empty: '— leer —',
+    uncaughtException: 'Nicht abgefangene Ausnahme',
+    logEntry: 'Protokolleintrag',
+    requestFailed: 'Anfrage fehlgeschlagen',
+    performanceRefreshFailed: 'Leistungsdaten konnten nicht aktualisiert werden',
+    domRefreshed: 'DOM-Snapshot aktualisiert.',
+    domRefreshFailed: 'DOM konnte nicht aktualisiert werden',
+    nodeInspectFailed: 'Knoten konnte nicht untersucht werden',
+    storageRefreshFailed: 'Website-Speicher konnte nicht aktualisiert werden',
+    siteInfoRefreshFailed: 'Websiteinformationen konnten nicht aktualisiert werden',
+    inspectorAttached: 'Inspector verbunden · Live-Ereignisse aktiviert.',
+    inspectorAttachFailed: 'Inspector konnte nicht verbunden werden',
+    evaluationFailed: 'Auswertung fehlgeschlagen',
+    actionProgress: (label: string) => `${label}…`,
+    actionComplete: (label: string) => `${label} abgeschlossen.`,
+    actionFailed: (label: string) => `${label} fehlgeschlagen`,
+    clearedSiteStorage: (origin: string) => `Websitedaten für ${origin} wurden gelöscht.`,
+    clearSiteStorageFailed: 'Websitedaten konnten nicht gelöscht werden',
+    titleAria: 'Nebula-Entwicklertools',
+    inspector: 'Nebula Inspector',
+    noActiveWebview: 'Keine aktive WebView',
+    noActiveUrl: 'Keine aktive URL',
+    closeAria: 'Entwicklertools schließen',
+    closeTitle: 'Schließen (F12 / Esc)',
+    overview: 'Übersicht',
+    elements: 'Elemente',
+    console: 'Konsole',
+    network: 'Netzwerk',
+    performance: 'Leistung',
+    storage: 'Speicher',
+    site: 'Website',
+    sources: 'Quellen',
+    accessibility: 'Barrierefreiheit',
+    events: 'Ereignisse',
+    openTabHint: 'Öffne einen Browser-Tab, um den Nebula Inspector zu verbinden.',
+    overviewLead: 'Live-Status der aktiven nativen WebView.',
+    refresh: 'Aktualisieren',
+    activeTab: 'Aktiver Tab',
+    openTabs: 'Geöffnete Tabs',
+    memoryPressure: 'Speicherauslastung',
+    audio: 'Audio',
+    playing: 'Wiedergabe',
+    silent: 'Stumm',
+    security: 'Sicherheit',
+    consoleErrors: 'Konsolenfehler',
+    requests: 'Anfragen',
+    failedRequests: 'Fehlgeschlagene Anfragen',
+    blockedRequests: 'Blockierte Anfragen',
+    currentUrl: 'Aktuelle URL',
+    reload: 'Neu laden',
+    reloadHint: 'Aktive WebView neu laden',
+    clearCache: 'Cache leeren',
+    clearCacheHint: 'Cache des aktiven Tabs leeren',
+    clearBuffers: 'Inspector-Puffer leeren',
+    clearBuffersHint: 'Konsolen-, Netzwerk- und Ereignisverlauf',
+    buffersCleared: 'Inspector-Puffer wurden geleert.',
+    dom: 'DOM',
+    loading: 'Wird geladen…',
+    noDom: 'Noch kein DOM-Snapshot vorhanden.',
+    nodeDetails: 'Knotendetails',
+    clearHighlight: 'Hervorhebung entfernen',
+    inspectElement: 'Element auf der Seite auswählen',
+    stopInspecting: 'Auswahl beenden',
+    inspectHint: 'Bewege den Zeiger über die Seite und klicke auf das zu untersuchende Element.',
+    outerHtml: 'Äußeres HTML',
+    editHtml: 'HTML bearbeiten',
+    apply: 'Anwenden',
+    cancel: 'Abbrechen',
+    copy: 'Kopieren',
+    attributeName: 'Attributname',
+    attributeValue: 'Attributwert',
+    setAttribute: 'Hinzufügen / aktualisieren',
+    removeAttribute: 'Entfernen',
+    searchDom: 'CSS-Selektor, XPath oder Text suchen…',
+    search: 'Suchen',
+    previousMatch: 'Zurück',
+    nextMatch: 'Weiter',
+    noMatches: 'Keine Treffer',
+    filterStyles: 'Berechnete Stile filtern…',
+    computedStyles: 'Berechnete Stile',
+    selectNode: 'Wähle einen DOM-Knoten aus, um HTML und berechnete Stile zu untersuchen.',
+    filterConsole: 'Konsole filtern…',
+    allLevels: 'Alle Ebenen',
+    edit: 'Bearbeiten',
+    command: 'Befehl',
+    result: 'Ergebnis',
+    protocol: 'Protokoll',
+    remote: 'Remote-Adresse',
+    cache: 'Cache',
+    request: 'Anfrage',
+    initiatorSecurity: 'Initiator / Sicherheit',
+    cdpMetrics: 'CDP-Metriken',
+    clear: 'Leeren',
+    consoleQuiet: 'Die Konsole ist leer.',
+    evalPlaceholder: 'JavaScript auf der aktiven Seite auswerten…',
+    run: 'Ausführen',
+    filterNetwork: 'Nach URL, Methode, Status oder Typ filtern…',
+    failed: 'fehlgeschlagen',
+    blocked: 'blockiert',
+    status: 'Status',
+    method: 'Methode',
+    type: 'Typ',
+    time: 'Zeit',
+    size: 'Größe',
+    other: 'Sonstiges',
+    noRequests: 'Seit dem Öffnen des Inspectors wurden keine Anfragen erfasst.',
+    recording: 'Aufzeichnung',
+    preserveLog: 'Protokoll beibehalten',
+    disableCache: 'Cache deaktivieren',
+    requestDetails: 'Anfragedetails',
+    headers: 'Header',
+    payload: 'Anfragedaten',
+    response: 'Antwort',
+    preview: 'Vorschau',
+    copyUrl: 'URL kopieren',
+    copyCurl: 'Als cURL kopieren',
+    noResponseBody: 'Kein Antwortinhalt vorhanden oder noch nicht verfügbar.',
+    performanceLead: 'CDP-Leistungszähler und V8-Heap-Nutzung.',
+    heapUsed: 'Verwendeter JS-Heap',
+    heapTotal: 'Gesamter JS-Heap',
+    capturedMetrics: 'Erfasste Metriken',
+    pageDomNodes: 'DOM-Knoten der Seite',
+    resourceTimingEntries: 'Resource-Timing-Einträge',
+    resourceTimingTransfer: 'Resource-Timing-Übertragung',
+    resourceTimingDecoded: 'Dekodierter Resource-Timing-Inhalt',
+    autoRefresh: 'Automatisch aktualisieren',
+    pageSummary: 'Seitenübersicht',
+    nebulaStorage: 'Nebula-Speicher',
+    nebulaStorageLead: 'localStorage-Status der Browseroberfläche.',
+    clearFolderCache: 'Ordner-Cache leeren',
+    clearLayout: 'Layout löschen',
+    delete: 'Löschen',
+    noNebulaStorage: 'Keine Nebula-localStorage-Einträge.',
+    pageStorage: 'Seitenspeicher',
+    pageStorageLead: 'Lokaler/Sitzungsspeicher und Cookie-Metadaten der aktiven Website.',
+    noPageStorage: 'Kein Snapshot des Seitenspeichers vorhanden.',
+    storageArea: 'Bereich',
+    storageKey: 'Schlüssel',
+    storageValue: 'Wert',
+    setStorageValue: 'Speichern',
+    cacheStorage: 'Cache Storage',
+    indexedDb: 'IndexedDB',
+    serviceWorkers: 'Service Worker',
+    deleteCookie: 'Cookie löschen',
+    cookieValue: 'Cookie-Wert',
+    showCookieValue: 'Wert anzeigen',
+    hideCookieValue: 'Wert ausblenden',
+    unspecified: 'Nicht angegeben',
+    clearCurrentSite: 'Daten der aktuellen Website löschen',
+    clearCurrentSiteHint: 'Cookies, Speicher- und Cache-Daten des aktuellen Ursprungs',
+    siteLead: 'Identität, Sicherheit und Berechtigungsstatus der Seite.',
+    readyState: 'Ladestatus',
+    visibility: 'Sichtbarkeit',
+    online: 'Online',
+    cookies: 'Cookies',
+    cookieApi: 'Cookie-API',
+    cookieApiAvailable: 'Verfügbar',
+    cookieApiUnavailable: 'Nicht verfügbar',
+    siteCookies: 'Website-Cookies',
+    nebulaCookiePolicy: 'Nebula-Richtlinie für websiteübergreifende Cookies',
+    strictPolicy: 'Streng · Cookie-Versand blockiert',
+    standardPolicy: 'Standard · kein zusätzlicher Nebula-Filter',
+    trackingPrevention: 'Tracking-Schutz',
+    trackerBlocking: 'Tracker-Blockierung',
+    trackingNone: 'Aus',
+    trackingBalanced: 'Ausgewogen',
+    trackingStrict: 'Streng',
+    historyLength: 'Verlaufslänge',
+    yes: 'Ja',
+    no: 'Nein',
+    enabled: 'Aktiviert',
+    disabled: 'Deaktiviert',
+    title: 'Titel',
+    origin: 'Ursprung',
+    language: 'Sprache',
+    charset: 'Zeichensatz',
+    referrer: 'Referrer',
+    viewport: 'Viewport',
+    permissions: 'Berechtigungen',
+    filterSources: 'Script-URLs filtern…',
+    showAnonymousSources: 'Anonyme Scripts anzeigen',
+    anonymousScripts: 'Anonyme Scripts',
+    inlineScripts: 'Inline-/virtuelle Scripts',
+    noSources: 'Noch keine Scripts erfasst.',
+    noSourceMatches: 'Keine Scripts entsprechen dem Filter und den Sichtbarkeitseinstellungen.',
+    selectSource: 'Wähle links ein Script aus, um den Quellcode anzuzeigen.',
+    sourceCode: 'Quellcode',
+    accessibilityLead: 'Barrierefreiheitsbaum und DOM-Treffer der aktiven Seite.',
+    filterAccessibility: 'Nach Rolle, Name, Beschreibung oder DOM-ID filtern…',
+    showAccessibilityNoise: 'Ignorierte und leere Knoten anzeigen',
+    noAccessibility: 'Keine Barrierefreiheitsknoten gefunden.',
+    noAccessibilityMatches: 'Keine Barrierefreiheitsknoten entsprechen dem Filter.',
+    filterEvents: 'CDP-Ereignisse filtern…',
+    buffered: 'gepuffert',
+    noEvents: 'Keine passenden CDP-Ereignisse.',
+    closeFooter: 'F12 / Esc zum Schließen',
+    cdpInspector: 'CDP-basierter Nebula Inspector',
+    waitingTab: 'Warten auf einen Tab',
+  },
+} as const
+
+type WidenDeveloperCopy<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R
+    ? (...args: A) => R
+    : T[K] extends string
+      ? string
+      : T[K]
+}
+
+type DeveloperCopy = WidenDeveloperCopy<typeof COPY.en>
+type AdditionalDeveloperCopy = {
+  [K in keyof DeveloperCopy]: readonly [DeveloperCopy[K], DeveloperCopy[K], DeveloperCopy[K]]
+}
+type ItalianJapaneseDeveloperCopy = {
+  [K in keyof DeveloperCopy]: readonly [DeveloperCopy[K], DeveloperCopy[K]]
+}
+
+const CHECKED_ADDITIONAL_DEVELOPER_COPY =
+  ADDITIONAL_DEVELOPER_COPY satisfies AdditionalDeveloperCopy
+const CHECKED_ITALIAN_JAPANESE_DEVELOPER_COPY =
+  ITALIAN_JAPANESE_DEVELOPER_COPY satisfies ItalianJapaneseDeveloperCopy
+
+function additionalDeveloperCopyColumn(index: 0 | 1 | 2): DeveloperCopy {
+  return Object.fromEntries(
+    Object.entries(CHECKED_ADDITIONAL_DEVELOPER_COPY).map(([key, values]) => [key, values[index]]),
+  ) as DeveloperCopy
+}
+
+function italianJapaneseDeveloperCopyColumn(index: 0 | 1): DeveloperCopy {
+  return Object.fromEntries(
+    Object.entries(CHECKED_ITALIAN_JAPANESE_DEVELOPER_COPY).map(([key, values]) => [key, values[index]]),
+  ) as DeveloperCopy
+}
+
+const LOCALIZED_COPY = {
+  ...COPY,
+  fr: additionalDeveloperCopyColumn(0),
+  id: additionalDeveloperCopyColumn(1),
+  ru: additionalDeveloperCopyColumn(2),
+  it: italianJapaneseDeveloperCopyColumn(0),
+  ja: italianJapaneseDeveloperCopyColumn(1),
 } as const
 
 const TECHNICAL_STATE_LABELS = {
@@ -470,12 +925,180 @@ const TECHNICAL_STATE_LABELS = {
     verbose: 'Verbose',
     blocked: 'Blocked',
   },
+  es: {
+    unknown: 'Desconocido',
+    neutral: 'Neutro',
+    insecure: 'No seguro',
+    'insecure-broken': 'Error de seguridad',
+    secure: 'Seguro',
+    info: 'Información',
+    loading: 'Cargando',
+    interactive: 'Interactivo',
+    complete: 'Completado',
+    visible: 'Visible',
+    hidden: 'Oculto',
+    prerender: 'Prerenderizando',
+    granted: 'Concedido',
+    denied: 'Denegado',
+    prompt: 'Preguntar',
+    error: 'Error',
+    warning: 'Advertencia',
+    warn: 'Advertencia',
+    log: 'Registro',
+    debug: 'Depuración',
+    verbose: 'Detallado',
+    blocked: 'Bloqueado',
+  },
+  de: {
+    unknown: 'Unbekannt',
+    neutral: 'Neutral',
+    insecure: 'Nicht sicher',
+    'insecure-broken': 'Sicherheitsfehler',
+    secure: 'Sicher',
+    info: 'Info',
+    loading: 'Wird geladen',
+    interactive: 'Interaktiv',
+    complete: 'Abgeschlossen',
+    visible: 'Sichtbar',
+    hidden: 'Ausgeblendet',
+    prerender: 'Wird vorgerendert',
+    granted: 'Zugelassen',
+    denied: 'Abgelehnt',
+    prompt: 'Nachfragen',
+    error: 'Fehler',
+    warning: 'Warnung',
+    warn: 'Warnung',
+    log: 'Protokoll',
+    debug: 'Debug',
+    verbose: 'Ausführlich',
+    blocked: 'Blockiert',
+  },
+  fr: {
+    unknown: 'Inconnu',
+    neutral: 'Neutre',
+    insecure: 'Non sécurisé',
+    'insecure-broken': 'Erreur de sécurité',
+    secure: 'Sécurisé',
+    info: 'Information',
+    loading: 'Chargement',
+    interactive: 'Interactif',
+    complete: 'Terminé',
+    visible: 'Visible',
+    hidden: 'Masqué',
+    prerender: 'Pré-rendu',
+    granted: 'Autorisé',
+    denied: 'Refusé',
+    prompt: 'Demander',
+    error: 'Erreur',
+    warning: 'Avertissement',
+    warn: 'Avertissement',
+    log: 'Journal',
+    debug: 'Débogage',
+    verbose: 'Détaillé',
+    blocked: 'Bloqué',
+  },
+  id: {
+    unknown: 'Tidak diketahui',
+    neutral: 'Netral',
+    insecure: 'Tidak aman',
+    'insecure-broken': 'Error keamanan',
+    secure: 'Aman',
+    info: 'Info',
+    loading: 'Memuat',
+    interactive: 'Interaktif',
+    complete: 'Selesai',
+    visible: 'Terlihat',
+    hidden: 'Tersembunyi',
+    prerender: 'Prarender',
+    granted: 'Diizinkan',
+    denied: 'Ditolak',
+    prompt: 'Tanya',
+    error: 'Error',
+    warning: 'Peringatan',
+    warn: 'Peringatan',
+    log: 'Log',
+    debug: 'Debug',
+    verbose: 'Rinci',
+    blocked: 'Diblokir',
+  },
+  ru: {
+    unknown: 'Неизвестно',
+    neutral: 'Нейтрально',
+    insecure: 'Не защищено',
+    'insecure-broken': 'Ошибка безопасности',
+    secure: 'Защищено',
+    info: 'Информация',
+    loading: 'Загрузка',
+    interactive: 'Интерактивный',
+    complete: 'Завершено',
+    visible: 'Видимый',
+    hidden: 'Скрытый',
+    prerender: 'Предварительный рендеринг',
+    granted: 'Разрешено',
+    denied: 'Запрещено',
+    prompt: 'Спрашивать',
+    error: 'Ошибка',
+    warning: 'Предупреждение',
+    warn: 'Предупреждение',
+    log: 'Журнал',
+    debug: 'Отладка',
+    verbose: 'Подробно',
+    blocked: 'Заблокировано',
+  },
+  it: {
+    unknown: 'Sconosciuto',
+    neutral: 'Neutro',
+    insecure: 'Non sicuro',
+    'insecure-broken': 'Errore di sicurezza',
+    secure: 'Sicuro',
+    info: 'Informazione',
+    loading: 'Caricamento',
+    interactive: 'Interattivo',
+    complete: 'Completato',
+    visible: 'Visibile',
+    hidden: 'Nascosto',
+    prerender: 'Pre-rendering',
+    granted: 'Consentito',
+    denied: 'Negato',
+    prompt: 'Chiedi',
+    error: 'Errore',
+    warning: 'Avviso',
+    warn: 'Avviso',
+    log: 'Log',
+    debug: 'Debug',
+    verbose: 'Dettagliato',
+    blocked: 'Bloccato',
+  },
+  ja: {
+    unknown: '不明',
+    neutral: '中立',
+    insecure: '保護されていません',
+    'insecure-broken': 'セキュリティエラー',
+    secure: '保護されています',
+    info: '情報',
+    loading: '読み込み中',
+    interactive: '操作可能',
+    complete: '完了',
+    visible: '表示',
+    hidden: '非表示',
+    prerender: '事前レンダリング',
+    granted: '許可',
+    denied: '拒否',
+    prompt: '確認',
+    error: 'エラー',
+    warning: '警告',
+    warn: '警告',
+    log: 'ログ',
+    debug: 'デバッグ',
+    verbose: '詳細',
+    blocked: 'ブロック',
+  },
 } as const
 
-function localizeTechnicalState(locale: 'tr' | 'en', value: string | null | undefined): string {
+function localizeTechnicalState(locale: NebulaLocale, value: string | null | undefined): string {
   if (!value) return '—'
   const key = value.toLowerCase()
-  const labels = TECHNICAL_STATE_LABELS[locale] as Record<string, string>
+  const labels = getLocaleCopy(TECHNICAL_STATE_LABELS, locale) as Record<string, string>
   return labels[key] ?? value
 }
 
@@ -715,7 +1338,7 @@ export function DeveloperTools({
   onClose,
 }: DeveloperToolsProps) {
   const { locale } = useLocale()
-  const copy = COPY[locale]
+  const copy = getLocaleCopy(LOCALIZED_COPY, locale)
   const dialogRef = useRef<HTMLElement>(null)
   useModalFocusTrap(dialogRef)
   const [section, setSection] = useState<DeveloperToolsSection>('overview')
@@ -1966,7 +2589,7 @@ export function DeveloperTools({
     }
   }, [captureTabRequest, copy.storageRefreshFailed, refreshPageStorage, requestIsCurrent])
 
-  const dateLocale = locale === 'tr' ? 'tr-TR' : 'en-US'
+  const dateLocale = getIntlLocale(locale)
 
   const filteredConsole = useMemo(() => {
     const needle = consoleFilter.trim().toLowerCase()
@@ -2212,15 +2835,15 @@ export function DeveloperTools({
                 <div className={styles.paneToolbar}>
                   <div className={styles.filterRow}><input value={consoleFilter} onChange={(event) => setConsoleFilter(event.target.value)} placeholder={copy.filterConsole} /></div>
                   <select className={styles.compactSelect} value={consoleLevelFilter} onChange={(event) => setConsoleLevelFilter(event.target.value)}>
-                    <option value="all">{locale === 'tr' ? 'Tüm düzeyler' : 'All levels'}</option>
-                    <option value="error">Error</option>
-                    <option value="blocked">{locale === 'tr' ? 'Engellendi' : 'Blocked'}</option>
-                    <option value="warning">Warning</option>
-                    <option value="log">Log</option>
-                    <option value="info">Info</option>
-                    <option value="debug">Debug</option>
-                    <option value="command">Command</option>
-                    <option value="result">Result</option>
+                    <option value="all">{copy.allLevels}</option>
+                    <option value="error">{localizeTechnicalState(locale, 'error')}</option>
+                    <option value="blocked">{localizeTechnicalState(locale, 'blocked')}</option>
+                    <option value="warning">{localizeTechnicalState(locale, 'warning')}</option>
+                    <option value="log">{localizeTechnicalState(locale, 'log')}</option>
+                    <option value="info">{localizeTechnicalState(locale, 'info')}</option>
+                    <option value="debug">{localizeTechnicalState(locale, 'debug')}</option>
+                    <option value="command">{copy.command}</option>
+                    <option value="result">{copy.result}</option>
                   </select>
                   <label className={styles.toggleLabel}><input type="checkbox" checked={preserveConsoleLog} onChange={(event) => setPreserveConsoleLog(event.target.checked)} />{copy.preserveLog}</label>
                   <button type="button" className={styles.smallButton} onClick={() => setConsoleEntries([])}>{copy.clear}</button>
@@ -2304,14 +2927,14 @@ export function DeveloperTools({
                           <span>URL</span><code>{selectedNetworkEntry.url}</code>
                           <span>{copy.method}</span><code>{selectedNetworkEntry.method}</code>
                           <span>{copy.status}</span><code>{isClientBlockedNetworkEntry(selectedNetworkEntry) ? `${copy.blocked}${selectedNetworkEntry.blockedReason ? ` · ${selectedNetworkEntry.blockedReason}` : ''}` : selectedNetworkEntry.status ?? selectedNetworkEntry.errorText ?? '—'} {selectedNetworkEntry.statusText ?? ''}</code>
-                          <span>Protocol</span><code>{selectedNetworkEntry.protocol ?? '—'}</code>
-                          <span>Remote</span><code>{selectedNetworkEntry.remoteIPAddress ? `${selectedNetworkEntry.remoteIPAddress}:${selectedNetworkEntry.remotePort ?? ''}` : '—'}</code>
-                          <span>Cache</span><code>{selectedNetworkEntry.fromDiskCache ? copy.yes : copy.no}</code>
+                          <span>{copy.protocol}</span><code>{selectedNetworkEntry.protocol ?? '—'}</code>
+                          <span>{copy.remote}</span><code>{selectedNetworkEntry.remoteIPAddress ? `${selectedNetworkEntry.remoteIPAddress}:${selectedNetworkEntry.remotePort ?? ''}` : '—'}</code>
+                          <span>{copy.cache}</span><code>{selectedNetworkEntry.fromDiskCache ? copy.yes : copy.no}</code>
                         </div>
-                        <details open className={styles.detailSection}><summary>{copy.headers}</summary><h4>Request</h4><pre>{headersText(selectedNetworkEntry.requestHeaders)}</pre><h4>Response</h4><pre>{headersText(selectedNetworkEntry.responseHeaders)}</pre></details>
+                        <details open className={styles.detailSection}><summary>{copy.headers}</summary><h4>{copy.request}</h4><pre>{headersText(selectedNetworkEntry.requestHeaders)}</pre><h4>{copy.response}</h4><pre>{headersText(selectedNetworkEntry.responseHeaders)}</pre></details>
                         <details className={styles.detailSection}><summary>{copy.payload}</summary><pre>{selectedNetworkEntry.postData || copy.empty}</pre></details>
                         <details open className={styles.detailSection}><summary>{copy.response}</summary><pre>{networkBody?.requestId === selectedNetworkEntry.requestId ? (networkBody.error || networkBody.body || copy.noResponseBody) : copy.noResponseBody}</pre>{networkBody?.base64Encoded && <small>Base64</small>}</details>
-                        <details className={styles.detailSection}><summary>Initiator / Security</summary><pre>{JSON.stringify({ initiator: selectedNetworkEntry.initiator, security: selectedNetworkEntry.securityDetails }, null, 2)}</pre></details>
+                        <details className={styles.detailSection}><summary>{copy.initiatorSecurity}</summary><pre>{JSON.stringify({ initiator: selectedNetworkEntry.initiator, security: selectedNetworkEntry.securityDetails }, null, 2)}</pre></details>
                       </div>
                     </aside>
                   )}
@@ -2347,7 +2970,7 @@ export function DeveloperTools({
                     </div>
                   </>
                 )}
-                <h3 className={styles.subheading}>CDP metrics</h3>
+                <h3 className={styles.subheading}>{copy.cdpMetrics}</h3>
                 <div className={styles.metricList}>{performanceMetrics.map((metric) => <div key={metric.name} className={styles.metricRow}><span>{metric.name}</span><code>{formatMetric(metric)}</code></div>)}</div>
               </div>
             )}
@@ -2381,7 +3004,7 @@ export function DeveloperTools({
                           <div className={styles.keyValueList}>
                             {Object.entries(pageStorage[area]).map(([key, value]) => (
                               <div key={key} className={styles.keyValueRow}>
-                                <button type="button" title={locale === 'tr' ? 'Düzenle' : 'Edit'} onClick={() => { setStorageArea(area); setStorageKey(key); setStorageValue(value) }}><code>{key}</code><span>{value}</span></button>
+                                <button type="button" title={copy.edit} onClick={() => { setStorageArea(area); setStorageKey(key); setStorageValue(value) }}><code>{key}</code><span>{value}</span></button>
                                 <button type="button" className={styles.rowDeleteButton} onClick={() => void deletePageStorageEntry(area, key)}>{copy.delete}</button>
                               </div>
                             ))}

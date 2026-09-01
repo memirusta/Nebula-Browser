@@ -19,7 +19,10 @@ test('Windows exposes one Nebula-owned media producer and suppresses WebView2 SM
   assert.match(media, /--disable-features=HardwareMediaKeyHandling/)
   assert.match(native, /mod media_session;/)
   assert.match(native, /media_session::setup\(&app, &label\)/)
-  assert.match(native, /media_session::teardown\(&app, &label\)/)
+  assert.match(
+    native,
+    /fn teardown_tab_webview_integrations[\s\S]*?media_session::teardown\(app, label\)[\s\S]*?async fn webview_close_tab[\s\S]*?teardown_tab_webview_integrations\(&app, &label\)[\s\S]*?webview\.close\(\)/,
+  )
   assert.match(
     native,
     /media_session::configure_webview_environment\(\)[\s\S]*?tauri::Builder::default\(\)/,

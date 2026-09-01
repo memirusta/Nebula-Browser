@@ -538,6 +538,21 @@ async fn weather_search_subdivisions(
     .await
 }
 
+fn teardown_tab_webview_integrations(app: &tauri::AppHandle, label: &str) {
+    tab_fullscreen::teardown_tab_fullscreen(app, label);
+    devtools_bridge::teardown(app, label);
+    context_menu::teardown(app, label);
+    site_ui::teardown(app, label);
+    media_session::teardown(app, label);
+    force_dark_pages::teardown(app, label);
+    download_manager::teardown_tab_downloads(app, label);
+    webview_privacy::teardown(app, label);
+    tab_error_page::teardown_tab_error_page(app, label);
+    tab_shortcuts::teardown_tab_shortcuts(app, label);
+    tab_metadata::teardown_tab_metadata(app, label);
+    webview_branding::teardown_webview_branding(label);
+}
+
 #[tauri::command]
 fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result<(), String> {
     // WebView registration must run from Tauri's WebView/main context. Several
@@ -545,22 +560,30 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
     // their COM handlers are installed before navigation begins. Moving this
     // entire command to `spawn_blocking` makes those helpers observe an
     // unconfigured WebView and abort tab activation.
-    webview_branding::setup_webview_branding(&app, &label)?;
-    site_ui::setup(&app, &label)?;
-    media_session::setup(&app, &label)?;
-    force_dark_pages::setup(&app, &label)?;
-    // Context-menu interception requires a newer WebView2 interface. Keep tab
-    // creation resilient on an unexpectedly old runtime; in that case the
-    // branding layer still leaves the native Edge menu disabled.
-    if let Err(_error) = context_menu::setup(&app, &label) {
-        #[cfg(debug_assertions)]
-        eprintln!("[nebula context menu] {label}: {_error}");
+    let result = (|| {
+        webview_branding::setup_webview_branding(&app, &label)?;
+        site_ui::setup(&app, &label)?;
+        media_session::setup(&app, &label)?;
+        force_dark_pages::setup(&app, &label)?;
+        // Context-menu interception requires a newer WebView2 interface. Keep tab
+        // creation resilient on an unexpectedly old runtime; in that case the
+        // branding layer still leaves the native Edge menu disabled.
+        if let Err(_error) = context_menu::setup(&app, &label) {
+            #[cfg(debug_assertions)]
+            eprintln!("[nebula context menu] {label}: {_error}");
+        }
+        download_manager::setup_tab_downloads(&app, &label)?;
+        tab_error_page::setup_tab_error_page(&app, &label)?;
+        tab_fullscreen::setup_tab_fullscreen(&app, &label)?;
+        tab_shortcuts::setup_tab_shortcuts(&app, &label)?;
+        tab_metadata::setup_tab_metadata(&app, &label)
+    })();
+
+    if result.is_err() {
+        teardown_tab_webview_integrations(&app, &label);
     }
-    download_manager::setup_tab_downloads(&app, &label)?;
-    tab_error_page::setup_tab_error_page(&app, &label)?;
-    tab_fullscreen::setup_tab_fullscreen(&app, &label)?;
-    tab_shortcuts::setup_tab_shortcuts(&app, &label)?;
-    tab_metadata::setup_tab_metadata(&app, &label)
+
+    result
 }
 
 #[tauri::command]
@@ -574,6 +597,17 @@ async fn site_ui_respond(
         .map_err(|error| error.to_string())?
 }
 
+fn teardown_popup_webview_integrations(app: &tauri::AppHandle, label: &str) {
+    context_menu::teardown(app, label);
+    site_ui::teardown(app, label);
+    media_session::teardown(app, label);
+    force_dark_pages::teardown(app, label);
+    download_manager::teardown_tab_downloads(app, label);
+    webview_privacy::teardown(app, label);
+    tab_error_page::teardown_tab_error_page(app, label);
+    webview_branding::teardown_webview_branding(label);
+}
+
 #[tauri::command]
 fn webview_setup_popup_target(app: tauri::AppHandle, label: String) -> Result<(), String> {
     if !label.starts_with("nebula-popup-content-") {
@@ -583,15 +617,23 @@ fn webview_setup_popup_target(app: tauri::AppHandle, label: String) -> Result<()
     // Keep the target unnavigated until CoreWebView2 NewWindowRequested binds it
     // as the site's real popup. All handlers that must exist before first
     // navigation are installed here.
-    webview_branding::setup_webview_branding(&app, &label)?;
-    site_ui::setup(&app, &label)?;
-    force_dark_pages::setup(&app, &label)?;
-    if let Err(_error) = context_menu::setup(&app, &label) {
-        #[cfg(debug_assertions)]
-        eprintln!("[nebula context menu] {label}: {_error}");
+    let result = (|| {
+        webview_branding::setup_webview_branding(&app, &label)?;
+        site_ui::setup(&app, &label)?;
+        force_dark_pages::setup(&app, &label)?;
+        if let Err(_error) = context_menu::setup(&app, &label) {
+            #[cfg(debug_assertions)]
+            eprintln!("[nebula context menu] {label}: {_error}");
+        }
+        download_manager::setup_tab_downloads(&app, &label)?;
+        tab_error_page::setup_tab_error_page(&app, &label)
+    })();
+
+    if result.is_err() {
+        teardown_popup_webview_integrations(&app, &label);
     }
-    download_manager::setup_tab_downloads(&app, &label)?;
-    tab_error_page::setup_tab_error_page(&app, &label)
+
+    result
 }
 
 #[tauri::command]
@@ -620,14 +662,7 @@ fn webview_teardown_popup_target(app: tauri::AppHandle, label: String) -> Result
         return Err("popup target label is not allowed".to_string());
     }
 
-    context_menu::teardown(&app, &label);
-    site_ui::teardown(&app, &label);
-    media_session::teardown(&app, &label);
-    force_dark_pages::teardown(&app, &label);
-    download_manager::teardown_tab_downloads(&app, &label);
-    webview_privacy::teardown(&app, &label);
-    tab_error_page::teardown_tab_error_page(&app, &label);
-    webview_branding::teardown_webview_branding(&label);
+    teardown_popup_webview_integrations(&app, &label);
     Ok(())
 }
 
@@ -768,17 +803,7 @@ async fn webview_close_tab(app: tauri::AppHandle, label: String) -> Result<(), S
         return Err("close is limited to browser tabs".to_string());
     }
     let deferred_for_download = download_manager::defer_tab_close_if_active(&label);
-    tab_fullscreen::teardown_tab_fullscreen(&app, &label);
-    devtools_bridge::teardown(&app, &label);
-    context_menu::teardown(&app, &label);
-    site_ui::teardown(&app, &label);
-    force_dark_pages::teardown(&app, &label);
-    download_manager::teardown_tab_downloads(&app, &label);
-    webview_privacy::teardown(&app, &label);
-    tab_error_page::teardown_tab_error_page(&app, &label);
-    tab_shortcuts::teardown_tab_shortcuts(&app, &label);
-    tab_metadata::teardown_tab_metadata(&app, &label);
-    webview_branding::teardown_webview_branding(&label);
+    teardown_tab_webview_integrations(&app, &label);
 
     let Some(webview) = app.get_webview(&label) else {
         return if deferred_for_download {
@@ -1306,21 +1331,21 @@ fn window_cursor_in_client_rect(
 /// Return whether the OS cursor is inside Semi-Lunar's visible lower-half
 /// ellipse in the parent window's client coordinate space.
 ///
-/// `x`, `y`, `width`, and `height` describe the physical bounding box whose
-/// ellipse is centered at the top-middle (`50% 0%`) with radii `50% 100%`,
-/// matching the browsing Semi-Lunar clip-path. A small physical-pixel
-/// tolerance keeps edge rounding/compositor jitter from causing false exits.
+/// The frontend supplies the dome's logical dimensions. Window size, scale
+/// factor, physical bounds, and cursor position are read in this single native
+/// call so the 60 ms hover watchdog does not need three IPC round trips.
 #[tauri::command]
 fn window_cursor_in_client_lunar_shape(
     app: tauri::AppHandle,
     window_label: String,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    tolerance: i32,
+    lunar_width_px: f64,
+    lunar_height_px: f64,
 ) -> Result<bool, String> {
-    if width < 1 || height < 1 {
+    if !lunar_width_px.is_finite()
+        || !lunar_height_px.is_finite()
+        || lunar_width_px < 1.0
+        || lunar_height_px < 1.0
+    {
         return Err("cursor lunar hit-test bounds must be positive".to_string());
     }
 
@@ -1334,6 +1359,8 @@ fn window_cursor_in_client_lunar_shape(
         let window = app
             .get_window(&window_label)
             .ok_or_else(|| format!("window '{window_label}' not found ({})", debug_labels(&app)))?;
+        let window_size = window.inner_size().map_err(|error| error.to_string())?;
+        let scale_factor = window.scale_factor().map_err(|error| error.to_string())?;
         let parent_hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
         let mut point = POINT::default();
@@ -1345,11 +1372,19 @@ fn window_cursor_in_client_lunar_shape(
             }
         }
 
-        let tolerance = tolerance.clamp(0, 256) as f64;
-        let x = x as f64;
-        let y = y as f64;
-        let width = width as f64;
-        let height = height as f64;
+        // A minimized Windows client can briefly report a zero-sized surface.
+        // Keep clamp bounds valid and mirror the frontend's former `max(1)`.
+        let window_width = (window_size.width as f64).max(1.0);
+        let window_height = (window_size.height as f64).max(1.0);
+        let width = (lunar_width_px * scale_factor)
+            .ceil()
+            .clamp(1.0, window_width);
+        let height = (lunar_height_px * scale_factor)
+            .ceil()
+            .clamp(1.0, window_height);
+        let x = ((window_width - width) / 2.0).round().max(0.0);
+        let y = 0.0;
+        let tolerance = (8.0 * scale_factor).ceil().clamp(2.0, 256.0);
         let px = point.x as f64;
         let py = point.y as f64;
 
@@ -1371,7 +1406,7 @@ fn window_cursor_in_client_lunar_shape(
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, window_label, x, y, width, height, tolerance);
+        let _ = (app, window_label, lunar_width_px, lunar_height_px);
         Ok(false)
     }
 }

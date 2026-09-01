@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import vm from 'node:vm'
+import ts from 'typescript'
 
 import {
   allSettledOrThrow,
@@ -14,6 +16,7 @@ import {
 import {
   prewarmCreationIsCurrent,
   prewarmProfileMatches,
+  shouldKeepPrewarmedWebview,
 } from '../src/core/prewarmProfile.ts'
 import {
   parsePasswordVault,
@@ -34,6 +37,8 @@ import {
 import { resetHomeMenuStorageOnce } from '../src/core/homeMenuStorage.ts'
 import { SingleFlightPoll } from '../src/core/singleFlightPoll.ts'
 import { searchShortcutIdentity } from '../src/core/searchShortcutIdentity.ts'
+import { waitForTauriCreated } from '../src/platform/tauriCreationWait.ts'
+import { debounce } from '../src/platform/debounce.ts'
 import { Cdp, pollUntil } from '../scripts/e2e-cdp.mjs'
 import {
   hostsMatchForPassword,
@@ -243,6 +248,19 @@ test('native shortcut and chrome-bounds commands remain in the Tauri ACL', () =>
       `${command} must be callable by the trusted shell`,
     )
   }
+})
+
+test('UI E2E smoke does not depend on Windows GPU availability', () => {
+  const source = readFileSync(
+    new URL('../scripts/e2e-smoke.mjs', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(source, /'--headless=new'/)
+  assert.match(source, /'--disable-gpu'/)
+  assert.match(source, /'--disable-software-rasterizer'/)
+  assert.match(source, /process\.platform === 'win32'[\s\S]{0,500}'--no-sandbox'/)
+  assert.match(source, /--host-resolver-rules=MAP example\.com 0\.0\.0\.0/)
 })
 
 test('release smoke pins and hashes the target-specific release artifact', () => {
@@ -474,6 +492,82 @@ test('prewarmed webviews are adopted only for the mode they were created with', 
   assert.equal(prewarmCreationIsCurrent(4, 5, true, true), false)
   assert.equal(prewarmCreationIsCurrent(5, 5, false, true), false)
   assert.equal(prewarmCreationIsCurrent(5, 5, true, true), true)
+  assert.equal(shouldKeepPrewarmedWebview(84), true)
+  assert.equal(shouldKeepPrewarmedWebview(85), false)
+  assert.equal(shouldKeepPrewarmedWebview(Number.NaN), false)
+})
+
+test('failed tab, prewarm and popup setup paths unwind native integrations', () => {
+  const native = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const browser = readFileSync(new URL('../src/platform/tauriBrowser.ts', import.meta.url), 'utf8')
+
+  assert.match(
+    native,
+    /fn webview_setup_tab_error_pages[\s\S]*?if result\.is_err\(\) \{[\s\S]*?teardown_tab_webview_integrations\(&app, &label\)/,
+  )
+  assert.match(
+    native,
+    /fn webview_setup_popup_target[\s\S]*?if result\.is_err\(\) \{[\s\S]*?teardown_popup_webview_integrations\(&app, &label\)/,
+  )
+  assert.match(
+    browser,
+    /configurePopupBrowseWebview[\s\S]*?catch \(error\) \{[\s\S]*?webview_teardown_popup_target/,
+  )
+  assert.match(
+    browser,
+    /browser\.prewarm\.close-after-error[\s\S]*?destroyTabWebview\(label\)/,
+  )
+})
+
+test('Tauri creation waits release the opposite listener on success and timeout', async () => {
+  type Handler = (event: { event: string; id: number; payload: unknown }) => void
+  const handlers = new Map<string, Set<Handler>>()
+  const target = {
+    async once<T>(event: string, handler: (value: { event: string; id: number; payload: T }) => void) {
+      const listeners = handlers.get(event) ?? new Set<Handler>()
+      listeners.add(handler as Handler)
+      handlers.set(event, listeners)
+      return () => listeners.delete(handler as Handler)
+    },
+  }
+  const emit = (event: string, payload?: unknown) => {
+    for (const handler of [...(handlers.get(event) ?? [])]) {
+      handler({ event, id: 1, payload })
+    }
+  }
+
+  const created = waitForTauriCreated(target, 'test target', 100)
+  await Promise.resolve()
+  emit('tauri://created')
+  await created
+  assert.equal(handlers.get('tauri://created')?.size, 0)
+  assert.equal(handlers.get('tauri://error')?.size, 0)
+
+  const failed = waitForTauriCreated(target, 'failed target', 100)
+  await Promise.resolve()
+  emit('tauri://error')
+  await assert.rejects(failed, /failed target create error/)
+  assert.equal(handlers.get('tauri://created')?.size, 0)
+  assert.equal(handlers.get('tauri://error')?.size, 0)
+
+  await assert.rejects(
+    waitForTauriCreated(target, 'timed target', 1),
+    /timed target create timeout/,
+  )
+  assert.equal(handlers.get('tauri://created')?.size, 0)
+  assert.equal(handlers.get('tauri://error')?.size, 0)
+})
+
+test('cancelled debounced layout work cannot apply stale geometry', async () => {
+  let calls = 0
+  const applyLayout = debounce(() => {
+    calls += 1
+  }, 1)
+
+  applyLayout()
+  applyLayout.cancel()
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(calls, 0)
 })
 
 test('password matching never downgrades an HTTPS credential to HTTP', () => {
@@ -805,13 +899,37 @@ test('browser zoom is shortcut-only and Ctrl+wheel uses the native zoom path', (
   assert.match(browserShell, /settings\.privacy\.privateMode/)
 })
 
-test('selected app locale drives clock formatting and native error-page copy', () => {
+test('supported app locales drive regional formatting and native UI copy', () => {
   const clock = readFileSync(
     new URL('../src/hooks/useSystemStats.ts', import.meta.url),
     'utf8',
   )
+  const localeCore = readFileSync(
+    new URL('../src/core/locale.ts', import.meta.url),
+    'utf8',
+  )
+  const spanishMessages = readFileSync(
+    new URL('../src/core/localeMessages.es.ts', import.meta.url),
+    'utf8',
+  )
+  const germanMessages = readFileSync(
+    new URL('../src/core/localeMessages.de.ts', import.meta.url),
+    'utf8',
+  )
+  const additionalMessages = readFileSync(
+    new URL('../src/core/localeMessages.additional.ts', import.meta.url),
+    'utf8',
+  )
+  const italianJapaneseMessages = readFileSync(
+    new URL('../src/core/localeMessages.it-ja.ts', import.meta.url),
+    'utf8',
+  )
   const localeHook = readFileSync(
     new URL('../src/hooks/useLocale.tsx', import.meta.url),
+    'utf8',
+  )
+  const tauriLocale = readFileSync(
+    new URL('../src/platform/tauriLocale.ts', import.meta.url),
     'utf8',
   )
   const nativeErrorPage = readFileSync(
@@ -824,14 +942,101 @@ test('selected app locale drives clock formatting and native error-page copy', (
   )
 
   assert.match(clock, /const \{ locale \} = useLocale\(\)/)
-  assert.match(clock, /locale === 'tr' \? 'tr-TR' : 'en-US'/)
+  assert.match(clock, /getIntlLocale\(locale\)/)
   assert.match(clock, /toLocaleTimeString\(dateLocale/)
   assert.match(clock, /toLocaleDateString\(dateLocale/)
+  assert.match(localeCore, /SUPPORTED_LOCALES = \['tr', 'en', 'es', 'de', 'fr', 'id', 'ru', 'it', 'ja'\]/)
+  assert.match(localeCore, /language\.startsWith\('es'\)/)
+  assert.match(localeCore, /language\.startsWith\('de'\)/)
+  assert.match(localeCore, /language\.startsWith\('fr'\)/)
+  assert.match(localeCore, /language\.startsWith\('id'\)/)
+  assert.match(localeCore, /language\.startsWith\('ru'\)/)
+  assert.match(localeCore, /language\.startsWith\('it'\)/)
+  assert.match(localeCore, /language\.startsWith\('ja'\)/)
+  assert.match(localeCore, /intlLocale: 'es-ES'/)
+  assert.match(localeCore, /intlLocale: 'de-DE'/)
+  assert.match(localeCore, /intlLocale: 'fr-FR'/)
+  assert.match(localeCore, /intlLocale: 'id-ID'/)
+  assert.match(localeCore, /intlLocale: 'ru-RU'/)
+  assert.match(localeCore, /intlLocale: 'it-IT'/)
+  assert.match(localeCore, /intlLocale: 'ja-JP'/)
+  assert.match(localeCore, /if \(locale === 'es'\) return ES_LOCALE_MESSAGES\[key\]/)
+  assert.match(localeCore, /if \(locale === 'de'\) return DE_LOCALE_MESSAGES\[key\]/)
+  assert.match(localeCore, /if \(locale === 'fr'\) return FR_LOCALE_MESSAGES\[key\]/)
+  assert.match(localeCore, /if \(locale === 'id'\) return ID_LOCALE_MESSAGES\[key\]/)
+  assert.match(localeCore, /if \(locale === 'ru'\) return RU_LOCALE_MESSAGES\[key\]/)
+  assert.match(localeCore, /if \(locale === 'it'\) return IT_LOCALE_MESSAGES\[key\]/)
+  assert.match(localeCore, /if \(locale === 'ja'\) return JA_LOCALE_MESSAGES\[key\]/)
+  assert.match(spanishMessages, /satisfies Record<LocaleMessageKey, string>/)
+  assert.match(germanMessages, /satisfies Record<LocaleMessageKey, string>/)
+  assert.match(additionalMessages, /satisfies Record<LocaleMessageKey, AdditionalLocaleTuple>/)
+  assert.match(italianJapaneseMessages, /satisfies Record<LocaleMessageKey, ItalianJapaneseTuple>/)
   assert.match(localeHook, /syncNativeUiLocale\(locale\)/)
+  assert.match(localeHook, /listenUiLocaleChanges/)
+  assert.match(localeHook, /isNebulaLocale\(next\)/)
+  assert.match(tauriLocale, /nebula-ui-locale-changed/)
+  assert.match(tauriLocale, /emit\(UI_LOCALE_CHANGED_EVENT, locale\)/)
   assert.match(nativeErrorPage, /This site can't be reached/)
   assert.match(nativeErrorPage, /Bu siteye ulaşılamıyor/)
+  assert.match(nativeErrorPage, /No se puede acceder a este sitio/)
+  assert.match(nativeErrorPage, /Diese Website ist nicht erreichbar/)
+  assert.match(nativeErrorPage, /Ce site est inaccessible/)
+  assert.match(nativeErrorPage, /Situs ini tidak dapat dijangkau/)
+  assert.match(nativeErrorPage, /Не удаётся открыть этот сайт/)
+  assert.match(nativeErrorPage, /Questo sito non è raggiungibile/)
+  assert.match(nativeErrorPage, /このサイトにアクセスできません/)
   assert.doesNotMatch(nativeErrorPage, /navigator\.language/)
   assert.match(permissions, /"webview_set_ui_locale"/)
+})
+
+test('flat locale catalogs cover every message key and preserve interpolation placeholders', () => {
+  const evaluateMap = (relativePath: string, exportName: string): Record<string, string | { en: string }> => {
+    const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+    const output = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }).outputText
+    const exports: Record<string, unknown> = {}
+    const sandbox = { exports, module: { exports } }
+    vm.runInNewContext(output, sandbox)
+    return sandbox.exports[exportName] as Record<string, string | { en: string }>
+  }
+  const base = evaluateMap('../src/core/localeMessages.ts', 'LOCALE_MESSAGES')
+  const spanish = evaluateMap('../src/core/localeMessages.es.ts', 'ES_LOCALE_MESSAGES')
+  const german = evaluateMap('../src/core/localeMessages.de.ts', 'DE_LOCALE_MESSAGES')
+  const french = evaluateMap('../src/core/localeMessages.additional.ts', 'FR_LOCALE_MESSAGES')
+  const indonesian = evaluateMap('../src/core/localeMessages.additional.ts', 'ID_LOCALE_MESSAGES')
+  const russian = evaluateMap('../src/core/localeMessages.additional.ts', 'RU_LOCALE_MESSAGES')
+  const italian = evaluateMap('../src/core/localeMessages.it-ja.ts', 'IT_LOCALE_MESSAGES')
+  const japanese = evaluateMap('../src/core/localeMessages.it-ja.ts', 'JA_LOCALE_MESSAGES')
+  const baseKeys = Object.keys(base).sort()
+  const placeholders = (value: string) =>
+    [...value.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => match[1]).sort()
+
+  assert.ok(baseKeys.length > 600)
+  for (const [localeName, catalog] of [
+    ['Spanish', spanish],
+    ['German', german],
+    ['French', french],
+    ['Indonesian', indonesian],
+    ['Russian', russian],
+    ['Italian', italian],
+    ['Japanese', japanese],
+  ] as const) {
+    assert.deepEqual(Object.keys(catalog).sort(), baseKeys)
+    for (const key of baseKeys) {
+      const baseValue = base[key]
+      const localizedValue = catalog[key]
+      assert.equal(typeof localizedValue, 'string', `${key} must have ${localeName} text`)
+      assert.deepEqual(
+        placeholders(typeof baseValue === 'string' ? baseValue : baseValue.en),
+        placeholders(localizedValue as string),
+        `${key} must preserve placeholders in ${localeName}`,
+      )
+    }
+  }
 })
 
 test('two-step password flow carries username within the same tab and records role origins', () => {
@@ -1229,7 +1434,7 @@ test('getDisplayMedia delegates to the native WebView2 picker and tracks its tab
   assert.match(siteUi, /source-tab-closed/)
   assert.doesNotMatch(siteUi, /visibilitychange[\s\S]*?liveDisplayTracks\.clear/)
   assert.match(usage, /screen: boolean/)
-  assert.match(chrome, /Ekran paylaşılıyor/)
+  assert.match(chrome, /t\('privacyScreenInUse'\)/)
 })
 
 test('transition logs redact secrets and Store updater absence is automated', () => {

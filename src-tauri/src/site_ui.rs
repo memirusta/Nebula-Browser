@@ -715,6 +715,18 @@ mod imp {
 
   installSensitiveFeatureUsageObserver();
 
+  function instagramAvatarKey(value) {
+    const normalized = String(value || '').toLocaleLowerCase().trim();
+    const alphanumeric = normalized.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 80);
+    if (alphanumeric) return alphanumeric;
+    return Array.from(normalized)
+      .filter(function (character) {
+        return !/\s/u.test(character) && character !== '\uFE0E' && character !== '\uFE0F';
+      })
+      .join('')
+      .slice(0, 40);
+  }
+
   function installInstagramAvatarObserver() {
     const hostname = String(window.location.hostname || '').toLowerCase();
     if (hostname !== 'instagram.com' && !hostname.endsWith('.instagram.com')) return;
@@ -728,10 +740,7 @@ mod imp {
     const reported = new Set();
 
     function senderKey(value) {
-      return String(value || '')
-        .toLocaleLowerCase()
-        .replace(/[^\p{L}\p{N}]/gu, '')
-        .slice(0, 80);
+      return instagramAvatarKey(value);
     }
 
     function trustedImageUrl(value) {
@@ -887,8 +896,8 @@ mod imp {
     }
 
     function conversationAvatar(composerRect, title) {
-      const titleKey = String(title || '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-      if (!titleKey || titleKey === 'instagram') return '';
+      const titleKey = instagramAvatarKey(title);
+      if (!String(title || '').trim() || titleKey === 'instagram') return '';
 
       function trustedAvatar(image) {
         if (!(image instanceof HTMLImageElement)) return '';
@@ -911,9 +920,7 @@ mod imp {
       const headings = document.querySelectorAll('main h1, main h2, main [role="heading"]');
       for (let index = 0; index < headings.length; index += 1) {
         const heading = headings[index];
-        const headingKey = String(heading.textContent || '')
-          .toLocaleLowerCase()
-          .replace(/[^\p{L}\p{N}]/gu, '');
+        const headingKey = instagramAvatarKey(heading.textContent);
         if (headingKey !== titleKey) continue;
         let container = heading.parentElement;
         for (let depth = 0; container && depth < 5; depth += 1) {
@@ -929,14 +936,62 @@ mod imp {
 
       const images = document.querySelectorAll('main img[src][alt]');
       for (let index = 0; index < images.length; index += 1) {
-        const altKey = String(images[index].getAttribute('alt') || '')
-          .toLocaleLowerCase()
-          .replace(/[^\p{L}\p{N}]/gu, '');
+        const altKey = instagramAvatarKey(images[index].getAttribute('alt'));
         if (!altKey.includes(titleKey)) continue;
         const avatar = trustedAvatar(images[index]);
         if (avatar) return avatar;
       }
       return '';
+    }
+
+    function isInstagramReactionActivity(text) {
+      const value = String(text || '').replace(/\s+/g, ' ').trim();
+      if (!value || value.length > 180) return false;
+      return /^(?:(?:.{1,80}?)\s+)?(?:liked (?:a|your) message|reacted(?:\s+.{1,16})?\s+to (?:a|your) message|(?:bir )?mesaj[ıi](?:n[ıi])? beğendi|mesaj[ıi]na (?:tepki verdi|ifade bıraktı)|le gustó un mensaje|reaccion(?:ó|o)(?:\s+.{1,16})?\s+a (?:un|tu) mensaje|gefällt eine nachricht|hat auf (?:eine|deine) nachricht reagiert|a aimé un message|a r[ée]agi(?:\s+.{1,16})?\s+à (?:un|votre) message|menyukai pesan|bereaksi(?:\s+.{1,16})?\s+terhadap pesan(?: anda)?|понравилось сообщение|отреагировал(?:а)?(?:\s+.{1,16})?\s+на (?:ваше )?сообщение|ha messo mi piace a un messaggio|ha reagito(?:\s+.{1,16})?\s+al tuo messaggio|メッセージに(?:「いいね」|リアクション)しました|メッセージに反応しました)(?:\s*[.!。])?(?:\s*(?:[·•]\s*)?(?:\d+\s*[smhdw]|just now))?$/iu.test(value);
+    }
+
+    function isGenericInstagramActivity(text) {
+      const value = String(text || '').replace(/\s+/g, ' ').trim();
+      if (!value || value.length > 220) return false;
+      return /^(?:typing(?:\s*[.…]{1,3})?|yaz[ıi]yor(?:\s*[.…]{1,3})?|escribiendo(?:\s*[.…]{1,3})?|schreibt(?:\s*[.…]{1,3})?|[ée]crit(?:\s*[.…]{1,3})?|sedang mengetik(?:\s*[.…]{1,3})?|печатает(?:\s*[.…]{1,3})?|sta scrivendo(?:\s*[.…]{1,3})?|入力中(?:\s*[.…]{1,3})?|you have (?:a )?new message(?: or notification)?\.?|yeni bir mesaj[ıi]n veya bildirimin var\.?|tienes un mensaje o una notificaci[óo]n nuevos\.?|du hast eine neue nachricht oder benachrichtigung\.?|vous avez un nouveau message ou une nouvelle notification\.?|anda memiliki pesan atau notifikasi baru\.?|у вас новое сообщение или уведомление\.?|hai un nuovo messaggio o una nuova notifica\.?|新しいメッセージまたは通知があります。?)$/iu.test(value);
+    }
+
+    function instagramActivityText(candidate) {
+      if (!candidate) return '';
+      const values = [];
+      function addValue(value) {
+        const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+        if (normalized && values.indexOf(normalized) < 0) values.push(normalized);
+      }
+      addValue(candidate.innerText);
+      addValue(candidate.textContent);
+      if (typeof candidate.getAttribute === 'function') {
+        addValue(candidate.getAttribute('aria-label'));
+        addValue(candidate.getAttribute('title'));
+      }
+      if (candidate.querySelectorAll) {
+        const labelled = candidate.querySelectorAll('[dir="auto"], [aria-label], [title]');
+        const parts = [];
+        for (let index = 0; index < labelled.length; index += 1) {
+          const node = labelled[index];
+          if (node.querySelector && node.querySelector('[dir="auto"], [aria-label], [title]')) {
+            continue;
+          }
+          const part = String(
+            node.innerText || node.textContent ||
+            node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title')) || ''
+          ).replace(/\s+/g, ' ').trim();
+          if (part && parts[parts.length - 1] !== part) parts.push(part);
+        }
+        addValue(parts.join(' '));
+      }
+      for (let index = 0; index < values.length; index += 1) {
+        if (
+          isInstagramReactionActivity(values[index]) ||
+          isGenericInstagramActivity(values[index])
+        ) return values[index];
+      }
+      return values[0] || '';
     }
 
     function messageDetailsFromCandidate(candidate, composerRect) {
@@ -971,16 +1026,23 @@ mod imp {
           !text || text.length > 500 || rect.width <= 0 || rect.height <= 0 ||
           rect.bottom >= composerRect.top || rect.top < 64 ||
           rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2 ||
-          /^(seen|new messages|just now|liked a message|\d+[smhd])$/i.test(text)
+          /^(seen|new messages|just now|gesehen|neue nachrichten|gerade eben|vu|nouveaux messages|à l’instant|dilihat|pesan baru|baru saja|просмотрено|новые сообщения|только что|visualizzato|nuovi messaggi|proprio ora|既読|新着メッセージ|たった今|\d+[smhd])$/i.test(text) ||
+          isGenericInstagramActivity(text)
         ) continue;
         if (entries.length === 0 || entries[entries.length - 1].text !== text) {
           entries.push({ node: node, rect: rect, text: text });
         }
       }
-      const fallbackText = String(candidate.textContent || '').replace(/\s+/g, ' ').trim();
-      if (entries.length === 0) return { text: fallbackText, isReply: false };
+      const fallbackText = instagramActivityText(candidate);
+      if (entries.length === 0) {
+        return {
+          text: fallbackText,
+          isReply: false,
+          isReaction: isInstagramReactionActivity(fallbackText)
+        };
+      }
       const actual = entries[entries.length - 1];
-      const hasReplyLabel = /repl(?:y|ied)|yan[ıi]t|cevap/i.test(
+      const hasReplyLabel = /repl(?:y|ied)|yan[ıi]t|cevap|antwort|geantwortet|r[ée]pond|r[ée]ponse|membalas|balasan|ответ(?:ил|ила)?|rispost|ha risposto|返信|返事/i.test(
         String(container.textContent || '')
       );
       const hasQuotedPreview = entries.slice(0, -1).some(function (entry) {
@@ -989,12 +1051,20 @@ mod imp {
           entry.node.parentElement !== actual.node.parentElement &&
           verticalGap >= -4 && verticalGap <= 72;
       });
-      return { text: actual.text, isReply: hasReplyLabel || hasQuotedPreview };
+      return {
+        text: actual.text,
+        isReply: hasReplyLabel || hasQuotedPreview,
+        isReaction: isInstagramReactionActivity(actual.text) ||
+          isInstagramReactionActivity(String(container.textContent || ''))
+      };
     }
 
     function reportCandidate(candidate) {
-      if (!candidate || seen.has(candidate)) return;
-      if (candidate.closest('button, a, input, textarea')) return;
+      if (!candidate) return;
+      const initialActivityText = instagramActivityText(candidate);
+      const initialReaction = isInstagramReactionActivity(initialActivityText);
+      if (seen.has(candidate) && !initialReaction) return;
+      if (candidate.closest('button, a, input, textarea') && !initialReaction) return;
 
       const composer = visibleComposer();
       if (!composer || !window.location.pathname.startsWith('/direct/t/')) return;
@@ -1003,13 +1073,14 @@ mod imp {
       const details = messageDetailsFromCandidate(candidate, composerRect);
       const text = details.text;
       if (!text || text.length > 500 || rect.width <= 0 || rect.height <= 0) return;
+      if (isGenericInstagramActivity(text)) return;
+      if (/^(seen|new messages|just now|gesehen|neue nachrichten|gerade eben|vu|nouveaux messages|à l’instant|dilihat|pesan baru|baru saja|просмотрено|новые сообщения|только что|visualizzato|nuovi messaggi|proprio ora|既読|新着メッセージ|たった今|\d+[smhd])$/i.test(text)) return;
       // Instagram can attach an empty message node and fill its text in a later
       // mutation. Mark it seen only after it has become measurable and readable.
       seen.add(candidate);
       if (rect.bottom >= composerRect.top || rect.top < 64) return;
       if (rect.left < composerRect.left - 48) return;
       if (rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2) return;
-      if (/^(seen|new messages|just now|\d+[smhd])$/i.test(text)) return;
 
       const now = Date.now();
       const title = conversationName(composerRect);
@@ -1018,7 +1089,7 @@ mod imp {
       lastMessageKey = key;
       lastMessageAt = now;
       const avatarHints = window.__nebulaInstagramAvatarHints;
-      const avatarKey = title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '').slice(0, 80);
+      const avatarKey = instagramAvatarKey(title);
       const iconUrl = conversationAvatar(composerRect, title) ||
         (avatarHints instanceof Map ? String(avatarHints.get(avatarKey) || '') : '');
       if (iconUrl) {
@@ -1033,30 +1104,34 @@ mod imp {
         } catch (_) {}
       }
       try {
-        const visibleBody = details.isReply ? title + ' replied to you' : text;
+        const eventKind = details.isReaction ? 'reaction' : details.isReply ? 'reply' : 'message';
+        const visibleBody = details.isReply && !details.isReaction ? title + ' replied to you' : text;
         bridge.postMessage(JSON.stringify({
           type: 'nebula-site-notification-content',
           origin: window.location.origin,
           title: title,
           body: visibleBody,
           iconUrl: iconUrl,
-          notificationType: details.isReply ? 'reply' : 'message',
-          notificationData: details.isReply ? { replyText: text } : null,
+          notificationType: eventKind,
+          notificationData: details.isReply && !details.isReaction ? { replyText: text } : null,
           siteName: 'Instagram',
           senderName: title,
-          eventKind: details.isReply ? 'reply' : 'message'
+          eventKind: eventKind
         }));
       } catch (_) {}
     }
 
     function queueCandidate(candidate) {
-      if (!candidate || seen.has(candidate) || queued.has(candidate)) return;
+      if (!candidate || queued.has(candidate)) return;
+      const reactionCandidate = isInstagramReactionActivity(instagramActivityText(candidate));
+      if (seen.has(candidate) && !reactionCandidate) return;
 
       queued.add(candidate);
 
       window.setTimeout(function () {
         queued.delete(candidate);
-        if (seen.has(candidate)) return;
+        const delayedReaction = isInstagramReactionActivity(instagramActivityText(candidate));
+        if (seen.has(candidate) && !delayedReaction) return;
 
         // Instagram hydrates both normal and replied messages over multiple
         // mutations. Let its own classifier inspect every incoming candidate;
@@ -1080,10 +1155,21 @@ mod imp {
         : node && node.parentElement;
       if (!element) return;
       if (element.matches && element.matches('[dir="auto"]')) queueCandidate(element);
+      if (
+        element.matches &&
+        element.matches('[aria-label], [title]') &&
+        isInstagramReactionActivity(instagramActivityText(element))
+      ) queueCandidate(element);
       if (element.querySelectorAll) {
         const candidates = element.querySelectorAll('[dir="auto"]');
         for (let index = 0; index < candidates.length; index += 1) {
           queueCandidate(candidates[index]);
+        }
+        const labelledCandidates = element.querySelectorAll('[aria-label], [title]');
+        for (let index = 0; index < labelledCandidates.length; index += 1) {
+          if (isInstagramReactionActivity(instagramActivityText(labelledCandidates[index]))) {
+            queueCandidate(labelledCandidates[index]);
+          }
         }
       }
     }
@@ -1104,13 +1190,21 @@ mod imp {
       observer = new MutationObserver(function (mutations) {
         for (let index = 0; index < mutations.length; index += 1) {
           const mutation = mutations[index];
-          if (mutation.type === 'characterData') inspectNode(mutation.target);
+          if (mutation.type === 'characterData' || mutation.type === 'attributes') {
+            inspectNode(mutation.target);
+          }
           for (let addedIndex = 0; addedIndex < mutation.addedNodes.length; addedIndex += 1) {
             inspectNode(mutation.addedNodes[addedIndex]);
           }
         }
       });
-      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['aria-label', 'title']
+      });
     }
 
     window.setTimeout(arm, 300);
@@ -1140,6 +1234,10 @@ mod imp {
         const pending = pendingUpgrades.get(token);
         if (!pending) return;
         pendingUpgrades.delete(token);
+        pending.presentation.eventLabel = eventKindLabel(
+          pending.presentation.eventKind,
+          String(value.locale || '')
+        );
         void upgradePersistentNotification(
           pending.registration,
           pending.notification,
@@ -1276,7 +1374,32 @@ mod imp {
         const text = candidate.text.toLocaleLowerCase();
         return candidate.text.toLocaleLowerCase() !== body.toLocaleLowerCase() &&
           candidate.text.toLocaleLowerCase() !== bodyWithoutSender.toLocaleLowerCase() &&
-          ['replied to you', 'replied to your message', 'yanıtladı', 'yanitladi'].indexOf(text) < 0;
+          [
+            'replied to you',
+            'replied to your message',
+            'yanıtladı',
+            'yanitladi',
+            'respondió a ti',
+            'respondio a ti',
+            'respondió a tu mensaje',
+            'respondio a tu mensaje',
+            'hat dir geantwortet',
+            'hat auf deine nachricht geantwortet',
+            'vous a répondu',
+            'vous a repondu',
+            'a répondu à votre message',
+            'a repondu a votre message',
+            'membalas anda',
+            'membalas pesan anda',
+            'ответил вам',
+            'ответила вам',
+            'ответил на ваше сообщение',
+            'ответила на ваше сообщение',
+            'ti ha risposto',
+            'ha risposto al tuo messaggio',
+            'あなたに返信しました',
+            'メッセージに返信しました'
+          ].indexOf(text) < 0;
       });
       filtered.sort(function (left, right) { return right.score - left.score; });
       return filtered.length > 0 ? filtered[0].text : '';
@@ -1285,8 +1408,8 @@ mod imp {
     function eventKind(notificationType, body) {
       const type = String(notificationType || '').toLowerCase();
       const text = String(body || '').toLowerCase();
-      if (/repl(?:y|ied)|yan[ıi]t|cevap/.test(text)) return 'reply';
-      if (type.indexOf('reaction') >= 0 || type.endsWith('_like')) return 'reaction';
+      if (/repl(?:y|ied)|yan[ıi]t|cevap|respond(?:ió|io)|respuesta|antwort|geantwortet|r[ée]pond|r[ée]ponse|membalas|balasan|ответ(?:ил|ила)?|rispost|ha risposto|返信|返事/.test(text)) return 'reply';
+      if (type.indexOf('reaction') >= 0 || type.endsWith('_like') || /reacted|liked|beğendi|tepki|ifade bıraktı|reaccion(?:ó|o)|le gustó|reagiert|gefällt|r[ée]agi|r[ée]action|a aimé|bereaksi|reaksi|menyukai|отреагировал|реакци|понравилось|ha reagito|reazione|piace|リアクション|反応|いいね/.test(text)) return 'reaction';
       if (type.indexOf('mention') >= 0) return 'mention';
       if (type.startsWith('direct_v2')) return 'message';
       if (type.indexOf('live_broadcast') >= 0) return 'live';
@@ -1295,12 +1418,35 @@ mod imp {
       return 'notification';
     }
 
-    function eventKindLabel(kind) {
-      const language = String(document.documentElement.lang || navigator.language || '').toLowerCase();
+    function eventKindLabel(kind, localeOverride) {
+      const language = String(
+        localeOverride || document.documentElement.lang || navigator.language || ''
+      ).toLowerCase();
       const turkish = language.startsWith('tr');
+      const spanish = language.startsWith('es');
+      const german = language.startsWith('de');
+      const french = language.startsWith('fr');
+      const indonesian = language.startsWith('id');
+      const russian = language.startsWith('ru');
+      const italian = language.startsWith('it');
+      const japanese = language.startsWith('ja');
       const labels = turkish
         ? { message: 'Mesaj', reply: 'Yanıt', reaction: 'Tepki', mention: 'Bahsetme', live: 'Canlı yayın', call: 'Arama', post: 'Gönderi' }
-        : { message: 'Message', reply: 'Reply', reaction: 'Reaction', mention: 'Mention', live: 'Live', call: 'Call', post: 'Post' };
+        : spanish
+          ? { message: 'Mensaje', reply: 'Respuesta', reaction: 'Reacción', mention: 'Mención', live: 'En directo', call: 'Llamada', post: 'Publicación' }
+          : german
+            ? { message: 'Nachricht', reply: 'Antwort', reaction: 'Reaktion', mention: 'Erwähnung', live: 'Live', call: 'Anruf', post: 'Beitrag' }
+            : french
+              ? { message: 'Message', reply: 'Réponse', reaction: 'Réaction', mention: 'Mention', live: 'En direct', call: 'Appel', post: 'Publication' }
+              : indonesian
+                ? { message: 'Pesan', reply: 'Balasan', reaction: 'Reaksi', mention: 'Sebutan', live: 'Live', call: 'Panggilan', post: 'Postingan' }
+                : russian
+                  ? { message: 'Сообщение', reply: 'Ответ', reaction: 'Реакция', mention: 'Упоминание', live: 'Прямой эфир', call: 'Звонок', post: 'Публикация' }
+                  : italian
+                    ? { message: 'Messaggio', reply: 'Risposta', reaction: 'Reazione', mention: 'Menzione', live: 'Diretta', call: 'Chiamata', post: 'Post' }
+                    : japanese
+                      ? { message: 'メッセージ', reply: '返信', reaction: 'リアクション', mention: 'メンション', live: 'ライブ', call: '通話', post: '投稿' }
+                      : { message: 'Message', reply: 'Reply', reaction: 'Reaction', mention: 'Mention', live: 'Live', call: 'Call', post: 'Post' };
       return labels[kind] || '';
     }
 
@@ -1318,12 +1464,12 @@ mod imp {
       }
       if (!senderName) {
         const actor = body.match(
-          /^(.{1,80}?)\s+(?:sent you|repl(?:y|ied)|reacted|liked|sana|hikayene|mesaj[ıi]na)/i
+          /^(.{1,80}?)\s+(?:sent you|repl(?:y|ied)|reacted|liked|sana|hikayene|mesaj[ıi]na|te envió|respond(?:ió|io)|reaccion(?:ó|o)|le gustó|hat dir gesendet|hat geantwortet|hat reagiert|gefällt|vous a envoyé|a répondu|a repondu|a réagi|a reagi|membalas|bereaksi|mengirim|menyukai|ответил|ответила|отреагировал|отправил|понравилось|ti ha inviato|ha risposto|ha reagito|piace|返信|リアクション|送信|いいね)/i
         );
         if (actor && actor[1]) senderName = actor[1].trim();
       }
       const avatarHints = window.__nebulaInstagramAvatarHints;
-      const avatarKey = senderName.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '').slice(0, 80);
+      const avatarKey = instagramAvatarKey(senderName);
       const cachedAvatar = avatarHints instanceof Map
         ? trustedInstagramImageUrl(avatarHints.get(avatarKey))
         : '';
@@ -2368,7 +2514,7 @@ if (container) queueCandidate(container);
                                     .and_then(serde_json::Value::as_str)
                                     .unwrap_or_default();
                                 if claimed_origin == source_origin
-                                    && matches!(mode, "off" | "native" | "algorithm")
+                                    && matches!(mode, "off" | "native" | "browser" | "algorithm")
                                 {
                                     let media_protected = value
                                         .get("mediaProtected")
@@ -2388,6 +2534,7 @@ if (container) queueCandidate(container);
                                                     | "visible-light-surfaces"
                                                     | "insufficient-dark-coverage"
                                                     | "algorithm-already-active"
+                                                    | "chromium-auto-dark"
                                             )
                                         })
                                         .map(str::to_string);
@@ -2695,6 +2842,7 @@ if (container) queueCandidate(container);
                                         let response = serde_json::json!({
                                             "type": "nebula-upgrade-persistent-notification",
                                             "token": replacement_token,
+                                            "locale": crate::tab_error_page::current_ui_locale(),
                                         })
                                         .to_string();
                                         let _ = sender.PostWebMessageAsJson(&HSTRING::from(response));

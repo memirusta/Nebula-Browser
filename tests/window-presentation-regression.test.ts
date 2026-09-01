@@ -194,6 +194,10 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
     chrome.indexOf('export async function isCursorInsideSemiLunarNativeTrigger'),
     chrome.indexOf('export async function isCursorInsideSemiLunarNativeShape'),
   )
+  const shapeHitTest = chrome.slice(
+    chrome.indexOf('export async function isCursorInsideSemiLunarNativeShape'),
+    chrome.indexOf('async function syncChromeBounds'),
+  )
 
   assert.match(delayedOpen, /const requestId = \+\+openRequestIdRef\.current/)
   assert.match(delayedOpen, /isCursorInsideSemiLunarNativeTrigger\(\)/)
@@ -208,6 +212,9 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
   )
   assert.match(triggerHitTest, /SEMI_LUNAR_HIT_ZONE_HEIGHT \* scaleFactor/)
   assert.doesNotMatch(triggerHitTest, /chromeOverlayLogicalHeight/)
+  assert.match(shapeHitTest, /window_cursor_in_client_lunar_shape/)
+  assert.match(shapeHitTest, /lunarWidthPx: Math\.max\(1, lunarWidthPx\)/)
+  assert.doesNotMatch(shapeHitTest, /windowClientPhysicalSize\(\)|scaleFactor\(\)/)
   assert.match(permissions, /"window_cursor_in_client_rect"/)
   assert.match(permissions, /"window_cursor_in_client_lunar_shape"/)
   assert.match(
@@ -217,6 +224,15 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
   assert.match(
     menu,
     /nativeHoverRecoveryArmed[\s\S]{0,900}isCursorInsideSemiLunarNativeTrigger\(\)[\s\S]{0,400}requestOpen\(false\)/,
+  )
+  assert.match(menu, /if \(openTimer\.current\) clearTimeout\(openTimer\.current\)/)
+  assert.match(
+    menu,
+    /if \(mergeAnimationTimerRef\.current\) clearTimeout\(mergeAnimationTimerRef\.current\)/,
+  )
+  assert.match(
+    menu,
+    /if \(newFolderIndicatorTimerRef\.current\)[\s\S]{0,120}clearTimeout\(newFolderIndicatorTimerRef\.current\)/,
   )
 
   const nativeLayoutEffect = menu.slice(
