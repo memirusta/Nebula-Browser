@@ -24,6 +24,12 @@ mod imp {
   if (window.__nebulaForceDark && window.__nebulaForceDark.version === 1) return;
 
   const MEDIA_SELECTOR = 'img,video,canvas,svg,picture,iframe,object,embed,[role="img"]';
+  const TEXT_CONTROL_SELECTOR = [
+    'textarea',
+    'select',
+    'button',
+    'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="image"])'
+  ].join(',');
   const MARK_SELECTOR = '[data-nebula-dark-bg],[data-nebula-dark-gradient],[data-nebula-dark-text],[data-nebula-dark-border]';
   const STYLE_ID = 'nebula-force-dark-style';
   const canReportToHost =
@@ -43,6 +49,7 @@ mod imp {
   let mutationStatusReported = false;
   let applyGeneration = 0;
   let lastAssessment = null;
+  let controlStateHandler = null;
 
   function reportStatus(mode, mutationObserved, assessment) {
     if (assessment) lastAssessment = assessment;
@@ -215,11 +222,18 @@ mod imp {
         border-color: #4b5155 !important;
         outline-color: #6a7278 !important;
       }
-      html[data-nebula-force-dark="algorithm"] :is(input,textarea,select,button) {
+      html[data-nebula-force-dark="algorithm"] :is(input,textarea,select,button,[contenteditable]) {
         color-scheme: dark !important;
       }
-      html[data-nebula-force-dark="algorithm"] ::placeholder {
+      html[data-nebula-force-dark="algorithm"] :is(input,textarea,select,button,[contenteditable])[data-nebula-dark-text] {
+        color: #e8e6e3 !important;
+        caret-color: #e8e6e3 !important;
+        -webkit-text-fill-color: #e8e6e3 !important;
+      }
+      html[data-nebula-force-dark="algorithm"] :is(input,textarea)[data-nebula-dark-text]::placeholder {
         color: #a9a49c !important;
+        -webkit-text-fill-color: #a9a49c !important;
+        opacity: 1 !important;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -228,6 +242,21 @@ mod imp {
 
   function shouldSkip(element) {
     return !(element instanceof Element) || element.matches(MEDIA_SELECTOR) || Boolean(element.closest('svg'));
+  }
+
+  function isTextBearingControl(element) {
+    return element.matches(TEXT_CONTROL_SELECTOR) ||
+      (element instanceof HTMLElement && element.isContentEditable);
+  }
+
+  function renderedSurfaceLuminance(element) {
+    let current = element;
+    while (current instanceof Element) {
+      const value = elementSurfaceLuminance(current);
+      if (value !== null) return value;
+      current = current.parentElement;
+    }
+    return canvasLuminance();
   }
 
   function markElement(element) {
@@ -259,11 +288,19 @@ mod imp {
       delete element.dataset.nebulaDarkGradient;
     }
 
-    const foreground = parseColor(style.color);
-    const hasText = Array.from(element.childNodes).some(
+    const foreground = isTextBearingControl(element)
+      ? parseColor(style.webkitTextFillColor) || parseColor(style.color)
+      : parseColor(style.color);
+    const hasText = isTextBearingControl(element) || Array.from(element.childNodes).some(
       (node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent && node.textContent.trim())
     );
-    if (foreground && hasText && luminance(foreground) < 0.48) {
+    const renderedSurface = renderedSurfaceLuminance(element);
+    if (
+      foreground &&
+      hasText &&
+      luminance(foreground) < 0.48 &&
+      renderedSurface < 0.42
+    ) {
       element.dataset.nebulaDarkText = 'true';
     } else {
       delete element.dataset.nebulaDarkText;
@@ -317,6 +354,12 @@ mod imp {
       window.removeEventListener('load', nativeLoadHandler);
       nativeLoadHandler = null;
     }
+    if (controlStateHandler) {
+      for (const eventName of ['focusin', 'focusout', 'input', 'change']) {
+        document.removeEventListener(eventName, controlStateHandler, true);
+      }
+      controlStateHandler = null;
+    }
     clearTimeout(nativeCheckTimer);
     nativeCheckTimer = 0;
     lastNativeAssessmentAt = 0;
@@ -353,6 +396,13 @@ mod imp {
       attributes: true,
       attributeFilter: ['class', 'style']
     });
+    controlStateHandler = (event) => {
+      const element = event.target;
+      if (element instanceof Element && isTextBearingControl(element)) enqueue(element);
+    };
+    for (const eventName of ['focusin', 'focusout', 'input', 'change']) {
+      document.addEventListener(eventName, controlStateHandler, true);
+    }
     reportStatus('algorithm', false, assessment);
   }
 
@@ -407,7 +457,7 @@ mod imp {
     return matched ? overrides[matched] : null;
   }
 
-  function apply(options) {
+  function apply(options, browserAutoDark = false) {
     const generation = ++applyGeneration;
     const override = matchingOverride(options.siteOverrides);
     const mode = override || options.mode;
@@ -417,6 +467,18 @@ mod imp {
       disableAlgorithm();
       lastAssessment = null;
       reportStatus('off', false);
+      return;
+    }
+    if (browserAutoDark) {
+      disableAlgorithm();
+      lastAssessment = null;
+      document.documentElement.dataset.nebulaForceDark = 'browser';
+      reportStatus('browser', false, {
+        reason: 'chromium-auto-dark',
+        darkRatio: null,
+        lightRatio: null,
+        sampleCount: null
+      });
       return;
     }
 
@@ -607,11 +669,56 @@ mod imp {
     unsafe fn apply_runtime(
         core: &ICoreWebView2,
         current: &ForceDarkOptions,
+        browser_auto_dark: bool,
     ) -> windows_core::Result<()> {
         let options_json = serde_json::to_string(current).unwrap_or_else(|_| "{}".to_string());
-        let script = HSTRING::from(format!("window.__nebulaForceDark?.apply({options_json});"));
+        let script = HSTRING::from(format!(
+            "window.__nebulaForceDark?.apply({options_json}, {browser_auto_dark});"
+        ));
         let handler = ExecuteScriptCompletedHandler::create(Box::new(|_result, _value| Ok(())));
         core.ExecuteScript(PCWSTR(script.as_ptr()), &handler)
+    }
+
+    unsafe fn apply_auto_dark_mode(
+        core: &ICoreWebView2,
+        label: &str,
+        current: &ForceDarkOptions,
+        target_url: &str,
+    ) {
+        let enabled = current.wants_dark_for_url(target_url);
+        let callback_core = core.clone();
+        let callback_label = label.to_string();
+        let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
+            move |result, response| {
+                let latest = options(&callback_label);
+                let latest_url = take_string(|value| callback_core.Source(value));
+                let latest_enabled = latest.wants_dark_for_url(&latest_url);
+
+                if latest_enabled != enabled {
+                    unsafe {
+                        apply_auto_dark_mode(&callback_core, &callback_label, &latest, &latest_url);
+                    }
+                    return Ok(());
+                }
+
+                let supported = result.is_ok() && !response.contains(r#""error""#);
+                let _ =
+                    unsafe { apply_runtime(&callback_core, &latest, supported && latest_enabled) };
+                Ok(())
+            },
+        ));
+        let method = HSTRING::from("Emulation.setAutoDarkModeOverride");
+        let params = HSTRING::from(if enabled {
+            r#"{"enabled":true}"#
+        } else {
+            r#"{"enabled":false}"#
+        });
+        if core
+            .CallDevToolsProtocolMethod(PCWSTR(method.as_ptr()), PCWSTR(params.as_ptr()), &handler)
+            .is_err()
+        {
+            let _ = apply_runtime(core, current, false);
+        }
     }
 
     pub fn setup(app: &AppHandle, label: &str) -> Result<(), String> {
@@ -666,7 +773,7 @@ mod imp {
                             let current = options(&completed_label);
                             let target_url = take_string(|value| sender.Source(value));
                             set_preferred_media(&sender, &current, &target_url);
-                            let _ = apply_runtime(&sender, &current);
+                            apply_auto_dark_mode(&sender, &completed_label, &current, &target_url);
                             Ok(())
                         }));
 
@@ -711,7 +818,8 @@ mod imp {
                     let current = options(&setup_label);
                     let target_url = take_string(|value| core.Source(value));
                     set_preferred_media(&core, &current, &target_url);
-                    apply_runtime(&core, &current)
+                    apply_auto_dark_mode(&core, &setup_label, &current, &target_url);
+                    Ok(())
                 })();
 
                 if let Err(error) = result {
@@ -759,13 +867,15 @@ mod imp {
             .ok_or_else(|| format!("webview '{label}' not found"))?;
         let apply_error = Arc::new(Mutex::new(None::<String>));
         let failure_slot = apply_error.clone();
+        let apply_label = label.to_string();
         webview
             .with_webview(move |inner| unsafe {
                 let result = (|| -> windows_core::Result<()> {
                     let core = inner.controller().CoreWebView2()?;
                     let target_url = take_string(|value| core.Source(value));
                     set_preferred_media(&core, &current, &target_url);
-                    apply_runtime(&core, &current)
+                    apply_auto_dark_mode(&core, &apply_label, &current, &target_url);
+                    Ok(())
                 })();
                 if let Err(error) = result {
                     if let Ok(mut failure) = failure_slot.lock() {

@@ -56,10 +56,16 @@ mod imp {
     }
 
     pub fn set_ui_locale(locale: &str) {
-        let normalized = if locale.eq_ignore_ascii_case("tr") {
-            "tr"
-        } else {
-            "en"
+        let normalized = match locale.to_ascii_lowercase().as_str() {
+            "tr" => "tr",
+            "es" => "es",
+            "de" => "de",
+            "fr" => "fr",
+            "id" => "id",
+            "ru" => "ru",
+            "it" => "it",
+            "ja" => "ja",
+            _ => "en",
         };
         if let Ok(mut current) = UI_LOCALE.lock() {
             *current = normalized.to_string();
@@ -74,10 +80,16 @@ mod imp {
     }
 
     pub fn notification_activity_body() -> String {
-        if current_ui_locale() == "tr" {
-            "Yeni bir mesajın veya bildirimin var.".to_string()
-        } else {
-            "You have a new message or notification.".to_string()
+        match current_ui_locale().as_str() {
+            "tr" => "Yeni bir mesajın veya bildirimin var.".to_string(),
+            "es" => "Tienes un mensaje o una notificación nuevos.".to_string(),
+            "de" => "Du hast eine neue Nachricht oder Benachrichtigung.".to_string(),
+            "fr" => "Vous avez un nouveau message ou une nouvelle notification.".to_string(),
+            "id" => "Anda memiliki pesan atau notifikasi baru.".to_string(),
+            "ru" => "У вас новое сообщение или уведомление.".to_string(),
+            "it" => "Hai un nuovo messaggio o una nuova notifica.".to_string(),
+            "ja" => "新しいメッセージまたは通知があります。".to_string(),
+            _ => "You have a new message or notification.".to_string(),
         }
     }
 
@@ -215,20 +227,61 @@ mod imp {
             .replace('"', "&quot;")
             .replace('\'', "&#39;");
 
-        let (lang, title, description, retry_label) = if locale == "tr" {
-            (
+        let (lang, title, description, retry_label) = match locale {
+            "tr" => (
                 "tr",
                 "Bu siteye ulaşılamıyor",
                 "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
                 "Tekrar dene",
-            )
-        } else {
-            (
+            ),
+            "es" => (
+                "es",
+                "No se puede acceder a este sitio",
+                "Comprueba tu conexión a Internet y vuelve a intentarlo.",
+                "Volver a intentarlo",
+            ),
+            "de" => (
+                "de",
+                "Diese Website ist nicht erreichbar",
+                "Prüfe deine Internetverbindung und versuche es erneut.",
+                "Erneut versuchen",
+            ),
+            "fr" => (
+                "fr",
+                "Ce site est inaccessible",
+                "Vérifiez votre connexion Internet et réessayez.",
+                "Réessayer",
+            ),
+            "id" => (
+                "id",
+                "Situs ini tidak dapat dijangkau",
+                "Periksa koneksi Internet Anda lalu coba lagi.",
+                "Coba lagi",
+            ),
+            "ru" => (
+                "ru",
+                "Не удаётся открыть этот сайт",
+                "Проверьте подключение к Интернету и повторите попытку.",
+                "Повторить",
+            ),
+            "it" => (
+                "it",
+                "Questo sito non è raggiungibile",
+                "Controlla la connessione a Internet e riprova.",
+                "Riprova",
+            ),
+            "ja" => (
+                "ja",
+                "このサイトにアクセスできません",
+                "インターネット接続を確認して、もう一度お試しください。",
+                "再試行",
+            ),
+            _ => (
                 "en",
                 "This site can't be reached",
                 "Check your internet connection and try again.",
                 "Try again",
-            )
+            ),
         };
 
         let html = format!(
@@ -644,6 +697,59 @@ mod imp {
             assert!(page.contains("Bu%20siteye%20ula%C5%9F%C4%B1lam%C4%B1yor"));
             assert!(page.contains("Tekrar%20dene"));
             assert!(page.contains("lang%3D%22tr%22"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_spanish_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "es");
+            assert!(page.contains("No%20se%20puede%20acceder%20a%20este%20sitio"));
+            assert!(page.contains("Volver%20a%20intentarlo"));
+            assert!(page.contains("lang%3D%22es%22"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_german_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "de");
+            assert!(page.contains("Diese%20Website%20ist%20nicht%20erreichbar"));
+            assert!(page.contains("Erneut%20versuchen"));
+            assert!(page.contains("lang%3D%22de%22"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_french_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "fr");
+            assert!(page.contains("Ce%20site%20est%20inaccessible"));
+            assert!(page.contains("lang%3D%22fr%22"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_indonesian_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "id");
+            assert!(page.contains("Situs%20ini%20tidak%20dapat%20dijangkau"));
+            assert!(page.contains("Coba%20lagi"));
+            assert!(page.contains("lang%3D%22id%22"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_russian_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "ru");
+            assert!(page.contains("lang%3D%22ru%22"));
+            assert!(page.contains("%D0%9F%D0%BE%D0%B2%D1%82%D0%BE%D1%80%D0%B8%D1%82%D1%8C"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_italian_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "it");
+            assert!(page.contains("Questo%20sito%20non%20%C3%A8%20raggiungibile"));
+            assert!(page.contains("Riprova"));
+            assert!(page.contains("lang%3D%22it%22"));
+        }
+
+        #[test]
+        fn custom_error_page_respects_selected_japanese_locale() {
+            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "ja");
+            assert!(page.contains("lang%3D%22ja%22"));
+            assert!(page.contains("%E5%86%8D%E8%A9%A6%E8%A1%8C"));
         }
 
         #[test]

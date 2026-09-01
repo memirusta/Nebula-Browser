@@ -18,7 +18,7 @@ export function AppDialogHost() {
   const request = queue[0]
   const primaryRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
-  const { locale, t } = useLocale()
+  const { t } = useLocale()
   useModalFocusTrap(dialogRef, Boolean(request))
 
   useEffect(() => {
@@ -33,8 +33,8 @@ export function AppDialogHost() {
     request.acceptLabel ??
     (
       request.kind === 'alert'
-        ? locale === 'tr' ? 'Tamam' : 'OK'
-        : locale === 'tr' ? 'Onayla' : 'Confirm'
+        ? t('dialogOk')
+        : t('dialogConfirm')
     )
 
   const cancelLabel =
@@ -67,7 +67,7 @@ export function AppDialogHost() {
             <img src="/nebula-app-logo.png" alt="" aria-hidden="true" draggable={false} />
           </div>
           <div className={styles.heading}>
-            <span>{locale === 'tr' ? 'Uygulama mesajı' : 'App message'}</span>
+            <span>{t('dialogAppMessage')}</span>
             <h2 id="nebula-app-dialog-title">{request.title}</h2>
           </div>
           {queue.length > 1 && (

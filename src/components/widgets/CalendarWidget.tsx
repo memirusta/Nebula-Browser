@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { getIntlLocale } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './widgets.module.css'
 
@@ -34,12 +35,12 @@ export function CalendarWidget() {
     const mondayFirst = (first.getDay() + 6) % 7
     const labels = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(2024, 0, 1 + i)
-      return new Intl.DateTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', { weekday: 'short' }).format(d)
+      return new Intl.DateTimeFormat(getIntlLocale(locale), { weekday: 'short' }).format(d)
     })
     return {
       days: Array.from({ length: count }, (_, i) => i + 1),
       leading: mondayFirst,
-      monthLabel: new Intl.DateTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', {
+      monthLabel: new Intl.DateTimeFormat(getIntlLocale(locale), {
         month: 'long',
         year: 'numeric',
       }).format(first),

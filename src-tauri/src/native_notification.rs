@@ -144,35 +144,109 @@ mod imp {
     }
 
     fn event_kind_label(kind: Option<&str>) -> Option<&'static str> {
-        let turkish = crate::tab_error_page::current_ui_locale() == "tr";
-        match (kind.unwrap_or_default(), turkish) {
-            ("message", true) => Some("Mesaj"),
-            ("message", false) => Some("Message"),
-            ("reply", true) => Some("Yanıt"),
-            ("reply", false) => Some("Reply"),
-            ("reaction", true) => Some("Tepki"),
-            ("reaction", false) => Some("Reaction"),
-            ("mention", true) => Some("Bahsetme"),
-            ("mention", false) => Some("Mention"),
-            ("live", true) => Some("Canlı yayın"),
-            ("live", false) => Some("Live"),
-            ("call", true) => Some("Arama"),
-            ("call", false) => Some("Call"),
-            ("post", true) => Some("Gönderi"),
-            ("post", false) => Some("Post"),
-            ("download", true) => Some("İndirme tamamlandı"),
-            ("download", false) => Some("Download complete"),
+        let locale = crate::tab_error_page::current_ui_locale();
+        match (kind.unwrap_or_default(), locale.as_str()) {
+            ("message", "tr") => Some("Mesaj"),
+            ("message", "es") => Some("Mensaje"),
+            ("message", "de") => Some("Nachricht"),
+            ("message", "fr") => Some("Message"),
+            ("message", "id") => Some("Pesan"),
+            ("message", "ru") => Some("Сообщение"),
+            ("message", "it") => Some("Messaggio"),
+            ("message", "ja") => Some("メッセージ"),
+            ("message", _) => Some("Message"),
+            ("reply", "tr") => Some("Yanıt"),
+            ("reply", "es") => Some("Respuesta"),
+            ("reply", "de") => Some("Antwort"),
+            ("reply", "fr") => Some("Réponse"),
+            ("reply", "id") => Some("Balasan"),
+            ("reply", "ru") => Some("Ответ"),
+            ("reply", "it") => Some("Risposta"),
+            ("reply", "ja") => Some("返信"),
+            ("reply", _) => Some("Reply"),
+            ("reaction", "tr") => Some("Tepki"),
+            ("reaction", "es") => Some("Reacción"),
+            ("reaction", "de") => Some("Reaktion"),
+            ("reaction", "fr") => Some("Réaction"),
+            ("reaction", "id") => Some("Reaksi"),
+            ("reaction", "ru") => Some("Реакция"),
+            ("reaction", "it") => Some("Reazione"),
+            ("reaction", "ja") => Some("リアクション"),
+            ("reaction", _) => Some("Reaction"),
+            ("mention", "tr") => Some("Bahsetme"),
+            ("mention", "es") => Some("Mención"),
+            ("mention", "de") => Some("Erwähnung"),
+            ("mention", "fr") => Some("Mention"),
+            ("mention", "id") => Some("Sebutan"),
+            ("mention", "ru") => Some("Упоминание"),
+            ("mention", "it") => Some("Menzione"),
+            ("mention", "ja") => Some("メンション"),
+            ("mention", _) => Some("Mention"),
+            ("live", "tr") => Some("Canlı yayın"),
+            ("live", "es") => Some("En directo"),
+            ("live", "de") => Some("Live"),
+            ("live", "fr") => Some("En direct"),
+            ("live", "id") => Some("Live"),
+            ("live", "ru") => Some("Прямой эфир"),
+            ("live", "it") => Some("Diretta"),
+            ("live", "ja") => Some("ライブ"),
+            ("live", _) => Some("Live"),
+            ("call", "tr") => Some("Arama"),
+            ("call", "es") => Some("Llamada"),
+            ("call", "de") => Some("Anruf"),
+            ("call", "fr") => Some("Appel"),
+            ("call", "id") => Some("Panggilan"),
+            ("call", "ru") => Some("Звонок"),
+            ("call", "it") => Some("Chiamata"),
+            ("call", "ja") => Some("通話"),
+            ("call", _) => Some("Call"),
+            ("post", "tr") => Some("Gönderi"),
+            ("post", "es") => Some("Publicación"),
+            ("post", "de") => Some("Beitrag"),
+            ("post", "fr") => Some("Publication"),
+            ("post", "id") => Some("Postingan"),
+            ("post", "ru") => Some("Публикация"),
+            ("post", "it") => Some("Post"),
+            ("post", "ja") => Some("投稿"),
+            ("post", _) => Some("Post"),
+            ("download", "tr") => Some("İndirme tamamlandı"),
+            ("download", "es") => Some("Descarga completada"),
+            ("download", "de") => Some("Download abgeschlossen"),
+            ("download", "fr") => Some("Téléchargement terminé"),
+            ("download", "id") => Some("Unduhan selesai"),
+            ("download", "ru") => Some("Загрузка завершена"),
+            ("download", "it") => Some("Download completato"),
+            ("download", "ja") => Some("ダウンロード完了"),
+            ("download", _) => Some("Download complete"),
             _ => None,
         }
     }
 
     fn additional_messages_label(count: u32) -> String {
-        if crate::tab_error_page::current_ui_locale() == "tr" {
-            format!("+{count} mesaj")
-        } else if count == 1 {
-            "+1 message".to_string()
-        } else {
-            format!("+{count} messages")
+        match crate::tab_error_page::current_ui_locale().as_str() {
+            "tr" => format!("+{count} mesaj"),
+            "es" if count == 1 => "+1 mensaje".to_string(),
+            "es" => format!("+{count} mensajes"),
+            "de" if count == 1 => "+1 Nachricht".to_string(),
+            "de" => format!("+{count} Nachrichten"),
+            "fr" if count == 1 => "+1 message".to_string(),
+            "fr" => format!("+{count} messages"),
+            "id" => format!("+{count} pesan"),
+            "ru" => {
+                let noun = if count % 10 == 1 && count % 100 != 11 {
+                    "сообщение"
+                } else if (2..=4).contains(&(count % 10)) && !(12..=14).contains(&(count % 100)) {
+                    "сообщения"
+                } else {
+                    "сообщений"
+                };
+                format!("+{count} {noun}")
+            }
+            "it" if count == 1 => "+1 messaggio".to_string(),
+            "it" => format!("+{count} messaggi"),
+            "ja" => format!("+{count} 件のメッセージ"),
+            _ if count == 1 => "+1 message".to_string(),
+            _ => format!("+{count} messages"),
         }
     }
 
@@ -255,6 +329,7 @@ mod imp {
             ToastUpdateOutcome::NotFound
         }
     }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn show(
         app: &AppHandle,

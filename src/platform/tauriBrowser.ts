@@ -14,6 +14,7 @@ import { allSettledOrThrow, LatestPerKeyRunner } from '../core/latestPerKey'
 import {
   prewarmCreationIsCurrent,
   prewarmProfileMatches,
+  shouldKeepPrewarmedWebview,
 } from '../core/prewarmProfile'
 import { debounce } from './debounce'
 import { normalizePageFavicon } from '../core/pageFavicon'
@@ -32,6 +33,7 @@ import {
   scheduleStackBrowsingChromeAboveBrowser,
   stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
+import { waitForTauriCreated } from './tauriCreationWait'
 import {
   browserWebviewFullscreenPhysicalBounds,
   browserWebviewPhysicalBounds,
@@ -40,7 +42,9 @@ import {
 const LAYOUT_DEBOUNCE_MS = 120
 const UBLOCK_READY_TIMEOUT_MS = 4_000
 const WEBVIEW_CREATE_TIMEOUT_MS = 15_000
+const INITIAL_PREWARM_DELAY_MS = 5_000
 const NEXT_PREWARM_DELAY_MS = 1_500
+const PREWARM_ADOPTION_GRACE_MS = 120
 const MEMORY_PRESSURE_POLL_MS = 15_000
 const MEMORY_PRESSURE_MIN_PERCENT = 45
 const MEMORY_PRESSURE_MAX_PERCENT = 95
@@ -337,11 +341,18 @@ export async function configurePopupBrowseWebview(
 ): Promise<void> {
   if (!isTauri) return
 
-  await invoke('webview_setup_popup_target', { label })
-  await invoke('webview_apply_browser_identity', { label })
-  await applyPrivacyToPopupLabel(label, privateMode)
-  await applyForceDarkToLabel(label)
-  popupPrivacyModes.set(label, privateMode)
+  try {
+    await invoke('webview_setup_popup_target', { label })
+    await invoke('webview_apply_browser_identity', { label })
+    await applyPrivacyToPopupLabel(label, privateMode)
+    await applyForceDarkToLabel(label)
+    popupPrivacyModes.set(label, privateMode)
+  } catch (error) {
+    popupPrivacyModes.delete(label)
+    forceDarkApplyRunner.invalidate(label)
+    await invoke('webview_teardown_popup_target', { label }).catch(() => undefined)
+    throw error
+  }
 }
 
 export async function teardownPopupBrowseWebview(
@@ -632,8 +643,41 @@ async function resetPrewarmedWebviewForPrivateModeChange(): Promise<void> {
   scheduleNextBrowseWebviewPrewarm()
 }
 
+async function discardPrewarmedWebviewForMemoryPressure(
+  memoryPressurePercent: number,
+): Promise<void> {
+  prewarmGeneration += 1
+
+  if (nextPrewarmTimer !== null) {
+    window.clearTimeout(nextPrewarmTimer)
+    nextPrewarmTimer = null
+  }
+
+  const ready = prewarmedWebview
+  prewarmedWebview = null
+  prewarmedPrivateMode = null
+
+  if (!ready) return
+
+  configuredWebviews.delete(ready.label)
+  privacyApplyRunner.invalidate(ready.label)
+  forceDarkApplyRunner.invalidate(ready.label)
+
+  await destroyTabWebview(ready.label)
+
+  await writeTransitionLog(
+    'browser.prewarm.discard-memory-pressure',
+    'info',
+    {
+      label: ready.label,
+      memoryPressurePercent,
+    },
+  )
+}
+
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
+let resizeDebounceCancel: (() => void) | null = null
 let lastBrowserBoundsKey: string | null = null
 let siteFullscreenBounds = false
 let windowMinimizedWebviewLabel: string | null = null
@@ -756,6 +800,8 @@ async function syncBrowserBounds(
 }
 
 function unbindResizeListeners(): void {
+  resizeDebounceCancel?.()
+  resizeDebounceCancel = null
   resizeUnlisten?.()
   resizeUnlisten = null
 
@@ -930,71 +976,45 @@ async function bindBrowserResize(
 
   const appWindow = getCurrentWindow()
 
-  resizeUnlisten = await traceTransitionCall(
-    traceId,
-    'browser.bounds.listen-resized',
-    { label: webview.label },
-    () =>
-      appWindow.onResized(
-        onLayoutChange,
-      ),
-  )
+  let nextResizeUnlisten: (() => void) | null = null
+  try {
+    nextResizeUnlisten = await traceTransitionCall(
+      traceId,
+      'browser.bounds.listen-resized',
+      { label: webview.label },
+      () =>
+        appWindow.onResized(
+          onLayoutChange,
+        ),
+    )
 
-  scaleUnlisten = await traceTransitionCall(
-    traceId,
-    'browser.bounds.listen-scale-changed',
-    { label: webview.label },
-    () =>
-      appWindow.onScaleChanged(
-        onLayoutChange,
-      ),
-  )
+    const nextScaleUnlisten = await traceTransitionCall(
+      traceId,
+      'browser.bounds.listen-scale-changed',
+      { label: webview.label },
+      () =>
+        appWindow.onScaleChanged(
+          onLayoutChange,
+        ),
+    )
+
+    resizeUnlisten = nextResizeUnlisten
+    scaleUnlisten = nextScaleUnlisten
+    resizeDebounceCancel = onLayoutChange.cancel
+  } catch (error) {
+    onLayoutChange.cancel()
+    nextResizeUnlisten?.()
+    throw error
+  }
 }
 
 async function waitForWebviewCreated(
   webview: Webview,
 ): Promise<void> {
-  await new Promise<void>(
-    (resolve, reject) => {
-      let settled = false
-
-      const finish = (
-        error?: unknown,
-      ) => {
-        if (settled) return
-
-        settled = true
-        window.clearTimeout(timeout)
-
-        if (error === undefined) {
-          resolve()
-        } else {
-          reject(error)
-        }
-      }
-
-      const timeout =
-        window.setTimeout(
-          () =>
-            finish(
-              new Error(
-                `browser webview create timeout: ${webview.label}`,
-              ),
-            ),
-          WEBVIEW_CREATE_TIMEOUT_MS,
-        )
-
-      void webview.once(
-        'tauri://created',
-        () => finish(),
-      )
-
-      void webview.once(
-        'tauri://error',
-        (event) =>
-          finish(event),
-      )
-    },
+  await waitForTauriCreated(
+    webview,
+    `browser webview ${webview.label}`,
+    WEBVIEW_CREATE_TIMEOUT_MS,
   )
 }
 
@@ -1049,7 +1069,7 @@ async function configureTabWebview(
   )
 }
 
-function scheduleNextBrowseWebviewPrewarm(): void {
+function scheduleBrowseWebviewPrewarm(delayMs: number): void {
   if (nextPrewarmTimer !== null) return
 
   nextPrewarmTimer =
@@ -1069,8 +1089,35 @@ function scheduleNextBrowseWebviewPrewarm(): void {
           },
         )
       },
-      NEXT_PREWARM_DELAY_MS,
+      delayMs,
     )
+}
+
+export function scheduleInitialBrowseWebviewPrewarm(): void {
+  scheduleBrowseWebviewPrewarm(INITIAL_PREWARM_DELAY_MS)
+}
+
+function scheduleNextBrowseWebviewPrewarm(): void {
+  scheduleBrowseWebviewPrewarm(NEXT_PREWARM_DELAY_MS)
+}
+
+async function waitForPendingPrewarmGrace(): Promise<void> {
+  const pending = prewarmPromise
+  if (!pending) return
+
+  let timeoutId: number | null = null
+  const graceElapsed = new Promise<void>((resolve) => {
+    timeoutId = window.setTimeout(resolve, PREWARM_ADOPTION_GRACE_MS)
+  })
+
+  try {
+    await Promise.race([
+      pending.catch(() => undefined),
+      graceElapsed,
+    ])
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId)
+  }
 }
 
 export async function prewarmBrowseWebview(): Promise<void> {
@@ -1088,6 +1135,19 @@ export async function prewarmBrowseWebview(): Promise<void> {
   const privateMode = privacyOptions.privateMode
 
   prewarmPromise = (async () => {
+    await refreshSystemMemoryPressure()
+
+    if (!shouldKeepPrewarmedWebview(systemMemoryPressurePercent)) {
+      await writeTransitionLog(
+        'browser.prewarm.skip-memory-pressure',
+        'info',
+        {
+          memoryPressurePercent: systemMemoryPressurePercent,
+        },
+      )
+      return
+    }
+
     await traceTransitionCall(
       traceId,
       'browser.prewarm.ensure-ublock',
@@ -1177,6 +1237,13 @@ export async function prewarmBrowseWebview(): Promise<void> {
         return
       }
 
+      await traceTransitionCall(
+        traceId,
+        'browser.prewarm.low-memory',
+        { label },
+        () => setLowMemoryFallback(webview),
+      )
+
       prewarmedWebview =
         webview
       prewarmedPrivateMode =
@@ -1211,7 +1278,7 @@ export async function prewarmBrowseWebview(): Promise<void> {
           'browser.prewarm.close-after-error',
           { label },
           () =>
-            webview.close(),
+            destroyTabWebview(label),
         )
       } catch {
         // ignore
@@ -1398,15 +1465,27 @@ async function refreshSystemMemoryPressure(): Promise<void> {
             100,
           )
 
+        const previous =
+          systemMemoryPressurePercent
+
         const changed =
           normalized !==
-          systemMemoryPressurePercent
+          previous
 
         systemMemoryPressurePercent =
           normalized
 
         if (changed) {
           rescheduleInactiveTabsForMemoryPressure()
+
+          if (!shouldKeepPrewarmedWebview(normalized)) {
+            await discardPrewarmedWebviewForMemoryPressure(normalized)
+          } else if (
+            !shouldKeepPrewarmedWebview(previous) &&
+            !prewarmPromise
+          ) {
+            scheduleNextBrowseWebviewPrewarm()
+          }
         }
       } catch {
         // keep last value
@@ -2587,15 +2666,12 @@ async function getOrCreateTabWebview(
     ) {
       await traceTransitionCall(
         traceId,
-        'browser.webview.await-prewarm',
+        'browser.webview.prewarm-adoption-grace',
         {
           shortcutId,
           label,
         },
-        () =>
-          prewarmPromise!.catch(
-            () => undefined,
-          ),
+        () => waitForPendingPrewarmGrace(),
       )
     }
 
@@ -2618,14 +2694,6 @@ async function getOrCreateTabWebview(
       label =
         webview.label
 
-      lowMemoryWebviews.delete(
-        label,
-      )
-
-      suspendedWebviews.delete(
-        label,
-      )
-
       try {
         if (
           !prewarmProfileMatches(
@@ -2637,6 +2705,13 @@ async function getOrCreateTabWebview(
             'prewarmed WebView profile no longer matches private mode',
           )
         }
+
+        await traceTransitionCall(
+          traceId,
+          'browser.webview.adopt.restore-memory',
+          { shortcutId, label },
+          () => restoreWebviewMemory(webview!),
+        )
 
         await traceTransitionCall(
           traceId,
@@ -3066,6 +3141,7 @@ async function getOrCreateTabWebview(
       shortcutId,
       webview,
     )
+    scheduleNextBrowseWebviewPrewarm()
   } else {
     webviewCache.set(
       shortcutId,

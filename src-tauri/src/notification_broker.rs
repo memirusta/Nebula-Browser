@@ -17,6 +17,7 @@ const RECENT_EVENT_RETENTION_MS: u64 = 10_000;
 const CONTENT_ADAPTER_DELAY_MS: u64 = 300;
 const WEBVIEW2_ENRICHMENT_DELAY_MS: u64 = 500;
 const INSTAGRAM_DOM_FALLBACK_DELAY_MS: u64 = 700;
+const INSTAGRAM_TITLE_FALLBACK_DELAY_MS: u64 = 1_250;
 const SENDER_AVATAR_TTL: Duration = Duration::from_secs(30 * 60);
 const MAX_SENDER_AVATARS: usize = 256;
 const SENDER_MESSAGE_TTL: Duration = Duration::from_secs(10);
@@ -224,6 +225,25 @@ fn sender_identity_key(value: &str) -> String {
         .collect()
 }
 
+fn sender_avatar_identity_key(value: &str) -> String {
+    let alphanumeric = sender_identity_key(value);
+    if !alphanumeric.is_empty() {
+        return alphanumeric;
+    }
+
+    value
+        .trim()
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|character| {
+            !character.is_whitespace()
+                && !character.is_control()
+                && !matches!(*character, '\u{fe0e}' | '\u{fe0f}')
+        })
+        .take(40)
+        .collect()
+}
+
 fn trusted_sender_avatar(origin: &str, icon_url: &str) -> Option<(String, String)> {
     let origin = normalized_origin(origin)?;
     let origin_url = url::Url::parse(&origin).ok()?;
@@ -249,7 +269,7 @@ fn trusted_sender_avatar(origin: &str, icon_url: &str) -> Option<(String, String
 }
 
 pub fn remember_sender_avatar(tab_label: &str, origin: &str, sender_name: &str, icon_url: &str) {
-    let sender_key = sender_identity_key(sender_name);
+    let sender_key = sender_avatar_identity_key(sender_name);
     let Some((origin, icon_url)) = trusted_sender_avatar(origin, icon_url) else {
         return;
     };
@@ -280,7 +300,7 @@ pub fn remember_sender_avatar(tab_label: &str, origin: &str, sender_name: &str, 
 }
 
 fn sender_avatar_hint(tab_label: &str, origin: &str, sender_name: &str) -> Option<String> {
-    let sender_key = sender_identity_key(sender_name);
+    let sender_key = sender_avatar_identity_key(sender_name);
     if sender_key.is_empty() {
         return None;
     }
@@ -881,11 +901,25 @@ fn find_metadata_message(
     candidates
         .into_iter()
         .filter(|(_, candidate)| {
+            let candidate_lower = candidate.to_lowercase();
             !candidate.eq_ignore_ascii_case(body)
                 && !candidate.eq_ignore_ascii_case(body_without_sender)
                 && !matches!(
-                    candidate.to_ascii_lowercase().as_str(),
-                    "replied to you" | "replied to your message" | "yanıtladı" | "yanitladı"
+                    candidate_lower.as_str(),
+                    "replied to you"
+                        | "replied to your message"
+                        | "yanıtladı"
+                        | "yanitladı"
+                        | "vous a répondu"
+                        | "vous a repondu"
+                        | "membalas anda"
+                        | "membalas pesan anda"
+                        | "ответил вам"
+                        | "ответила вам"
+                        | "ti ha risposto"
+                        | "ha risposto al tuo messaggio"
+                        | "あなたに返信しました"
+                        | "メッセージに返信しました"
                 )
         })
         .max_by_key(|(score, _)| *score)
@@ -905,9 +939,25 @@ fn reply_display_body(body: &str, sender_name: &str, content_hint: Option<String
         .split_once(':')
         .filter(|(prefix, content)| {
             !content.trim().is_empty()
-                && ["replied", "reply", "yanıt", "yanit", "cevap"]
-                    .iter()
-                    .any(|keyword| prefix.to_lowercase().contains(keyword))
+                && [
+                    "replied",
+                    "reply",
+                    "yanıt",
+                    "yanit",
+                    "cevap",
+                    "répond",
+                    "repond",
+                    "réponse",
+                    "reponse",
+                    "membalas",
+                    "balasan",
+                    "ответ",
+                    "rispost",
+                    "返信",
+                    "返事",
+                ]
+                .iter()
+                .any(|keyword| prefix.to_lowercase().contains(keyword))
         })
         .map(|(prefix, content)| (prefix.trim(), Some(content.trim().to_string())))
         .unwrap_or((summary, None));
@@ -936,12 +986,60 @@ fn sender_prefix(body: &str) -> Option<String> {
 fn notification_event_kind(notification_type: &str, body: &str) -> String {
     let notification_type = notification_type.to_lowercase();
     let body = body.to_lowercase();
-    if ["replied", "reply", "yanıt", "yanit", "cevap"]
+    if [
+        "replied",
+        "reply",
+        "yanıt",
+        "yanit",
+        "cevap",
+        "répond",
+        "repond",
+        "réponse",
+        "reponse",
+        "membalas",
+        "balasan",
+        "ответ",
+        "rispost",
+        "返信",
+        "返事",
+    ]
+    .iter()
+    .any(|keyword| body.contains(keyword))
+    {
+        "reply"
+    } else if notification_type.contains("reaction")
+        || notification_type.ends_with("_like")
+        || [
+            "reacted",
+            "reaction",
+            "liked",
+            "beğendi",
+            "ifade bıraktı",
+            "tepki",
+            "reacción",
+            "reaccion",
+            "reagiert",
+            "gefällt",
+            "réagi",
+            "reagi",
+            "réaction",
+            "aimé",
+            "bereaksi",
+            "reaksi",
+            "menyukai",
+            "отреагировал",
+            "реакци",
+            "понравилось",
+            "ha reagito",
+            "reazione",
+            "piace",
+            "リアクション",
+            "反応",
+            "いいね",
+        ]
         .iter()
         .any(|keyword| body.contains(keyword))
     {
-        "reply"
-    } else if notification_type.contains("reaction") || notification_type.ends_with("_like") {
         "reaction"
     } else if notification_type.contains("mention") {
         "mention"
@@ -1353,23 +1451,14 @@ fn process_candidate(
         );
     });
 }
-pub fn submit(app: &AppHandle, source: NotificationSource, candidate: NotificationCandidate) {
-    let _ = DIAGNOSTIC_APP.set(app.clone());
-    record_diagnostic(
-        Some(source),
-        "candidate",
-        "received",
-        "source-submitted",
-        &candidate.tab_label,
-        &candidate.origin,
-        None,
-        "",
-    );
-    let is_instagram = instagram_origin(&candidate.origin).is_some();
-    let is_whatsapp = whatsapp_origin(&candidate.origin).is_some();
-
-    let delay_ms = if source == NotificationSource::ContentAdapter
-        && candidate.adapter_kind != Some(ContentAdapterKind::ServiceWorkerSnapshot)
+fn candidate_delay_ms(
+    source: NotificationSource,
+    adapter_kind: Option<ContentAdapterKind>,
+    is_instagram: bool,
+    is_whatsapp: bool,
+) -> Option<u64> {
+    if source == NotificationSource::ContentAdapter
+        && adapter_kind != Some(ContentAdapterKind::ServiceWorkerSnapshot)
     {
         if is_instagram {
             Some(INSTAGRAM_DOM_FALLBACK_DELAY_MS)
@@ -1389,9 +1478,33 @@ pub fn submit(app: &AppHandle, source: NotificationSource, candidate: Notificati
         } else {
             None
         }
+    } else if source == NotificationSource::TitleFallback && is_instagram {
+        // Instagram changes its document title before the richer DOM adapter
+        // has finished classifying the same message. Keep the title-only path
+        // as a real fallback: once the adapter is accepted, dedupe_reason
+        // suppresses this delayed generic notification.
+        Some(INSTAGRAM_TITLE_FALLBACK_DELAY_MS)
     } else {
         None
-    };
+    }
+}
+
+pub fn submit(app: &AppHandle, source: NotificationSource, candidate: NotificationCandidate) {
+    let _ = DIAGNOSTIC_APP.set(app.clone());
+    record_diagnostic(
+        Some(source),
+        "candidate",
+        "received",
+        "source-submitted",
+        &candidate.tab_label,
+        &candidate.origin,
+        None,
+        "",
+    );
+    let is_instagram = instagram_origin(&candidate.origin).is_some();
+    let is_whatsapp = whatsapp_origin(&candidate.origin).is_some();
+    let delay_ms = candidate_delay_ms(source, candidate.adapter_kind, is_instagram, is_whatsapp);
+
     if let Some(delay_ms) = delay_ms {
         let delayed_app = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -1578,6 +1691,25 @@ mod tests {
                 1_300,
             ),
             Some("recent-higher-authority-source")
+        );
+    }
+
+    #[test]
+    fn instagram_title_fallback_waits_for_the_richer_dom_adapter() {
+        let dom_delay = candidate_delay_ms(
+            NotificationSource::ContentAdapter,
+            Some(ContentAdapterKind::Dom),
+            true,
+            false,
+        )
+        .expect("Instagram DOM notifications should be delayed for enrichment");
+        let title_delay = candidate_delay_ms(NotificationSource::TitleFallback, None, true, false)
+            .expect("Instagram title fallback should wait for richer sources");
+
+        assert!(title_delay > dom_delay);
+        assert_eq!(
+            candidate_delay_ms(NotificationSource::TitleFallback, None, false, false,),
+            None
         );
     }
 
@@ -1788,6 +1920,18 @@ mod tests {
     }
 
     #[test]
+    fn instagram_message_payload_with_reaction_text_is_classified_as_reaction() {
+        assert_eq!(
+            notification_event_kind("direct_v2_text", "Nebula Friend liked your message"),
+            "reaction"
+        );
+        assert_eq!(
+            notification_event_kind("direct_v2_text", "Nebula Friend mesajına ifade bıraktı"),
+            "reaction"
+        );
+    }
+
+    #[test]
     fn generic_message_presentation_uses_a_non_site_title_as_sender() {
         assert_eq!(
             notification_presentation(
@@ -1815,6 +1959,19 @@ mod tests {
 
         assert_eq!(
             sender_avatar_hint(tab_label, origin, "Sincap67 🐿").as_deref(),
+            Some(icon_url)
+        );
+    }
+
+    #[test]
+    fn instagram_sender_avatar_matches_an_emoji_only_display_name() {
+        let tab_label = "nebula-tab-emoji-avatar-test";
+        let origin = "https://www.instagram.com";
+        let icon_url = "https://scontent.cdninstagram.com/v/emoji-avatar.jpg";
+        remember_sender_avatar(tab_label, origin, "❤", icon_url);
+
+        assert_eq!(
+            sender_avatar_hint(tab_label, origin, "❤️").as_deref(),
             Some(icon_url)
         );
     }

@@ -39,7 +39,7 @@ test('tab search is reachable from site WebViews and supports switch, close, and
   assert.match(nativeShortcuts, /"open-tab-search"\.into\(\), vec!\["Ctrl\+Shift\+A"\.into\(\)\]/)
   assert.match(bridge, /nebula-tab-search-request/)
   assert.match(chrome, /listenTabSearchRequests/)
-  assert.match(tabSearch, /Search title or address/)
+  assert.match(tabSearch, /t\('tabSearchPlaceholder'\)/)
   assert.match(tabSearch, /onToggleMute\(tab\.shortcutId\)/)
   assert.match(tabSearch, /onCloseTab\(tab\.shortcutId\)/)
 })
@@ -81,6 +81,7 @@ test('every widget header dot follows the selected accent color', () => {
 test('network connectivity dot is green online and red offline', () => {
   const tokens = read('src/styles/tokens.css')
   const widgets = read('src/components/widgets/widgets.module.css')
+  const networkWidget = read('src/components/widgets/NetworkWidget.tsx')
 
   assert.match(tokens, /--nebula-success:\s*#4ade80/)
   assert.match(
@@ -91,6 +92,8 @@ test('network connectivity dot is green online and red offline', () => {
     widgets,
     /\.networkStatus\[data-online='true'\] \.networkDot\s*\{[\s\S]*?background:\s*var\(--nebula-success\)/,
   )
+  assert.match(networkWidget, /polling \|\|\s*document\.hidden/)
+  assert.match(networkWidget, /'visibilitychange',[\s\S]{0,80}poll/)
 })
 
 test('settings search indexes every settings surface and notifications are grouped by site', () => {
@@ -102,7 +105,7 @@ test('settings search indexes every settings surface and notifications are group
   assert.match(settings, /SHORTCUT_REFERENCE\.flatMap/)
   assert.match(settings, /normalizeSettingsSearchText/)
   assert.match(settings, /tokens\.every\(\(token\) => searchable\.includes\(token\)\)/)
-  assert.match(settings, /Ayarlarda ara/)
+  assert.match(settings, /t\('settingsSearchPlaceholder'\)/)
   assert.match(settings, /'privateMode'/)
   assert.match(settings, /settingsSearchResults/)
   assert.match(notifications, /const notificationGroups = useMemo/)
@@ -114,6 +117,7 @@ test('settings search indexes every settings surface and notifications are group
 test('tab performance housekeeping releases lifecycle keys and idle memory polling', () => {
   const queue = read('src/core/keyedLifecycleQueue.ts')
   const browser = read('src/platform/tauriBrowser.ts')
+  const main = read('src/main.tsx')
   const shell = read('src/components/BrowserShell/BrowserShell.tsx')
 
   assert.match(queue, /async releaseWhenIdle\(key: K\)/)
@@ -122,5 +126,28 @@ test('tab performance housekeeping releases lifecycle keys and idle memory polli
   assert.match(browser, /function stopMemoryPressureMonitorIfIdle/)
   assert.match(browser, /window\.clearInterval\(memoryPressurePollTimer\)/)
   assert.match(browser, /tabUnloadInFlight\.delete[\s\S]*stopMemoryPressureMonitorIfIdle\(\)/)
+  assert.match(browser, /const PREWARM_ADOPTION_GRACE_MS = 120/)
+  assert.match(browser, /Promise\.race\(\[[\s\S]*pending\.catch[\s\S]*graceElapsed/)
+  assert.match(browser, /browser\.webview\.prewarm-adoption-grace/)
+  assert.doesNotMatch(browser, /browser\.webview\.await-prewarm/)
+  assert.match(browser, /browser\.prewarm\.skip-memory-pressure/)
+  assert.match(browser, /browser\.prewarm\.discard-memory-pressure/)
+  assert.match(browser, /const INITIAL_PREWARM_DELAY_MS = 5_000/)
+  assert.match(
+    main,
+    /prewarmUblockProfile\(\)[\s\S]*?scheduleInitialBrowseWebviewPrewarm\(\)/,
+  )
+  assert.match(
+    browser,
+    /browser\.prewarm\.low-memory[\s\S]*?setLowMemoryFallback\(webview\)/,
+  )
+  assert.match(
+    browser,
+    /browser\.webview\.adopt\.restore-memory[\s\S]*?restoreWebviewMemory\(webview!\)/,
+  )
+  assert.match(
+    read('src/components/SemiLunarMenu/SemiLunarMenu.tsx'),
+    /if \(document\.hidden\) \{[\s\S]{0,140}consecutiveNativeMisses = 0/,
+  )
   assert.match(shell, /showSystemWidgets &&\s+isHome &&/)
 })

@@ -56,7 +56,7 @@ import styles from './ChromeApp.module.css'
  */
 export function ChromeApp() {
   const { settings } = useNebulaSettings()
-  const { locale } = useLocale()
+  const { t, tf } = useLocale()
   const semiLunar = settings.semiLunar
   const { bindings: browserShortcutBindings } = useBrowserShortcutBindings({ syncNative: false })
 
@@ -489,29 +489,27 @@ export function ChromeApp() {
           <span className={styles.privacyIndicatorPulse} aria-hidden="true" />
           <span className={styles.privacyIndicatorSite}>
             {sensitiveUsageSummary.host ||
-              (locale === 'tr'
-                ? `${sensitiveUsageSummary.siteCount} site`
-                : `${sensitiveUsageSummary.siteCount} sites`)}
+              tf('privacySiteCount', { n: sensitiveUsageSummary.siteCount })}
           </span>
           <span className={styles.privacyIndicatorFeatures}>
             {sensitiveUsageSummary.camera && (
-              <span title={locale === 'tr' ? 'Kamera kullanılıyor' : 'Camera in use'}>
-                {locale === 'tr' ? 'Kamera' : 'Camera'}
+              <span title={t('privacyCameraInUse')}>
+                {t('privacyCamera')}
               </span>
             )}
             {sensitiveUsageSummary.microphone && (
-              <span title={locale === 'tr' ? 'Mikrofon kullanılıyor' : 'Microphone in use'}>
-                {locale === 'tr' ? 'Mikrofon' : 'Microphone'}
+              <span title={t('privacyMicrophoneInUse')}>
+                {t('privacyMicrophone')}
               </span>
             )}
             {sensitiveUsageSummary.location && (
-              <span title={locale === 'tr' ? 'Konum kullanılıyor' : 'Location in use'}>
-                {locale === 'tr' ? 'Konum' : 'Location'}
+              <span title={t('privacyLocationInUse')}>
+                {t('privacyLocation')}
               </span>
             )}
             {sensitiveUsageSummary.screen && (
-              <span title={locale === 'tr' ? 'Ekran paylaşılıyor' : 'Screen sharing in use'}>
-                {locale === 'tr' ? 'Ekran' : 'Screen'}
+              <span title={t('privacyScreenInUse')}>
+                {t('privacyScreen')}
               </span>
             )}
           </span>

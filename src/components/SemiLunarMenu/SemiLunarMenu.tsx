@@ -17,8 +17,8 @@ import {
   type ShortcutPosition,
 } from '../../core/shortcutLayout'
 import {
+  buildOpenTabIdByDockId,
   buildBrowsingVisibleDockItemIds,
-  openTabIdForDockId,
 } from '../../core/browsingDock'
 import { hostKeyForShortcut } from '../../core/shortcutFromUrl'
 import type { BrowseSession } from '../../core/browseSession'
@@ -207,6 +207,8 @@ export function SemiLunarMenu({
   const openIntentRef = useRef(false)
   const openRequestIdRef = useRef(0)
   const mergeHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mergeAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const newFolderIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mergeHoldTargetRef = useRef<string | null>(null)
   const mergeStartedRef = useRef(false)
   const dragHoverRef = useRef(dragHover)
@@ -289,6 +291,49 @@ export function SemiLunarMenu({
       restoreShortcutLayout,
     )
 
+  const positionById = useMemo(
+    () => new Map(positions.map((position) => [position.id, position])),
+    [positions],
+  )
+
+  const firstPositionByHost = useMemo(() => {
+    const result = new Map<string, ShortcutPosition>()
+    for (const position of positions) {
+      const shortcut = shortcutMap.get(position.id)
+      if (!shortcut) continue
+
+      const host = hostKeyForShortcut(shortcut.url)
+      if (!result.has(host)) result.set(host, position)
+    }
+    return result
+  }, [positions, shortcutMap])
+
+  const getPosition = useCallback(
+    (id: string): ShortcutPosition => {
+      const direct = positionById.get(id)
+      if (direct) return direct
+
+      const shortcut = shortcutMap.get(id)
+      if (shortcut) {
+        const alias = firstPositionByHost.get(hostKeyForShortcut(shortcut.url))
+        if (alias) return alias
+      }
+
+      return { id, x: lunarMetrics.cx, y: 55 }
+    },
+    [firstPositionByHost, lunarMetrics.cx, positionById, shortcutMap],
+  )
+
+  const openTabIdByDockId = useMemo(
+    () => buildOpenTabIdByDockId(openTabIds, shortcutMap),
+    [openTabIds, shortcutMap],
+  )
+
+  const resolveCloseTabId = useCallback(
+    (dockId: string) => openTabIdByDockId.get(dockId) ?? null,
+    [openTabIdByDockId],
+  )
+
   useEffect(() => {
     clearSemiLunarFullscreenReload()
   }, [])
@@ -340,7 +385,13 @@ export function SemiLunarMenu({
       removePosition(targetDockId)
       setPosition(newDockId, targetX, targetY)
       setNewFolderId(parseFolderDockId(newDockId))
-      setTimeout(() => setNewFolderId(null), 500)
+      if (newFolderIndicatorTimerRef.current) {
+        clearTimeout(newFolderIndicatorTimerRef.current)
+      }
+      newFolderIndicatorTimerRef.current = setTimeout(() => {
+        newFolderIndicatorTimerRef.current = null
+        setNewFolderId(null)
+      }, 500)
     },
     [onAddToFolder, onCreateFolder, removePosition, setPosition],
   )
@@ -350,7 +401,7 @@ export function SemiLunarMenu({
       if (mergeStartedRef.current || isFolderDockId(sourceId)) return
 
       const sourceShortcut = shortcutMap.get(sourceId)
-      const targetPos = positions.find((p) => p.id === targetId)
+      const targetPos = positionById.get(targetId)
       if (!sourceShortcut || !targetPos) return
 
       let targetShortcut: Shortcut | undefined
@@ -378,13 +429,17 @@ export function SemiLunarMenu({
         sourceShortcut,
         targetShortcut,
       })
-      setTimeout(() => {
+      if (mergeAnimationTimerRef.current) {
+        clearTimeout(mergeAnimationTimerRef.current)
+      }
+      mergeAnimationTimerRef.current = setTimeout(() => {
+        mergeAnimationTimerRef.current = null
         completeMerge(sourceId, targetId, targetPos.x, targetPos.y)
         setMergeAnim(null)
         setDragHover(null)
       }, mergeAnimMs)
     },
-    [clearMergeHoldTimer, completeMerge, folderMap, mergeAnimMs, positions, shortcutMap],
+    [clearMergeHoldTimer, completeMerge, folderMap, mergeAnimMs, positionById, shortcutMap],
   )
 
   const handleMoveShortcut = useCallback(
@@ -455,7 +510,18 @@ export function SemiLunarMenu({
     }, folderMergeHoldMs)
   }, [clearMergeHoldTimer, dragHover, folderMergeHoldMs, iconSizePx, mergeAnim, mergeReady, positions])
 
-  useEffect(() => () => clearMergeHoldTimer(), [clearMergeHoldTimer])
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+      if (openTimer.current) clearTimeout(openTimer.current)
+      if (mergeHoldTimerRef.current) clearTimeout(mergeHoldTimerRef.current)
+      if (mergeAnimationTimerRef.current) clearTimeout(mergeAnimationTimerRef.current)
+      if (newFolderIndicatorTimerRef.current) {
+        clearTimeout(newFolderIndicatorTimerRef.current)
+      }
+    },
+    [],
+  )
 
   const clearTimers = useCallback(() => {
     if (closeTimer.current) {
@@ -711,6 +777,8 @@ export function SemiLunarMenu({
     let nativeCheckInFlight = false
 
     const sampleCollapsedTrigger = () => {
+      if (document.hidden) return
+
       const surface = browsingHoverSurfaceRef.current
 
       // Once DOM hover recovers, normal mouseenter handling owns the next open
@@ -774,6 +842,12 @@ export function SemiLunarMenu({
     }
 
     const interval = window.setInterval(() => {
+      if (document.hidden) {
+        consecutiveDomMisses = 0
+        consecutiveNativeMisses = 0
+        return
+      }
+
       if (shouldDeferClose()) {
         consecutiveDomMisses = 0
         consecutiveNativeMisses = 0
@@ -917,8 +991,7 @@ const handleContextMenuOpen = useCallback(
     (folderId: string, shortcutId: string, clientX: number, clientY: number) => {
       if (!onRemoveMemberFromFolder) return
       const dockId = folderDockId(folderId)
-      const folderPos =
-        positions.find((p) => p.id === dockId) ?? { id: dockId, x: lunarMetrics.cx, y: 55 }
+      const folderPos = getPosition(dockId)
       const anchor = anchorRef.current?.getBoundingClientRect()
       let dropX = folderPos.x
       let dropY = folderPos.y
@@ -950,7 +1023,7 @@ const handleContextMenuOpen = useCallback(
     },
     [
       onRemoveMemberFromFolder,
-      positions,
+      getPosition,
       replacePositionId,
       removePosition,
       setPosition,
@@ -986,29 +1059,6 @@ const handleContextMenuOpen = useCallback(
     // the drag when the pointer actually finished outside the Semi-Lunar.
     if (!menuHoverRef.current) scheduleClose()
   }, [clearMergeHoldTimer, scheduleClose])
-
-  const getPosition = (id: string) => {
-    const direct = positions.find((p) => p.id === id)
-    if (direct) return direct
-
-    const shortcut = shortcutMap.get(id)
-    if (shortcut) {
-      const host = hostKeyForShortcut(shortcut.url)
-      const alias = positions.find((position) => {
-        if (position.id === id) return false
-        const other = shortcutMap.get(position.id)
-        return other && hostKeyForShortcut(other.url) === host
-      })
-      if (alias) return alias
-    }
-
-    return { id, x: lunarMetrics.cx, y: 55 }
-  }
-
-  const resolveCloseTabId = useCallback(
-    (dockId: string) => openTabIdForDockId(dockId, openTabIds, shortcutMap),
-    [openTabIds, shortcutMap],
-  )
 
 const handleFolderMemberClose = useCallback(
   (folderId: string, shortcut: Shortcut) => {
@@ -1162,12 +1212,6 @@ const handleFolderMemberClose = useCallback(
     if (!isBrowsing || previous === activeTabId) return
     closeMenuImmediately()
   }, [activeTabId, closeMenuImmediately, isBrowsing])
-
-  useEffect(() => {
-    return () => {
-      if (closeTimer.current) clearTimeout(closeTimer.current)
-    }
-  }, [])
 
   shellBoundedLayoutResyncRef.current = () => {
     if (!shouldManageNativeChrome || !isTauri || shellViewMode === 'overlay') return
@@ -1490,6 +1534,7 @@ const handleFolderMemberClose = useCallback(
     }, 150)
 
     applyLayout()
+    return () => applyLayout.cancel()
   }, [
     mode,
     isExpanded,
@@ -1803,7 +1848,7 @@ const members = memberIds
                 const item = shortcutMap.get(dockId)
                 if (!item) return null
 
-                const openTabId = openTabIdForDockId(dockId, openTabIds, shortcutMap)
+                const openTabId = resolveCloseTabId(dockId)
                 const tabIsOpen = openTabId !== null
                 const tabIsActive = openTabId !== null && activeTabId === openTabId
                 const tab = resolveTabForDock(dockId)

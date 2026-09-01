@@ -4,6 +4,7 @@ import {
   notificationSiteName,
   type NebulaNotification,
 } from '../../core/notification'
+import { getLocaleCopy, type NebulaLocale } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './NotificationPanel.module.css'
@@ -41,24 +42,117 @@ function DownloadGlyph() {
   )
 }
 
+const NOTIFICATION_TYPE_COPY = {
+  tr: {
+    reply: 'Yanıt',
+    reaction: 'Tepki',
+    mention: 'Bahsetme',
+    message: 'Mesaj',
+    live: 'Canlı yayın',
+    call: 'Arama',
+    post: 'Gönderi',
+    download: 'İndirme tamamlandı',
+  },
+  en: {
+    reply: 'Reply',
+    reaction: 'Reaction',
+    mention: 'Mention',
+    message: 'Message',
+    live: 'Live',
+    call: 'Call',
+    post: 'Post',
+    download: 'Download complete',
+  },
+  es: {
+    reply: 'Respuesta',
+    reaction: 'Reacción',
+    mention: 'Mención',
+    message: 'Mensaje',
+    live: 'En directo',
+    call: 'Llamada',
+    post: 'Publicación',
+    download: 'Descarga completada',
+  },
+  de: {
+    reply: 'Antwort',
+    reaction: 'Reaktion',
+    mention: 'Erwähnung',
+    message: 'Nachricht',
+    live: 'Live',
+    call: 'Anruf',
+    post: 'Beitrag',
+    download: 'Download abgeschlossen',
+  },
+  fr: {
+    reply: 'Réponse',
+    reaction: 'Réaction',
+    mention: 'Mention',
+    message: 'Message',
+    live: 'En direct',
+    call: 'Appel',
+    post: 'Publication',
+    download: 'Téléchargement terminé',
+  },
+  id: {
+    reply: 'Balasan',
+    reaction: 'Reaksi',
+    mention: 'Sebutan',
+    message: 'Pesan',
+    live: 'Live',
+    call: 'Panggilan',
+    post: 'Postingan',
+    download: 'Unduhan selesai',
+  },
+  ru: {
+    reply: 'Ответ',
+    reaction: 'Реакция',
+    mention: 'Упоминание',
+    message: 'Сообщение',
+    live: 'Прямой эфир',
+    call: 'Звонок',
+    post: 'Публикация',
+    download: 'Загрузка завершена',
+  },
+  it: {
+    reply: 'Risposta',
+    reaction: 'Reazione',
+    mention: 'Menzione',
+    message: 'Messaggio',
+    live: 'Diretta',
+    call: 'Chiamata',
+    post: 'Post',
+    download: 'Download completato',
+  },
+  ja: {
+    reply: '返信',
+    reaction: 'リアクション',
+    mention: 'メンション',
+    message: 'メッセージ',
+    live: 'ライブ',
+    call: '通話',
+    post: '投稿',
+    download: 'ダウンロード完了',
+  },
+} as const
+
 function notificationTypeLabel(
   eventKind: string | null,
   type: string | null,
-  locale: string,
+  locale: NebulaLocale,
 ): string | null {
   const normalized = (eventKind || type || '').toLocaleLowerCase()
   if (!normalized) return null
-  const tr = locale.toLocaleLowerCase().startsWith('tr')
-  if (normalized === 'reply') return tr ? 'Yanıt' : 'Reply'
+  const copy = getLocaleCopy(NOTIFICATION_TYPE_COPY, locale)
+  if (normalized === 'reply') return copy.reply
   if (normalized === 'reaction' || normalized.includes('reaction') || normalized.endsWith('_like')) {
-    return tr ? 'Tepki' : 'Reaction'
+    return copy.reaction
   }
-  if (normalized === 'mention' || normalized.includes('mention')) return tr ? 'Bahsetme' : 'Mention'
-  if (normalized === 'message' || normalized.startsWith('direct_v2')) return tr ? 'Mesaj' : 'Message'
-  if (normalized === 'live' || normalized.includes('live_broadcast')) return tr ? 'Canlı yayın' : 'Live'
-  if (normalized === 'call' || normalized.includes('rtc')) return tr ? 'Arama' : 'Call'
-  if (normalized === 'post') return tr ? 'Gönderi' : 'Post'
-  if (normalized === 'download') return tr ? 'İndirme tamamlandı' : 'Download complete'
+  if (normalized === 'mention' || normalized.includes('mention')) return copy.mention
+  if (normalized === 'message' || normalized.startsWith('direct_v2')) return copy.message
+  if (normalized === 'live' || normalized.includes('live_broadcast')) return copy.live
+  if (normalized === 'call' || normalized.includes('rtc')) return copy.call
+  if (normalized === 'post') return copy.post
+  if (normalized === 'download') return copy.download
   return null
 }
 
@@ -81,7 +175,7 @@ export function NotificationPanel({
   onOpenDownload,
   onClose,
 }: NotificationPanelProps) {
-  const { t, locale } = useLocale()
+  const { t, tf, locale } = useLocale()
   const hasUnread = items.some((item) => !item.read)
   const timeFormatter = new Intl.DateTimeFormat(locale, {
     hour: '2-digit',
@@ -100,14 +194,14 @@ export function NotificationPanel({
       const key = item.origin ?? `kind:${item.kind}`
       const title = item.origin
         ? item.siteName || notificationSiteName(item.origin)
-        : locale === 'tr' ? 'İndirmeler' : 'Downloads'
+        : t('notificationDownloads')
       const group = groups.get(key) ?? { key, title, items: [], unreadCount: 0 }
       group.items.push(item)
       if (!item.read) group.unreadCount += 1
       groups.set(key, group)
     }
     return [...groups.values()]
-  }, [items, locale])
+  }, [items, t])
 
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -165,7 +259,7 @@ export function NotificationPanel({
                   <span>
                     {group.items.length}
                     {group.unreadCount > 0 && (
-                      <> · {locale === 'tr' ? `${group.unreadCount} okunmamış` : `${group.unreadCount} unread`}</>
+                      <> · {tf('notificationUnreadCount', { n: group.unreadCount })}</>
                     )}
                   </span>
                 </header>
@@ -228,7 +322,7 @@ export function NotificationPanel({
                           <span className={styles.meta}>
                             {item.origin ? notificationHost(item.origin) : t('notificationDownloadSource')}
                             {item.targetUrl && (
-                              <><span>•</span>{locale.startsWith('tr') ? 'İlgili içeriği aç' : 'Open related content'}</>
+                              <><span>•</span>{t('notificationOpenRelated')}</>
                             )}
                           </span>
                         </span>

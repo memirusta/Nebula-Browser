@@ -3,6 +3,7 @@ import {
   useState,
 } from 'react'
 import { useLocale } from '../../hooks/useLocale'
+import { getLocaleCopy } from '../../core/locale'
 import {
   fetchNetworkStats,
   type NetworkStatsSnapshot,
@@ -27,6 +28,69 @@ const COPY = {
     usage: 'Kullanım',
     measuring: 'Ağ trafiği ölçülüyor…',
     unavailable: 'Ağ sayaçları kullanılamıyor.',
+  },
+  es: {
+    online: 'En línea',
+    offline: 'Sin conexión',
+    download: 'Descarga',
+    upload: 'Subida',
+    usage: 'Uso',
+    measuring: 'Midiendo el tráfico de red…',
+    unavailable: 'Los contadores de red no están disponibles.',
+  },
+  de: {
+    online: 'Online',
+    offline: 'Offline',
+    download: 'Download',
+    upload: 'Upload',
+    usage: 'Nutzung',
+    measuring: 'Netzwerkverkehr wird gemessen…',
+    unavailable: 'Netzwerkzähler sind nicht verfügbar.',
+  },
+  fr: {
+    online: 'En ligne',
+    offline: 'Hors ligne',
+    download: 'Téléchargement',
+    upload: 'Envoi',
+    usage: 'Utilisation',
+    measuring: 'Mesure du trafic réseau…',
+    unavailable: 'Les compteurs réseau ne sont pas disponibles.',
+  },
+  id: {
+    online: 'Online',
+    offline: 'Offline',
+    download: 'Unduh',
+    upload: 'Unggah',
+    usage: 'Penggunaan',
+    measuring: 'Mengukur lalu lintas jaringan…',
+    unavailable: 'Penghitung jaringan tidak tersedia.',
+  },
+  ru: {
+    online: 'В сети',
+    offline: 'Не в сети',
+    download: 'Скачивание',
+    upload: 'Отправка',
+    usage: 'Использование',
+    measuring: 'Измерение сетевого трафика…',
+    unavailable: 'Сетевые счётчики недоступны.',
+  },
+  it: {
+    online: 'Online',
+    offline: 'Offline',
+    download: 'Download',
+    upload: 'Upload',
+    usage: 'Utilizzo',
+    measuring: 'Misurazione del traffico di rete…',
+    unavailable: 'I contatori di rete non sono disponibili.',
+  },
+  ja: {
+    online: 'オンライン',
+    offline: 'オフライン',
+    download: 'ダウンロード',
+    upload: 'アップロード',
+    usage: '使用量',
+    measuring: 'ネットワーク通信量を測定中…',
+    unavailable: 'ネットワークカウンターを利用できません。',
   },
 } as const
 
@@ -55,7 +119,7 @@ function formatMbps(
 
 export function NetworkWidget() {
   const { locale } = useLocale()
-  const copy = COPY[locale]
+  const copy = getLocaleCopy(COPY, locale)
 
   const [
     online,
@@ -87,7 +151,8 @@ export function NetworkWidget() {
     const poll = async () => {
       if (
         disposed ||
-        polling
+        polling ||
+        document.hidden
       ) {
         return
       }
@@ -121,6 +186,10 @@ export function NetworkWidget() {
       'offline',
       updateOnline,
     )
+    document.addEventListener(
+      'visibilitychange',
+      poll,
+    )
 
     void poll()
 
@@ -147,6 +216,11 @@ export function NetworkWidget() {
       window.removeEventListener(
         'offline',
         updateOnline,
+      )
+
+      document.removeEventListener(
+        'visibilitychange',
+        poll,
       )
     }
   }, [])

@@ -87,11 +87,43 @@ test('Instagram message nodes are not marked seen before their delayed text arri
     /\[contenteditable\]:not\(\[contenteditable="false"\]\), textarea, input\[type="text"\]/,
   )
   assert.match(siteUi, /function messageDetailsFromCandidate/)
+  assert.match(siteUi, /function isInstagramReactionActivity/)
+  assert.match(siteUi, /function isGenericInstagramActivity/)
+  assert.doesNotMatch(siteUi, /function instagramInboxRow/)
+  assert.doesNotMatch(siteUi, /window\.__nebulaScanInstagramNotificationContent/)
+  assert.match(siteUi, /isReaction: isInstagramReactionActivity/)
+  assert.match(siteUi, /details\.isReaction \? 'reaction'/)
+  assert.match(siteUi, /attributeFilter: \['aria-label', 'title'\]/)
+  assert.match(siteUi, /mutation\.type === 'characterData' \|\| mutation\.type === 'attributes'/)
   assert.match(siteUi, /hasQuotedPreview/)
-  assert.match(siteUi, /notificationData: details\.isReply \? \{ replyText: text \} : null/)
+  assert.match(
+    siteUi,
+    /notificationData: details\.isReply && !details\.isReaction \? \{ replyText: text \} : null/,
+  )
   assert.match(report, /function queueCandidate[\s\S]*reportCandidate\(candidate\)/)
   assert.doesNotMatch(report, /reportIncoming\(candidate\)/)
   assert.doesNotMatch(report, /Normal message; DOM adapter/)
+
+  const reactionStart = siteUi.indexOf('function isInstagramReactionActivity')
+  const reactionEnd = siteUi.indexOf('function isGenericInstagramActivity', reactionStart)
+  assert.ok(reactionStart >= 0)
+  assert.ok(reactionEnd > reactionStart)
+  const isInstagramReactionActivity = new Function(
+    `${siteUi.slice(reactionStart, reactionEnd)}; return isInstagramReactionActivity;`,
+  )() as (text: string) => boolean
+  assert.equal(isInstagramReactionActivity('Reacted 💟 to your message · 2m'), true)
+  assert.equal(isInstagramReactionActivity('Reacted 💟 to your message 2m'), true)
+  assert.equal(isInstagramReactionActivity('Sincap67 Reacted ❤️ to your message'), true)
+  assert.equal(isInstagramReactionActivity('You have a new message or notification.'), false)
+
+  const genericStart = siteUi.indexOf('function isGenericInstagramActivity')
+  const genericEnd = siteUi.indexOf('function instagramActivityText', genericStart)
+  const isGenericInstagramActivity = new Function(
+    `${siteUi.slice(genericStart, genericEnd)}; return isGenericInstagramActivity;`,
+  )() as (text: string) => boolean
+  assert.equal(isGenericInstagramActivity('Typing...'), true)
+  const metadata = read('src-tauri/src/tab_metadata.rs')
+  assert.doesNotMatch(metadata, /request_instagram_content_scan/)
 })
 
 test('clicking a site notification returns to its live tab before opening a fallback URL', () => {
@@ -235,6 +267,8 @@ test('persistent social notifications surface while their source tab is hidden',
   assert.match(siteUi, /senderName: presentation\.senderName/)
   assert.match(siteUi, /eventKind: presentation\.eventKind/)
   assert.match(siteUi, /installInstagramAvatarObserver/)
+  assert.match(siteUi, /function instagramAvatarKey/)
+  assert.match(siteUi, /character !== '\\uFE0E' && character !== '\\uFE0F'/)
   assert.match(siteUi, /nebula-site-avatar-hint/)
   assert.match(siteUi, /profileImageUrl: profileImageUrl/)
   assert.match(siteUi, /presentation\.profileImageUrl \|\| notification\.icon/)

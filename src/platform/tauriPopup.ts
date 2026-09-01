@@ -12,6 +12,7 @@ import {
   POPUP_CONTENT_PREFIX,
   POPUP_WINDOW_PREFIX,
 } from './popupShell'
+import { waitForTauriCreated } from './tauriCreationWait'
 
 export { isPopupContentLabel } from './popupShell'
 const DEFAULT_POPUP_CONTENT_WIDTH = 520
@@ -48,23 +49,7 @@ function waitForCreated(
   target: Window | Webview,
   description: string,
 ): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      reject(new Error(`${description} create timeout`))
-    }, CREATE_TIMEOUT_MS)
-
-    const finish = () => window.clearTimeout(timeout)
-
-    void target.once('tauri://created', () => {
-      finish()
-      resolve()
-    })
-
-    void target.once('tauri://error', (event) => {
-      finish()
-      reject(event.payload)
-    })
-  })
+  return waitForTauriCreated(target, description, CREATE_TIMEOUT_MS)
 }
 
 async function layoutPopup(runtime: PopupRuntime): Promise<void> {

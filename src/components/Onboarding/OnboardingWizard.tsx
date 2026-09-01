@@ -11,7 +11,7 @@ import {
   loadNebulaAccount,
   type NebulaAccount,
 } from '../../core/nebulaAccount'
-import { tf } from '../../core/locale'
+import { getLocaleCopy, tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import {
@@ -85,6 +85,104 @@ const BOOKMARK_COPY = {
     ready: (count: number) =>
       `${count} site Nebula’da hazır`,
   },
+  es: {
+    title: 'Continúa donde lo dejaste.',
+    lead: (browser: string) =>
+      `Trae tus marcadores de ${browser} a Nebula.`,
+    detected: 'Marcadores encontrados',
+    searching: 'Detectando tu navegador predeterminado…',
+    unavailable: 'No se encontró ninguna fuente de marcadores compatible.',
+    webOnly: 'La importación de marcadores está disponible en la aplicación de escritorio.',
+    import: 'Importar marcadores',
+    importing: 'Importando…',
+    imported: 'Marcadores importados',
+    ready: (count: number) =>
+      `${count} sitios listos en Nebula`,
+  },
+  de: {
+    title: 'Mach dort weiter, wo du aufgehört hast.',
+    lead: (browser: string) =>
+      `Übertrage deine Lesezeichen aus ${browser} zu Nebula.`,
+    detected: 'Lesezeichen gefunden',
+    searching: 'Standardbrowser wird erkannt…',
+    unavailable: 'Es wurde keine unterstützte Lesezeichenquelle gefunden.',
+    webOnly: 'Der Lesezeichenimport ist in der Desktop-App verfügbar.',
+    import: 'Lesezeichen importieren',
+    importing: 'Wird importiert…',
+    imported: 'Lesezeichen importiert',
+    ready: (count: number) =>
+      `${count} Websites sind in Nebula bereit`,
+  },
+  fr: {
+    title: 'Reprenez là où vous vous êtes arrêté.',
+    lead: (browser: string) =>
+      `Importez vos favoris de ${browser} dans Nebula.`,
+    detected: 'Favoris trouvés',
+    searching: 'Détection de votre navigateur par défaut…',
+    unavailable: 'Aucune source de favoris compatible n’a été trouvée.',
+    webOnly: 'L’importation des favoris est disponible dans l’application de bureau.',
+    import: 'Importer les favoris',
+    importing: 'Importation…',
+    imported: 'Favoris importés',
+    ready: (count: number) =>
+      `${count} sites sont prêts dans Nebula`,
+  },
+  id: {
+    title: 'Lanjutkan dari tempat terakhir.',
+    lead: (browser: string) =>
+      `Bawa bookmark Anda dari ${browser} ke Nebula.`,
+    detected: 'Bookmark ditemukan',
+    searching: 'Mendeteksi browser bawaan…',
+    unavailable: 'Tidak ada sumber bookmark yang didukung.',
+    webOnly: 'Impor bookmark tersedia di aplikasi desktop.',
+    import: 'Impor bookmark',
+    importing: 'Mengimpor…',
+    imported: 'Bookmark diimpor',
+    ready: (count: number) =>
+      `${count} situs siap di Nebula`,
+  },
+  ru: {
+    title: 'Продолжите с того места, где остановились.',
+    lead: (browser: string) =>
+      `Перенесите закладки из ${browser} в Nebula.`,
+    detected: 'Закладки найдены',
+    searching: 'Определение браузера по умолчанию…',
+    unavailable: 'Поддерживаемый источник закладок не найден.',
+    webOnly: 'Импорт закладок доступен в настольном приложении.',
+    import: 'Импортировать закладки',
+    importing: 'Импорт…',
+    imported: 'Закладки импортированы',
+    ready: (count: number) =>
+      `${count} сайтов готовы в Nebula`,
+  },
+  it: {
+    title: 'Riprendi da dove avevi interrotto.',
+    lead: (browser: string) =>
+      `Porta i tuoi segnalibri da ${browser} a Nebula.`,
+    detected: 'Segnalibri trovati',
+    searching: 'Rilevamento del browser predefinito…',
+    unavailable: 'Non è stata trovata una fonte di segnalibri supportata.',
+    webOnly: 'L’importazione dei segnalibri è disponibile nell’app desktop.',
+    import: 'Importa segnalibri',
+    importing: 'Importazione…',
+    imported: 'Segnalibri importati',
+    ready: (count: number) =>
+      `${count} siti pronti in Nebula`,
+  },
+  ja: {
+    title: '前回の続きから始めましょう。',
+    lead: (browser: string) =>
+      `${browser} のブックマークを Nebula に移行します。`,
+    detected: 'ブックマークが見つかりました',
+    searching: '既定のブラウザーを検出中…',
+    unavailable: '対応するブックマーク元が見つかりませんでした。',
+    webOnly: 'ブックマークのインポートはデスクトップアプリで利用できます。',
+    import: 'ブックマークをインポート',
+    importing: 'インポート中…',
+    imported: 'ブックマークをインポートしました',
+    ready: (count: number) =>
+      `${count} 件のサイトを Nebula で利用できます`,
+  },
 } as const
 
 export function OnboardingWizard({
@@ -99,7 +197,7 @@ export function OnboardingWizard({
     t,
   } = useLocale()
 
-  const bookmarkCopy = BOOKMARK_COPY[locale]
+  const bookmarkCopy = getLocaleCopy(BOOKMARK_COPY, locale)
 
   const [
     step,

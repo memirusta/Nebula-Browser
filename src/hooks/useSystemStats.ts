@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SystemStats } from '../core/types'
 import { showAppAlert } from '../core/appDialog'
-import { loadLocale } from '../core/locale'
+import { getIntlLocale, loadLocale } from '../core/locale'
 import { useLocale } from './useLocale'
 import { SingleFlightPoll } from '../core/singleFlightPoll'
 import { isTauri } from '../platform/runtime'
@@ -147,7 +147,7 @@ export function useClock() {
     }
   }, [])
 
-  const dateLocale = locale === 'tr' ? 'tr-TR' : 'en-US'
+  const dateLocale = getIntlLocale(locale)
   const time = now.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
   const date = now.toLocaleDateString(dateLocale, {
     weekday: 'long',

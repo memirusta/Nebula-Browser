@@ -11,7 +11,11 @@ import {
   getSettingsCategories,
   type SettingsCategoryId,
 } from '../../core/settingsCategories'
-import { LOCALE_MESSAGES, type LocaleMessageKey } from '../../core/locale'
+import { getLocaleCopy, LOCALE_MESSAGES, type LocaleMessageKey } from '../../core/locale'
+import { DE_LOCALE_MESSAGES } from '../../core/localeMessages.de'
+import { ES_LOCALE_MESSAGES } from '../../core/localeMessages.es'
+import { FR_LOCALE_MESSAGES, ID_LOCALE_MESSAGES, RU_LOCALE_MESSAGES } from '../../core/localeMessages.additional'
+import { IT_LOCALE_MESSAGES, JA_LOCALE_MESSAGES } from '../../core/localeMessages.it-ja'
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { showAppConfirmation } from '../../core/appDialog'
@@ -52,16 +56,37 @@ export interface SettingsAnchor {
 }
 
 interface ShortcutReferenceItem {
-  id: ConfigurableBrowserShortcutId
+  actionId: ConfigurableBrowserShortcutId
   tr: string
   en: string
+  es: string
+  de: string
+  fr: string
+  id: string
+  ru: string
+  it: string
+  ja: string
   noteTr?: string
   noteEn?: string
+  noteEs?: string
+  noteDe?: string
+  noteFr?: string
+  noteId?: string
+  noteRu?: string
+  noteIt?: string
+  noteJa?: string
 }
 
 interface ShortcutReferenceGroup {
   tr: string
   en: string
+  es: string
+  de: string
+  fr: string
+  id: string
+  ru: string
+  it: string
+  ja: string
   items: ShortcutReferenceItem[]
 }
 
@@ -69,52 +94,73 @@ const SHORTCUT_REFERENCE: ShortcutReferenceGroup[] = [
   {
     tr: 'Sekmeler',
     en: 'Tabs',
+    es: 'Pestañas',
+    de: 'Tabs',
+    fr: 'Onglets',
+    id: 'Tab',
+    ru: 'Вкладки',
+    it: 'Schede',
+    ja: 'タブ',
     items: [
-      { id: 'close-tab', tr: 'Aktif sekmeyi kapat', en: 'Close the active tab' },
-      { id: 'reopen-tab', tr: 'Son kapatılan sekmeyi yeniden aç', en: 'Reopen the last closed tab' },
-      { id: 'next-tab', tr: 'Sonraki sekmeye geç', en: 'Switch to the next tab' },
-      { id: 'prev-tab', tr: 'Önceki sekmeye geç', en: 'Switch to the previous tab' },
-      { id: 'open-tab-search', tr: 'Sekmelerde ara', en: 'Search open tabs' },
-      { id: 'switch-tab-1', tr: '1. sekmeye geç', en: 'Switch to tab 1' },
-      { id: 'switch-tab-2', tr: '2. sekmeye geç', en: 'Switch to tab 2' },
-      { id: 'switch-tab-3', tr: '3. sekmeye geç', en: 'Switch to tab 3' },
-      { id: 'switch-tab-4', tr: '4. sekmeye geç', en: 'Switch to tab 4' },
-      { id: 'switch-tab-5', tr: '5. sekmeye geç', en: 'Switch to tab 5' },
-      { id: 'switch-tab-6', tr: '6. sekmeye geç', en: 'Switch to tab 6' },
-      { id: 'switch-tab-7', tr: '7. sekmeye geç', en: 'Switch to tab 7' },
-      { id: 'switch-tab-8', tr: '8. sekmeye geç', en: 'Switch to tab 8' },
-      { id: 'switch-tab-last', tr: 'Son sekmeye geç', en: 'Switch to the last tab' },
+      { actionId: 'close-tab', tr: 'Aktif sekmeyi kapat', en: 'Close the active tab', es: 'Cerrar la pestaña activa', de: 'Aktiven Tab schließen', fr: 'Fermer l’onglet actif', id: 'Tutup tab aktif', ru: 'Закрыть активную вкладку', it: 'Chiudi la scheda attiva', ja: 'アクティブなタブを閉じる' },
+      { actionId: 'reopen-tab', tr: 'Son kapatılan sekmeyi yeniden aç', en: 'Reopen the last closed tab', es: 'Volver a abrir la última pestaña cerrada', de: 'Zuletzt geschlossenen Tab wieder öffnen', fr: 'Rouvrir le dernier onglet fermé', id: 'Buka kembali tab terakhir yang ditutup', ru: 'Снова открыть последнюю закрытую вкладку', it: 'Riapri l’ultima scheda chiusa', ja: '最後に閉じたタブを開き直す' },
+      { actionId: 'next-tab', tr: 'Sonraki sekmeye geç', en: 'Switch to the next tab', es: 'Cambiar a la pestaña siguiente', de: 'Zum nächsten Tab wechseln', fr: 'Passer à l’onglet suivant', id: 'Beralih ke tab berikutnya', ru: 'Перейти к следующей вкладке', it: 'Passa alla scheda successiva', ja: '次のタブに切り替える' },
+      { actionId: 'prev-tab', tr: 'Önceki sekmeye geç', en: 'Switch to the previous tab', es: 'Cambiar a la pestaña anterior', de: 'Zum vorherigen Tab wechseln', fr: 'Passer à l’onglet précédent', id: 'Beralih ke tab sebelumnya', ru: 'Перейти к предыдущей вкладке', it: 'Passa alla scheda precedente', ja: '前のタブに切り替える' },
+      { actionId: 'open-tab-search', tr: 'Sekmelerde ara', en: 'Search open tabs', es: 'Buscar en las pestañas abiertas', de: 'Geöffnete Tabs durchsuchen', fr: 'Rechercher dans les onglets ouverts', id: 'Cari tab terbuka', ru: 'Поиск открытых вкладок', it: 'Cerca nelle schede aperte', ja: '開いているタブを検索' },
+      { actionId: 'switch-tab-1', tr: '1. sekmeye geç', en: 'Switch to tab 1', es: 'Cambiar a la pestaña 1', de: 'Zu Tab 1 wechseln', fr: 'Passer à l’onglet 1', id: 'Beralih ke tab 1', ru: 'Перейти к вкладке 1', it: 'Passa alla scheda 1', ja: 'タブ 1 に切り替える' },
+      { actionId: 'switch-tab-2', tr: '2. sekmeye geç', en: 'Switch to tab 2', es: 'Cambiar a la pestaña 2', de: 'Zu Tab 2 wechseln', fr: 'Passer à l’onglet 2', id: 'Beralih ke tab 2', ru: 'Перейти к вкладке 2', it: 'Passa alla scheda 2', ja: 'タブ 2 に切り替える' },
+      { actionId: 'switch-tab-3', tr: '3. sekmeye geç', en: 'Switch to tab 3', es: 'Cambiar a la pestaña 3', de: 'Zu Tab 3 wechseln', fr: 'Passer à l’onglet 3', id: 'Beralih ke tab 3', ru: 'Перейти к вкладке 3', it: 'Passa alla scheda 3', ja: 'タブ 3 に切り替える' },
+      { actionId: 'switch-tab-4', tr: '4. sekmeye geç', en: 'Switch to tab 4', es: 'Cambiar a la pestaña 4', de: 'Zu Tab 4 wechseln', fr: 'Passer à l’onglet 4', id: 'Beralih ke tab 4', ru: 'Перейти к вкладке 4', it: 'Passa alla scheda 4', ja: 'タブ 4 に切り替える' },
+      { actionId: 'switch-tab-5', tr: '5. sekmeye geç', en: 'Switch to tab 5', es: 'Cambiar a la pestaña 5', de: 'Zu Tab 5 wechseln', fr: 'Passer à l’onglet 5', id: 'Beralih ke tab 5', ru: 'Перейти к вкладке 5', it: 'Passa alla scheda 5', ja: 'タブ 5 に切り替える' },
+      { actionId: 'switch-tab-6', tr: '6. sekmeye geç', en: 'Switch to tab 6', es: 'Cambiar a la pestaña 6', de: 'Zu Tab 6 wechseln', fr: 'Passer à l’onglet 6', id: 'Beralih ke tab 6', ru: 'Перейти к вкладке 6', it: 'Passa alla scheda 6', ja: 'タブ 6 に切り替える' },
+      { actionId: 'switch-tab-7', tr: '7. sekmeye geç', en: 'Switch to tab 7', es: 'Cambiar a la pestaña 7', de: 'Zu Tab 7 wechseln', fr: 'Passer à l’onglet 7', id: 'Beralih ke tab 7', ru: 'Перейти к вкладке 7', it: 'Passa alla scheda 7', ja: 'タブ 7 に切り替える' },
+      { actionId: 'switch-tab-8', tr: '8. sekmeye geç', en: 'Switch to tab 8', es: 'Cambiar a la pestaña 8', de: 'Zu Tab 8 wechseln', fr: 'Passer à l’onglet 8', id: 'Beralih ke tab 8', ru: 'Перейти к вкладке 8', it: 'Passa alla scheda 8', ja: 'タブ 8 に切り替える' },
+      { actionId: 'switch-tab-last', tr: 'Son sekmeye geç', en: 'Switch to the last tab', es: 'Cambiar a la última pestaña', de: 'Zum letzten Tab wechseln', fr: 'Passer au dernier onglet', id: 'Beralih ke tab terakhir', ru: 'Перейти к последней вкладке', it: 'Passa all’ultima scheda', ja: '最後のタブに切り替える' },
     ],
   },
   {
     tr: 'Gezinme',
     en: 'Navigation',
+    es: 'Navegación',
+    de: 'Navigation',
+    fr: 'Navigation',
+    id: 'Navigasi',
+    ru: 'Навигация',
+    it: 'Navigazione',
+    ja: 'ナビゲーション',
     items: [
-      { id: 'go-home', tr: 'Ana sayfaya dön', en: 'Go to Home' },
-      { id: 'open-history', tr: 'Geçmişi aç', en: 'Open History' },
-      { id: 'focus-url-bar', tr: 'Adres çubuğuna odaklan', en: 'Focus the address bar' },
-      { id: 'go-back', tr: 'Geri git', en: 'Go back' },
-      { id: 'go-forward', tr: 'İleri git', en: 'Go forward' },
-      { id: 'reload', tr: 'Sayfayı yenile', en: 'Reload the page' },
+      { actionId: 'go-home', tr: 'Ana sayfaya dön', en: 'Go to Home', es: 'Ir a Inicio', de: 'Zur Startseite wechseln', fr: 'Aller à l’accueil', id: 'Buka Beranda', ru: 'Перейти на главную', it: 'Vai alla Home', ja: 'ホームへ移動' },
+      { actionId: 'open-history', tr: 'Geçmişi aç', en: 'Open History', es: 'Abrir el historial', de: 'Verlauf öffnen', fr: 'Ouvrir l’historique', id: 'Buka riwayat', ru: 'Открыть историю', it: 'Apri Cronologia', ja: '履歴を開く' },
+      { actionId: 'focus-url-bar', tr: 'Adres çubuğuna odaklan', en: 'Focus the address bar', es: 'Enfocar la barra de direcciones', de: 'Adressleiste fokussieren', fr: 'Activer la barre d’adresse', id: 'Fokus ke kolom alamat', ru: 'Перейти к адресной строке', it: 'Attiva la barra degli indirizzi', ja: 'アドレスバーにフォーカス' },
+      { actionId: 'go-back', tr: 'Geri git', en: 'Go back', es: 'Volver', de: 'Zurück', fr: 'Revenir en arrière', id: 'Kembali', ru: 'Назад', it: 'Indietro', ja: '戻る' },
+      { actionId: 'go-forward', tr: 'İleri git', en: 'Go forward', es: 'Avanzar', de: 'Vorwärts', fr: 'Avancer', id: 'Maju', ru: 'Вперёд', it: 'Avanti', ja: '進む' },
+      { actionId: 'reload', tr: 'Sayfayı yenile', en: 'Reload the page', es: 'Recargar la página', de: 'Seite neu laden', fr: 'Recharger la page', id: 'Muat ulang halaman', ru: 'Обновить страницу', it: 'Ricarica la pagina', ja: 'ページを再読み込み' },
     ],
   },
   {
     tr: 'Görünüm ve geliştirici',
     en: 'View and developer',
+    es: 'Vista y desarrollo',
+    de: 'Ansicht und Entwicklung',
+    fr: 'Affichage et développement',
+    id: 'Tampilan dan pengembang',
+    ru: 'Вид и разработка',
+    it: 'Visualizzazione e sviluppo',
+    ja: '表示と開発者',
     items: [
-      { id: 'zoom-in', tr: 'Yakınlaştır', en: 'Zoom in' },
-      { id: 'zoom-out', tr: 'Uzaklaştır', en: 'Zoom out' },
-      { id: 'zoom-reset', tr: 'Yakınlaştırmayı sıfırla', en: 'Reset zoom' },
-      { id: 'print', tr: 'Sayfayı yazdır', en: 'Print the current page' },
-      { id: 'toggle-fullscreen', tr: 'Tam ekranı aç/kapat', en: 'Toggle fullscreen' },
-      { id: 'devtools', tr: 'Geliştirici araçlarını aç', en: 'Open Developer Tools' },
+      { actionId: 'zoom-in', tr: 'Yakınlaştır', en: 'Zoom in', es: 'Acercar', de: 'Vergrößern', fr: 'Zoom avant', id: 'Perbesar', ru: 'Увеличить', it: 'Aumenta zoom', ja: '拡大' },
+      { actionId: 'zoom-out', tr: 'Uzaklaştır', en: 'Zoom out', es: 'Alejar', de: 'Verkleinern', fr: 'Zoom arrière', id: 'Perkecil', ru: 'Уменьшить', it: 'Riduci zoom', ja: '縮小' },
+      { actionId: 'zoom-reset', tr: 'Yakınlaştırmayı sıfırla', en: 'Reset zoom', es: 'Restablecer el zoom', de: 'Zoom zurücksetzen', fr: 'Réinitialiser le zoom', id: 'Atur ulang zoom', ru: 'Сбросить масштаб', it: 'Reimposta zoom', ja: 'ズームをリセット' },
+      { actionId: 'print', tr: 'Sayfayı yazdır', en: 'Print the current page', es: 'Imprimir la página actual', de: 'Aktuelle Seite drucken', fr: 'Imprimer la page actuelle', id: 'Cetak halaman saat ini', ru: 'Печать текущей страницы', it: 'Stampa la pagina corrente', ja: '現在のページを印刷' },
+      { actionId: 'toggle-fullscreen', tr: 'Tam ekranı aç/kapat', en: 'Toggle fullscreen', es: 'Alternar pantalla completa', de: 'Vollbild umschalten', fr: 'Activer le plein écran', id: 'Aktifkan/nonaktifkan layar penuh', ru: 'Переключить полноэкранный режим', it: 'Attiva/disattiva schermo intero', ja: '全画面表示を切り替え' },
+      { actionId: 'devtools', tr: 'Geliştirici araçlarını aç', en: 'Open Developer Tools', es: 'Abrir las herramientas para desarrolladores', de: 'Entwicklertools öffnen', fr: 'Ouvrir les outils de développement', id: 'Buka Alat Pengembang', ru: 'Открыть инструменты разработчика', it: 'Apri Strumenti per sviluppatori', ja: '開発者ツールを開く' },
     ],
   },
 ]
 
 const SHORTCUT_LABELS = new Map(
   SHORTCUT_REFERENCE.flatMap((group) =>
-    group.items.map((item) => [item.id, item] as const),
+    group.items.map((item) => [item.actionId, item] as const),
   ),
 )
 
@@ -122,6 +168,13 @@ interface SettingsSearchEntry {
   categoryId: SettingsCategoryId
   tr: string
   en: string
+  es: string
+  de: string
+  fr: string
+  id: string
+  ru: string
+  it: string
+  ja: string
   keywords: string
 }
 
@@ -233,7 +286,14 @@ function localizedSettingsSearchEntry(
     categoryId,
     tr: label.tr,
     en: label.en,
-    keywords: `${labelKey} ${hint?.tr ?? ''} ${hint?.en ?? ''}`,
+    es: ES_LOCALE_MESSAGES[labelKey],
+    de: DE_LOCALE_MESSAGES[labelKey],
+    fr: FR_LOCALE_MESSAGES[labelKey],
+    id: ID_LOCALE_MESSAGES[labelKey],
+    ru: RU_LOCALE_MESSAGES[labelKey],
+    it: IT_LOCALE_MESSAGES[labelKey],
+    ja: JA_LOCALE_MESSAGES[labelKey],
+    keywords: `${labelKey} ${hint?.tr ?? ''} ${hint?.en ?? ''} ${hint ? ES_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''} ${hint ? DE_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''} ${hint ? FR_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''} ${hint ? ID_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''} ${hint ? RU_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''} ${hint ? IT_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''} ${hint ? JA_LOCALE_MESSAGES[possibleHintKey as LocaleMessageKey] : ''}`,
   }
 }
 
@@ -245,59 +305,143 @@ const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
     categoryId: 'appearance',
     tr: 'Duvar kağıdı',
     en: 'Wallpaper',
-    keywords: 'görsel image hareketli animated video ambient arka plan background yerleşim fit konum position yoğunluk intensity hız speed',
+    es: 'Fondo de pantalla',
+    de: 'Hintergrundbild',
+    fr: 'Fond d’écran',
+    id: 'Wallpaper',
+    ru: 'Обои',
+    it: 'Sfondo',
+    ja: '壁紙',
+    keywords: 'görsel image imagen bild bewegtes animiert hareketli animated animado video ambient ambiente arka plan background fondo hintergrund yerleşim fit ajuste anpassung konum position posición yoğunluk intensity intensidad intensität hız speed velocidad geschwindigkeit',
   },
   {
     categoryId: 'home',
     tr: 'Son oturumu geri yükle',
     en: 'Restore the last session',
-    keywords: 'sekme tab session oturum restore başlangıç startup klasör folder ikon layout',
+    es: 'Restaurar la última sesión',
+    de: 'Letzte Sitzung wiederherstellen',
+    fr: 'Restaurer la dernière session',
+    id: 'Pulihkan sesi terakhir',
+    ru: 'Восстановить последний сеанс',
+    it: 'Ripristina l’ultima sessione',
+    ja: '前回のセッションを復元',
+    keywords: 'sekme tab pestaña registerkarte session sesión sitzung oturum restore restaurar wiederherstellen başlangıç startup inicio start klasör folder carpeta ordner ikon icono symbol layout diseño',
   },
   {
     categoryId: 'home',
     tr: 'Kaydedilmiş sekme oturumunu temizle',
     en: 'Clear saved tab session',
-    keywords: 'sekme tab snapshot oturum session temizle clear',
+    es: 'Borrar la sesión de pestañas guardada',
+    de: 'Gespeicherte Tabsitzung löschen',
+    fr: 'Effacer la session d’onglets enregistrée',
+    id: 'Hapus sesi tab tersimpan',
+    ru: 'Удалить сохранённый сеанс вкладок',
+    it: 'Cancella la sessione di schede salvata',
+    ja: '保存済みタブセッションを消去',
+    keywords: 'sekme tab pestaña registerkarte snapshot oturum session sesión sitzung temizle clear borrar löschen',
   },
   {
     categoryId: 'semi-lunar',
     tr: 'Semi-Lunar yerleşimini sıfırla',
     en: 'Reset Semi-Lunar layout',
-    keywords: 'ikon icon konum position varsayılan default',
+    es: 'Restablecer la disposición de Semi-Lunar',
+    de: 'Semi-Lunar-Layout zurücksetzen',
+    fr: 'Réinitialiser la disposition Semi-Lunar',
+    id: 'Atur ulang tata letak Semi-Lunar',
+    ru: 'Сбросить компоновку Semi-Lunar',
+    it: 'Reimposta il layout Semi-Lunar',
+    ja: 'Semi-Lunar のレイアウトをリセット',
+    keywords: 'ikon icon icono symbol konum position posición varsayılan default predeterminado standard diseño layout disposición anordnung',
   },
   {
     categoryId: 'semi-lunar',
     tr: 'Klasörleri sıfırla',
     en: 'Reset folders',
-    keywords: 'semi lunar folder dissolve çöz dağıt',
+    es: 'Restablecer carpetas',
+    de: 'Ordner zurücksetzen',
+    fr: 'Réinitialiser les dossiers',
+    id: 'Atur ulang folder',
+    ru: 'Сбросить папки',
+    it: 'Reimposta cartelle',
+    ja: 'フォルダーをリセット',
+    keywords: 'semi lunar folder carpeta ordner dissolve disolver auflösen çöz dağıt',
   },
   {
     categoryId: 'account',
     tr: 'Nebula hesabı ve Google Sync',
     en: 'Nebula account and Google Sync',
-    keywords: 'hesap account google sync eşitleme profil oturum parola password csv içe aktar import',
+    es: 'Cuenta de Nebula y Google Sync',
+    de: 'Nebula-Konto und Google Sync',
+    fr: 'Compte Nebula et Google Sync',
+    id: 'Akun Nebula dan Google Sync',
+    ru: 'Аккаунт Nebula и Google Sync',
+    it: 'Account Nebula e Google Sync',
+    ja: 'Nebula アカウントと Google Sync',
+    keywords: 'hesap account cuenta konto google sync eşitleme sincronización synchronisierung profil perfil oturum sesión sitzung parola password contraseña passwort csv içe aktar import importar importieren',
   },
   {
     categoryId: 'privacy',
     tr: 'uBlock Origin Lite',
     en: 'uBlock Origin Lite',
-    keywords: 'reklam ad blocker engelleme tracker izleyici',
+    es: 'uBlock Origin Lite',
+    de: 'uBlock Origin Lite',
+    fr: 'uBlock Origin Lite',
+    id: 'uBlock Origin Lite',
+    ru: 'uBlock Origin Lite',
+    it: 'uBlock Origin Lite',
+    ja: 'uBlock Origin Lite',
+    keywords: 'reklam ad anuncio werbung blocker bloqueador engelleme blockierung tracker rastreador izleyici',
   },
   {
     categoryId: 'about',
     tr: 'Sürüm ve güncellemeler',
     en: 'Version and updates',
-    keywords: 'hakkında about version sürüm update güncelleme check install yükle',
+    es: 'Versión y actualizaciones',
+    de: 'Version und Updates',
+    fr: 'Version et mises à jour',
+    id: 'Versi dan pembaruan',
+    ru: 'Версия и обновления',
+    it: 'Versione e aggiornamenti',
+    ja: 'バージョンとアップデート',
+    keywords: 'hakkında about acerca über version versión sürüm update actualización aktualisierung güncelleme check comprobar prüfen install instalar installieren yükle',
   },
   ...SHORTCUT_REFERENCE.flatMap((group) =>
     group.items.map((item) => ({
       categoryId: 'shortcuts' as const,
       tr: item.tr,
       en: item.en,
-      keywords: `${item.id} ${group.tr} ${group.en} klavye keyboard shortcut kısayol`,
+      es: item.es,
+      de: item.de,
+      fr: item.fr,
+      id: item.id,
+      ru: item.ru,
+      it: item.it,
+      ja: item.ja,
+      keywords: `${item.actionId} ${group.tr} ${group.en} ${group.es} ${group.de} ${group.fr} ${group.id} ${group.ru} ${group.it} ${group.ja} klavye keyboard teclado tastatur clavier papan ketik клавиатура tastiera キーボード shortcut atajo tastenkürzel raccourci pintasan сочетание scorciatoia ショートカット kısayol`,
     })),
   ),
 ]
+
+function localizedValue<T extends Record<NebulaLocale, string>>(
+  value: T,
+  locale: NebulaLocale,
+): string {
+  return value[locale]
+}
+
+function shortcutNote(item: ShortcutReferenceItem, locale: NebulaLocale): string | undefined {
+  switch (locale) {
+    case 'tr': return item.noteTr
+    case 'es': return item.noteEs
+    case 'de': return item.noteDe
+    case 'fr': return item.noteFr
+    case 'id': return item.noteId
+    case 'ru': return item.noteRu
+    case 'it': return item.noteIt
+    case 'ja': return item.noteJa
+    default: return item.noteEn
+  }
+}
 
 function normalizeSettingsSearchText(value: string, locale: NebulaLocale): string {
   return value
@@ -306,6 +450,153 @@ function normalizeSettingsSearchText(value: string, locale: NebulaLocale): strin
     .replace(/\p{M}/gu, '')
     .replace(/ı/g, 'i')
 }
+
+const SHORTCUT_UI_COPY = {
+  tr: {
+    reserved: 'Bu kombinasyon Windows veya Nebula tarafından ayrılmış.',
+    needsModifier: 'Harf, sayı ve gezinme tuşları için Ctrl veya Alt kullan.',
+    unsupported: 'Bu tuş kombinasyonu site WebView’larında güvenilir biçimde desteklenmiyor.',
+    conflict: '{binding} zaten “{action}” için kullanılıyor.',
+    changeFailed: 'Kısayol değiştirilemedi; çakışma olup olmadığını kontrol et.',
+    saved: '{binding} kaydedildi.',
+    intro: 'Bir eylemde Değiştir’e basıp yeni kombinasyona bas. Değişiklikler Home, Semi-Lunar ve site sekmeleri arasında anında eşitlenir.',
+    pressKeys: 'Tuşlara bas…',
+    change: 'Değiştir',
+    resetConflict: 'Varsayılan kombinasyon başka bir eylem tarafından kullanılıyor. Önce o kısayolu değiştir veya tümünü sıfırla.',
+    reset: 'Sıfırla',
+    keyboardNavigation: 'Klavye navigasyonu',
+    keyboardHint: 'Esc, Tab / Shift+Tab, Enter, Space, ok tuşları, Home ve End erişilebilirlik için sabit kalır.',
+    resetAll: 'Tümünü varsayılana döndür',
+  },
+  en: {
+    reserved: 'This combination is reserved by Windows or Nebula.',
+    needsModifier: 'Use Ctrl or Alt with letters, numbers, and navigation keys.',
+    unsupported: 'This key combination is not reliably supported inside site WebViews.',
+    conflict: '{binding} is already used by “{action}”.',
+    changeFailed: 'The shortcut could not be changed; check for a conflict.',
+    saved: '{binding} saved.',
+    intro: 'Choose Change on an action, then press the new combination. Changes sync immediately across Home, Semi-Lunar, and site tabs.',
+    pressKeys: 'Press keys…',
+    change: 'Change',
+    resetConflict: 'The default combination is used by another action. Change that shortcut first or reset all.',
+    reset: 'Reset',
+    keyboardNavigation: 'Keyboard navigation',
+    keyboardHint: 'Esc, Tab / Shift+Tab, Enter, Space, arrow keys, Home, and End stay fixed for accessibility.',
+    resetAll: 'Reset all to defaults',
+  },
+  es: {
+    reserved: 'Esta combinación está reservada por Windows o Nebula.',
+    needsModifier: 'Usa Ctrl o Alt con letras, números y teclas de navegación.',
+    unsupported: 'Esta combinación no funciona de forma fiable dentro de las vistas web de los sitios.',
+    conflict: '{binding} ya se usa para “{action}”.',
+    changeFailed: 'No se pudo cambiar el atajo; comprueba si existe un conflicto.',
+    saved: 'Se guardó {binding}.',
+    intro: 'Elige Cambiar en una acción y pulsa la nueva combinación. Los cambios se sincronizan de inmediato entre Inicio, Semi-Lunar y las pestañas de sitios.',
+    pressKeys: 'Pulsa las teclas…',
+    change: 'Cambiar',
+    resetConflict: 'Otra acción usa la combinación predeterminada. Cambia primero ese atajo o restablécelos todos.',
+    reset: 'Restablecer',
+    keyboardNavigation: 'Navegación con teclado',
+    keyboardHint: 'Esc, Tab / Mayús+Tab, Enter, Espacio, las flechas, Inicio y Fin permanecen fijos por accesibilidad.',
+    resetAll: 'Restablecer todos',
+  },
+  de: {
+    reserved: 'Diese Kombination ist von Windows oder Nebula reserviert.',
+    needsModifier: 'Verwende Strg oder Alt zusammen mit Buchstaben, Zahlen und Navigationstasten.',
+    unsupported: 'Diese Tastenkombination wird in Website-WebViews nicht zuverlässig unterstützt.',
+    conflict: '{binding} wird bereits für „{action}“ verwendet.',
+    changeFailed: 'Das Tastenkürzel konnte nicht geändert werden. Prüfe, ob ein Konflikt vorliegt.',
+    saved: '{binding} wurde gespeichert.',
+    intro: 'Wähle bei einer Aktion Ändern und drücke dann die neue Kombination. Änderungen werden sofort zwischen Startseite, Semi-Lunar und Website-Tabs synchronisiert.',
+    pressKeys: 'Tasten drücken…',
+    change: 'Ändern',
+    resetConflict: 'Die Standardkombination wird von einer anderen Aktion verwendet. Ändere zuerst dieses Tastenkürzel oder setze alle zurück.',
+    reset: 'Zurücksetzen',
+    keyboardNavigation: 'Tastaturnavigation',
+    keyboardHint: 'Esc, Tab / Umschalt+Tab, Eingabe, Leertaste, Pfeiltasten, Pos1 und Ende bleiben aus Gründen der Barrierefreiheit festgelegt.',
+    resetAll: 'Alle auf Standard zurücksetzen',
+  },
+  fr: {
+    reserved: 'Cette combinaison est réservée par Windows ou Nebula.',
+    needsModifier: 'Utilisez Ctrl ou Alt avec les lettres, les chiffres et les touches de navigation.',
+    unsupported: 'Cette combinaison de touches n’est pas prise en charge de façon fiable dans les WebViews des sites.',
+    conflict: '{binding} est déjà utilisé pour « {action} ».',
+    changeFailed: 'Le raccourci n’a pas pu être modifié ; vérifiez s’il existe un conflit.',
+    saved: '{binding} a été enregistré.',
+    intro: 'Choisissez Modifier pour une action, puis appuyez sur la nouvelle combinaison. Les changements sont immédiatement synchronisés entre l’Accueil, Semi-Lunar et les onglets de sites.',
+    pressKeys: 'Appuyez sur les touches…',
+    change: 'Modifier',
+    resetConflict: 'La combinaison par défaut est utilisée par une autre action. Modifiez d’abord ce raccourci ou réinitialisez-les tous.',
+    reset: 'Réinitialiser',
+    keyboardNavigation: 'Navigation au clavier',
+    keyboardHint: 'Échap, Tab / Maj+Tab, Entrée, Espace, les flèches, Début et Fin restent fixes pour l’accessibilité.',
+    resetAll: 'Tout réinitialiser',
+  },
+  id: {
+    reserved: 'Kombinasi ini dicadangkan oleh Windows atau Nebula.',
+    needsModifier: 'Gunakan Ctrl atau Alt bersama huruf, angka, dan tombol navigasi.',
+    unsupported: 'Kombinasi tombol ini tidak didukung secara andal di WebView situs.',
+    conflict: '{binding} sudah digunakan untuk “{action}”.',
+    changeFailed: 'Pintasan tidak dapat diubah; periksa apakah ada konflik.',
+    saved: '{binding} disimpan.',
+    intro: 'Pilih Ubah pada suatu tindakan, lalu tekan kombinasi baru. Perubahan langsung disinkronkan antara Beranda, Semi-Lunar, dan tab situs.',
+    pressKeys: 'Tekan tombol…',
+    change: 'Ubah',
+    resetConflict: 'Kombinasi bawaan digunakan oleh tindakan lain. Ubah pintasan tersebut terlebih dahulu atau atur ulang semuanya.',
+    reset: 'Atur ulang',
+    keyboardNavigation: 'Navigasi keyboard',
+    keyboardHint: 'Esc, Tab / Shift+Tab, Enter, Spasi, tombol panah, Home, dan End tetap digunakan untuk aksesibilitas.',
+    resetAll: 'Atur ulang semua',
+  },
+  ru: {
+    reserved: 'Эта комбинация зарезервирована Windows или Nebula.',
+    needsModifier: 'Используйте Ctrl или Alt вместе с буквами, цифрами и клавишами навигации.',
+    unsupported: 'Эта комбинация клавиш ненадёжно поддерживается в WebView сайтов.',
+    conflict: '{binding} уже используется для действия «{action}».',
+    changeFailed: 'Не удалось изменить сочетание клавиш; проверьте наличие конфликта.',
+    saved: '{binding} сохранено.',
+    intro: 'Нажмите «Изменить» у действия, затем введите новое сочетание. Изменения сразу синхронизируются между главной страницей, Semi-Lunar и вкладками сайтов.',
+    pressKeys: 'Нажмите клавиши…',
+    change: 'Изменить',
+    resetConflict: 'Сочетание по умолчанию используется другим действием. Сначала измените его или сбросьте все сочетания.',
+    reset: 'Сбросить',
+    keyboardNavigation: 'Навигация с клавиатуры',
+    keyboardHint: 'Esc, Tab / Shift+Tab, Enter, пробел, стрелки, Home и End остаются закреплёнными для специальных возможностей.',
+    resetAll: 'Сбросить все',
+  },
+  it: {
+    reserved: 'Questa combinazione è riservata da Windows o Nebula.',
+    needsModifier: 'Usa Ctrl o Alt con lettere, numeri e tasti di navigazione.',
+    unsupported: 'Questa combinazione di tasti non è supportata in modo affidabile nelle WebView dei siti.',
+    conflict: '{binding} è già usata per “{action}”.',
+    changeFailed: 'Impossibile modificare la scorciatoia; verifica la presenza di conflitti.',
+    saved: '{binding} salvata.',
+    intro: 'Scegli Cambia su un’azione, quindi premi la nuova combinazione. Le modifiche vengono sincronizzate subito tra Home, Semi-Lunar e le schede dei siti.',
+    pressKeys: 'Premi i tasti…',
+    change: 'Cambia',
+    resetConflict: 'La combinazione predefinita è usata da un’altra azione. Modifica prima quella scorciatoia o reimpostale tutte.',
+    reset: 'Reimposta',
+    keyboardNavigation: 'Navigazione da tastiera',
+    keyboardHint: 'Esc, Tab / Maiusc+Tab, Invio, Spazio, frecce, Home e Fine restano fissi per l’accessibilità.',
+    resetAll: 'Ripristina tutte le impostazioni predefinite',
+  },
+  ja: {
+    reserved: 'このキーの組み合わせは Windows または Nebula によって予約されています。',
+    needsModifier: '文字、数字、ナビゲーションキーには Ctrl または Alt を組み合わせてください。',
+    unsupported: 'このキーの組み合わせはサイトの WebView 内で安定してサポートされていません。',
+    conflict: '{binding} はすでに「{action}」で使用されています。',
+    changeFailed: 'ショートカットを変更できませんでした。競合を確認してください。',
+    saved: '{binding} を保存しました。',
+    intro: 'アクションの「変更」を選び、新しいキーの組み合わせを押してください。変更はホーム、Semi-Lunar、サイトのタブにすぐ同期されます。',
+    pressKeys: 'キーを押してください…',
+    change: '変更',
+    resetConflict: '既定の組み合わせが別のアクションで使用されています。先にそのショートカットを変更するか、すべてリセットしてください。',
+    reset: 'リセット',
+    keyboardNavigation: 'キーボード操作',
+    keyboardHint: 'アクセシビリティのため、Esc、Tab / Shift+Tab、Enter、Space、矢印キー、Home、End は固定されています。',
+    resetAll: 'すべて既定に戻す',
+  },
+} as const
 
 function ShortcutReference({
   locale,
@@ -320,7 +611,7 @@ function ShortcutReference({
   onResetBinding: (action: ConfigurableBrowserShortcutId) => boolean
   onResetAll: () => void
 }) {
-  const isTr = locale === 'tr'
+  const copy = getLocaleCopy(SHORTCUT_UI_COPY, locale)
   const [recordingAction, setRecordingAction] =
     useState<ConfigurableBrowserShortcutId | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -328,9 +619,9 @@ function ShortcutReference({
   const actionLabel = useCallback(
     (action: ConfigurableBrowserShortcutId) => {
       const item = SHORTCUT_LABELS.get(action)
-      return item ? (isTr ? item.tr : item.en) : action
+      return item ? localizedValue(item, locale) : action
     },
-    [isTr],
+    [locale],
   )
 
   const stopRecording = useCallback(() => {
@@ -363,16 +654,10 @@ function ShortcutReference({
       if (validation.ok === false) {
         setMessage(
           validation.reason === 'reserved'
-            ? isTr
-              ? 'Bu kombinasyon Windows veya Nebula tarafından ayrılmış.'
-              : 'This combination is reserved by Windows or Nebula.'
+            ? copy.reserved
             : validation.reason === 'needs-modifier'
-              ? isTr
-                ? 'Harf, sayı ve gezinme tuşları için Ctrl veya Alt kullan.'
-                : 'Use Ctrl or Alt with letters, numbers, and navigation keys.'
-              : isTr
-                ? 'Bu tuş kombinasyonu site WebView’larında güvenilir biçimde desteklenmiyor.'
-                : 'This key combination is not reliably supported inside site WebViews.',
+              ? copy.needsModifier
+              : copy.unsupported,
         )
         return
       }
@@ -380,38 +665,28 @@ function ShortcutReference({
       const conflict = findBrowserShortcutConflict(bindings, binding, recordingAction)
       if (conflict) {
         setMessage(
-          isTr
-            ? `${formatBrowserShortcutBinding(binding)} zaten “${actionLabel(conflict)}” için kullanılıyor.`
-            : `${formatBrowserShortcutBinding(binding)} is already used by “${actionLabel(conflict)}”.`,
+          copy.conflict
+            .replace('{binding}', formatBrowserShortcutBinding(binding))
+            .replace('{action}', actionLabel(conflict)),
         )
         return
       }
 
       if (!onSetBinding(recordingAction, binding)) {
-        setMessage(
-          isTr
-            ? 'Kısayol değiştirilemedi; çakışma olup olmadığını kontrol et.'
-            : 'The shortcut could not be changed; check for a conflict.',
-        )
+        setMessage(copy.changeFailed)
         return
       }
 
       setRecordingAction(null)
-      setMessage(
-        isTr
-          ? `${formatBrowserShortcutBinding(binding)} kaydedildi.`
-          : `${formatBrowserShortcutBinding(binding)} saved.`,
-      )
+      setMessage(copy.saved.replace('{binding}', formatBrowserShortcutBinding(binding)))
     },
-    [actionLabel, bindings, isTr, onSetBinding, recordingAction, stopRecording],
+    [actionLabel, bindings, copy, onSetBinding, recordingAction, stopRecording],
   )
 
   return (
     <div className={styles.shortcutGroups} onKeyDownCapture={handleRecordingKeyDown}>
       <p className={styles.shortcutIntro}>
-        {isTr
-          ? 'Bir eylemde Değiştir’e basıp yeni kombinasyona bas. Değişiklikler Home, Semi-Lunar ve site sekmeleri arasında anında eşitlenir.'
-          : 'Choose Change on an action, then press the new combination. Changes sync immediately across Home, Semi-Lunar, and site tabs.'}
+        {copy.intro}
       </p>
 
       {message && (
@@ -422,22 +697,21 @@ function ShortcutReference({
 
       {SHORTCUT_REFERENCE.map((group) => (
         <section key={group.en} className={styles.shortcutGroup}>
-          <h3 className={styles.shortcutGroupTitle}>{isTr ? group.tr : group.en}</h3>
+          <h3 className={styles.shortcutGroupTitle}>{localizedValue(group, locale)}</h3>
           <div className={styles.shortcutList}>
             {group.items.map((item) => {
-              const isRecording = recordingAction === item.id
+              const isRecording = recordingAction === item.actionId
+              const note = shortcutNote(item, locale)
               return (
-                <div key={item.id} className={styles.shortcutRow}>
+                <div key={item.actionId} className={styles.shortcutRow}>
                   <div className={styles.shortcutText}>
-                    <div className={styles.shortcutLabel}>{isTr ? item.tr : item.en}</div>
-                    {(isTr ? item.noteTr : item.noteEn) && (
-                      <div className={styles.shortcutNote}>{isTr ? item.noteTr : item.noteEn}</div>
-                    )}
+                    <div className={styles.shortcutLabel}>{localizedValue(item, locale)}</div>
+                    {note && <div className={styles.shortcutNote}>{note}</div>}
                   </div>
 
                   <div className={styles.shortcutEditor}>
-                    <div className={styles.shortcutKeySet} aria-label={bindings[item.id].join(' / ')}>
-                      {bindings[item.id].map((binding, index) => (
+                    <div className={styles.shortcutKeySet} aria-label={bindings[item.actionId].join(' / ')}>
+                      {bindings[item.actionId].map((binding, index) => (
                         <span key={binding} className={styles.shortcutKeyWrap}>
                           {index > 0 && <span className={styles.shortcutOr}>/</span>}
                           <kbd className={styles.shortcutKey}>
@@ -452,33 +726,25 @@ function ShortcutReference({
                         className={`${styles.actionBtn} ${isRecording ? styles.shortcutRecordingBtn : ''}`}
                         onClick={() => {
                           setMessage(null)
-                          setRecordingAction((current) => (current === item.id ? null : item.id))
+                          setRecordingAction((current) => (current === item.actionId ? null : item.actionId))
                         }}
                       >
-                        {isRecording
-                          ? isTr
-                            ? 'Tuşlara bas…'
-                            : 'Press keys…'
-                          : isTr
-                            ? 'Değiştir'
-                            : 'Change'}
+                        {isRecording ? copy.pressKeys : copy.change}
                       </button>
                       <button
                         type="button"
                         className={styles.shortcutResetBtn}
                         onClick={() => {
                           setRecordingAction(null)
-                          const ok = onResetBinding(item.id)
+                          const ok = onResetBinding(item.actionId)
                           setMessage(
                             ok
                               ? null
-                              : isTr
-                                ? 'Varsayılan kombinasyon başka bir eylem tarafından kullanılıyor. Önce o kısayolu değiştir veya tümünü sıfırla.'
-                                : 'The default combination is used by another action. Change that shortcut first or reset all.',
+                              : copy.resetConflict,
                           )
                         }}
                       >
-                        {isTr ? 'Sıfırla' : 'Reset'}
+                        {copy.reset}
                       </button>
                     </div>
                   </div>
@@ -491,12 +757,8 @@ function ShortcutReference({
 
       <div className={styles.shortcutFooter}>
         <div>
-          <div className={styles.rowLabel}>{isTr ? 'Klavye navigasyonu' : 'Keyboard navigation'}</div>
-          <div className={styles.rowHint}>
-            {isTr
-              ? 'Esc, Tab / Shift+Tab, Enter, Space, ok tuşları, Home ve End erişilebilirlik için sabit kalır.'
-              : 'Esc, Tab / Shift+Tab, Enter, Space, arrow keys, Home, and End stay fixed for accessibility.'}
-          </div>
+          <div className={styles.rowLabel}>{copy.keyboardNavigation}</div>
+          <div className={styles.rowHint}>{copy.keyboardHint}</div>
         </div>
         <button
           type="button"
@@ -507,7 +769,7 @@ function ShortcutReference({
             onResetAll()
           }}
         >
-          {isTr ? 'Tümünü varsayılana döndür' : 'Reset all to defaults'}
+          {copy.resetAll}
         </button>
       </div>
     </div>
@@ -694,6 +956,13 @@ function CategoryContent({
             options={[
               { value: 'tr', label: t('languageTurkish') },
               { value: 'en', label: t('languageEnglish') },
+              { value: 'es', label: t('languageSpanish') },
+              { value: 'de', label: t('languageGerman') },
+              { value: 'fr', label: t('languageFrench') },
+              { value: 'id', label: t('languageIndonesian') },
+              { value: 'ru', label: t('languageRussian') },
+              { value: 'it', label: t('languageItalian') },
+              { value: 'ja', label: t('languageJapanese') },
             ]}
             onChange={(value) => setLocale(value as NebulaLocale)}
           />
@@ -939,12 +1208,8 @@ function CategoryContent({
             }
           />
           <SettingToggleRow
-            label={locale === 'tr' ? 'Son oturumu geri yükle' : 'Restore the last session'}
-            hint={
-              locale === 'tr'
-                ? 'Nebula normal şekilde kapatıldığında açık sekmeleri, Semi-Lunar klasörlerini ve ikon yerleşimini bir sonraki açılışta geri getirir. Kapalıysa yeni açılış temiz bir oturumla başlar; pinler, ayarlar ve geçmiş korunur. Çökme kurtarma sistemi bundan bağımsız çalışır.'
-                : 'Restores open tabs, Semi-Lunar folders, and icon layout after a normal restart. When off, the next launch starts with a clean session while pins, settings, and history stay intact. Crash recovery remains independent.'
-            }
+            label={t('settingsRestoreSession')}
+            hint={t('settingsRestoreSessionHint')}
             checked={browsing.restoreTabsOnStartup}
             onChange={() =>
               onUpdate('browsing', 'restoreTabsOnStartup', !browsing.restoreTabsOnStartup)
@@ -953,16 +1218,12 @@ function CategoryContent({
           <div className={styles.row}>
             <div className={styles.rowText}>
               <div className={styles.rowLabel}>
-                {locale === 'tr' ? 'Kaydedilmiş sekme oturumunu temizle' : 'Clear saved tab session'}
+                {t('settingsClearSession')}
               </div>
-              <div className={styles.rowHint}>
-                {locale === 'tr'
-                  ? 'Şu anda saklanan önceki oturum anlık olarak silinir. Açık sekmeler çalışmaya devam eder.'
-                  : 'Deletes the currently saved previous-session snapshot. Open tabs keep running.'}
-              </div>
+              <div className={styles.rowHint}>{t('settingsClearSessionHint')}</div>
             </div>
             <button type="button" className={styles.actionBtn} onClick={onClearSavedSession}>
-              {locale === 'tr' ? 'Temizle' : 'Clear'}
+              {t('settingsClear')}
             </button>
           </div>
           <div className={styles.row}>
@@ -1164,31 +1425,23 @@ function CategoryContent({
           <div className={styles.row}>
             <div className={styles.rowText}>
               <div className={styles.rowLabel}>
-                {locale === 'tr' ? 'Semi-Lunar yerleşimini sıfırla' : 'Reset Semi-Lunar layout'}
+                {t('settingsResetLunarLayout')}
               </div>
-              <div className={styles.rowHint}>
-                {locale === 'tr'
-                  ? 'Kaydedilmiş ikon konumlarını silip varsayılan yerleşime döner.'
-                  : 'Clears saved icon positions and returns to the default layout.'}
-              </div>
+              <div className={styles.rowHint}>{t('settingsResetLunarLayoutHint')}</div>
             </div>
             <button type="button" className={styles.actionBtn} onClick={onResetSemiLunarLayout}>
-              {locale === 'tr' ? 'Sıfırla' : 'Reset'}
+              {t('reset')}
             </button>
           </div>
           <div className={styles.row}>
             <div className={styles.rowText}>
               <div className={styles.rowLabel}>
-                {locale === 'tr' ? 'Klasörleri sıfırla' : 'Reset folders'}
+                {t('settingsResetFolders')}
               </div>
-              <div className={styles.rowHint}>
-                {locale === 'tr'
-                  ? 'Tüm Semi-Lunar klasörlerini çözer; sekme ve site kısayollarını silmez.'
-                  : 'Dissolves all Semi-Lunar folders without deleting tabs or site shortcuts.'}
-              </div>
+              <div className={styles.rowHint}>{t('settingsResetFoldersHint')}</div>
             </div>
             <button type="button" className={styles.actionBtn} onClick={onResetFolders}>
-              {locale === 'tr' ? 'Sıfırla' : 'Reset'}
+              {t('reset')}
             </button>
           </div>
           <SettingResetRow
@@ -1522,12 +1775,17 @@ export function SettingsPanel({
     return SETTINGS_SEARCH_INDEX.map((entry, order) => {
       const category = settingsCategories.find((item) => item.id === entry.categoryId)
       const localizedLabel = normalizeSettingsSearchText(
-        locale === 'tr' ? entry.tr : entry.en,
+        localizedValue(entry, locale),
         locale,
       )
       const searchable = normalizeSettingsSearchText([
         entry.tr,
         entry.en,
+        entry.es,
+        entry.de,
+        entry.fr,
+        entry.id,
+        entry.ru,
         entry.keywords,
         category?.label,
         category?.description,
@@ -1646,15 +1904,15 @@ export function SettingsPanel({
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={locale === 'tr' ? 'Ayarlarda ara…' : 'Search settings…'}
-              aria-label={locale === 'tr' ? 'Ayarlarda ara' : 'Search settings'}
+              placeholder={t('settingsSearchPlaceholder')}
+              aria-label={t('settingsSearchAria')}
             />
           </label>
           {searchQuery.trim() ? (
             <div className={styles.settingsSearchResults}>
               {settingsSearchResults.length === 0 ? (
                 <p className={styles.settingsSearchEmpty}>
-                  {locale === 'tr' ? 'Eşleşen ayar bulunamadı.' : 'No matching setting.'}
+                  {t('settingsSearchEmpty')}
                 </p>
               ) : settingsSearchResults.map((entry) => {
                 const category = settingsCategories.find((item) => item.id === entry.categoryId)!
@@ -1665,7 +1923,7 @@ export function SettingsPanel({
                     className={styles.settingsSearchResult}
                     onClick={() => setActiveId(entry.categoryId)}
                   >
-                    <span>{locale === 'tr' ? entry.tr : entry.en}</span>
+                    <span>{localizedValue(entry, locale)}</span>
                     <small>{category.label}</small>
                   </button>
                 )

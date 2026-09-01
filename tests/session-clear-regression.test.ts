@@ -44,8 +44,8 @@ test('restore-session UI owns tabs, folders, and Semi-Lunar layout', () => {
     'utf8',
   )
 
-  assert.match(panelSource, /Restore the last session/)
-  assert.match(panelSource, /Semi-Lunar folders, and icon layout/)
+  assert.match(panelSource, /t\('settingsRestoreSession'\)/)
+  assert.match(panelSource, /t\('settingsRestoreSessionHint'\)/)
   assert.doesNotMatch(panelSource, /Remember icon layout/)
   assert.doesNotMatch(panelSource, /Remember folders/)
   assert.doesNotMatch(panelSource, /clearOnExit/)

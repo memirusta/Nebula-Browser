@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import { useLocale } from '../../hooks/useLocale'
+import { getLocaleCopy } from '../../core/locale'
 import type { SiteUiRequest, SiteUiResponse } from '../../platform/tauriSiteUi'
 import styles from './SiteUiPrompt.module.css'
 
@@ -41,6 +42,111 @@ const PERMISSION_LABELS = {
     'midi-sysex': 'MIDI devices',
     'window-management': 'window management',
     'persistent-storage': 'persistent storage',
+  },
+  es: {
+    microphone: 'micrófono',
+    camera: 'cámara',
+    geolocation: 'ubicación',
+    notifications: 'notificaciones',
+    sensors: 'sensores de movimiento',
+    'clipboard-read': 'portapapeles',
+    'multiple-downloads': 'varias descargas',
+    'file-read-write': 'archivos',
+    autoplay: 'reproducción automática',
+    'local-fonts': 'fuentes locales',
+    'midi-sysex': 'dispositivos MIDI',
+    'window-management': 'gestión de ventanas',
+    'persistent-storage': 'almacenamiento persistente',
+  },
+  de: {
+    microphone: 'Mikrofon',
+    camera: 'Kamera',
+    geolocation: 'Standort',
+    notifications: 'Benachrichtigungen',
+    sensors: 'Bewegungssensoren',
+    'clipboard-read': 'Zwischenablage',
+    'multiple-downloads': 'mehrere Downloads',
+    'file-read-write': 'Dateien',
+    autoplay: 'automatische Wiedergabe',
+    'local-fonts': 'lokale Schriftarten',
+    'midi-sysex': 'MIDI-Geräte',
+    'window-management': 'Fensterverwaltung',
+    'persistent-storage': 'dauerhaften Speicher',
+  },
+  fr: {
+    microphone: 'microphone',
+    camera: 'caméra',
+    geolocation: 'localisation',
+    notifications: 'notifications',
+    sensors: 'capteurs de mouvement',
+    'clipboard-read': 'presse-papiers',
+    'multiple-downloads': 'plusieurs téléchargements',
+    'file-read-write': 'fichiers',
+    autoplay: 'lecture automatique',
+    'local-fonts': 'polices locales',
+    'midi-sysex': 'appareils MIDI',
+    'window-management': 'gestion des fenêtres',
+    'persistent-storage': 'stockage persistant',
+  },
+  id: {
+    microphone: 'mikrofon',
+    camera: 'kamera',
+    geolocation: 'lokasi',
+    notifications: 'notifikasi',
+    sensors: 'sensor gerak',
+    'clipboard-read': 'papan klip',
+    'multiple-downloads': 'beberapa unduhan',
+    'file-read-write': 'file',
+    autoplay: 'putar otomatis',
+    'local-fonts': 'font lokal',
+    'midi-sysex': 'perangkat MIDI',
+    'window-management': 'pengelolaan jendela',
+    'persistent-storage': 'penyimpanan persisten',
+  },
+  ru: {
+    microphone: 'микрофон',
+    camera: 'камеру',
+    geolocation: 'местоположение',
+    notifications: 'уведомления',
+    sensors: 'датчики движения',
+    'clipboard-read': 'буфер обмена',
+    'multiple-downloads': 'несколько скачиваний',
+    'file-read-write': 'файлы',
+    autoplay: 'автовоспроизведение',
+    'local-fonts': 'локальные шрифты',
+    'midi-sysex': 'MIDI-устройства',
+    'window-management': 'управление окнами',
+    'persistent-storage': 'постоянное хранилище',
+  },
+  it: {
+    microphone: 'microfono',
+    camera: 'fotocamera',
+    geolocation: 'posizione',
+    notifications: 'notifiche',
+    sensors: 'sensori di movimento',
+    'clipboard-read': 'appunti',
+    'multiple-downloads': 'download multipli',
+    'file-read-write': 'file',
+    autoplay: 'riproduzione automatica',
+    'local-fonts': 'font locali',
+    'midi-sysex': 'dispositivi MIDI',
+    'window-management': 'gestione delle finestre',
+    'persistent-storage': 'archiviazione permanente',
+  },
+  ja: {
+    microphone: 'マイク',
+    camera: 'カメラ',
+    geolocation: '位置情報',
+    notifications: '通知',
+    sensors: 'モーションセンサー',
+    'clipboard-read': 'クリップボード',
+    'multiple-downloads': '複数のダウンロード',
+    'file-read-write': 'ファイル',
+    autoplay: '自動再生',
+    'local-fonts': 'ローカルフォント',
+    'midi-sysex': 'MIDI デバイス',
+    'window-management': 'ウィンドウ管理',
+    'persistent-storage': '永続ストレージ',
   },
 } as const
 
@@ -133,6 +239,314 @@ const COPY = {
     password: 'Password',
     remember: 'Remember this choice for this site',
   },
+  es: {
+    thisFeature: 'esta función',
+    sitePermission: 'Permiso del sitio',
+    nebulaPermission: 'Permiso de Nebula',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} quiere usar ${permission}`,
+    allowAccess: (origin: string, permission: string) =>
+      `¿Permitir que ${origin} acceda a ${permission}?`,
+    nebulaLocationTitle: '¿Permitir que Nebula use tu ubicación?',
+    nebulaLocationMessage:
+      'Nebula puede usar tu ubicación precisa para configurar automáticamente el tiempo.',
+    allow: 'Permitir',
+    block: 'Bloquear',
+    authRequired: 'Autenticación necesaria',
+    signInTo: (title: string) => `Iniciar sesión en ${title}`,
+    serverChallenge: (challenge: string) =>
+      `El servidor solicitó credenciales (${challenge}).`,
+    serverCredentials: 'El servidor solicitó un nombre de usuario y una contraseña.',
+    signIn: 'Iniciar sesión',
+    cancel: 'Cancelar',
+    emailLinks: 'enlaces de correo electrónico',
+    protocolLinks: (scheme: string) => `enlaces ${scheme}:`,
+    protocolHandler: 'Controlador de protocolo',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} quiere abrir ${label}`,
+    allowHandle: (origin: string, label: string) =>
+      `¿Permitir que ${origin} gestione ${label} en Nebula?`,
+    openExternal: '¿Abrir una aplicación externa?',
+    wantsAnotherApp: (title: string) => `${title} quiere abrir otra aplicación`,
+    allowOutside: (scheme: string) =>
+      `¿Permitir que este sitio abra un enlace ${scheme}: fuera de Nebula?`,
+    open: 'Abrir',
+    leaveSite: '¿Salir del sitio?',
+    unsaved: 'Es posible que no se guarden los cambios realizados.',
+    leave: 'Salir',
+    stay: 'Quedarse',
+    siteMessage: 'Mensaje del sitio',
+    siteInput: 'Entrada del sitio',
+    ok: 'Aceptar',
+    promptResponse: 'Respuesta al mensaje del sitio',
+    username: 'Nombre de usuario',
+    password: 'Contraseña',
+    remember: 'Recordar esta elección para este sitio',
+  },
+  de: {
+    thisFeature: 'diese Funktion',
+    sitePermission: 'Website-Berechtigung',
+    nebulaPermission: 'Nebula-Berechtigung',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} möchte ${permission} verwenden`,
+    allowAccess: (origin: string, permission: string) =>
+      `${origin} den Zugriff auf ${permission} erlauben?`,
+    nebulaLocationTitle: 'Nebula erlauben, deinen Standort zu verwenden?',
+    nebulaLocationMessage:
+      'Nebula kann deinen genauen Standort verwenden, um den Wetterstandort automatisch festzulegen.',
+    allow: 'Zulassen',
+    block: 'Blockieren',
+    authRequired: 'Authentifizierung erforderlich',
+    signInTo: (title: string) => `Bei ${title} anmelden`,
+    serverChallenge: (challenge: string) =>
+      `Der Server hat Anmeldedaten angefordert (${challenge}).`,
+    serverCredentials: 'Der Server hat einen Benutzernamen und ein Passwort angefordert.',
+    signIn: 'Anmelden',
+    cancel: 'Abbrechen',
+    emailLinks: 'E-Mail-Links',
+    protocolLinks: (scheme: string) => `${scheme}:-Links`,
+    protocolHandler: 'Protokollhandler',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} möchte ${label} öffnen`,
+    allowHandle: (origin: string, label: string) =>
+      `${origin} erlauben, ${label} in Nebula zu verarbeiten?`,
+    openExternal: 'Externe App öffnen?',
+    wantsAnotherApp: (title: string) => `${title} möchte eine andere Anwendung öffnen`,
+    allowOutside: (scheme: string) =>
+      `Dieser Website erlauben, einen ${scheme}:-Link außerhalb von Nebula zu öffnen?`,
+    open: 'Öffnen',
+    leaveSite: 'Website verlassen?',
+    unsaved: 'Vorgenommene Änderungen werden möglicherweise nicht gespeichert.',
+    leave: 'Verlassen',
+    stay: 'Bleiben',
+    siteMessage: 'Website-Nachricht',
+    siteInput: 'Website-Eingabe',
+    ok: 'OK',
+    promptResponse: 'Antwort auf die Website-Abfrage',
+    username: 'Benutzername',
+    password: 'Passwort',
+    remember: 'Diese Auswahl für diese Website merken',
+  },
+  fr: {
+    thisFeature: 'cette fonctionnalité',
+    sitePermission: 'Autorisation du site',
+    nebulaPermission: 'Autorisation de Nebula',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} souhaite utiliser ${permission}`,
+    allowAccess: (origin: string, permission: string) =>
+      `Autoriser ${origin} à accéder à ${permission} ?`,
+    nebulaLocationTitle: 'Autoriser Nebula à utiliser votre localisation ?',
+    nebulaLocationMessage:
+      'Nebula peut utiliser votre localisation précise pour définir automatiquement la météo.',
+    allow: 'Autoriser',
+    block: 'Bloquer',
+    authRequired: 'Authentification requise',
+    signInTo: (title: string) => `Se connecter à ${title}`,
+    serverChallenge: (challenge: string) =>
+      `Le serveur a demandé des identifiants (${challenge}).`,
+    serverCredentials: 'Le serveur a demandé un nom d’utilisateur et un mot de passe.',
+    signIn: 'Se connecter',
+    cancel: 'Annuler',
+    emailLinks: 'les liens d’e-mail',
+    protocolLinks: (scheme: string) => `les liens ${scheme}:`,
+    protocolHandler: 'Gestionnaire de protocole',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} souhaite ouvrir ${label}`,
+    allowHandle: (origin: string, label: string) =>
+      `Autoriser ${origin} à gérer ${label} dans Nebula ?`,
+    openExternal: 'Ouvrir l’application externe ?',
+    wantsAnotherApp: (title: string) => `${title} souhaite ouvrir une autre application`,
+    allowOutside: (scheme: string) =>
+      `Autoriser ce site à ouvrir un lien ${scheme}: hors de Nebula ?`,
+    open: 'Ouvrir',
+    leaveSite: 'Quitter le site ?',
+    unsaved: 'Les modifications effectuées risquent de ne pas être enregistrées.',
+    leave: 'Quitter',
+    stay: 'Rester',
+    siteMessage: 'Message du site',
+    siteInput: 'Saisie du site',
+    ok: 'OK',
+    promptResponse: 'Réponse à la demande du site',
+    username: 'Nom d’utilisateur',
+    password: 'Mot de passe',
+    remember: 'Mémoriser ce choix pour ce site',
+  },
+  id: {
+    thisFeature: 'fitur ini',
+    sitePermission: 'Izin situs',
+    nebulaPermission: 'Izin Nebula',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} ingin menggunakan ${permission}`,
+    allowAccess: (origin: string, permission: string) =>
+      `Izinkan ${origin} mengakses ${permission}?`,
+    nebulaLocationTitle: 'Izinkan Nebula menggunakan lokasi Anda?',
+    nebulaLocationMessage:
+      'Nebula dapat menggunakan lokasi akurat Anda untuk mengatur lokasi cuaca secara otomatis.',
+    allow: 'Izinkan',
+    block: 'Blokir',
+    authRequired: 'Autentikasi diperlukan',
+    signInTo: (title: string) => `Masuk ke ${title}`,
+    serverChallenge: (challenge: string) =>
+      `Server meminta kredensial (${challenge}).`,
+    serverCredentials: 'Server meminta nama pengguna dan kata sandi.',
+    signIn: 'Masuk',
+    cancel: 'Batal',
+    emailLinks: 'tautan email',
+    protocolLinks: (scheme: string) => `tautan ${scheme}:`,
+    protocolHandler: 'Penangan protokol',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} ingin membuka ${label}`,
+    allowHandle: (origin: string, label: string) =>
+      `Izinkan ${origin} menangani ${label} di Nebula?`,
+    openExternal: 'Buka aplikasi eksternal?',
+    wantsAnotherApp: (title: string) => `${title} ingin membuka aplikasi lain`,
+    allowOutside: (scheme: string) =>
+      `Izinkan situs ini membuka tautan ${scheme}: di luar Nebula?`,
+    open: 'Buka',
+    leaveSite: 'Tinggalkan situs?',
+    unsaved: 'Perubahan yang Anda buat mungkin tidak disimpan.',
+    leave: 'Tinggalkan',
+    stay: 'Tetap di sini',
+    siteMessage: 'Pesan situs',
+    siteInput: 'Input situs',
+    ok: 'OK',
+    promptResponse: 'Jawaban permintaan situs',
+    username: 'Nama pengguna',
+    password: 'Kata sandi',
+    remember: 'Ingat pilihan ini untuk situs ini',
+  },
+  ru: {
+    thisFeature: 'эту функцию',
+    sitePermission: 'Разрешение сайта',
+    nebulaPermission: 'Разрешение Nebula',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} запрашивает доступ: ${permission}`,
+    allowAccess: (origin: string, permission: string) =>
+      `Разрешить ${origin} доступ к функции «${permission}»?`,
+    nebulaLocationTitle: 'Разрешить Nebula использовать ваше местоположение?',
+    nebulaLocationMessage:
+      'Nebula может использовать точное местоположение для автоматической настройки погоды.',
+    allow: 'Разрешить',
+    block: 'Блокировать',
+    authRequired: 'Требуется аутентификация',
+    signInTo: (title: string) => `Вход на ${title}`,
+    serverChallenge: (challenge: string) =>
+      `Сервер запросил учётные данные (${challenge}).`,
+    serverCredentials: 'Сервер запросил имя пользователя и пароль.',
+    signIn: 'Войти',
+    cancel: 'Отмена',
+    emailLinks: 'ссылки электронной почты',
+    protocolLinks: (scheme: string) => `ссылки ${scheme}:`,
+    protocolHandler: 'Обработчик протокола',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} хочет открыть ${label}`,
+    allowHandle: (origin: string, label: string) =>
+      `Разрешить ${origin} обрабатывать ${label} в Nebula?`,
+    openExternal: 'Открыть внешнее приложение?',
+    wantsAnotherApp: (title: string) => `${title} хочет открыть другое приложение`,
+    allowOutside: (scheme: string) =>
+      `Разрешить этому сайту открыть ссылку ${scheme}: вне Nebula?`,
+    open: 'Открыть',
+    leaveSite: 'Покинуть сайт?',
+    unsaved: 'Внесённые изменения могут не сохраниться.',
+    leave: 'Покинуть',
+    stay: 'Остаться',
+    siteMessage: 'Сообщение сайта',
+    siteInput: 'Ввод сайта',
+    ok: 'OK',
+    promptResponse: 'Ответ на запрос сайта',
+    username: 'Имя пользователя',
+    password: 'Пароль',
+    remember: 'Запомнить этот выбор для сайта',
+  },
+  it: {
+    thisFeature: 'questa funzione',
+    sitePermission: 'Autorizzazione del sito',
+    nebulaPermission: 'Autorizzazione Nebula',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} vuole usare ${permission}`,
+    allowAccess: (origin: string, permission: string) =>
+      `Consentire a ${origin} di accedere a ${permission}?`,
+    nebulaLocationTitle: 'Consentire a Nebula di usare la tua posizione?',
+    nebulaLocationMessage:
+      'Nebula può usare la tua posizione precisa per impostare automaticamente la località meteo.',
+    allow: 'Consenti',
+    block: 'Blocca',
+    authRequired: 'Autenticazione richiesta',
+    signInTo: (title: string) => `Accedi a ${title}`,
+    serverChallenge: (challenge: string) =>
+      `Il server ha richiesto le credenziali (${challenge}).`,
+    serverCredentials: 'Il server ha richiesto un nome utente e una password.',
+    signIn: 'Accedi',
+    cancel: 'Annulla',
+    emailLinks: 'collegamenti e-mail',
+    protocolLinks: (scheme: string) => `collegamenti ${scheme}:`,
+    protocolHandler: 'Gestore protocollo',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} vuole aprire ${label}`,
+    allowHandle: (origin: string, label: string) =>
+      `Consentire a ${origin} di gestire ${label} in Nebula?`,
+    openExternal: 'Aprire l’app esterna?',
+    wantsAnotherApp: (title: string) => `${title} vuole aprire un’altra applicazione`,
+    allowOutside: (scheme: string) =>
+      `Consentire a questo sito di aprire un collegamento ${scheme}: fuori da Nebula?`,
+    open: 'Apri',
+    leaveSite: 'Uscire dal sito?',
+    unsaved: 'Le modifiche apportate potrebbero non essere salvate.',
+    leave: 'Esci',
+    stay: 'Resta',
+    siteMessage: 'Messaggio del sito',
+    siteInput: 'Input del sito',
+    ok: 'OK',
+    promptResponse: 'Risposta alla richiesta del sito',
+    username: 'Nome utente',
+    password: 'Password',
+    remember: 'Ricorda questa scelta per questo sito',
+  },
+  ja: {
+    thisFeature: 'この機能',
+    sitePermission: 'サイトの権限',
+    nebulaPermission: 'Nebula の権限',
+    wantsToUse: (title: string, permission: string) =>
+      `${title} が${permission}を使用しようとしています`,
+    allowAccess: (origin: string, permission: string) =>
+      `${origin} に${permission}へのアクセスを許可しますか？`,
+    nebulaLocationTitle: 'Nebula に位置情報の使用を許可しますか？',
+    nebulaLocationMessage:
+      'Nebula は正確な位置情報を使用して、天気の地域を自動設定できます。',
+    allow: '許可',
+    block: 'ブロック',
+    authRequired: '認証が必要です',
+    signInTo: (title: string) => `${title} にログイン`,
+    serverChallenge: (challenge: string) =>
+      `サーバーが認証情報を要求しました（${challenge}）。`,
+    serverCredentials: 'サーバーがユーザー名とパスワードを要求しました。',
+    signIn: 'ログイン',
+    cancel: 'キャンセル',
+    emailLinks: 'メールリンク',
+    protocolLinks: (scheme: string) => `${scheme}: リンク`,
+    protocolHandler: 'プロトコルハンドラー',
+    wantsToOpen: (title: string, label: string) =>
+      `${title} が${label}を開こうとしています`,
+    allowHandle: (origin: string, label: string) =>
+      `${origin} が Nebula で${label}を処理することを許可しますか？`,
+    openExternal: '外部アプリを開きますか？',
+    wantsAnotherApp: (title: string) => `${title} が別のアプリを開こうとしています`,
+    allowOutside: (scheme: string) =>
+      `このサイトが Nebula の外部で ${scheme}: リンクを開くことを許可しますか？`,
+    open: '開く',
+    leaveSite: 'サイトを離れますか？',
+    unsaved: '変更内容が保存されない可能性があります。',
+    leave: '移動',
+    stay: 'このページに留まる',
+    siteMessage: 'サイトからのメッセージ',
+    siteInput: 'サイトの入力',
+    ok: 'OK',
+    promptResponse: 'サイトの入力要求への回答',
+    username: 'ユーザー名',
+    password: 'パスワード',
+    remember: 'このサイトでこの選択を記憶する',
+  },
 } as const
 
 function originText(uri: string, fallback: string): string {
@@ -149,7 +563,7 @@ export function SiteUiPrompt({
   onRespond,
 }: SiteUiPromptProps) {
   const { locale } = useLocale()
-  const copy = COPY[locale]
+  const copy = getLocaleCopy(COPY, locale)
   const [text, setText] = useState(request.defaultText ?? '')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -187,7 +601,7 @@ export function SiteUiPrompt({
       const permission =
         permissionKind === 'unknown'
           ? copy.thisFeature
-          : PERMISSION_LABELS[locale][
+          : getLocaleCopy(PERMISSION_LABELS, locale)[
               permissionKind as keyof typeof PERMISSION_LABELS.tr
             ] ??
             permissionKind ??
