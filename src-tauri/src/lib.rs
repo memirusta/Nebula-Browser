@@ -13,6 +13,7 @@ mod media_session;
 #[cfg(target_os = "windows")]
 mod media_session_bindings;
 mod native_notification;
+mod network_address;
 mod notification_broker;
 mod password_webview;
 mod secure_password_vault;

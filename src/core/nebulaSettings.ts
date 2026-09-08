@@ -1,5 +1,6 @@
 import { LEGACY_PREVIEW_ON_HOVER_KEY, SEMI_LUNAR_SETTINGS_KEY } from './semiLunarSettings'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
+import { DEFAULT_USER_DISPLAY_NAME } from './userProfile'
 
 export const NEBULA_SETTINGS_KEY = 'nebula-settings-v1'
 
@@ -148,7 +149,7 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     profileOffsetX: 0,
     profileOffsetY: 0,
     showToolbar: true,
-    userDisplayName: 'memir',
+    userDisplayName: DEFAULT_USER_DISPLAY_NAME,
     searchEngine: 'google',
   },
   semiLunar: {

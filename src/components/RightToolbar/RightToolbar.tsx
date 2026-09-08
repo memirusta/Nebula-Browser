@@ -116,7 +116,10 @@ export function RightToolbar({
   }
 
   const toolbar = (
-    <aside className={variant === 'overlay' ? styles.rootOverlay : styles.root}>
+    <aside
+      data-nebula-tutorial={variant === 'default' ? 'home-toolbar' : undefined}
+      className={variant === 'overlay' ? styles.rootOverlay : styles.root}
+    >
       <div className={styles.actions} role="toolbar" aria-orientation="vertical" aria-label={t('toolbarLabel')} onKeyDown={onToolbarKeyDown}>
         {ACTION_IDS.filter((id) => id !== 'downloads' || downloadCount > 0).map((id) => (
           <button

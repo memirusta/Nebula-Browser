@@ -1,0 +1,123 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 13200;
+  display: grid;
+  padding: 24px;
+  background: rgba(3, 7, 12, 0.62);
+  backdrop-filter: blur(10px) saturate(0.86);
+  -webkit-backdrop-filter: blur(10px) saturate(0.86);
+  place-items: center;
+}
+
+.card {
+  display: flex;
+  width: min(460px, calc(100vw - 32px));
+  padding: 28px;
+  border: 1px solid rgba(175, 195, 255, 0.22);
+  border-radius: 24px;
+  flex-direction: column;
+  align-items: flex-start;
+  color: rgba(247, 249, 255, 0.97);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(124, 104, 238, 0.22), transparent 42%),
+    linear-gradient(145deg, rgba(22, 27, 40, 0.98), rgba(9, 13, 22, 0.98));
+  box-shadow:
+    0 32px 100px rgba(0, 0, 0, 0.56),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: noticeEnter 220ms var(--ease-out-expo, ease-out);
+}
+
+.icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(141, 211, 183, 0.3);
+  border-radius: 17px;
+  color: #a6e8ca;
+  background: rgba(65, 169, 126, 0.14);
+  box-shadow: 0 0 34px rgba(78, 211, 157, 0.1);
+  place-items: center;
+}
+
+.icon svg {
+  width: 27px;
+  height: 27px;
+}
+
+.eyebrow {
+  color: rgba(181, 176, 255, 0.82);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+
+.card h2 {
+  margin: 8px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.card p {
+  margin: 14px 0 0;
+  color: rgba(232, 236, 247, 0.72);
+  font-size: 14px;
+  line-height: 1.62;
+  white-space: pre-line;
+}
+
+.card button {
+  min-width: 112px;
+  min-height: 42px;
+  margin-top: 24px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 13px;
+  align-self: flex-end;
+  color: #fff;
+  background: linear-gradient(135deg, #7f67e8, #4f8fdc);
+  box-shadow: 0 10px 28px rgba(82, 105, 220, 0.3);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.card button:hover {
+  filter: brightness(1.08);
+}
+
+.card button:focus-visible {
+  outline: 2px solid rgba(216, 224, 255, 0.96);
+  outline-offset: 3px;
+}
+
+@keyframes noticeEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@media (max-width: 560px) {
+  .backdrop {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 23px;
+    border-radius: 20px;
+  }
+
+  .card h2 {
+    font-size: 21px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}

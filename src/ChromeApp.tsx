@@ -15,12 +15,14 @@ import {
   emitChromeAction,
   listenActiveUrl,
   listenDownloadUiState,
+  listenGuidedTutorialState,
   listenTabCatalog,
   listenTabSearchRequests,
   listenViewMode,
   listenZoomIndicator,
   listenSiteInfoState,
   type DownloadUiStatePayload,
+  type GuidedTutorialStatePayload,
   type ShellViewMode,
   type TabCatalogPayload,
   type SiteInfoStatePayload,
@@ -81,6 +83,10 @@ export function ChromeApp() {
   })
   const [activeUrl, setActiveUrl] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ShellViewMode>('home')
+  const [guidedTutorial, setGuidedTutorial] = useState<GuidedTutorialStatePayload>({
+    open: false,
+    step: 0,
+  })
   const [downloadUi, setDownloadUi] = useState<DownloadUiStatePayload>({
     items: [],
     activeCount: 0,
@@ -155,6 +161,7 @@ export function ChromeApp() {
       () => listenActiveUrl(setActiveUrl),
       () => listenViewMode(setViewMode),
       () => listenDownloadUiState(setDownloadUi),
+      () => listenGuidedTutorialState(setGuidedTutorial),
       () => listenZoomIndicator(showZoomIndicator),
       () => listenTabSearchRequests(() => setTabSearchOpen(true)),
       () => listenSiteInfoState(setSiteInfoState),
@@ -625,7 +632,11 @@ export function ChromeApp() {
       }}
       getSession={getSession}
       previewOnHover={semiLunar.previewOnHover}
-      homeAlwaysOpen={semiLunar.homeAlwaysOpen}
+      homeAlwaysOpen={
+        guidedTutorial.open && guidedTutorial.step === 0
+          ? false
+          : semiLunar.homeAlwaysOpen
+      }
       browsingHoverOpen={semiLunar.browsingHoverOpen}
       browsingOpenDelayMs={semiLunar.browsingOpenDelayMs}
       closeDelayMs={semiLunar.closeDelayMs}
@@ -661,6 +672,22 @@ export function ChromeApp() {
       downloadProgress={downloadUi.aggregateProgress}
       downloadPanelOpen={browsingDownloadPanelOpen}
       forceOpen={browsingDownloadPanelOpen}
+      tutorialExpansion={
+        guidedTutorial.open && guidedTutorial.step === 1
+          ? true
+          : null
+      }
+      tutorialHoverOpen={guidedTutorial.open && guidedTutorial.step === 0}
+      tutorialDemoTab={guidedTutorial.open && guidedTutorial.step === 1}
+      tutorialHighlight={
+        guidedTutorial.open
+          ? guidedTutorial.step === 0
+            ? 'edge'
+            : guidedTutorial.step === 1
+              ? 'content'
+              : null
+          : null
+      }
       />
 
       {siteInfoOpen && effectiveSiteInfoState.hostname && effectiveSiteInfoState.origin && effectiveSiteInfoState.shortcutId && (

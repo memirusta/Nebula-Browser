@@ -54,6 +54,11 @@ export interface DownloadUiStatePayload {
   panelOpen: boolean
 }
 
+export interface GuidedTutorialStatePayload {
+  open: boolean
+  step: number
+}
+
 export type SitePermissionState =
   | 'granted'
   | 'denied'
@@ -87,6 +92,7 @@ const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
 const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
 const BROWSER_SHORTCUT_EVENT = 'nebula-browser-shortcut'
+const GUIDED_TUTORIAL_STATE_EVENT = 'nebula-guided-tutorial-state'
 
 function scoped(event: string): string {
   return scopedBrowserEvent(event)
@@ -244,4 +250,21 @@ export function listenSiteInfoState(
   return listen<SiteInfoStatePayload>(scoped(SITE_INFO_STATE_EVENT), (event) => {
     handler(event.payload)
   })
+}
+
+export async function emitGuidedTutorialState(
+  state: GuidedTutorialStatePayload,
+): Promise<void> {
+  if (!isTauri) return
+  await emit(scoped(GUIDED_TUTORIAL_STATE_EVENT), state)
+}
+
+export function listenGuidedTutorialState(
+  handler: (state: GuidedTutorialStatePayload) => void,
+): Promise<() => void> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<GuidedTutorialStatePayload>(
+    scoped(GUIDED_TUTORIAL_STATE_EVENT),
+    (event) => handler(event.payload),
+  )
 }

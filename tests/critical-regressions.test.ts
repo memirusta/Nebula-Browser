@@ -497,6 +497,26 @@ test('prewarmed webviews are adopted only for the mode they were created with', 
   assert.equal(shouldKeepPrewarmedWebview(Number.NaN), false)
 })
 
+test('fresh active webviews navigate after they receive visible browser bounds', () => {
+  const browser = readFileSync(
+    new URL('../src/platform/tauriBrowser.ts', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(
+    browser,
+    /getOrCreateTabWebview\(\s*shortcutId,\s*targetUrl,\s*forceNavigate,\s*traceId,\s*true,\s*\)/,
+  )
+  assert.match(
+    browser,
+    /browser\.activation\.show[\s\S]*?navigateDeferredInitialWebview\(\s*webview,\s*traceId,\s*\)/,
+  )
+  assert.match(
+    browser,
+    /prepareBrowseTabInBackgroundQueued[\s\S]*?getOrCreateTabWebview\(\s*shortcutId,\s*targetUrl,\s*forceNavigate,\s*traceId,\s*\)/,
+  )
+})
+
 test('failed tab, prewarm and popup setup paths unwind native integrations', () => {
   const native = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
   const browser = readFileSync(new URL('../src/platform/tauriBrowser.ts', import.meta.url), 'utf8')
@@ -747,7 +767,7 @@ test('search shortcut IDs distinguish punctuation-sensitive queries', () => {
   assert.equal(plain, 'search-google-hello-world')
 })
 
-test('native transition logging is production opt-in and size bounded', () => {
+test('routine transition logging is opt-in while production failures remain diagnosable and bounded', () => {
   const frontend = readFileSync(
     new URL('../src/platform/tauriTransitionLog.ts', import.meta.url),
     'utf8',
@@ -758,7 +778,7 @@ test('native transition logging is production opt-in and size bounded', () => {
   )
 
   assert.match(frontend, /import\.meta\.env\.DEV\s*\|\|\s*import\.meta\.env\.VITE_NEBULA_TRANSITION_LOG === '1'/)
-  assert.match(frontend, /!isTauri \|\| !transitionLoggingEnabled/)
+  assert.match(frontend, /!isTauri \|\| \(!transitionLoggingEnabled && status !== 'error'\)/)
   assert.match(native, /MAX_TRANSITION_LOG_BYTES/)
   assert.match(native, /native-tab-transitions\.jsonl\.1/)
 })

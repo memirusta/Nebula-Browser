@@ -895,7 +895,340 @@
   padding: 14px 0 2px;
 }
 
+.tutorialMenu {
+  display: grid;
+  gap: 18px;
+}
+
+.tutorialLaunch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tutorialLaunch .tutorialIntro {
+  margin: 0;
+}
+
+.tutorialLaunch .actionBtn {
+  flex: 0 0 auto;
+}
+
+.tutorialIntro {
+  margin: 0;
+  color: var(--nebula-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.tutorialLayout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.tutorialStepList {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.tutorialStepButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--nebula-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast),
+    background var(--duration-fast),
+    color var(--duration-fast),
+    transform var(--duration-fast);
+}
+
+.tutorialStepButton:hover {
+  transform: translateX(2px);
+  background: rgba(255, 255, 255, 0.065);
+  color: var(--nebula-text);
+}
+
+.tutorialStepButton > span {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tutorialStepButton div,
+.tutorialStepButton small,
+.tutorialStepButton strong {
+  display: block;
+  min-width: 0;
+}
+
+.tutorialStepButton small {
+  margin-bottom: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.tutorialStepButton strong {
+  color: inherit;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tutorialStepButtonActive {
+  border-color: color-mix(in srgb, var(--nebula-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--nebula-accent) 12%, transparent);
+  color: var(--nebula-text);
+}
+
+.tutorialStepButtonActive > span {
+  border-color: color-mix(in srgb, var(--nebula-accent) 62%, transparent);
+  background: color-mix(in srgb, var(--nebula-accent) 20%, transparent);
+  box-shadow: 0 0 16px var(--nebula-accent-glow);
+}
+
+.tutorialPreview {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(126, 200, 227, 0.12), transparent 42%),
+    linear-gradient(160deg, rgba(8, 16, 23, 0.9), rgba(13, 20, 28, 0.72));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.tutorialEdgeGlow {
+  position: absolute;
+  top: -7px;
+  left: 14%;
+  width: 72%;
+  height: 13px;
+  border-radius: 0 0 50% 50%;
+  background: rgba(255, 255, 255, 0.12);
+  opacity: 0.35;
+  transition: opacity 220ms ease, box-shadow 220ms ease;
+}
+
+.tutorialEdgeGlowActive {
+  opacity: 1;
+  background: var(--nebula-accent);
+  box-shadow:
+    0 5px 18px var(--nebula-accent-glow),
+    0 13px 42px color-mix(in srgb, var(--nebula-accent) 42%, transparent);
+  animation: tutorialGlow 1.8s ease-in-out infinite;
+}
+
+.tutorialMockTabs {
+  position: absolute;
+  top: 38px;
+  left: 50%;
+  display: flex;
+  gap: 9px;
+  transform: translateX(-50%);
+}
+
+.tutorialMockTabs span {
+  width: 25px;
+  height: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  transition: transform 220ms ease, box-shadow 220ms ease, background 220ms ease;
+}
+
+.tutorialMockTabs span:nth-child(2) {
+  background: color-mix(in srgb, var(--nebula-accent) 36%, rgba(255, 255, 255, 0.08));
+}
+
+.tutorialMockTabs .tutorialMockTabActive {
+  transform: scale(1.16);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 20px var(--nebula-accent-glow);
+}
+
+.tutorialMockAddress {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(310px, calc(100% - 46px));
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--nebula-text-muted);
+  font-size: 11px;
+  transform: translateX(-50%);
+  transition: border-color 220ms ease, box-shadow 220ms ease, color 220ms ease;
+}
+
+.tutorialMockAddressActive {
+  border-color: color-mix(in srgb, var(--nebula-accent) 65%, transparent);
+  color: var(--nebula-text);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nebula-accent) 15%, transparent), 0 0 24px var(--nebula-accent-glow);
+}
+
+.tutorialStepCopy {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 15px;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.tutorialProgress,
+.tutorialStepCopy > small {
+  color: var(--nebula-accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tutorialProgress {
+  float: right;
+}
+
+.tutorialStepCopy h3 {
+  margin: 8px 0 7px;
+  color: var(--nebula-text);
+  font-size: 20px;
+}
+
+.tutorialStepCopy p {
+  max-width: 500px;
+  margin: 0 0 14px;
+  color: var(--nebula-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.tutorialStepCopy kbd {
+  display: inline-flex;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nebula-text);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.tutorialFooter {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+}
+
+.tutorialFooter > :last-child {
+  justify-self: end;
+}
+
+.tutorialFooter .shortcutResetBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tutorialDots {
+  display: flex;
+  gap: 6px;
+}
+
+.tutorialDots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  transition: width 180ms ease, background 180ms ease;
+}
+
+.tutorialDots .tutorialDotActive {
+  width: 20px;
+  border-radius: 999px;
+  background: var(--nebula-accent);
+}
+
+.tutorialComplete {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  padding: 32px;
+  text-align: center;
+}
+
+.tutorialCompleteMark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 1px solid color-mix(in srgb, var(--nebula-accent) 52%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--nebula-accent) 14%, transparent);
+  color: var(--nebula-accent);
+  font-size: 30px;
+  box-shadow: 0 0 34px var(--nebula-accent-glow);
+}
+
+.tutorialComplete h3 {
+  margin: 18px 0 7px;
+  color: var(--nebula-text);
+  font-size: 22px;
+}
+
+.tutorialComplete p {
+  max-width: 430px;
+  margin: 0 0 20px;
+  color: var(--nebula-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@keyframes tutorialGlow {
+  0%, 100% { filter: brightness(0.82); }
+  50% { filter: brightness(1.32); }
+}
+
 @media (max-width: 900px) {
+  .tutorialLaunch {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tutorialLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .tutorialStepList {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .shortcutRow,
   .shortcutFooter {
     align-items: flex-start;
@@ -910,6 +1243,12 @@
 
   .shortcutKeySet {
     justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorialEdgeGlowActive {
+    animation: none;
   }
 }
 
