@@ -21,6 +21,162 @@
     width 360ms var(--lunar-ease-open);
 }
 
+.tutorialEdgeHighlight::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  z-index: 80;
+  height: 13px;
+  border-radius: 0 0 999px 999px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(202, 181, 255, 0.72), rgba(105, 220, 255, 0.2) 48%, transparent 76%);
+  box-shadow:
+    0 4px 15px rgba(192, 163, 255, 0.5),
+    0 8px 34px rgba(100, 216, 255, 0.34);
+  pointer-events: none;
+  animation: tutorialEdgeBreathe 1.8s ease-in-out infinite;
+}
+
+.tutorialEdgeHighlight::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 20%;
+  right: 20%;
+  z-index: 81;
+  height: 17px;
+  background:
+    radial-gradient(circle at 4% 32%, rgba(232, 220, 255, 0.9) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 17% 72%, rgba(124, 226, 255, 0.85) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 31% 38%, rgba(211, 184, 255, 0.9) 0 0.8px, transparent 1.7px),
+    radial-gradient(circle at 47% 78%, rgba(142, 217, 255, 0.82) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 61% 30%, rgba(238, 225, 255, 0.92) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 76% 70%, rgba(158, 206, 255, 0.86) 0 0.9px, transparent 1.7px),
+    radial-gradient(circle at 92% 38%, rgba(218, 190, 255, 0.9) 0 1.1px, transparent 1.9px);
+  filter: drop-shadow(0 0 4px rgba(176, 142, 255, 0.9));
+  pointer-events: none;
+  animation: tutorialEdgeDust 2.4s ease-in-out infinite;
+}
+
+.tutorialContentHighlight .lunarGlass {
+  filter:
+    drop-shadow(0 7px 18px rgba(165, 119, 255, 0.38))
+    drop-shadow(0 12px 34px rgba(78, 200, 255, 0.2));
+}
+
+.tutorialContentHighlight .arcStroke {
+  filter: drop-shadow(0 2px 6px rgba(205, 179, 255, 0.62));
+}
+
+.tutorialContentHighlight .iconAnchor > :not(.tutorialDemoTab) {
+  opacity: 0.42;
+  filter: saturate(0.55);
+}
+
+.tutorialContentHighlight .iconAnchor::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 10%;
+  height: 46%;
+  border: 1px solid rgba(212, 190, 255, 0.44);
+  border-radius: 999px;
+  box-shadow: 0 0 26px rgba(146, 97, 236, 0.3);
+  pointer-events: none;
+  animation: tutorialContentBreathe 2s ease-in-out infinite;
+}
+
+@keyframes tutorialEdgeBreathe {
+  0%, 100% { opacity: 0.5; transform: scaleX(0.86); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes tutorialEdgeDust {
+  0%, 100% { opacity: 0.38; transform: translateY(-1px) scaleX(0.94); }
+  45% { opacity: 1; transform: translateY(2px) scaleX(1.02); }
+  70% { opacity: 0.64; transform: translateY(0) scaleX(0.98); }
+}
+
+@keyframes tutorialContentBreathe {
+  0%, 100% { opacity: 0.42; transform: scale(0.98); }
+  50% { opacity: 0.9; transform: scale(1); }
+}
+
+.tutorialDemoTab {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  z-index: 35;
+  display: grid;
+  width: 52px;
+  justify-items: center;
+  transform: translate(-50%, -50%);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  pointer-events: auto;
+  animation: tutorialDemoTabReveal 2s ease-in-out infinite;
+}
+
+.tutorialDemoTabHalo {
+  position: absolute;
+  top: -11px;
+  width: 68px;
+  height: 68px;
+  border: 1px solid rgba(218, 196, 255, 0.6);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(167, 116, 255, 0.25), transparent 65%);
+  box-shadow:
+    0 0 16px rgba(191, 155, 255, 0.72),
+    0 0 34px rgba(83, 210, 255, 0.42);
+}
+
+.tutorialDemoTabLogo {
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 50%;
+  background: rgba(18, 23, 29, 0.94);
+  box-shadow: 0 0 0 3px rgba(193, 165, 255, 0.2);
+}
+
+.tutorialDemoTabLogo svg {
+  width: 28px;
+  height: 20px;
+  overflow: visible;
+}
+
+.tutorialDemoTabLogo rect {
+  fill: #ff0033;
+}
+
+.tutorialDemoTabLogo path {
+  fill: #fff;
+}
+
+.tutorialDemoTabLabel {
+  position: relative;
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 10px;
+  font-weight: 720;
+  text-shadow: 0 2px 7px rgba(0, 0, 0, 0.9);
+}
+
+@keyframes tutorialDemoTabReveal {
+  0%, 100% { filter: brightness(1); transform: translate(-50%, -50%) scale(0.98); }
+  50% { filter: brightness(1.22); transform: translate(-50%, -50%) scale(1.07); }
+}
+
 .rootBrowsing {
   z-index: 10050;
 }
@@ -711,5 +867,14 @@
   100% {
     transform: translate(-50%, -50%) scale(1);
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorialEdgeHighlight::before,
+  .tutorialEdgeHighlight::after,
+  .tutorialContentHighlight .iconAnchor::after,
+  .tutorialDemoTab {
+    animation: none;
   }
 }

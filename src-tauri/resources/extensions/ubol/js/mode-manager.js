@@ -81,9 +81,8 @@ function enforceNebulaInternalExceptions(filteringModes) {
     for ( const hostname of nebulaNoFilteringHostnames ) {
         applyFilteringMode(filteringModes, hostname, MODE_NONE);
     }
-    // YouTube's player ads rely on extended cosmetic filters and scriptlets.
-    // Keep the strongest uBO Lite mode for YouTube while retaining the more
-    // compatible optimal mode as the global default.
+    // YouTube needs complete mode for cosmetic filters and scriptlets used to
+    // keep player ads out of the page.
     for ( const hostname of nebulaCompleteFilteringHostnames ) {
         applyFilteringMode(filteringModes, hostname, MODE_COMPLETE);
     }

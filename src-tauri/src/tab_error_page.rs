@@ -10,8 +10,22 @@ mod imp {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2NavigationCompletedEventArgs2,
         ICoreWebView2NavigationCompletedEventHandler, COREWEBVIEW2_WEB_ERROR_STATUS,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CLIENT_CERTIFICATE_CONTAINS_ERRORS,
         COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
-        COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED, COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET, COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE,
+        COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_REDIRECT_FAILED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE, COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT,
+        COREWEBVIEW2_WEB_ERROR_STATUS_UNEXPECTED_ERROR, COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN,
+        COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED,
+        COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED,
     };
     use webview2_com::NavigationCompletedEventHandler;
     use windows::core::PCWSTR;
@@ -53,6 +67,17 @@ mod imp {
         tab_label: String,
         url: String,
         error_status: String,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ErrorKind {
+        Certificate,
+        NameNotResolved,
+        TimedOut,
+        Authentication,
+        ServerResponse,
+        Network,
+        Unexpected,
     }
 
     pub fn set_ui_locale(locale: &str) {
@@ -174,6 +199,16 @@ mod imp {
         format!("data:text/html;charset=utf-8,{encoded}")
     }
 
+    fn js_string_literal(value: &str) -> String {
+        serde_json::to_string(value)
+            .unwrap_or_else(|_| "\"\"".to_string())
+            .replace('<', "\\u003C")
+            .replace('>', "\\u003E")
+            .replace('&', "\\u0026")
+            .replace('\u{2028}', "\\u2028")
+            .replace('\u{2029}', "\\u2029")
+    }
+
     fn read_webview_source(webview: &ICoreWebView2) -> String {
         unsafe {
             let mut uri = PWSTR::null();
@@ -191,16 +226,116 @@ mod imp {
 
     fn compatibility_request_url(value: &str) -> Option<String> {
         let parsed = url::Url::parse(value).ok()?;
-        (matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some())
-            .then(|| parsed.to_string())
+        let host = parsed.host_str()?;
+        (matches!(parsed.scheme(), "http" | "https")
+            && !crate::network_address::is_local_network_host(host))
+        .then(|| parsed.to_string())
+    }
+
+    fn web_error_status_name(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> &'static str {
+        match status {
+            COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN => "COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN",
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CLIENT_CERTIFICATE_CONTAINS_ERRORS => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CLIENT_CERTIFICATE_CONTAINS_ERRORS"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT => "COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT",
+            COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_REDIRECT_FAILED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_REDIRECT_FAILED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_UNEXPECTED_ERROR => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_UNEXPECTED_ERROR"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED"
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED => {
+                "COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED"
+            }
+            _ => "COREWEBVIEW2_WEB_ERROR_STATUS_UNRECOGNIZED",
+        }
+    }
+
+    fn error_kind(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> ErrorKind {
+        match status {
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CLIENT_CERTIFICATE_CONTAINS_ERRORS
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID => ErrorKind::Certificate,
+            COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED => ErrorKind::NameNotResolved,
+            COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT => ErrorKind::TimedOut,
+            COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED => {
+                ErrorKind::Authentication
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE
+            | COREWEBVIEW2_WEB_ERROR_STATUS_REDIRECT_FAILED => ErrorKind::ServerResponse,
+            COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
+            | COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED
+            | COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT => ErrorKind::Network,
+            _ => ErrorKind::Unexpected,
+        }
+    }
+
+    fn should_offer_compatibility_retry(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
+        matches!(
+            status,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+                | COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
+                | COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED
+                | COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT
+                | COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE
+                | COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE
+        )
     }
 
     fn emit_compatibility_request(
         app: &AppHandle,
         label: &str,
         failed_url: &str,
-        error_status: &str,
+        error_status: COREWEBVIEW2_WEB_ERROR_STATUS,
     ) {
+        if !should_offer_compatibility_retry(error_status) {
+            return;
+        }
         let Some(url) = compatibility_request_url(failed_url) else {
             return;
         };
@@ -209,80 +344,209 @@ mod imp {
             CompatibilityRequestPayload {
                 tab_label: label.to_string(),
                 url,
-                error_status: error_status.to_string(),
+                error_status: web_error_status_name(error_status).to_string(),
             },
         );
     }
 
-    fn build_error_page_url(retry_url: &str, error_status: &str, locale: &str) -> String {
+    fn local_http_fallback_url(
+        retry_url: &str,
+        error_status: COREWEBVIEW2_WEB_ERROR_STATUS,
+    ) -> Option<String> {
+        if error_kind(error_status) != ErrorKind::Certificate {
+            return None;
+        }
+
+        let mut parsed = url::Url::parse(retry_url).ok()?;
+        if parsed.scheme() != "https"
+            || !crate::network_address::is_local_network_host(parsed.host_str()?)
+        {
+            return None;
+        }
+
+        if parsed.port() == Some(443) {
+            parsed.set_port(None).ok()?;
+        }
+        parsed.set_scheme("http").ok()?;
+        Some(parsed.to_string())
+    }
+
+    fn error_page_labels(locale: &str) -> (&'static str, &'static str, &'static str) {
+        match locale {
+            "tr" => ("tr", "Tekrar dene", "HTTP ile dene"),
+            "es" => ("es", "Volver a intentarlo", "Probar con HTTP"),
+            "de" => ("de", "Erneut versuchen", "HTTP versuchen"),
+            "fr" => ("fr", "Réessayer", "Essayer en HTTP"),
+            "id" => ("id", "Coba lagi", "Coba HTTP"),
+            "ru" => ("ru", "Повторить", "Попробовать HTTP"),
+            "it" => ("it", "Riprova", "Prova HTTP"),
+            "ja" => ("ja", "再試行", "HTTP で試す"),
+            _ => ("en", "Try again", "Try HTTP"),
+        }
+    }
+
+    fn error_page_copy(locale: &str, kind: ErrorKind) -> (&'static str, &'static str) {
+        match locale {
+            "tr" => match kind {
+                ErrorKind::Certificate => (
+                    "Bağlantı güvenli değil",
+                    "Bu adresin güvenlik sertifikası geçersiz veya güvenilir değil.",
+                ),
+                ErrorKind::NameNotResolved => (
+                    "Site bulunamadı",
+                    "Sunucu adresi bulunamadı. Adresi kontrol edip tekrar deneyin.",
+                ),
+                ErrorKind::TimedOut => (
+                    "Bağlantı zaman aşımına uğradı",
+                    "Sunucu zamanında yanıt vermedi. Bir süre sonra tekrar deneyin.",
+                ),
+                ErrorKind::Authentication => (
+                    "Kimlik doğrulama gerekli",
+                    "Sunucu veya proxy geçerli oturum bilgileri istiyor.",
+                ),
+                ErrorKind::ServerResponse => (
+                    "Sunucu yanıtı geçersiz",
+                    "Sunucu geçersiz bir yanıt veya yönlendirme gönderdi.",
+                ),
+                ErrorKind::Network => (
+                    "Bu siteye ulaşılamıyor",
+                    "Sunucuya bağlanılamadı. Adresi ve ağ bağlantısını kontrol edin.",
+                ),
+                ErrorKind::Unexpected => (
+                    "Sayfa yüklenemedi",
+                    "Beklenmeyen bir gezinme hatası oluştu. Tekrar deneyin.",
+                ),
+            },
+            "es" => match kind {
+                ErrorKind::Certificate => (
+                    "La conexión no es privada",
+                    "El certificado de seguridad del sitio no es válido o no es de confianza.",
+                ),
+                _ => (
+                    "No se puede acceder a este sitio",
+                    "No se pudo establecer la conexión. Comprueba la dirección y vuelve a intentarlo.",
+                ),
+            },
+            "de" => match kind {
+                ErrorKind::Certificate => (
+                    "Die Verbindung ist nicht privat",
+                    "Das Sicherheitszertifikat der Website ist ungültig oder nicht vertrauenswürdig.",
+                ),
+                _ => (
+                    "Diese Website ist nicht erreichbar",
+                    "Die Verbindung konnte nicht hergestellt werden. Prüfe die Adresse und versuche es erneut.",
+                ),
+            },
+            "fr" => match kind {
+                ErrorKind::Certificate => (
+                    "La connexion n’est pas privée",
+                    "Le certificat de sécurité du site est invalide ou non approuvé.",
+                ),
+                _ => (
+                    "Ce site est inaccessible",
+                    "La connexion n’a pas pu être établie. Vérifiez l’adresse et réessayez.",
+                ),
+            },
+            "id" => match kind {
+                ErrorKind::Certificate => (
+                    "Koneksi tidak pribadi",
+                    "Sertifikat keamanan situs tidak valid atau tidak tepercaya.",
+                ),
+                _ => (
+                    "Situs ini tidak dapat dijangkau",
+                    "Koneksi tidak dapat dibuat. Periksa alamat lalu coba lagi.",
+                ),
+            },
+            "ru" => match kind {
+                ErrorKind::Certificate => (
+                    "Подключение не защищено",
+                    "Сертификат безопасности сайта недействителен или ему нельзя доверять.",
+                ),
+                _ => (
+                    "Не удаётся открыть этот сайт",
+                    "Не удалось установить соединение. Проверьте адрес и повторите попытку.",
+                ),
+            },
+            "it" => match kind {
+                ErrorKind::Certificate => (
+                    "La connessione non è privata",
+                    "Il certificato di sicurezza del sito non è valido o non è attendibile.",
+                ),
+                _ => (
+                    "Questo sito non è raggiungibile",
+                    "Non è stato possibile stabilire la connessione. Controlla l’indirizzo e riprova.",
+                ),
+            },
+            "ja" => match kind {
+                ErrorKind::Certificate => (
+                    "この接続ではプライバシーが保護されません",
+                    "このサイトのセキュリティ証明書は無効か、信頼されていません。",
+                ),
+                _ => (
+                    "このサイトにアクセスできません",
+                    "接続できませんでした。アドレスを確認して、もう一度お試しください。",
+                ),
+            },
+            _ => match kind {
+                ErrorKind::Certificate => (
+                    "Your connection isn't private",
+                    "The site's security certificate is invalid or not trusted.",
+                ),
+                ErrorKind::NameNotResolved => (
+                    "This site can't be found",
+                    "The server address could not be found. Check the address and try again.",
+                ),
+                ErrorKind::TimedOut => (
+                    "The connection timed out",
+                    "The server did not respond in time. Try again later.",
+                ),
+                ErrorKind::Authentication => (
+                    "Authentication required",
+                    "The server or proxy requires valid sign-in credentials.",
+                ),
+                ErrorKind::ServerResponse => (
+                    "Invalid server response",
+                    "The server returned an invalid response or redirect.",
+                ),
+                ErrorKind::Network => (
+                    "This site can't be reached",
+                    "The server could not be reached. Check the address and your network connection.",
+                ),
+                ErrorKind::Unexpected => (
+                    "The page couldn't be loaded",
+                    "An unexpected navigation error occurred. Try again.",
+                ),
+            },
+        }
+    }
+
+    fn build_error_page_url(
+        retry_url: &str,
+        error_status: COREWEBVIEW2_WEB_ERROR_STATUS,
+        locale: &str,
+    ) -> String {
         let nebula_mark = include_str!("../resources/branding/nebula-app-logo-128.base64").trim();
-        let retry_js = retry_url
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace(['\n', '\r'], "");
+        let retry_js = js_string_literal(retry_url);
         let display_url = retry_url
             .replace('&', "&amp;")
             .replace('<', "&lt;")
             .replace('>', "&gt;")
             .replace('"', "&quot;")
             .replace('\'', "&#39;");
-
-        let (lang, title, description, retry_label) = match locale {
-            "tr" => (
-                "tr",
-                "Bu siteye ulaşılamıyor",
-                "İnternet bağlantınızı kontrol edin ve tekrar deneyin.",
-                "Tekrar dene",
-            ),
-            "es" => (
-                "es",
-                "No se puede acceder a este sitio",
-                "Comprueba tu conexión a Internet y vuelve a intentarlo.",
-                "Volver a intentarlo",
-            ),
-            "de" => (
-                "de",
-                "Diese Website ist nicht erreichbar",
-                "Prüfe deine Internetverbindung und versuche es erneut.",
-                "Erneut versuchen",
-            ),
-            "fr" => (
-                "fr",
-                "Ce site est inaccessible",
-                "Vérifiez votre connexion Internet et réessayez.",
-                "Réessayer",
-            ),
-            "id" => (
-                "id",
-                "Situs ini tidak dapat dijangkau",
-                "Periksa koneksi Internet Anda lalu coba lagi.",
-                "Coba lagi",
-            ),
-            "ru" => (
-                "ru",
-                "Не удаётся открыть этот сайт",
-                "Проверьте подключение к Интернету и повторите попытку.",
-                "Повторить",
-            ),
-            "it" => (
-                "it",
-                "Questo sito non è raggiungibile",
-                "Controlla la connessione a Internet e riprova.",
-                "Riprova",
-            ),
-            "ja" => (
-                "ja",
-                "このサイトにアクセスできません",
-                "インターネット接続を確認して、もう一度お試しください。",
-                "再試行",
-            ),
-            _ => (
-                "en",
-                "This site can't be reached",
-                "Check your internet connection and try again.",
-                "Try again",
-            ),
-        };
+        let status_name = web_error_status_name(error_status);
+        let kind = error_kind(error_status);
+        let (lang, retry_label, try_http_label) = error_page_labels(locale);
+        let (title, description) = error_page_copy(locale, kind);
+        let http_fallback = local_http_fallback_url(retry_url, error_status);
+        let http_fallback_js = js_string_literal(http_fallback.as_deref().unwrap_or_default());
+        let http_fallback_button = http_fallback
+            .as_ref()
+            .map(|_| {
+                format!(
+                    r#"<button type="button" id="try-http" class="secondary">{try_http_label}</button>"#
+                )
+            })
+            .unwrap_or_default();
 
         let html = format!(
             r#"<!DOCTYPE html>
@@ -326,6 +590,7 @@ mod imp {
     overflow-wrap: anywhere;
   }}
   .status {{ color: #675a80; font-size: 12px; margin: -14px 0 20px; }}
+  .actions {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }}
   button {{
     background: #863bff;
     color: #fff;
@@ -336,6 +601,7 @@ mod imp {
     cursor: pointer;
   }}
   button:hover {{ filter: brightness(1.08); }}
+  button.secondary {{ background: #241a38; color: #d8c9f4; }}
   .brand {{ position: fixed; bottom: 16px; color: #5c4d7a; font-size: 13px; letter-spacing: 0.08em; }}
 </style>
 </head>
@@ -344,15 +610,23 @@ mod imp {
   <h1>{title}</h1>
   <p>{description}</p>
   <div class="url">{display_url}</div>
-  <div class="status">{error_status}</div>
-  <button type="button" id="retry">{retry_label}</button>
+  <div class="status">{status_name}</div>
+  <div class="actions">
+    <button type="button" id="retry">{retry_label}</button>
+    {http_fallback_button}
+  </div>
   <div class="brand">NEBULA</div>
   <script>
-    const retryUrl = '{retry_js}';
+    const retryUrl = {retry_js};
+    const httpFallbackUrl = {http_fallback_js};
     document.getElementById('retry').onclick = () => {{
       if (retryUrl) location.replace(retryUrl);
       else location.reload();
     }};
+    const httpButton = document.getElementById('try-http');
+    if (httpButton && httpFallbackUrl) {{
+      httpButton.onclick = () => location.replace(httpFallbackUrl);
+    }}
   </script>
 </body>
 </html>"#
@@ -409,7 +683,7 @@ mod imp {
         app: AppHandle,
         label: String,
         failed_url: String,
-        error_status: String,
+        error_status: COREWEBVIEW2_WEB_ERROR_STATUS,
     ) {
         std::thread::spawn(move || {
             std::thread::sleep(DOWNLOAD_ABORT_GRACE);
@@ -437,9 +711,9 @@ mod imp {
                     }
 
                     let locale = current_ui_locale();
-                    let error_url = build_error_page_url(&failed_url, &error_status, &locale);
+                    let error_url = build_error_page_url(&failed_url, error_status, &locale);
                     navigate_webview(&core, &error_url);
-                    emit_compatibility_request(&app_for_main, &label, &failed_url, &error_status);
+                    emit_compatibility_request(&app_for_main, &label, &failed_url, error_status);
                 });
             });
         });
@@ -552,20 +826,19 @@ mod imp {
                                 app_for_handler.clone(),
                                 label_for_handler.clone(),
                                 failed_url,
-                                format!("{error_status:?}"),
+                                error_status,
                             );
                             return Ok(());
                         }
 
                         let locale = current_ui_locale();
-                        let error_status = format!("{error_status:?}");
-                        let error_url = build_error_page_url(&failed_url, &error_status, &locale);
+                        let error_url = build_error_page_url(&failed_url, error_status, &locale);
                         navigate_webview(&webview, &error_url);
                         emit_compatibility_request(
                             &app_for_handler,
                             &label_for_handler,
                             &failed_url,
-                            &error_status,
+                            error_status,
                         );
                         Ok(())
                     }));
@@ -622,7 +895,9 @@ mod imp {
     mod tests {
         use super::{
             build_error_page_url, claim_external_uri_navigation, compatibility_request_url,
-            note_external_uri_navigation, retry_target_is_current, suppress_error_page,
+            js_string_literal, local_http_fallback_url, note_external_uri_navigation,
+            retry_target_is_current, should_offer_compatibility_retry, suppress_error_page,
+            web_error_status_name,
         };
 
         #[test]
@@ -634,10 +909,15 @@ mod imp {
             assert!(compatibility_request_url("data:text/html,blocked").is_none());
             assert!(compatibility_request_url("file:///C:/secret.txt").is_none());
             assert!(compatibility_request_url("javascript:alert(1)").is_none());
+            assert!(compatibility_request_url("https://192.168.1.1/").is_none());
+            assert!(compatibility_request_url("http://router.local/").is_none());
         }
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
             COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+            COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
             COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
             COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN,
         };
@@ -683,7 +963,7 @@ mod imp {
         fn custom_error_page_includes_the_webview_status() {
             let page = build_error_page_url(
                 "https://example.com",
-                "COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
                 "en",
             );
             assert!(page.contains("COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET"));
@@ -693,7 +973,11 @@ mod imp {
 
         #[test]
         fn custom_error_page_respects_selected_turkish_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "tr");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "tr",
+            );
             assert!(page.contains("Bu%20siteye%20ula%C5%9F%C4%B1lam%C4%B1yor"));
             assert!(page.contains("Tekrar%20dene"));
             assert!(page.contains("lang%3D%22tr%22"));
@@ -701,7 +985,11 @@ mod imp {
 
         #[test]
         fn custom_error_page_respects_selected_spanish_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "es");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "es",
+            );
             assert!(page.contains("No%20se%20puede%20acceder%20a%20este%20sitio"));
             assert!(page.contains("Volver%20a%20intentarlo"));
             assert!(page.contains("lang%3D%22es%22"));
@@ -709,7 +997,11 @@ mod imp {
 
         #[test]
         fn custom_error_page_respects_selected_german_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "de");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "de",
+            );
             assert!(page.contains("Diese%20Website%20ist%20nicht%20erreichbar"));
             assert!(page.contains("Erneut%20versuchen"));
             assert!(page.contains("lang%3D%22de%22"));
@@ -717,14 +1009,22 @@ mod imp {
 
         #[test]
         fn custom_error_page_respects_selected_french_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "fr");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "fr",
+            );
             assert!(page.contains("Ce%20site%20est%20inaccessible"));
             assert!(page.contains("lang%3D%22fr%22"));
         }
 
         #[test]
         fn custom_error_page_respects_selected_indonesian_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "id");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "id",
+            );
             assert!(page.contains("Situs%20ini%20tidak%20dapat%20dijangkau"));
             assert!(page.contains("Coba%20lagi"));
             assert!(page.contains("lang%3D%22id%22"));
@@ -732,14 +1032,22 @@ mod imp {
 
         #[test]
         fn custom_error_page_respects_selected_russian_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "ru");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "ru",
+            );
             assert!(page.contains("lang%3D%22ru%22"));
             assert!(page.contains("%D0%9F%D0%BE%D0%B2%D1%82%D0%BE%D1%80%D0%B8%D1%82%D1%8C"));
         }
 
         #[test]
         fn custom_error_page_respects_selected_italian_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "it");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "it",
+            );
             assert!(page.contains("Questo%20sito%20non%20%C3%A8%20raggiungibile"));
             assert!(page.contains("Riprova"));
             assert!(page.contains("lang%3D%22it%22"));
@@ -747,9 +1055,79 @@ mod imp {
 
         #[test]
         fn custom_error_page_respects_selected_japanese_locale() {
-            let page = build_error_page_url("https://example.com", "NETWORK_ERROR", "ja");
+            let page = build_error_page_url(
+                "https://example.com",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                "ja",
+            );
             assert!(page.contains("lang%3D%22ja%22"));
             assert!(page.contains("%E5%86%8D%E8%A9%A6%E8%A1%8C"));
+        }
+
+        #[test]
+        fn certificate_error_uses_a_named_status_and_offers_local_http_fallback() {
+            let page = build_error_page_url(
+                "https://192.168.1.1/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+                "en",
+            );
+            assert!(page.contains("COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID"));
+            assert!(page.contains("Your%20connection%20isn%27t%20private"));
+            assert!(page.contains("Try%20HTTP"));
+            assert!(page.contains("http%3A%2F%2F192.168.1.1%2F"));
+            assert!(!page.contains("COREWEBVIEW2_WEB_ERROR_STATUS%285%29"));
+
+            assert_eq!(
+                local_http_fallback_url(
+                    "https://192.168.1.1:443/admin",
+                    COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+                )
+                .as_deref(),
+                Some("http://192.168.1.1/admin")
+            );
+        }
+
+        #[test]
+        fn public_certificate_errors_do_not_offer_an_insecure_downgrade() {
+            let page = build_error_page_url(
+                "https://example.com/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+                "en",
+            );
+            assert!(!page.contains("Try%20HTTP"));
+            assert!(local_http_fallback_url(
+                "https://example.com/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+            )
+            .is_none());
+        }
+
+        #[test]
+        fn error_page_script_literals_cannot_close_the_script_element() {
+            let literal = js_string_literal("https://example.com/</script>?q='&line=\u{2028}");
+            assert!(!literal.contains('<'));
+            assert!(!literal.contains('>'));
+            assert!(!literal.contains('&'));
+            assert!(literal.contains("\\u003C/script\\u003E"));
+            assert!(literal.contains("\\u0026"));
+            assert!(literal.contains("\\u2028"));
+        }
+
+        #[test]
+        fn status_names_and_compatibility_prompts_follow_the_real_error_kind() {
+            assert_eq!(
+                web_error_status_name(COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID),
+                "COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID"
+            );
+            assert!(!should_offer_compatibility_retry(
+                COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID
+            ));
+            assert!(!should_offer_compatibility_retry(
+                COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED
+            ));
+            assert!(should_offer_compatibility_retry(
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
+            ));
         }
 
         #[test]

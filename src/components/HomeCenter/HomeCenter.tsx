@@ -10,6 +10,8 @@ import {
   buildSearchUrl,
   type SearchEngine,
 } from '../../core/nebulaSettings'
+import { resolveNavigationInput } from '../../core/addressNavigation'
+import { DEFAULT_USER_DISPLAY_NAME } from '../../core/userProfile'
 import { useLocale } from '../../hooks/useLocale'
 import type {
   HomeLayout,
@@ -78,7 +80,7 @@ export function HomeCenter({
   variant = 'home',
   searchEngine = 'google',
   historyEntries = [],
-  userDisplayName = 'memir',
+  userDisplayName = DEFAULT_USER_DISPLAY_NAME,
   avatarUrl,
   showGreeting = true,
   showProfile = true,
@@ -281,49 +283,11 @@ useEffect(() => {
       return
     }
 
-    let url =
-      buildSearchUrl(
-        trimmed,
-        searchEngine,
-      )
-
-    /*
-     * Tek kelime / URL girdilerinde
-     * doğrudan siteye gitmeyi dene.
-     *
-     * Örn:
-     *
-     * github.com
-     * https://github.com
-     */
-    if (!trimmed.includes(' ')) {
-      const candidate =
-        /^https?:\/\//i.test(trimmed)
-          ? trimmed
-          : `https://${trimmed}`
-
-      try {
-        const parsed =
-          new URL(candidate)
-
-        if (
-          [
-            'http:',
-            'https:',
-          ].includes(
-            parsed.protocol,
-          ) &&
-          parsed.hostname.includes('.')
-        ) {
-          url = parsed.href
-        }
-      } catch {
-        /*
-         * URL değilse normal
-         * arama olarak devam et.
-         */
-      }
-    }
+    const url = resolveNavigationInput(
+      trimmed,
+      buildSearchUrl(trimmed, searchEngine),
+    )
+    if (!url) return
 
     ;(
       onSearchNavigate ??
@@ -602,6 +566,7 @@ useEffect(() => {
 
   const searchBar = (
     <div
+      data-nebula-tutorial="home-search"
       className={
         styles.searchWrap
       }

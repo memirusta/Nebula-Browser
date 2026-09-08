@@ -41,7 +41,8 @@ export async function writeTransitionLog(
   status: TransitionLogStatus,
   details: Record<string, unknown> = {},
 ): Promise<void> {
-  if (!isTauri || !transitionLoggingEnabled) return
+  // Retain failures in production so first-run errors can be diagnosed.
+  if (!isTauri || (!transitionLoggingEnabled && status !== 'error')) return
   try {
     await invoke('write_transition_log', {
       entry: {

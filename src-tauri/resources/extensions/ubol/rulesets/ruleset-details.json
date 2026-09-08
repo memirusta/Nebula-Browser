@@ -376,7 +376,7 @@
  {
   "id": "ublock-experimental",
   "name": "uBlock filters – Experimental",
-  "enabled": true,
+  "enabled": false,
   "homeURL": "https://github.com/uBlockOrigin/uAssets",
   "filters": {
    "total": 0,

@@ -61,6 +61,13 @@ import styles from './SemiLunarMenu.module.css'
 type MenuMode = 'home' | 'browsing' | 'overlay'
 type MenuStage = 'closed' | 'expanded'
 
+const TUTORIAL_DEMO_SHORTCUT: Shortcut = {
+  id: 'nebula-tutorial-youtube',
+  label: 'YouTube',
+  url: 'https://www.youtube.com/',
+  favicon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2232%22 fill=%22%23151a20%22/%3E%3Crect x=%2212%22 y=%2220%22 width=%2240%22 height=%2226%22 rx=%228%22 fill=%22%23ff0033%22/%3E%3Cpath d=%22M28 26l14 7-14 7z%22 fill=%22white%22/%3E%3C/svg%3E',
+}
+
 interface SemiLunarMenuProps {
   shortcuts: Shortcut[]
   dockItemIds: string[]
@@ -107,6 +114,10 @@ interface SemiLunarMenuProps {
   downloadProgress?: number | null
   downloadPanelOpen?: boolean
   forceOpen?: boolean
+  tutorialExpansion?: boolean | null
+  tutorialHoverOpen?: boolean
+  tutorialDemoTab?: boolean
+  tutorialHighlight?: 'edge' | 'content' | null
   onShortcutInteractionChange?: (active: boolean) => void
   activeUrl?: string | null
   getSession?: (url: string) => BrowseSession | null
@@ -157,6 +168,10 @@ export function SemiLunarMenu({
   downloadProgress = null,
   downloadPanelOpen = false,
   forceOpen = false,
+  tutorialExpansion = null,
+  tutorialHoverOpen = false,
+  tutorialDemoTab = false,
+  tutorialHighlight = null,
   onShortcutInteractionChange,
   activeUrl = null,
   getSession,
@@ -171,15 +186,17 @@ export function SemiLunarMenu({
   const [stage, setStage] = useState<MenuStage>(
     isHome && homeAlwaysOpen ? 'expanded' : 'closed',
   )
-  const isExpanded =
+  const isExpanded = tutorialExpansion ?? (
     forceOpen ||
     stage === 'expanded' ||
     (isHome && homeAlwaysOpen)
+  )
   const [browserFullscreenActive, setBrowserFullscreenActive] = useState(false)
   const [semiLunarRenderEpoch, setSemiLunarRenderEpoch] = useState(0)
   const [nativeHoverRecoveryArmed, setNativeHoverRecoveryArmed] = useState(false)
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
   const [previewTabId, setPreviewTabId] = useState<string | null>(null)
+  const tutorialDemoPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [openFolderId, setOpenFolderId] = useState<string | null>(null)
   const [mergeAnim, setMergeAnim] = useState<{
     sourceId: string
@@ -578,7 +595,11 @@ export function SemiLunarMenu({
       openIntentRef.current = true
       clearTimers()
 
-      if (isBrowsing && !immediate && browsingOpenDelayMs > 0) {
+      if (
+        (isBrowsing || tutorialHoverOpen) &&
+        !immediate &&
+        browsingOpenDelayMs > 0
+      ) {
         openTimer.current = setTimeout(() => {
           openTimer.current = null
 
@@ -630,6 +651,7 @@ export function SemiLunarMenu({
       isBrowsing,
       isPointerOverSemiLunar,
       rejectStaleBrowsingHover,
+      tutorialHoverOpen,
     ],
   )
 
@@ -1149,6 +1171,12 @@ const handleFolderMemberClose = useCallback(
           label: previewTab.title,
           updatedAt: Date.now(),
         }
+      : previewShortcut?.id === TUTORIAL_DEMO_SHORTCUT.id
+        ? {
+            url: TUTORIAL_DEMO_SHORTCUT.url,
+            label: TUTORIAL_DEMO_SHORTCUT.label,
+            updatedAt: Date.now(),
+          }
       : previewShortcut
         ? (getSession?.(previewShortcut.url) ?? null)
         : null
@@ -1157,6 +1185,40 @@ const handleFolderMemberClose = useCallback(
     previewTabId !== null
       ? activeTabId === previewTabId
       : undefined
+
+  const clearTutorialDemoPreviewTimer = useCallback(() => {
+    if (tutorialDemoPreviewTimerRef.current === null) return
+    clearTimeout(tutorialDemoPreviewTimerRef.current)
+    tutorialDemoPreviewTimerRef.current = null
+  }, [])
+
+  const showTutorialDemoPreview = useCallback(() => {
+    clearTutorialDemoPreviewTimer()
+    tutorialDemoPreviewTimerRef.current = setTimeout(() => {
+      tutorialDemoPreviewTimerRef.current = null
+      setPreviewShortcut(TUTORIAL_DEMO_SHORTCUT)
+      setPreviewTabId(null)
+    }, previewDelayMs)
+  }, [clearTutorialDemoPreviewTimer, previewDelayMs])
+
+  const hideTutorialDemoPreview = useCallback(() => {
+    clearTutorialDemoPreviewTimer()
+    setPreviewShortcut((current) =>
+      current?.id === TUTORIAL_DEMO_SHORTCUT.id ? null : current,
+    )
+    setPreviewTabId(null)
+  }, [clearTutorialDemoPreviewTimer])
+
+  useEffect(() => {
+    if (tutorialDemoTab) return
+    const timer = window.setTimeout(hideTutorialDemoPreview, 0)
+    return () => window.clearTimeout(timer)
+  }, [hideTutorialDemoPreview, tutorialDemoTab])
+
+  useEffect(
+    () => () => clearTutorialDemoPreviewTimer(),
+    [clearTutorialDemoPreviewTimer],
+  )
 
   const previewActive = previewShortcut !== null
   const shortcutInteractionActive = previewActive || isAnyDragging
@@ -1564,6 +1626,8 @@ const handleFolderMemberClose = useCallback(
   const rootClass = [
     isBrowsing ? styles.browsingRoot : styles.root,
     isExpanded ? styles.rootExpanded : '',
+    tutorialHighlight === 'edge' ? styles.tutorialEdgeHighlight : '',
+    tutorialHighlight === 'content' ? styles.tutorialContentHighlight : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -1580,7 +1644,11 @@ const handleFolderMemberClose = useCallback(
         } as React.CSSProperties
       }
       onMouseEnter={
-        isBrowsing
+        tutorialHoverOpen
+          ? isExpanded
+            ? handleExpandedEnter
+            : handleEnter
+          : isBrowsing
           ? isExpanded
             ? handleExpandedEnter
             : handleEnter
@@ -1808,6 +1876,27 @@ const handleFolderMemberClose = useCallback(
                 .filter(Boolean)
                 .join(' ')}
             >
+              {tutorialDemoTab && (
+                <button
+                  type="button"
+                  className={styles.tutorialDemoTab}
+                  aria-label="YouTube"
+                  onMouseEnter={showTutorialDemoPreview}
+                  onMouseLeave={hideTutorialDemoPreview}
+                  onFocus={showTutorialDemoPreview}
+                  onBlur={hideTutorialDemoPreview}
+                >
+                  <span className={styles.tutorialDemoTabHalo} />
+                  <span className={styles.tutorialDemoTabLogo}>
+                    <svg viewBox="0 0 28 20" aria-hidden="true">
+                      <rect x="0" y="0" width="28" height="20" rx="6" />
+                      <path d="M11 5.5 19 10l-8 4.5z" />
+                    </svg>
+                  </span>
+                  <span className={styles.tutorialDemoTabLabel}>YouTube</span>
+                </button>
+              )}
+
               {visibleDockItemIds.map((dockId) => {
                 const pos = getPosition(dockId)
                 const merging =

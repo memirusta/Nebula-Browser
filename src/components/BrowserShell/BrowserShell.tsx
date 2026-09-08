@@ -17,8 +17,11 @@ import { DeveloperTools } from '../DeveloperTools/DeveloperTools'
 import { AppDialogHost } from '../AppDialog/AppDialogHost'
 import {
   getAppDialogsSnapshot,
+  showAppAlert,
   showAppConfirmation,
 } from '../../core/appDialog'
+import { nativeTabFailureMessage } from '../../core/nativeTabFailure'
+import { loadLocale } from '../../core/locale'
 import { SiteUiPrompt } from '../SiteUiPrompt/SiteUiPrompt'
 import { PasswordSavePrompt } from '../PasswordSavePrompt/PasswordSavePrompt'
 import { PasswordFillPrompt } from '../PasswordFillPrompt/PasswordFillPrompt'
@@ -29,6 +32,7 @@ import {
   listenChromeActions,
   emitActiveUrl,
   emitDownloadUiState,
+  emitGuidedTutorialState,
   emitTabCatalog,
   emitTabSearchRequest,
   emitSiteInfoState,
@@ -244,6 +248,12 @@ import { DownloadManager } from '../DownloadManager/DownloadManager'
 import { NotificationPanel } from '../NotificationPanel/NotificationPanel'
 import { HistoryPanel } from '../HistoryPanel/HistoryPanel'
 import { CrashRecoveryPrompt } from '../CrashRecoveryPrompt/CrashRecoveryPrompt'
+import { GuidedTutorial } from '../GuidedTutorial/GuidedTutorial'
+import {
+  completeGuidedTutorial,
+  shouldResumeGuidedTutorial,
+  startGuidedTutorial,
+} from '../../core/tutorial'
 import styles from './BrowserShell.module.css'
 
 type ViewMode = 'home' | 'browsing' | 'overlay'
@@ -309,7 +319,7 @@ async function readSitePermissionStates(
 }
 
 export function BrowserShell() {
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
 
   const {
     settings,
@@ -328,6 +338,19 @@ export function BrowserShell() {
 
   const [viewMode, setViewMode] =
     useState<ViewMode>('home')
+
+  const [
+    guidedTutorialOpen,
+    setGuidedTutorialOpen,
+  ] = useState(() =>
+    isOnboardingComplete() &&
+    shouldResumeGuidedTutorial(),
+  )
+
+  const [
+    guidedTutorialStep,
+    setGuidedTutorialStep,
+  ] = useState(0)
 
   const isHome =
     viewMode ===
@@ -1206,6 +1229,10 @@ export function BrowserShell() {
         setOnboardingInitialStep(
           undefined,
         )
+
+        startGuidedTutorial()
+        setGuidedTutorialStep(0)
+        setGuidedTutorialOpen(true)
       },
       [
         handleApplyImportedShortcuts,
@@ -1391,6 +1418,20 @@ export function BrowserShell() {
       null,
     )
 
+  const guidedTutorialStateRef = useRef({
+    open: guidedTutorialOpen,
+    step: guidedTutorialStep,
+  })
+
+  useEffect(() => {
+    const state = {
+      open: guidedTutorialOpen,
+      step: guidedTutorialStep,
+    }
+    guidedTutorialStateRef.current = state
+    void emitGuidedTutorialState(state)
+  }, [guidedTutorialOpen, guidedTutorialStep])
+
   useEffect(() => {
     if (!isTauri) return
 
@@ -1402,6 +1443,10 @@ export function BrowserShell() {
         siteContextMenu !== null ||
         passwordPromptOffer !== null ||
         compatibilityPromptActive ||
+        (
+          guidedTutorialOpen &&
+          guidedTutorialStep >= 2
+        ) ||
         (
           viewMode !== 'browsing' &&
           (
@@ -1416,6 +1461,8 @@ export function BrowserShell() {
     compatibilityPromptActive,
     developerToolsOpen,
     downloadPanelOpen,
+    guidedTutorialOpen,
+    guidedTutorialStep,
     historyPanelOpen,
     notificationPanelOpen,
     passwordPromptOffer,
@@ -1721,6 +1768,11 @@ export function BrowserShell() {
         setViewMode(
           'home',
         )
+
+        if (getAppDialogsSnapshot().length === 0) {
+          const failure = nativeTabFailureMessage(detail, loadLocale())
+          void showAppAlert(failure.message, failure.title)
+        }
 
         delete document
           .documentElement
@@ -2333,6 +2385,13 @@ export function BrowserShell() {
       setSettingsAnchor(
         null,
       )
+    }, [])
+
+  const handleFinishGuidedTutorial =
+    useCallback(() => {
+      completeGuidedTutorial()
+      setGuidedTutorialOpen(false)
+      setGuidedTutorialStep(0)
     }, [])
 
   const handleClearBrowsingData =
@@ -5540,7 +5599,8 @@ export function BrowserShell() {
     bindings:
       browserShortcutBindings,
     enabled:
-      !onboardingOpen,
+      !onboardingOpen &&
+      !guidedTutorialOpen,
   })
 
   useEffect(() => {
@@ -5755,6 +5815,9 @@ export function BrowserShell() {
             )
             void emitDownloadUiState(
               downloadUiStateRef.current,
+            )
+            void emitGuidedTutorialState(
+              guidedTutorialStateRef.current,
             )
             void emitFreshSiteInfoState()
             break
@@ -6589,6 +6652,12 @@ export function BrowserShell() {
     lunarHeightPx:
       browsingAdaptiveLunar.height,
 
+    homeAlwaysOpen:
+      guidedTutorialOpen &&
+      guidedTutorialStep === 0
+        ? false
+        : semiLunar.homeAlwaysOpen,
+
     onHomeClick:
       isHome
         ? undefined
@@ -6618,8 +6687,34 @@ export function BrowserShell() {
       downloadPanelOpen,
 
     forceOpen:
-      !isHome &&
-      downloadPanelOpen,
+      (
+        !isHome &&
+        downloadPanelOpen
+      ),
+
+    tutorialExpansion:
+      guidedTutorialOpen &&
+      guidedTutorialStep === 1
+        ? true
+        : null,
+
+    tutorialHoverOpen:
+      guidedTutorialOpen &&
+      guidedTutorialStep === 0,
+
+    tutorialDemoTab:
+      guidedTutorialOpen &&
+      guidedTutorialStep === 1,
+
+    tutorialHighlight: (
+      guidedTutorialOpen
+        ? guidedTutorialStep === 0
+          ? 'edge'
+          : guidedTutorialStep === 1
+            ? 'content'
+            : null
+        : null
+    ) as 'edge' | 'content' | null,
 
   }
 
@@ -7269,7 +7364,7 @@ export function BrowserShell() {
                   )
                 }
               >
-                âœ•
+                {'\u00D7'}
               </button>
 
               <div
@@ -7517,6 +7612,17 @@ export function BrowserShell() {
           }
         />
       )}
+
+      <GuidedTutorial
+        open={guidedTutorialOpen}
+        locale={locale}
+        step={guidedTutorialStep}
+        lunarWidthPx={browsingAdaptiveLunar.width}
+        lunarHeightPx={browsingAdaptiveLunar.height}
+        onStepChange={setGuidedTutorialStep}
+        onSkip={handleFinishGuidedTutorial}
+        onComplete={handleFinishGuidedTutorial}
+      />
 
       {onboardingOpen && (
         <Suspense

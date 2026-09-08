@@ -575,6 +575,7 @@ let activeWebview: Webview | null = null
 
 const webviewCache = new Map<string, Webview>()
 const createdTabs = new Set<string>()
+const deferredInitialNavigations = new Map<string, string>()
 const lowMemoryWebviews = new Set<string>()
 const suspendedWebviews = new Set<string>()
 const tabSleepTimers = new Map<string, number>()
@@ -820,7 +821,7 @@ async function currentWindowIsMinimized(): Promise<boolean> {
 async function showWebviewForCurrentWindowState(
   webview: Webview,
   traceId: string,
-): Promise<void> {
+): Promise<boolean> {
   if (
     await currentWindowIsMinimized()
   ) {
@@ -837,7 +838,7 @@ async function showWebviewForCurrentWindowState(
         minimized: true,
       },
     )
-    return
+    return false
   }
 
   if (
@@ -849,6 +850,7 @@ async function showWebviewForCurrentWindowState(
   }
 
   await webview.show()
+  return true
 }
 
 async function syncWebviewWindowVisibilityAfterResize(
@@ -893,6 +895,11 @@ async function syncWebviewWindowVisibilityAfterResize(
     windowMinimizedWebviewLabel =
       null
     await webview.show()
+
+    await navigateDeferredInitialWebview(
+      webview,
+      `${traceId}:restored`,
+    )
 
     await writeTransitionLog(
       'browser.window-visibility',
@@ -2618,6 +2625,7 @@ async function getOrCreateTabWebview(
   initialUrl: string,
   forceNavigate = false,
   traceId: string,
+  deferInitialNavigation = false,
 ): Promise<Webview> {
   let label =
     tabWebviewLabel(
@@ -2636,6 +2644,7 @@ async function getOrCreateTabWebview(
           shortcutId,
         ),
       forceNavigate,
+      deferInitialNavigation,
       initialUrl,
     },
   )
@@ -2744,31 +2753,14 @@ async function getOrCreateTabWebview(
           )
         }
 
-        if (
-          initialUrl &&
-          initialUrl !==
-            'about:blank'
-        ) {
-          await traceTransitionCall(
-            traceId,
-            'browser.webview.adopt.navigate',
-            {
-              shortcutId,
-              label,
-              url:
-                initialUrl,
-            },
-            () =>
-              invoke(
-                'webview_navigate',
-                {
-                  label,
-                  url:
-                    initialUrl,
-                },
-            ),
-          )
-        }
+        await stageInitialWebviewNavigation(
+          shortcutId,
+          label,
+          initialUrl,
+          deferInitialNavigation,
+          traceId,
+          'browser.webview.adopt.navigate',
+        )
 
         if (
           !prewarmProfileMatches(
@@ -2951,31 +2943,14 @@ async function getOrCreateTabWebview(
         traceId,
       )
 
-      if (
-        initialUrl &&
-        initialUrl !==
-          'about:blank'
-      ) {
-        await traceTransitionCall(
-          traceId,
-          'browser.webview.navigate',
-          {
-            shortcutId,
-            label,
-            url:
-              initialUrl,
-          },
-          () =>
-            invoke(
-              'webview_navigate',
-              {
-                label,
-                url:
-                  initialUrl,
-              },
-            ),
-        )
-      }
+      await stageInitialWebviewNavigation(
+        shortcutId,
+        label,
+        initialUrl,
+        deferInitialNavigation,
+        traceId,
+        'browser.webview.navigate',
+      )
 
       createdTabs.add(
         shortcutId,
@@ -3106,31 +3081,14 @@ async function getOrCreateTabWebview(
         traceId,
       )
 
-      if (
-        initialUrl &&
-        initialUrl !==
-          'about:blank'
-      ) {
-        await traceTransitionCall(
-          traceId,
-          'browser.webview.recover-navigate',
-          {
-            shortcutId,
-            label,
-            url:
-              initialUrl,
-          },
-          () =>
-            invoke(
-              'webview_navigate',
-              {
-                label,
-                url:
-                  initialUrl,
-              },
-            ),
-        )
-      }
+      await stageInitialWebviewNavigation(
+        shortcutId,
+        label,
+        initialUrl,
+        deferInitialNavigation,
+        traceId,
+        'browser.webview.recover-navigate',
+      )
 
       createdTabs.add(
         shortcutId,
@@ -3154,6 +3112,7 @@ async function getOrCreateTabWebview(
     )
 
     if (forceNavigate) {
+      deferredInitialNavigations.delete(label)
       await traceTransitionCall(
         traceId,
         'browser.webview.existing.navigate',
@@ -3177,6 +3136,85 @@ async function getOrCreateTabWebview(
   }
 
   return webview
+}
+
+async function stageInitialWebviewNavigation(
+  shortcutId: string,
+  label: string,
+  url: string,
+  defer: boolean,
+  traceId: string,
+  immediateStage: string,
+): Promise<void> {
+  if (!url || url === 'about:blank') return
+
+  if (defer) {
+    deferredInitialNavigations.set(label, url)
+    await writeTransitionLog(
+      'browser.webview.initial-navigation-deferred',
+      'info',
+      {
+        traceId,
+        shortcutId,
+        label,
+        url,
+      },
+    )
+    return
+  }
+
+  deferredInitialNavigations.delete(label)
+  await traceTransitionCall(
+    traceId,
+    immediateStage,
+    {
+      shortcutId,
+      label,
+      url,
+    },
+    () =>
+      invoke(
+        'webview_navigate',
+        { label, url },
+      ),
+  )
+}
+
+async function navigateDeferredInitialWebview(
+  webview: Webview,
+  traceId: string,
+): Promise<boolean> {
+  const url =
+    deferredInitialNavigations.get(webview.label)
+
+  if (!url) return false
+
+  await traceTransitionCall(
+    traceId,
+    'browser.activation.navigate-deferred',
+    {
+      label: webview.label,
+      shortcutId:
+        shortcutIdForTabWebviewLabel(webview.label),
+      url,
+    },
+    () =>
+      invoke(
+        'webview_navigate',
+        {
+          label: webview.label,
+          url,
+        },
+      ),
+  )
+
+  if (
+    deferredInitialNavigations.get(webview.label) === url
+  ) {
+    deferredInitialNavigations.delete(webview.label)
+  }
+
+  return true
 }
 
 async function hideOtherTabs(
@@ -3356,6 +3394,7 @@ async function activateBrowseTabQueued(
             targetUrl,
             forceNavigate,
             traceId,
+            true,
           ),
       )
 
@@ -3439,7 +3478,7 @@ async function activateBrowseTabQueued(
         }
       }
 
-      await traceTransitionCall(
+      const shown = await traceTransitionCall(
         traceId,
         'browser.activation.show',
         {
@@ -3464,6 +3503,21 @@ async function activateBrowseTabQueued(
           webview,
         )
         return
+      }
+
+      if (shown) {
+        await navigateDeferredInitialWebview(
+          webview,
+          traceId,
+        )
+
+        if (!shouldContinue()) {
+          await logSuperseded(
+            'same-tab-after-deferred-navigation',
+            webview,
+          )
+          return
+        }
       }
 
       await traceTransitionCall(
@@ -3634,7 +3688,7 @@ async function activateBrowseTabQueued(
       }
     }
 
-    await traceTransitionCall(
+    const shown = await traceTransitionCall(
       traceId,
       'browser.activation.show',
       {
@@ -3659,6 +3713,21 @@ async function activateBrowseTabQueued(
         webview,
       )
       return
+    }
+
+    if (shown) {
+      await navigateDeferredInitialWebview(
+        webview,
+        traceId,
+      )
+
+      if (!shouldContinue()) {
+        await logSuperseded(
+          'after-deferred-navigation',
+          webview,
+        )
+        return
+      }
     }
 
     await traceTransitionCall(
@@ -4371,6 +4440,8 @@ async function destroyTabWebview(
   label: string,
   shortcutId?: string,
 ): Promise<void> {
+  deferredInitialNavigations.delete(label)
+
   try {
     await invoke(
       'webview_close_tab',

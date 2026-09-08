@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.8.4"
+version = "1.8.5"
 description = "Nebula Browser"
 authors = ["Nebula"]
 license = ""
@@ -19,6 +19,7 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 serde_json = "1.0"
+sha2 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 base64 = "0.22"
 log = "0.4"
@@ -41,7 +42,7 @@ psl = "2.1.223"
 tempfile = "3.27"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-updater = "2"
+tauri-plugin-updater = "=2.11.0"
 tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
 [profile.release]
 codegen-units = 1

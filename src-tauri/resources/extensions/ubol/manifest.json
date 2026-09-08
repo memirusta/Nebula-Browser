@@ -104,7 +104,7 @@
       },
       {
         "id": "ublock-experimental",
-        "enabled": true,
+        "enabled": false,
         "path": "ublock-experimental.json"
       },
       {

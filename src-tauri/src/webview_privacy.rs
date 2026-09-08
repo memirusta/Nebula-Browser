@@ -192,16 +192,11 @@ mod imp {
         text
     }
 
-    fn is_local_host(host: &str) -> bool {
-        host.eq_ignore_ascii_case("localhost")
-            || host == "127.0.0.1"
-            || host == "[::1]"
-            || host.ends_with(".localhost")
-    }
-
     fn https_upgrade(uri: &str) -> Option<String> {
         let parsed = url::Url::parse(uri).ok()?;
-        if parsed.scheme() != "http" || is_local_host(parsed.host_str()?) {
+        if parsed.scheme() != "http"
+            || crate::network_address::is_local_network_host(parsed.host_str()?)
+        {
             return None;
         }
         let mut upgraded = parsed;
@@ -1354,12 +1349,15 @@ mod imp {
         use super::*;
 
         #[test]
-        fn upgrades_remote_http_but_not_localhost() {
+        fn upgrades_remote_http_but_not_local_network_addresses() {
             assert_eq!(
                 https_upgrade("http://example.com/path").as_deref(),
                 Some("https://example.com/path")
             );
             assert!(https_upgrade("http://localhost:3000/path").is_none());
+            assert!(https_upgrade("http://192.168.1.1/admin").is_none());
+            assert!(https_upgrade("http://router.local/admin").is_none());
+            assert!(https_upgrade("http://[fd12:3456::1]/admin").is_none());
         }
 
         #[test]
