@@ -43,6 +43,7 @@ mod restore_visibility;
 #[cfg(target_os = "windows")]
 mod restore_visibility_state;
 mod secure_password_vault;
+mod shell_state_store;
 mod site_fullscreen_window;
 mod site_ui;
 mod system_stats;
@@ -2004,6 +2005,9 @@ pub fn run() {
             download_control,
             download_start_drag,
             secure_password_vault::password_vault_load,
+            shell_state_store::shell_store_apply,
+            shell_state_store::shell_store_status,
+            shell_state_store::shell_store_wipe,
             secure_password_vault::password_vault_save,
             secure_password_vault::password_vault_clear,
             password_reveal::password_verify_reveal,

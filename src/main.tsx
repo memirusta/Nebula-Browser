@@ -1,3 +1,5 @@
+// First on purpose: mirrors localStorage writes, so it must hook before anything writes.
+import './platform/shellStateMirror'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { isChromeShell } from './core/nebulaBridge'

@@ -110,3 +110,12 @@ commands.allow = [
   "password_verify_reveal",
   "password_vault_clear"
 ]
+
+[[permission]]
+identifier = "allow-shell-state-store-commands"
+description = "Allow the trusted shell to mirror its localStorage into the Rust-owned state store"
+commands.allow = [
+  "shell_store_apply",
+  "shell_store_status",
+  "shell_store_wipe"
+]

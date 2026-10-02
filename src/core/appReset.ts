@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '../platform/runtime'
 import { runFactoryReset } from './factoryResetFlow'
 import { changeNotificationHistory } from './notificationHistory'
+import { wipeShellStateMirror } from '../platform/shellStateMirror'
 
 const NEBULA_STORAGE_PREFIX = 'nebula-'
 
@@ -46,6 +47,7 @@ export async function factoryResetNebulaApp(): Promise<void> {
     clearGoogleSyncCredential: () =>
       isTauri ? invoke('google_sync_forget') : Promise.resolve(),
     clearShellStorage: resetNebulaAppData,
+    clearShellStateMirror: wipeShellStateMirror,
     reloadShell: reloadNebulaApp,
   })
 }

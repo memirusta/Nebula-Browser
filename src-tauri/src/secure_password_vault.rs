@@ -109,7 +109,7 @@ fn replace_synced(path: &Path, temp_path: &Path, backup: Option<&Path>) -> Resul
     std::fs::rename(temp_path, path).map_err(|error| error.to_string())
 }
 
-fn durable_replace(path: &Path, data: &[u8], keep_backup: bool) -> Result<(), String> {
+pub(crate) fn durable_replace(path: &Path, data: &[u8], keep_backup: bool) -> Result<(), String> {
     let temp_path = write_synced_temp(path, data)?;
     let backup = backup_path(path);
     let result = (|| {
@@ -128,7 +128,7 @@ fn durable_replace(path: &Path, data: &[u8], keep_backup: bool) -> Result<(), St
     result
 }
 
-fn read_with_backup_recovery<T>(
+pub(crate) fn read_with_backup_recovery<T>(
     path: &Path,
     decode: impl Fn(&[u8]) -> Result<T, String>,
 ) -> Result<Option<T>, String> {
@@ -158,7 +158,7 @@ fn read_with_backup_recovery<T>(
 }
 
 #[cfg(target_os = "windows")]
-fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
     use windows::Win32::Security::Cryptography::{
         CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
@@ -189,7 +189,7 @@ fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
     use windows::Win32::Security::Cryptography::{
         CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
@@ -220,12 +220,12 @@ fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn protect(_data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn protect(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure password storage is currently supported on Windows only.".to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
-fn unprotect(_data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn unprotect(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure password storage is currently supported on Windows only.".to_string())
 }
 

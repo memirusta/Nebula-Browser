@@ -661,6 +661,11 @@ test('factory reset clears notification history around durable stores before rel
       events.push('google-sync:done')
     },
     clearShellStorage: () => events.push('storage:clear'),
+    clearShellStateMirror: async () => {
+      events.push('mirror:start')
+      await Promise.resolve()
+      events.push('mirror:done')
+    },
     reloadShell: () => events.push('shell:reload'),
   })
 
@@ -674,6 +679,8 @@ test('factory reset clears notification history around durable stores before rel
     'google-sync:done',
     'notifications:clear',
     'storage:clear',
+    'mirror:start',
+    'mirror:done',
     'shell:reload',
   ])
 })

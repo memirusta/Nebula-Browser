@@ -4,6 +4,8 @@ export interface FactoryResetOperations {
   clearPasswordVault(): Promise<void>
   clearGoogleSyncCredential(): Promise<void>
   clearShellStorage(): void
+  /** The Rust-owned mirror of the shell storage, emptied after the shell storage is. */
+  clearShellStateMirror(): Promise<void>
   reloadShell(): void
 }
 
@@ -20,5 +22,6 @@ export async function runFactoryReset(
   // Also discard notifications received while the native profiles were clearing.
   await operations.clearNotificationHistory()
   operations.clearShellStorage()
+  await operations.clearShellStateMirror()
   operations.reloadShell()
 }
