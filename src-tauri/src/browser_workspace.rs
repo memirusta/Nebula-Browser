@@ -158,16 +158,227 @@ pub fn mark_window_active(window_label: String) -> Result<(), String> {
     Ok(())
 }
 
-pub fn most_recent_window_label() -> String {
-    MOST_RECENT_WINDOW
+pub fn most_recent_window_label<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> String {
+    let remembered = MOST_RECENT_WINDOW
         .lock()
         .map(|label| label.clone())
-        .unwrap_or_else(|_| "main".to_string())
+        .unwrap_or_else(|_| "main".to_string());
+    if app.get_window(&remembered).is_some() {
+        return remembered;
+    }
+    if app.get_window("main").is_some() {
+        return "main".to_string();
+    }
+    app.windows()
+        .into_keys()
+        .find(|label| valid_workspace_label(label))
+        .unwrap_or_else(|| "main".to_string())
+}
+
+/// Result of resolving the window under the OS cursor for a tab drop.
+///
+/// `Outside` is a positive measurement: the hit window belongs to another
+/// process and no visible Nebula window contains the cursor. Anything that
+/// cannot be proven either way is `Unknown`, and callers must not create a
+/// window for it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum WindowAtCursor {
+    Window { label: String },
+    Outside,
+    Unknown,
+}
+
+/// Classify a cursor that matched no Nebula window. `hit_root_pid` is the
+/// process that owns the root of the window under the cursor, or `None` when
+/// the hit-test returned no window at all.
+fn classify_unmatched_cursor(hit_root_pid: Option<u32>, own_pid: u32) -> WindowAtCursor {
+    match hit_root_pid {
+        Some(pid) if pid != 0 && pid != own_pid => WindowAtCursor::Outside,
+        _ => WindowAtCursor::Unknown,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn window_at_cursor(_app: &tauri::AppHandle) -> Result<WindowAtCursor, String> {
+    Ok(WindowAtCursor::Unknown)
+}
+
+#[cfg(target_os = "windows")]
+pub fn window_at_cursor(app: &tauri::AppHandle) -> Result<WindowAtCursor, String> {
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetClassNameW, GetCursorPos, GetTopWindow, GetWindow, GetWindowRect,
+        GetWindowThreadProcessId, IsWindowVisible, WindowFromPoint, GA_ROOT, GW_HWNDNEXT, GW_OWNER,
+    };
+
+    fn class_name(hwnd: HWND) -> String {
+        if hwnd.0.is_null() {
+            return String::new();
+        }
+        let mut buffer = [0u16; 128];
+        let length = unsafe { GetClassNameW(hwnd, &mut buffer) };
+        String::from_utf16_lossy(&buffer[..length.max(0) as usize])
+    }
+
+    fn process_id(hwnd: HWND) -> u32 {
+        if hwnd.0.is_null() {
+            return 0;
+        }
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        pid
+    }
+
+    let mut point = POINT::default();
+    unsafe { GetCursorPos(&mut point).map_err(|error| error.to_string())? };
+
+    let mut owned: Vec<(String, HWND)> = Vec::new();
+    // `webview_windows()` omits any window that hosts a child WebView with a
+    // different label, which is every Nebula window (Chrome + tab WebViews).
+    for (label, window) in app.windows() {
+        if label != "main" && !valid_workspace_label(&label) {
+            continue;
+        }
+        owned.push((label, window.hwnd().map_err(|error| error.to_string())?));
+    }
+
+    let hovered = unsafe { WindowFromPoint(point) };
+    let root = if hovered.0.is_null() {
+        hovered
+    } else {
+        unsafe { GetAncestor(hovered, GA_ROOT) }
+    };
+    if !root.0.is_null() {
+        // The hit window's root, then its owner chain, may be a Nebula window.
+        let mut candidate = root;
+        for _ in 0..8 {
+            if let Some((label, _)) = owned.iter().find(|(_, hwnd)| *hwnd == candidate) {
+                return Ok(WindowAtCursor::Window {
+                    label: label.clone(),
+                });
+            }
+            match unsafe { GetWindow(candidate, GW_OWNER) } {
+                Ok(owner) if !owner.0.is_null() => candidate = owner,
+                _ => break,
+            }
+        }
+    }
+
+    // `WindowFromPoint` can miss a transparent, pointer-captured window. Walk
+    // the real top-level z-order and take the first visible Nebula window whose
+    // rectangle contains the cursor.
+    let mut walked = unsafe { GetTopWindow(None) }.ok();
+    let mut steps = 0;
+    while let Some(current) = walked {
+        steps += 1;
+        if steps > 1024 || current.0.is_null() {
+            break;
+        }
+        if let Some((label, _)) = owned.iter().find(|(_, hwnd)| *hwnd == current) {
+            if unsafe { IsWindowVisible(current) }.as_bool() {
+                let mut rect = RECT::default();
+                if unsafe { GetWindowRect(current, &mut rect) }.is_ok()
+                    && point.x >= rect.left
+                    && point.x < rect.right
+                    && point.y >= rect.top
+                    && point.y < rect.bottom
+                {
+                    return Ok(WindowAtCursor::Window {
+                        label: label.clone(),
+                    });
+                }
+            }
+        }
+        walked = unsafe { GetWindow(current, GW_HWNDNEXT) }.ok();
+    }
+
+    // No Nebula window matched. The cursor is only proven to be outside when
+    // the hit window belongs to another process; a hit on one of our own
+    // windows (or no hit at all) stays unknown so callers do not guess.
+    let own_pid = std::process::id();
+    let hit_root_pid = if root.0.is_null() {
+        None
+    } else {
+        Some(process_id(root))
+    };
+    let outcome = classify_unmatched_cursor(hit_root_pid, own_pid);
+    if outcome == WindowAtCursor::Outside {
+        return Ok(outcome);
+    }
+
+    // Keep the evidence for the unresolved case.
+    let _ = crate::write_transition_log(
+        app.clone(),
+        serde_json::json!({
+            "stage": "workspace.window-at-cursor.unmatched",
+            "status": "error",
+            "outcome": "unknown",
+            "cursor": { "x": point.x, "y": point.y },
+            "hovered": hovered.0 as isize,
+            "hoveredClass": class_name(hovered),
+            "hoveredPid": process_id(hovered),
+            "root": root.0 as isize,
+            "rootClass": class_name(root),
+            "rootPid": process_id(root),
+            "processId": own_pid,
+            "windows": owned
+                .iter()
+                .map(|(label, hwnd)| serde_json::json!({
+                    "label": label,
+                    "hwnd": hwnd.0 as isize,
+                    "visible": unsafe { IsWindowVisible(*hwnd) }.as_bool(),
+                }))
+                .collect::<Vec<_>>(),
+        }),
+    );
+    Ok(WindowAtCursor::Unknown)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::valid_workspace_label;
+    use super::{classify_unmatched_cursor, valid_workspace_label, WindowAtCursor};
+
+    #[test]
+    fn unmatched_cursor_is_outside_only_for_a_foreign_process() {
+        assert_eq!(
+            classify_unmatched_cursor(Some(4321), 100),
+            WindowAtCursor::Outside
+        );
+        // A hit on one of our own windows that we could not label is unknown.
+        assert_eq!(
+            classify_unmatched_cursor(Some(100), 100),
+            WindowAtCursor::Unknown
+        );
+        // No hit, or an unreadable owner, is never proof of "outside".
+        assert_eq!(
+            classify_unmatched_cursor(None, 100),
+            WindowAtCursor::Unknown
+        );
+        assert_eq!(
+            classify_unmatched_cursor(Some(0), 100),
+            WindowAtCursor::Unknown
+        );
+    }
+
+    #[test]
+    fn window_at_cursor_serializes_as_a_tagged_union() {
+        assert_eq!(
+            serde_json::to_string(&WindowAtCursor::Window {
+                label: "main".to_string()
+            })
+            .unwrap(),
+            r#"{"kind":"window","label":"main"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&WindowAtCursor::Outside).unwrap(),
+            r#"{"kind":"outside"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&WindowAtCursor::Unknown).unwrap(),
+            r#"{"kind":"unknown"}"#
+        );
+    }
 
     #[test]
     fn workspace_window_labels_are_narrowly_scoped() {

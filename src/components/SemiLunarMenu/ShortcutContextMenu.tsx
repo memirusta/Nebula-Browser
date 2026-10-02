@@ -19,6 +19,7 @@ interface ShortcutContextMenuProps {
   onToggleMute: () => void
   onOpenNewTab: () => void
   onTogglePin?: () => void
+  onEdit?: () => void
   onMouseEnter?: () => void
   onMouseLeave?: () => void
   onLayout?: (rect: DOMRect) => void
@@ -38,6 +39,7 @@ export function ShortcutContextMenu({
   onToggleMute,
   onOpenNewTab,
   onTogglePin,
+  onEdit,
   onMouseEnter,
   onMouseLeave,
   onLayout,
@@ -187,6 +189,22 @@ export function ShortcutContextMenu({
         )}
       </div>
       <div className={styles.separator} role="separator" />
+      {onEdit && (
+        <button
+          type="button"
+          className={styles.item}
+          role="menuitem"
+          onClick={() => {
+            onEdit()
+            onClose()
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m4 20 4.2-1 10.5-10.5-3.2-3.2L5 15.8 4 20ZM13.8 7l3.2 3.2" />
+          </svg>
+          <span>{t('editBtn')}</span>
+        </button>
+      )}
       <button
         type="button"
         className={styles.item}

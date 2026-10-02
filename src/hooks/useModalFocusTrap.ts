@@ -1,19 +1,6 @@
 import { useEffect, type RefObject } from 'react'
-
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
-
-function focusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-    (element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true',
-  )
-}
+import { canRestoreModalFocus, registerModalFocusTrap } from '../core/modalFocusStack'
+import { focusableElements, moveModalTabFocus } from '../core/focusableElements'
 
 /** Keep keyboard focus inside a modal surface and restore it when the modal closes. */
 export function useModalFocusTrap(
@@ -25,8 +12,10 @@ export function useModalFocusTrap(
 
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const trap = registerModalFocusTrap(containerRef)
 
     const focusInside = () => {
+      if (!trap.isTopmost()) return
       const root = containerRef.current
       if (!root) return
       if (document.activeElement instanceof Node && root.contains(document.activeElement)) return
@@ -37,40 +26,21 @@ export function useModalFocusTrap(
     const focusTimer = window.setTimeout(focusInside, 0)
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!trap.isTopmost()) return
       if (event.key !== 'Tab') return
       const root = containerRef.current
       if (!root) return
 
-      const focusable = focusableElements(root)
-      if (focusable.length === 0) {
-        event.preventDefault()
-        root.focus()
-        return
-      }
-
-      const activeElement = document.activeElement as HTMLElement | null
-      const currentIndex = activeElement ? focusable.indexOf(activeElement) : -1
-      const lastIndex = focusable.length - 1
-
-      if (event.shiftKey) {
-        if (currentIndex <= 0) {
-          event.preventDefault()
-          focusable[lastIndex]?.focus()
-        }
-        return
-      }
-
-      if (currentIndex === -1 || currentIndex === lastIndex) {
-        event.preventDefault()
-        focusable[0]?.focus()
-      }
+      event.preventDefault()
+      moveModalTabFocus(root, event.shiftKey)
     }
 
     document.addEventListener('keydown', onKeyDown, true)
     return () => {
       window.clearTimeout(focusTimer)
       document.removeEventListener('keydown', onKeyDown, true)
-      if (previousFocus?.isConnected) previousFocus.focus()
+      trap.unregister()
+      if (previousFocus && canRestoreModalFocus(previousFocus)) previousFocus.focus()
     }
   }, [active, containerRef])
 }

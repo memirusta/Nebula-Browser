@@ -28,6 +28,7 @@ export function useBrowserTabs() {
         activate?: boolean
         tabId?: string
         navigation?: TabNavigationState
+        isPrivate?: boolean
       },
     ) => {
       dispatch({
@@ -37,6 +38,7 @@ export function useBrowserTabs() {
         activate: options?.activate !== false,
         tabId: options?.tabId,
         navigation: options?.navigation,
+        isPrivate: options?.isPrivate,
       })
     },
     [],

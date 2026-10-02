@@ -56,7 +56,9 @@ export function upsertBrowseSession(
   sessions: Record<string, BrowseSession>,
   url: string,
   label: string,
+  isPrivate = false,
 ): Record<string, BrowseSession> {
+  if (isPrivate) return sessions
   const key = hostKeyFromUrl(url)
   const next = {
     ...sessions,

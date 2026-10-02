@@ -3,6 +3,8 @@
   left: 50%;
   z-index: 12000;
   width: min(430px, calc(100vw - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px;
   transform: translateX(-50%);
   border: 1px solid rgba(255, 255, 255, 0.16);

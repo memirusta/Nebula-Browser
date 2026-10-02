@@ -122,8 +122,14 @@ mod imp {
         {
             return None;
         }
-        let bytes = response.bytes().await.ok()?;
-        if bytes.is_empty() || bytes.len() as u64 > MAX_SITE_ICON_BYTES {
+        let bytes = crate::http_response::read_bounded_response(
+            response,
+            MAX_SITE_ICON_BYTES as usize,
+            "Notification icon exceeds Nebula's supported size.",
+        )
+        .await
+        .ok()?;
+        if bytes.is_empty() {
             return None;
         }
         std::fs::write(&icon_path, &bytes).ok()?;
@@ -409,15 +415,27 @@ mod imp {
         }
 
         let document = XmlDocument::new().map_err(|error| error.to_string())?;
-        let image = notification_icon_uri(app, icon_url.as_deref(), origin.as_deref())
-            .await
-            .map(|uri| {
-                format!(
-                    "<image placement=\"appLogoOverride\" hint-crop=\"circle\" src=\"{}\"/>",
-                    xml_escape(&uri)
-                )
-            })
-            .unwrap_or_default();
+        // Private notifications must not leave site/avatar images in the disk cache.
+        let private_tab = tab_label
+            .as_deref()
+            .is_some_and(crate::notification_history::is_private_tab);
+        let image = notification_icon_uri(
+            app,
+            if private_tab {
+                None
+            } else {
+                icon_url.as_deref()
+            },
+            if private_tab { None } else { origin.as_deref() },
+        )
+        .await
+        .map(|uri| {
+            format!(
+                "<image placement=\"appLogoOverride\" hint-crop=\"circle\" src=\"{}\"/>",
+                xml_escape(&uri)
+            )
+        })
+        .unwrap_or_default();
         if let (Some(tag), Some(generation)) = (toast_tag.as_deref(), toast_generation) {
             if !crate::notification_broker::toast_generation_is_current(tag, generation) {
                 return Ok(());
@@ -462,7 +480,9 @@ mod imp {
                 .as_deref()
                 .and_then(|label| activation_app.get_webview(label))
                 .map(|webview| webview.window().label().to_string())
-                .unwrap_or_else(crate::browser_workspace::most_recent_window_label);
+                .unwrap_or_else(|| {
+                    crate::browser_workspace::most_recent_window_label(&activation_app)
+                });
             if let Some(window) = activation_app.get_window(&target_label) {
                 crate::external_open::activate_main_window(&window);
             }

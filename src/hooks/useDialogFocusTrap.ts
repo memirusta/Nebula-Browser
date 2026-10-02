@@ -1,22 +1,6 @@
-import { useEffect, useRef, type RefObject } from 'react'
-
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled]):not([type="hidden"])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[contenteditable="true"]',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
-
-function getFocusable(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
-    if (element.getAttribute('aria-hidden') === 'true') return false
-    const style = window.getComputedStyle(element)
-    return style.display !== 'none' && style.visibility !== 'hidden'
-  })
-}
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { canRestoreModalFocus, registerModalFocusTrap } from '../core/modalFocusStack'
+import { focusableElements, moveModalTabFocus } from '../core/focusableElements'
 
 interface DialogFocusTrapOptions {
   active: boolean
@@ -38,7 +22,7 @@ export function useDialogFocusTrap({
   restoreFocus = true,
 }: DialogFocusTrapOptions) {
   const onEscapeRef = useRef(onEscape)
-  onEscapeRef.current = onEscape
+  useLayoutEffect(() => { onEscapeRef.current = onEscape }, [onEscape])
 
   useEffect(() => {
     if (!active) return
@@ -46,15 +30,18 @@ export function useDialogFocusTrap({
     const previouslyFocused = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null
+    const trap = registerModalFocusTrap(containerRef)
 
     const focusFrame = window.requestAnimationFrame(() => {
+      if (!trap.isTopmost()) return
       const container = containerRef.current
       if (!container) return
-      const target = initialFocusRef?.current ?? getFocusable(container)[0] ?? container
+      const target = initialFocusRef?.current ?? focusableElements(container)[0] ?? container
       target.focus({ preventScroll: true })
     })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!trap.isTopmost()) return
       const container = containerRef.current
       if (!container) return
 
@@ -67,38 +54,21 @@ export function useDialogFocusTrap({
 
       if (event.key !== 'Tab') return
 
-      const focusable = getFocusable(container)
-      if (focusable.length === 0) {
-        event.preventDefault()
-        container.focus({ preventScroll: true })
-        return
-      }
-
-      const activeElement = document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null
-      const index = activeElement ? focusable.indexOf(activeElement) : -1
-
-      if (event.shiftKey) {
-        if (index <= 0) {
-          event.preventDefault()
-          focusable[focusable.length - 1].focus({ preventScroll: true })
-        }
-        return
-      }
-
-      if (index === -1 || index === focusable.length - 1) {
-        event.preventDefault()
-        focusable[0].focus({ preventScroll: true })
-      }
+      event.preventDefault()
+      moveModalTabFocus(container, event.shiftKey)
     }
 
     document.addEventListener('keydown', onKeyDown, true)
     return () => {
       window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('keydown', onKeyDown, true)
-      if (restoreFocus && previouslyFocused?.isConnected) {
-        window.requestAnimationFrame(() => previouslyFocused.focus({ preventScroll: true }))
+      trap.unregister()
+      if (restoreFocus && previouslyFocused) {
+        window.requestAnimationFrame(() => {
+          if (canRestoreModalFocus(previouslyFocused)) {
+            previouslyFocused.focus({ preventScroll: true })
+          }
+        })
       }
     }
   }, [active, containerRef, initialFocusRef, restoreFocus])

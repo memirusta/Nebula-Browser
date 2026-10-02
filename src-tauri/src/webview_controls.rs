@@ -1,5 +1,152 @@
 use tauri::{AppHandle, Manager};
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebviewProcessSnapshot {
+    pid: i32,
+    kind: &'static str,
+    frame_kinds: Vec<&'static str>,
+}
+
+#[cfg(target_os = "windows")]
+fn process_snapshot_blocking(app: AppHandle) -> Result<Vec<WebviewProcessSnapshot>, String> {
+    use std::sync::mpsc::sync_channel;
+    use std::time::Duration;
+    use webview2_com::GetProcessExtendedInfosCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Environment13, ICoreWebView2_2, COREWEBVIEW2_PROCESS_KIND,
+    };
+    use windows_core::{Interface, BOOL, PWSTR};
+
+    let webview = app
+        .get_webview("main")
+        .ok_or_else(|| "main webview not found".to_string())?;
+    let (tx, rx) = sync_channel(1);
+    webview
+        .with_webview(move |inner| unsafe {
+            let failure_tx = tx.clone();
+            let handler = GetProcessExtendedInfosCompletedHandler::create(Box::new(
+                move |result, collection| {
+                    let snapshot = (|| -> Result<Vec<WebviewProcessSnapshot>, String> {
+                        if result.is_err() {
+                            return Err(format!("WebView2 process query failed: {result:?}"));
+                        }
+                        let collection = collection
+                            .ok_or_else(|| "WebView2 returned no process collection".to_string())?;
+                        let mut count = 0;
+                        collection
+                            .Count(&mut count)
+                            .map_err(|error| error.to_string())?;
+                        let mut processes = Vec::with_capacity(count as usize);
+                        for index in 0..count {
+                            let extended = collection
+                                .GetValueAtIndex(index)
+                                .map_err(|error| error.to_string())?;
+                            let info = extended.ProcessInfo().map_err(|error| error.to_string())?;
+                            let mut pid = 0;
+                            let mut kind = COREWEBVIEW2_PROCESS_KIND::default();
+                            info.ProcessId(&mut pid)
+                                .map_err(|error| error.to_string())?;
+                            info.Kind(&mut kind).map_err(|error| error.to_string())?;
+                            let kind_name = match kind.0 {
+                                0 => "browser",
+                                1 => "renderer",
+                                2 => "utility",
+                                3 => "sandbox-helper",
+                                4 => "gpu",
+                                _ => "other",
+                            };
+                            let mut frame_kinds = Vec::new();
+                            if kind.0 == 1 {
+                                let frames = extended
+                                    .AssociatedFrameInfos()
+                                    .map_err(|error| error.to_string())?;
+                                let iterator =
+                                    frames.GetIterator().map_err(|error| error.to_string())?;
+                                let mut has_frame = BOOL::default();
+                                iterator
+                                    .HasCurrent(&mut has_frame)
+                                    .map_err(|error| error.to_string())?;
+                                while has_frame.as_bool() {
+                                    let frame =
+                                        iterator.GetCurrent().map_err(|error| error.to_string())?;
+                                    let mut source = PWSTR::null();
+                                    if frame.Source(&mut source).is_ok() {
+                                        let url = source.to_string().unwrap_or_default();
+                                        if !source.is_null() {
+                                            windows::Win32::System::Com::CoTaskMemFree(Some(
+                                                source.as_ptr().cast(),
+                                            ));
+                                        }
+                                        let frame_kind = if url.contains("tauri.localhost")
+                                            && url.contains("#chrome")
+                                        {
+                                            "chrome"
+                                        } else if url.contains("tauri.localhost") {
+                                            "main"
+                                        } else if url.starts_with("http://127.0.0.1:") {
+                                            "fixture"
+                                        } else if url.starts_with("chrome-extension://") {
+                                            "extension"
+                                        } else {
+                                            "other"
+                                        };
+                                        if !frame_kinds.contains(&frame_kind) {
+                                            frame_kinds.push(frame_kind);
+                                        }
+                                    }
+                                    iterator
+                                        .MoveNext(&mut has_frame)
+                                        .map_err(|error| error.to_string())?;
+                                }
+                            }
+                            processes.push(WebviewProcessSnapshot {
+                                pid,
+                                kind: kind_name,
+                                frame_kinds,
+                            });
+                        }
+                        Ok(processes)
+                    })();
+                    let _ = tx.send(snapshot);
+                    Ok(())
+                },
+            ));
+            let result = (|| -> windows_core::Result<()> {
+                let core = inner.controller().CoreWebView2()?;
+                let core2: ICoreWebView2_2 = core.cast()?;
+                let environment: ICoreWebView2Environment13 = core2.Environment()?.cast()?;
+                environment.GetProcessExtendedInfos(&handler)
+            })();
+            if let Err(error) = result {
+                let _ = failure_tx.send(Err(error.to_string()));
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    rx.recv_timeout(Duration::from_secs(5))
+        .map_err(|_| "timed out reading WebView2 processes".to_string())?
+}
+
+#[tauri::command]
+pub async fn webview_process_snapshot(
+    app: AppHandle,
+) -> Result<Vec<WebviewProcessSnapshot>, String> {
+    if std::env::var_os("NEBULA_PROCESS_DIAGNOSTICS").is_none() {
+        return Err("WebView2 process diagnostics are disabled".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || process_snapshot_blocking(app))
+            .await
+            .map_err(|error| error.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("WebView2 process diagnostics require Windows".to_string())
+    }
+}
+
 #[cfg(target_os = "windows")]
 static PRINT_PREVIEW_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
@@ -793,39 +940,6 @@ pub fn webview_open_devtools(app: AppHandle, label: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn webview_set_memory_usage(app: AppHandle, label: String, low: bool) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use webview2_com::Microsoft::Web::WebView2::Win32::{
-            ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
-            COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
-        };
-        use windows_core::Interface;
-
-        with_webview_result(&app, &label, move |inner| unsafe {
-            let core = inner
-                .controller()
-                .CoreWebView2()
-                .map_err(|error| error.to_string())?;
-            let memory: ICoreWebView2_19 = core.cast().map_err(|error| error.to_string())?;
-            memory
-                .SetMemoryUsageTargetLevel(if low {
-                    COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
-                } else {
-                    COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
-                })
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, label, low);
-        Ok(())
-    }
-}
-
-#[tauri::command]
 pub fn webview_is_playing_audio(app: AppHandle, label: String) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
@@ -878,14 +992,14 @@ pub fn webview_set_muted(app: AppHandle, label: String, muted: bool) -> Result<(
 }
 
 #[tauri::command]
-pub fn webview_set_suspended(
+pub async fn webview_set_suspended(
     app: AppHandle,
     label: String,
     suspended: bool,
 ) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        use std::sync::mpsc::sync_channel;
+        use std::sync::{Arc, Mutex};
         use std::time::Duration;
 
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
@@ -894,6 +1008,10 @@ pub fn webview_set_suspended(
 
         if !label.starts_with("nebula-tab-") {
             return Err("webview suspension is limited to browser tabs".to_string());
+        }
+
+        if suspended && crate::download_manager::has_recent_or_active_download_for_label(&label) {
+            return Ok(false);
         }
 
         if !suspended {
@@ -918,18 +1036,24 @@ pub fn webview_set_suspended(
         let webview = app
             .get_webview(&label)
             .ok_or_else(|| format!("webview '{label}' not found"))?;
-        let (tx, rx) = sync_channel(1);
+        let (sender, receiver) = tokio::sync::oneshot::channel::<Result<bool, String>>();
+        let sender = Arc::new(Mutex::new(Some(sender)));
+        let callback_sender = Arc::clone(&sender);
         let label_for_error = label.clone();
 
         webview
             .with_webview(move |inner| unsafe {
-                let failure_tx = tx.clone();
+                let failure_sender = Arc::clone(&sender);
                 let handler =
                     TrySuspendCompletedHandler::create(Box::new(move |result, is_successful| {
                         let outcome = result
                             .map(|_| is_successful)
                             .map_err(|error| error.to_string());
-                        let _ = tx.send(outcome);
+                        if let Ok(mut sender) = callback_sender.lock() {
+                            if let Some(sender) = sender.take() {
+                                let _ = sender.send(outcome);
+                            }
+                        }
                         Ok(())
                     }));
 
@@ -939,20 +1063,30 @@ pub fn webview_set_suspended(
                     let mut is_suspended = BOOL::default();
                     lifecycle.IsSuspended(&mut is_suspended)?;
                     if is_suspended.as_bool() {
-                        let _ = failure_tx.send(Ok(true));
+                        if let Ok(mut sender) = failure_sender.lock() {
+                            if let Some(sender) = sender.take() {
+                                let _ = sender.send(Ok(true));
+                            }
+                        }
                         return Ok(());
                     }
                     lifecycle.TrySuspend(&handler)
                 })();
 
                 if let Err(error) = result {
-                    let _ = failure_tx.send(Err(error.to_string()));
+                    if let Ok(mut sender) = failure_sender.lock() {
+                        if let Some(sender) = sender.take() {
+                            let _ = sender.send(Err(error.to_string()));
+                        }
+                    }
                 }
             })
             .map_err(|error| error.to_string())?;
 
-        rx.recv_timeout(Duration::from_secs(3))
+        tokio::time::timeout(Duration::from_secs(3), receiver)
+            .await
             .map_err(|_| format!("timed out suspending webview '{label_for_error}'"))?
+            .map_err(|_| format!("suspend callback was dropped for '{label_for_error}'"))?
     }
 
     #[cfg(not(target_os = "windows"))]

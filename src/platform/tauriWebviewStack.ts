@@ -16,6 +16,10 @@ export function setBrowsingChromeExpected(expected: boolean): void {
   browsingChromeExpected = expected
 }
 
+export function isBrowsingChromeExpected(): boolean {
+  return browsingChromeExpected && !overlayModeActive
+}
+
 /**
  * Coalesce rapid z-order fixes so scroll/input is not interrupted.
  *

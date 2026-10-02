@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   entryMatchesHistoryFilters,
   type BrowserSessionSnapshot,
@@ -11,6 +11,7 @@ import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './HistoryPanel.module.css'
+import floatingPanel from '../../styles/floatingPanel.module.css'
 
 interface HistoryPanelProps {
   entries: HistoryEntry[]
@@ -114,10 +115,10 @@ export function HistoryPanel({
       <div className={styles.backdrop} style={{ zIndex: 10100 }} onClick={onClose} aria-hidden="true" />
       <section
         ref={panelRef}
-        className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
+        className={[styles.panel, floatingPanel.viewportBound, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
         style={
           variant === 'browsing'
-            ? { top: browsingTop + 16, zIndex: 10101 }
+            ? { '--panel-anchor-top': `${browsingTop + 16}px`, zIndex: 10101 } as CSSProperties
             : { zIndex: 10101 }
         }
         role="dialog"

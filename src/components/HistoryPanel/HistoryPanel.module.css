@@ -42,7 +42,7 @@
   position: fixed;
   z-index: 181;
   width: min(520px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 48px));
+  --panel-preferred-top: var(--panel-anchor-top, calc(170px + var(--title-bar-height, 0px)));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -67,7 +67,6 @@
 }
 
 .panelHome {
-  top: calc(170px + var(--title-bar-height, 0));
   right: 60px;
 }
 
@@ -76,6 +75,7 @@
 }
 
 .header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -237,7 +237,9 @@
 }
 
 .content {
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 0 16px 16px;
   scrollbar-gutter: stable;
 }
@@ -559,11 +561,8 @@
   .panelBrowsing {
     left: 16px;
     right: 16px;
-    top: calc(16px + var(--title-bar-height, 0)) !important;
+    --panel-preferred-top: calc(16px + var(--title-bar-height, 0px));
     width: auto;
-    max-height: calc(
-      100vh - 32px - var(--title-bar-height, 0)
-    );
   }
 
   .closedList {

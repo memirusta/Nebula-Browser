@@ -10,8 +10,6 @@ import {
   initializeBrowserRunState,
   loadCurrentSessionSnapshot,
   clearCurrentSessionSnapshot,
-  persistBrowsingHistory,
-  persistClosedTabs,
   markBrowserRunClean,
   persistCurrentSessionSnapshot,
   type BrowserSessionSnapshot,
@@ -22,6 +20,7 @@ import {
 import type { BrowserTab } from '../core/browserTab'
 import { useStorageSync } from '../core/storageSync'
 import { currentBrowserWindowId } from '../platform/browserWindowScope'
+import { updateBrowsingHistory, updateClosedTabs } from '../core/browsingHistoryMutations'
 
 export function useBrowsingHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadBrowsingHistory)
@@ -56,57 +55,43 @@ export function useBrowsingHistory() {
     }
   }, [primaryWindow])
 
-  const recordVisit = useCallback((url: string, title?: string | null) => {
-    setEntries((previous) => {
-      const next = addHistoryEntry(previous, url, title)
-      if (next !== previous) persistBrowsingHistory(next)
-      return next
-    })
-  }, [])
+  const recordVisit = useCallback(async (url: string, title?: string | null, isPrivate = false) => {
+    if (isPrivate) return
+    await updateBrowsingHistory((current) => addHistoryEntry(current, url, title, isPrivate))
+    reloadHistory()
+  }, [reloadHistory])
 
-  const removeEntry = useCallback((id: string) => {
-    setEntries((previous) => {
-      const next = previous.filter((entry) => entry.id !== id)
-      if (next.length !== previous.length) persistBrowsingHistory(next)
-      return next
-    })
-  }, [])
+  const removeEntry = useCallback(async (id: string) => {
+    await updateBrowsingHistory((current) => current.filter((entry) => entry.id !== id))
+    reloadHistory()
+  }, [reloadHistory])
 
-  const clearAll = useCallback(() => {
-    persistBrowsingHistory([])
-    setEntries([])
-  }, [])
+  const clearAll = useCallback(async () => {
+    await updateBrowsingHistory(() => [])
+    reloadHistory()
+  }, [reloadHistory])
 
-  const clearFiltered = useCallback((filters: { query?: string; host?: string; time?: HistoryTimeFilter }) => {
-    setEntries((previous) => {
-      const next = previous.filter((entry) => !entryMatchesHistoryFilters(entry, filters))
-      if (next.length !== previous.length) persistBrowsingHistory(next)
-      return next
-    })
-  }, [])
+  const clearFiltered = useCallback(async (filters: { query?: string; host?: string; time?: HistoryTimeFilter }) => {
+    await updateBrowsingHistory((current) => current.filter((entry) => !entryMatchesHistoryFilters(entry, filters)))
+    reloadHistory()
+  }, [reloadHistory])
 
-  const recordClosedTab = useCallback((tab: BrowserTab) => {
+  const recordClosedTab = useCallback(async (tab: BrowserTab) => {
     const entry = closedTabFromBrowserTab(tab)
     if (!entry) return
-    setClosedTabs((previous) => {
-      const next = [entry, ...previous].slice(0, 50)
-      persistClosedTabs(next)
-      return next
-    })
-  }, [])
+    await updateClosedTabs((current) => [entry, ...current].slice(0, 50))
+    reloadClosedTabs()
+  }, [reloadClosedTabs])
 
-  const removeClosedTab = useCallback((id: string) => {
-    setClosedTabs((previous) => {
-      const next = previous.filter((entry) => entry.id !== id)
-      if (next.length !== previous.length) persistClosedTabs(next)
-      return next
-    })
-  }, [])
+  const removeClosedTab = useCallback(async (id: string) => {
+    await updateClosedTabs((current) => current.filter((entry) => entry.id !== id))
+    reloadClosedTabs()
+  }, [reloadClosedTabs])
 
-  const clearClosedTabs = useCallback(() => {
-    persistClosedTabs([])
-    setClosedTabs([])
-  }, [])
+  const clearClosedTabs = useCallback(async () => {
+    await updateClosedTabs(() => [])
+    reloadClosedTabs()
+  }, [reloadClosedTabs])
 
   const saveCurrentSession = useCallback((
     windowId: string,

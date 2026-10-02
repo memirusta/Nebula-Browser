@@ -36,6 +36,7 @@ export function TabSearch({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const panelRef = useRef<HTMLElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const selectedRef = useRef<HTMLDivElement>(null)
 
   const filteredTabs = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
@@ -43,9 +44,11 @@ export function TabSearch({
     return tabs.filter((tab) => searchableTabText(tab).includes(normalized))
   }, [query, tabs])
 
+  const safeSelectedIndex = Math.min(selectedIndex, Math.max(0, filteredTabs.length - 1))
+
   useEffect(() => {
-    setSelectedIndex(0)
-  }, [query])
+    selectedRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [safeSelectedIndex, filteredTabs])
 
   useDialogFocusTrap({
     active: true,
@@ -74,16 +77,17 @@ export function TabSearch({
         aria-modal="true"
         aria-label={t('tabSearchTitle')}
         onKeyDown={(event) => {
+          if (event.target !== inputRef.current || event.nativeEvent.isComposing) return
           if (event.key === 'ArrowDown' && filteredTabs.length > 0) {
             event.preventDefault()
-            setSelectedIndex((index) => (index + 1) % filteredTabs.length)
+            setSelectedIndex((safeSelectedIndex + 1) % filteredTabs.length)
           } else if (event.key === 'ArrowUp' && filteredTabs.length > 0) {
             event.preventDefault()
             setSelectedIndex(
-              (index) => (index - 1 + filteredTabs.length) % filteredTabs.length,
+              (safeSelectedIndex - 1 + filteredTabs.length) % filteredTabs.length,
             )
           } else if (event.key === 'Enter') {
-            const tab = filteredTabs[selectedIndex]
+            const tab = filteredTabs[safeSelectedIndex]
             if (tab) {
               event.preventDefault()
               selectTab(tab.shortcutId)
@@ -107,7 +111,7 @@ export function TabSearch({
           <input
             ref={inputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setQuery(event.target.value); setSelectedIndex(0) }}
             placeholder={t('tabSearchPlaceholder')}
             aria-label={t('tabSearchAria')}
           />
@@ -122,13 +126,14 @@ export function TabSearch({
             filteredTabs.map((tab, index) => (
               <div
                 key={tab.shortcutId}
+                ref={index === safeSelectedIndex ? selectedRef : undefined}
                 className={[
                   styles.result,
-                  index === selectedIndex ? styles.resultSelected : '',
+                  index === safeSelectedIndex ? styles.resultSelected : '',
                   tab.shortcutId === activeTabId ? styles.resultActive : '',
                 ].filter(Boolean).join(' ')}
                 role="option"
-                aria-selected={index === selectedIndex}
+                aria-selected={index === safeSelectedIndex}
                 onPointerEnter={() => setSelectedIndex(index)}
               >
                 <button
@@ -143,9 +148,18 @@ export function TabSearch({
                     <strong>{tab.title}</strong>
                     <span>{tab.url}</span>
                   </span>
-                  {tab.shortcutId === activeTabId && (
-                    <span className={styles.activeBadge}>
-                      {t('tabSearchActive')}
+                  {(tab.isPrivate || tab.shortcutId === activeTabId) && (
+                    <span className={styles.tabBadges}>
+                      {tab.isPrivate && (
+                        <span className={styles.privateBadge} title={t('privateTabHint')}>
+                          {t('privateTab')}
+                        </span>
+                      )}
+                      {tab.shortcutId === activeTabId && (
+                        <span className={styles.activeBadge}>
+                          {t('tabSearchActive')}
+                        </span>
+                      )}
                     </span>
                   )}
                 </button>

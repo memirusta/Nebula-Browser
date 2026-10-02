@@ -9,6 +9,8 @@
 }
 
 .panel {
+  display: flex;
+  flex-direction: column;
   position: fixed;
   z-index: 1101;
   top: 76px;
@@ -26,6 +28,7 @@
 }
 
 .header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -37,6 +40,7 @@
 .eyebrow { color: rgba(255,255,255,.4); font-size: 9px; font-weight: 800; letter-spacing: .15em; }
 
 .search {
+  flex-shrink: 0;
   display: flex;
   height: 48px;
   margin: 0 16px 12px;
@@ -53,7 +57,7 @@
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; color: inherit; background: transparent; font: 500 14px/1.2 system-ui; }
 .search input::placeholder { color: rgba(255,255,255,.38); }
 
-.results { max-height: 402px; padding: 0 10px 12px; overflow-y: auto; }
+.results { min-height: 0; flex: 1 1 auto; max-height: 402px; padding: 0 10px 12px; overflow-y: auto; }
 .result { display: grid; min-height: 64px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 13px; }
 .resultSelected { background: rgba(255,255,255,.075); }
 .resultActive { box-shadow: inset 3px 0 0 #8869f2; }
@@ -64,7 +68,10 @@
 .resultText strong, .resultText span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resultText strong { font-size: 13px; }
 .resultText span { margin-top: 4px; color: rgba(255,255,255,.43); font-size: 10px; }
-.activeBadge { padding: 4px 7px; border-radius: 999px; color: #cbbcff; background: rgba(133,94,235,.17); font-size: 9px; font-weight: 700; }
+.tabBadges { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.activeBadge, .privateBadge { padding: 4px 7px; border-radius: 999px; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.activeBadge { color: #cbbcff; background: rgba(133,94,235,.17); }
+.privateBadge { color: #f0ddff; background: rgba(151, 90, 224, .28); }
 .actions { display: flex; padding-right: 8px; gap: 3px; }
 .actions button { width: 32px; height: 32px; border: 0; border-radius: 9px; color: rgba(255,255,255,.62); background: transparent; cursor: pointer; }
 .actions button:hover, .actions .muted { color: #fff; background: rgba(255,255,255,.1); }

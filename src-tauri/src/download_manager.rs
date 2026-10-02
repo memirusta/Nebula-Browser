@@ -99,6 +99,12 @@ mod imp {
     }
 
     impl DownloadLifecycle {
+        fn has_active(&self, label: &str) -> bool {
+            self.active_by_label
+                .get(label)
+                .is_some_and(|downloads| !downloads.is_empty())
+        }
+
         fn register(&mut self, label: &str, id: &str) {
             self.active_by_label
                 .entry(label.to_string())
@@ -470,14 +476,30 @@ mod imp {
         payload
     }
 
+    fn download_review_complete(id: &str, payload: &DownloadPayload) -> bool {
+        !payload.requires_confirmation
+            && SIGNATURE_CHECKS
+                .lock()
+                .map(|checks| !checks.contains(id))
+                .unwrap_or(false)
+            && DOWNLOAD_WARNINGS
+                .lock()
+                .map(|warnings| !warnings.contains_key(id))
+                .unwrap_or(false)
+    }
+
     fn is_terminal(payload: &DownloadPayload) -> bool {
         !payload.requires_confirmation
-            && (matches!(payload.state.as_str(), "completed" | "cancelled")
+            && ((payload.state == "completed" && download_review_complete(&payload.id, payload))
+                || payload.state == "cancelled"
                 || (payload.state == "interrupted" && !payload.can_resume))
     }
 
     fn remember_finished_download(id: &str, payload: &DownloadPayload) {
-        if payload.state != "completed" || payload.file_path.is_empty() {
+        if payload.state != "completed"
+            || payload.file_path.is_empty()
+            || !download_review_complete(id, payload)
+        {
             return;
         }
 
@@ -730,12 +752,10 @@ mod imp {
             return true;
         }
 
-        DOWNLOADS.with(|downloads| {
-            downloads
-                .borrow()
-                .values()
-                .any(|registration| registration.label == label)
-        })
+        DOWNLOAD_LIFECYCLE
+            .lock()
+            .map(|lifecycle| lifecycle.has_active(label))
+            .unwrap_or(true)
     }
 
     pub(crate) fn defer_tab_close_if_active(label: &str) -> bool {
@@ -1211,6 +1231,13 @@ mod imp {
             .with(|finished| finished.borrow().get(id).map(|item| item.file_path.clone()))
     }
 
+    fn openable_download_path(id: &str) -> Result<String, String> {
+        // Only finalization publishes paths here, after signature review or Keep.
+        // An active operation may already have a file while approval is pending.
+        finished_download_path(id)
+            .ok_or_else(|| "download is not complete or is still awaiting confirmation".to_string())
+    }
+
     unsafe fn start_shell_file_drag(
         hwnd: windows::Win32::Foundation::HWND,
         file_path: &str,
@@ -1250,7 +1277,9 @@ mod imp {
                 }
 
                 let window = app_for_main
-                    .get_window(&crate::browser_workspace::most_recent_window_label())
+                    .get_window(&crate::browser_workspace::most_recent_window_label(
+                        &app_for_main,
+                    ))
                     .ok_or_else(|| "active Nebula window not found".to_string())?;
                 let hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
@@ -1487,7 +1516,9 @@ mod imp {
                         });
                     }
                     "open" | "reveal" => {
-                        let path = if let Some((operation, _, _)) = active {
+                        let path = if action == "open" {
+                            openable_download_path(&id)?
+                        } else if let Some((operation, _, _)) = active {
                             unsafe { take_webview_string(|value| operation.ResultFilePath(value)) }
                         } else {
                             finished_download_path(&id).unwrap_or_default()
@@ -1520,7 +1551,69 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::{dangerous_file_reason, has_trusted_authenticode_signature, DownloadLifecycle};
+        use super::{
+            dangerous_file_reason, has_trusted_authenticode_signature, is_terminal,
+            openable_download_path, remember_finished_download, DownloadLifecycle, DownloadPayload,
+            DOWNLOAD_WARNINGS, FINISHED_DOWNLOADS, SIGNATURE_CHECKS,
+        };
+
+        #[test]
+        fn download_open_requires_completed_signature_review_and_confirmation() {
+            let id = "test-unconfirmed-download";
+            let mut payload = DownloadPayload {
+                id: id.to_string(),
+                tab_label: "nebula-tab-test".to_string(),
+                source_url: "https://example.com/setup.exe".to_string(),
+                file_name: "setup.exe".to_string(),
+                file_path: "C:\\Downloads\\setup.exe".to_string(),
+                mime_type: "application/octet-stream".to_string(),
+                total_bytes: 16,
+                received_bytes: 16,
+                state: "completed".to_string(),
+                interrupt_reason: 0,
+                can_resume: false,
+                paused: false,
+                danger_reason: None,
+                requires_confirmation: false,
+                started_at_ms: 0,
+            };
+
+            SIGNATURE_CHECKS.lock().unwrap().insert(id.to_string());
+            assert!(!is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            SIGNATURE_CHECKS.lock().unwrap().remove(id);
+            DOWNLOAD_WARNINGS
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), "dangerous_file_type".to_string());
+            // Even a payload captured before the warning appeared is rejected.
+            assert!(!is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            payload.requires_confirmation = true;
+            payload.danger_reason = Some("dangerous_file_type".to_string());
+            assert!(!is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            // The Keep action clears the warning, allowing normal finalization.
+            DOWNLOAD_WARNINGS.lock().unwrap().remove(id);
+            payload.requires_confirmation = false;
+            payload.danger_reason = None;
+
+            payload.state = "in_progress".to_string();
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            payload.state = "completed".to_string();
+            assert!(is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert_eq!(openable_download_path(id).unwrap(), payload.file_path);
+            FINISHED_DOWNLOADS.with(|finished| finished.borrow_mut().remove(id));
+        }
 
         #[test]
         fn active_download_defers_tab_close_until_the_last_operation_finishes() {
@@ -1528,9 +1621,12 @@ mod imp {
             lifecycle.register("nebula-tab-a", "download-1");
             lifecycle.register("nebula-tab-a", "download-2");
 
+            assert!(lifecycle.has_active("nebula-tab-a"));
             assert!(lifecycle.defer_tab_close("nebula-tab-a"));
             assert!(!lifecycle.finish("nebula-tab-a", "download-1"));
+            assert!(lifecycle.has_active("nebula-tab-a"));
             assert!(lifecycle.finish("nebula-tab-a", "download-2"));
+            assert!(!lifecycle.has_active("nebula-tab-a"));
             assert!(!lifecycle.finish("nebula-tab-a", "download-2"));
         }
 

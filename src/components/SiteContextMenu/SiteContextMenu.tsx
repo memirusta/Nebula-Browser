@@ -8,6 +8,8 @@ import {
 import { createPortal } from 'react-dom'
 import {
   NEBULA_INSPECT_COMMAND_ID,
+  NEBULA_OPEN_SELECTION_COMMAND_ID,
+  NEBULA_PASSWORD_SETTINGS_COMMAND_ID,
   type SiteContextMenuItem,
   type SiteContextMenuRequest,
 } from '../../platform/tauriContextMenu'
@@ -71,11 +73,14 @@ export function SiteContextMenu({
   const menuRef = useRef<HTMLDivElement>(null)
 
   const menuItems = useMemo(() => {
-    if (request.items.some((item) => item.commandId === NEBULA_INSPECT_COMMAND_ID)) {
-      return request.items
-    }
-
-    const items = request.items.slice()
+    const localize = (item: SiteContextMenuItem): SiteContextMenuItem => ({
+      ...item,
+      label: item.commandId === NEBULA_OPEN_SELECTION_COMMAND_ID ? t('ctxOpenNewTab')
+        : item.commandId === NEBULA_PASSWORD_SETTINGS_COMMAND_ID ? t('gsImportPasswords') : item.label,
+      children: item.children.map(localize),
+    })
+    const items = request.items.map(localize)
+    if (items.some((item) => item.commandId === NEBULA_INSPECT_COMMAND_ID)) return items
     if (items.length > 0 && items.at(-1)?.kind !== 'separator') {
       items.push({
         commandId: -1,

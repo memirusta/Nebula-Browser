@@ -25,6 +25,7 @@ export type BrowserTabsAction =
       activate: boolean
       tabId?: string
       navigation?: TabNavigationState
+      isPrivate?: boolean
     }
   | { type: 'close'; shortcutId: string }
   | {
@@ -85,6 +86,7 @@ export function browserTabsReducer(
           createBrowserTab(action.shortcut, {
             tabId: action.tabId,
             navigation: action.navigation,
+            isPrivate: action.isPrivate,
           }),
         ]
       }

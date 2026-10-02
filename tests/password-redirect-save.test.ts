@@ -210,7 +210,7 @@ test('multi-account password prompt requires an explicit account choice', () => 
   )
 
   assert.match(promptSource, /const multipleAccounts = matches\.length > 1/)
-  assert.match(promptSource, /event\.key === 'Enter' && !multipleAccounts && first/)
+  assert.doesNotMatch(promptSource, /event\.key === 'Enter'/)
   assert.match(promptSource, /dialogRef\.current\?\.focus\(\)/)
   assert.match(promptSource, /className=\{styles\.accountList\}/)
   assert.match(promptSource, /className=\{styles\.accountRow\}/)
@@ -277,4 +277,3 @@ test('password DOM bridge keeps secrets out of page-global prompt state', () => 
   assert.doesNotMatch(bridgeSource, /window\.__nebulaPwdUserAction/)
   assert.doesNotMatch(bridgeSource, /BridgePromptConfig/)
 })
-

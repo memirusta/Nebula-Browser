@@ -641,9 +641,10 @@ test('password vault preserves long secrets and rejects corrupt payloads', () =>
   )
 })
 
-test('factory reset waits for browser profiles, vault, and Google Sync credential before storage reload', async () => {
+test('factory reset clears notification history around durable stores before reloading', async () => {
   const events: string[] = []
   await runFactoryReset({
+    clearNotificationHistory: async () => { events.push('notifications:clear') },
     clearBrowserProfiles: async () => {
       events.push('profiles:start')
       await Promise.resolve()
@@ -664,12 +665,14 @@ test('factory reset waits for browser profiles, vault, and Google Sync credentia
   })
 
   assert.deepEqual(events, [
+    'notifications:clear',
     'profiles:start',
     'profiles:done',
     'vault:start',
     'vault:done',
     'google-sync:start',
     'google-sync:done',
+    'notifications:clear',
     'storage:clear',
     'shell:reload',
   ])

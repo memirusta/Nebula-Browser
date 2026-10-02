@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import test from 'node:test'
+import test, { beforeEach } from 'node:test'
 import type { BrowserTabTransfer } from '../src/core/browserWorkspace.ts'
 import { createTabNavigationState } from '../src/core/tabNavigation.ts'
 import {
   browserTabTransferIdsForTarget,
+  clearBrowserTabTransfer,
   loadBrowserTabTransfer,
   markBrowserTabTransferTargetReady,
   pruneBrowserTabTransfers,
@@ -14,29 +15,12 @@ import {
   waitForBrowserTabTransferTargetReady,
 } from '../src/platform/tauriBrowserWorkspace.ts'
 
-class MemoryStorage {
-  readonly values = new Map<string, string>()
-
-  get length(): number {
-    return this.values.size
+beforeEach(async () => {
+  for (const id of ['transfer-race', 'target-ready', 'other-target', 'already-claimed',
+    'recent-pending', 'stale-pending', 'old-claimed', 'private-transfer']) {
+    await clearBrowserTabTransfer(id)
   }
-
-  key(index: number): string | null {
-    return [...this.values.keys()][index] ?? null
-  }
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null
-  }
-
-  setItem(key: string, value: string): void {
-    this.values.set(key, value)
-  }
-
-  removeItem(key: string): void {
-    this.values.delete(key)
-  }
-}
+})
 
 function transfer(state: BrowserTabTransfer['state']): BrowserTabTransfer {
   const url = 'https://example.com/transferred'
@@ -59,118 +43,119 @@ function transfer(state: BrowserTabTransfer['state']): BrowserTabTransfer {
 }
 
 test('new target keeps watching a pending transfer until reparent marks it ready', async () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: new MemoryStorage(),
-  })
-
-  try {
-    const pending = transfer('pending')
-    saveBrowserTabTransfer(pending)
-    globalThis.setTimeout(() => {
-      updateBrowserTabTransfer(pending, 'ready')
-    }, 5)
-
-    const ready = await waitForBrowserTabTransferReady(
-      pending.id,
-      pending.targetWindowId,
-      250,
-    )
-    assert.equal(ready.state, 'ready')
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
-    else delete (globalThis as { localStorage?: unknown }).localStorage
-  }
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  globalThis.setTimeout(() => { void updateBrowserTabTransfer(pending, 'ready') }, 5)
+  const ready = await waitForBrowserTabTransferReady(pending.id, pending.targetWindowId, 250)
+  assert.equal(ready.state, 'ready')
 })
-
 
 test('new target publishes receiver readiness before source reparents the live webview', async () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: new MemoryStorage(),
-  })
-
-  try {
-    const pending = transfer('pending')
-    saveBrowserTabTransfer(pending)
-
-    const marked = markBrowserTabTransferTargetReady(
-      pending.id,
-      pending.targetWindowId,
-    )
-    assert.equal(marked?.state, 'target-ready')
-
-    const ready = await waitForBrowserTabTransferTargetReady(
-      pending.id,
-      pending.targetWindowId,
-      250,
-    )
-    assert.equal(ready.state, 'target-ready')
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
-    else delete (globalThis as { localStorage?: unknown }).localStorage
-  }
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  const marked = await markBrowserTabTransferTargetReady(pending.id, pending.targetWindowId)
+  assert.equal(marked?.state, 'target-ready')
+  const ready = await waitForBrowserTabTransferTargetReady(pending.id, pending.targetWindowId, 250)
+  assert.equal(ready.state, 'target-ready')
 })
 
-test('new window can discover a pending transfer by destination without a transfer query id', () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: new MemoryStorage(),
-  })
-
-  try {
-    const pending = transfer('pending')
-    saveBrowserTabTransfer(pending)
-    saveBrowserTabTransfer({
-      ...pending,
-      id: 'target-ready',
-      state: 'target-ready',
-    })
-    saveBrowserTabTransfer({
-      ...pending,
-      id: 'other-target',
-      targetWindowId: 'nebula-window-other',
-    })
-    saveBrowserTabTransfer({
-      ...pending,
-      id: 'already-claimed',
-      state: 'claimed',
-    })
-
-    assert.deepEqual(
-      browserTabTransferIdsForTarget(pending.targetWindowId),
-      [pending.id, 'target-ready'],
-    )
-  } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
-    else delete (globalThis as { localStorage?: unknown }).localStorage
-  }
+test('receiver readiness racing with source readiness cannot move the transfer backwards', async () => {
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  const marking = markBrowserTabTransferTargetReady(pending.id, pending.targetWindowId)
+  await updateBrowserTabTransfer(pending, 'ready')
+  await marking
+  assert.equal((await loadBrowserTabTransfer(pending.id))?.state, 'ready')
 })
 
-test('stale and finished tab-transfer records are pruned without touching live work', () => {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
-  const storage = new MemoryStorage()
+test('stale state updates preserve the latest descriptor and never undo a claim', async () => {
+  const pending = transfer('pending')
+  pending.tab.isPrivate = true
+  await saveBrowserTabTransfer(pending)
+  await updateBrowserTabTransfer(pending, 'ready')
+  const stale = { ...pending, tab: { ...pending.tab, isPrivate: false, url: 'https://stale.example' } }
+  const claimed = await updateBrowserTabTransfer(stale, 'claimed')
+  assert.equal(claimed.tab.isPrivate, true)
+  assert.equal(claimed.tab.url, pending.tab.url)
+  assert.equal((await updateBrowserTabTransfer(stale, 'target-ready')).state, 'claimed')
+  assert.equal((await markBrowserTabTransferTargetReady(pending.id, pending.targetWindowId))?.state, 'claimed')
+  await saveBrowserTabTransfer(stale)
+  assert.deepEqual(await loadBrowserTabTransfer(pending.id), claimed)
+  await assert.rejects(updateBrowserTabTransfer(stale, 'cancelled'), /cannot move from 'claimed'/)
+})
+
+test('cancelled or removed transfers cannot be revived by delayed updates', async () => {
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  await updateBrowserTabTransfer(pending, 'cancelled')
+  for (const state of ['pending', 'target-ready', 'ready', 'claimed'] as const) {
+    await assert.rejects(updateBrowserTabTransfer(pending, state), /cannot move from 'cancelled'/)
+  }
+  assert.equal(await markBrowserTabTransferTargetReady(pending.id, pending.targetWindowId), null)
+  await saveBrowserTabTransfer(pending)
+  assert.equal((await loadBrowserTabTransfer(pending.id))?.state, 'cancelled')
+  await clearBrowserTabTransfer(pending.id)
+  await assert.rejects(updateBrowserTabTransfer(pending, 'ready'), /no longer available/)
+  assert.equal(await loadBrowserTabTransfer(pending.id), null)
+})
+
+test('competing claim and cancellation expose one terminal winner', async () => {
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  await updateBrowserTabTransfer(pending, 'ready')
+  const results = await Promise.allSettled([
+    updateBrowserTabTransfer(pending, 'claimed'),
+    updateBrowserTabTransfer(pending, 'cancelled'),
+  ])
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1)
+  assert.equal(results.filter((result) => result.status === 'rejected').length, 1)
+  assert.equal((await loadBrowserTabTransfer(pending.id))?.state, 'claimed')
+})
+
+test('receiver readiness checks the destination in the same operation', async () => {
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  assert.equal(await markBrowserTabTransferTargetReady(pending.id, 'wrong-target'), null)
+  assert.equal((await loadBrowserTabTransfer(pending.id))?.state, 'pending')
+})
+
+test('new window can discover a pending transfer by destination without a transfer query id', async () => {
+  const pending = transfer('pending')
+  await saveBrowserTabTransfer(pending)
+  await saveBrowserTabTransfer({ ...pending, id: 'target-ready', state: 'target-ready' })
+  await saveBrowserTabTransfer({ ...pending, id: 'other-target', targetWindowId: 'nebula-window-other' })
+  await saveBrowserTabTransfer({ ...pending, id: 'already-claimed', state: 'claimed' })
+  assert.deepEqual(await browserTabTransferIdsForTarget(pending.targetWindowId), [pending.id, 'target-ready'])
+})
+
+test('stale and finished tab-transfer records are pruned without touching live work', async () => {
+  const now = Date.now()
+  const pending = { ...transfer('pending'), id: 'recent-pending', createdAt: now - 5_000 }
+  await saveBrowserTabTransfer(pending)
+  await saveBrowserTabTransfer({ ...pending, id: 'stale-pending', createdAt: now - 180_000 })
+  await saveBrowserTabTransfer({ ...pending, id: 'old-claimed', state: 'claimed', createdAt: now - 45_000 })
+  assert.equal(await pruneBrowserTabTransfers(now), 2)
+  assert.equal((await loadBrowserTabTransfer(pending.id))?.state, 'pending')
+  assert.equal(await loadBrowserTabTransfer('stale-pending'), null)
+})
+
+test('private transfer retains navigation and mode without using disk-backed storage', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
-    value: storage,
+    get() { throw new Error('Private transfer touched localStorage') },
   })
-
   try {
-    const now = Date.now()
-    const pending = { ...transfer('pending'), id: 'recent-pending', createdAt: now - 5_000 }
-    saveBrowserTabTransfer(pending)
-    saveBrowserTabTransfer({ ...pending, id: 'stale-pending', createdAt: now - 180_000 })
-    saveBrowserTabTransfer({ ...pending, id: 'old-claimed', state: 'claimed', createdAt: now - 45_000 })
-    storage.setItem('nebula-browser-tab-transfer-v1:invalid', '{not-json')
-
-    assert.equal(pruneBrowserTabTransfers(now), 3)
-    assert.equal(loadBrowserTabTransfer(pending.id)?.state, 'pending')
-    assert.equal(storage.length, 1)
+    const privateTransfer = { ...transfer('pending'), id: 'private-transfer' }
+    privateTransfer.tab = { ...privateTransfer.tab, isPrivate: true }
+    await saveBrowserTabTransfer(privateTransfer)
+    const ready = await markBrowserTabTransferTargetReady(privateTransfer.id, privateTransfer.targetWindowId)
+    assert.equal(ready?.tab.isPrivate, true)
+    assert.deepEqual(ready?.tab.navigation, privateTransfer.tab.navigation)
+    await clearBrowserTabTransfer(privateTransfer.id)
+    assert.equal(await loadBrowserTabTransfer(privateTransfer.id), null)
   } finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
     else delete (globalThis as { localStorage?: unknown }).localStorage
   }
 })
@@ -285,7 +270,7 @@ test('transferred tab layout uses one complete bounds update instead of stale-pa
   )
   assert.match(
     applyBounds,
-    /invoke\('webview_set_browser_bounds',[\s\S]*windowLabel: currentBrowserWindowLabel\(\)[\s\S]*width: size\.width[\s\S]*height: size\.height/,
+    /const windowLabel = currentBrowserWindowLabel\(\)[\s\S]*invoke\('webview_set_browser_bounds',[\s\S]*windowLabel,[\s\S]*width: size\.width[\s\S]*height: size\.height/,
   )
   assert.match(
     applyBounds,
@@ -296,7 +281,7 @@ test('transferred tab layout uses one complete bounds update instead of stale-pa
     browser.indexOf('async function syncBrowserBounds'),
     browser.indexOf('function unbindResizeListeners'),
   )
-  assert.match(syncBounds, /applyBrowserBounds\(webview, position, size\)/)
+  assert.match(syncBounds, /applyBrowserBounds\(webview, position, size, traceId\)/)
   assert.doesNotMatch(syncBounds, /webview\.setPosition|webview\.setSize/)
 
   assert.match(

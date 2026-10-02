@@ -33,6 +33,8 @@ dist-ssr
 
 # Rust / Tauri build output
 src-tauri/target
+# Vendored crates are built in place too: keep their build output out of git
+src-tauri/vendor/**/target/
 
 # Local release binaries (upload via GitHub Releases)
 release/*.exe

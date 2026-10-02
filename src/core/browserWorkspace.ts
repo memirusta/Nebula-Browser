@@ -2,6 +2,8 @@ import type {
   BrowserWindowSessionSnapshot,
   PersistedBrowserTab,
 } from './browserSessionSnapshot.ts'
+import { persistedBrowserTabFromBrowserTab } from './browserSessionSnapshot.ts'
+import type { BrowserTab } from './browserTab.ts'
 
 export const BROWSER_WINDOW_PREFIX = 'nebula-window-'
 export const BROWSER_TAB_PREFIX = 'nebula-tab-'
@@ -19,11 +21,21 @@ export interface BrowserWorkspace {
   mostRecentlyActiveWindowId: string | null
 }
 
+export interface BrowserTransferTab extends PersistedBrowserTab {
+  isPrivate?: boolean
+}
+
+/** Transfer payloads are transient; private payloads must never enter durable storage. */
+export function transferredBrowserTabFromBrowserTab(tab: BrowserTab): BrowserTransferTab | null {
+  const snapshot = persistedBrowserTabFromBrowserTab({ ...tab, isPrivate: false })
+  return snapshot ? { ...snapshot, isPrivate: tab.isPrivate === true } : null
+}
+
 export interface BrowserTabTransfer {
   id: string
   sourceWindowId: string
   targetWindowId: string
-  tab: PersistedBrowserTab
+  tab: BrowserTransferTab
   webviewLabel: string
   createdAt: number
   state: 'pending' | 'target-ready' | 'ready' | 'claimed' | 'cancelled'

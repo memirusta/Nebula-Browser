@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { TabSearch } from './components/TabSearch/TabSearch'
 import { SiteInfoPanel } from './components/SiteInfoPanel/SiteInfoPanel'
+import { PrivateBrowsingPanel } from './components/PrivateBrowsingPanel/PrivateBrowsingPanel'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
+import { RightToolbar } from './components/RightToolbar/RightToolbar'
 import {
   matchBrowserShortcut,
   shouldIgnoreShellShortcut,
@@ -15,6 +17,7 @@ import {
   emitChromeAction,
   listenActiveUrl,
   listenDownloadUiState,
+  listenToolbarUiState,
   listenGuidedTutorialState,
   listenTabCatalog,
   listenTabSearchRequests,
@@ -22,6 +25,7 @@ import {
   listenZoomIndicator,
   listenSiteInfoState,
   type DownloadUiStatePayload,
+  type ToolbarUiStatePayload,
   type GuidedTutorialStatePayload,
   type ShellViewMode,
   type TabCatalogPayload,
@@ -37,6 +41,7 @@ import {
   type SensitiveFeatureUsage,
 } from './core/sensitiveFeatureUsage'
 import { computeAdaptiveLunarSize } from './core/lunarSizing'
+import { chromeOverlayMinimumHeight } from './core/chromeOverlayLayout'
 import { useBrowseSessions } from './hooks/useBrowseSessions'
 import { useBrowserShortcutBindings } from './hooks/useBrowserShortcutBindings'
 import { useNebulaSettings } from './hooks/useNebulaSettings'
@@ -93,9 +98,16 @@ export function ChromeApp() {
     aggregateProgress: null,
     panelOpen: false,
   })
+  const [toolbarUi, setToolbarUi] = useState<ToolbarUiStatePayload>({
+    notificationBadge: 0,
+  })
   const [zoomIndicatorPercent, setZoomIndicatorPercent] = useState<number | null>(null)
   const [tabSearchOpen, setTabSearchOpen] = useState(false)
   const [siteInfoOpen, setSiteInfoOpen] = useState(false)
+  const [privateInfoOpen, setPrivateInfoOpen] = useState(false)
+  const privateTabs = useMemo(() => catalog.tabs.filter((tab) => tab.isPrivate), [catalog.tabs])
+  const privateIndicatorVisible = settings.privacy.privateMode || privateTabs.length > 0
+  const closePrivateInfo = useCallback(() => setPrivateInfoOpen(false), [])
   const [siteInfoState, setSiteInfoState] = useState<SiteInfoStatePayload>({
     shortcutId: null,
     url: null,
@@ -161,9 +173,10 @@ export function ChromeApp() {
       () => listenActiveUrl(setActiveUrl),
       () => listenViewMode(setViewMode),
       () => listenDownloadUiState(setDownloadUi),
+      () => listenToolbarUiState(setToolbarUi),
       () => listenGuidedTutorialState(setGuidedTutorial),
       () => listenZoomIndicator(showZoomIndicator),
-      () => listenTabSearchRequests(() => setTabSearchOpen(true)),
+      () => listenTabSearchRequests(() => { setPrivateInfoOpen(false); setTabSearchOpen(true) }),
       () => listenSiteInfoState(setSiteInfoState),
       () => listenSensitiveFeatureUsage((usage) => {
         setSensitiveUsageByTab((current) => {
@@ -326,25 +339,32 @@ export function ChromeApp() {
   }, [activeUrl, catalog.activeTabId, settings.appearance, settings.privacy, siteInfoState, tabById])
 
   useEffect(() => {
-    const hasZoom = zoomIndicatorPercent !== null
-    const hasSensitiveUsage = sensitiveUsageSummary !== null
-    const minimumHeight = siteInfoOpen
-      ? 650
-      : tabSearchOpen
-      ? 650
-      : viewMode !== 'browsing'
-      ? 0
-      : hasZoom && hasSensitiveUsage
-        ? 138
-        : hasZoom || hasSensitiveUsage
-          ? 78
-          : 0
+    const floatingPanelHeight = chromeOverlayMinimumHeight({
+      siteInfoOpen,
+      privateInfoOpen,
+      tabSearchOpen,
+      isBrowsing: viewMode === 'browsing',
+      hasZoom: zoomIndicatorPercent !== null,
+      hasSensitiveUsage: sensitiveUsageSummary !== null,
+    })
+    const homeToolbarHeight =
+      viewMode === 'home' &&
+      settings.home.showToolbar
+        ? downloadUi.items.length > 0
+          ? 248
+          : 192
+        : 0
+    const minimumHeight = Math.max(floatingPanelHeight, homeToolbarHeight)
     void setChromeOverlayMinimumLogicalHeight(minimumHeight).then(() => {
       if (viewMode === 'browsing' && catalog.activeTabId) {
         return emitChromeAction({ type: 'raise-chrome-overlay' })
       }
     })
-  }, [catalog.activeTabId, sensitiveUsageSummary, siteInfoOpen, tabSearchOpen, viewMode, zoomIndicatorPercent])
+  }, [catalog.activeTabId, downloadUi.items.length, sensitiveUsageSummary, settings.home.showToolbar, siteInfoOpen, privateInfoOpen, tabSearchOpen, viewMode, zoomIndicatorPercent])
+
+  useEffect(() => {
+    if (viewMode !== 'browsing' || !privateIndicatorVisible) setPrivateInfoOpen(false)
+  }, [viewMode, privateIndicatorVisible])
 
   useEffect(() => {
     if (viewMode !== 'browsing') setSiteInfoOpen(false)
@@ -439,6 +459,7 @@ export function ChromeApp() {
   )
 
   const toggleDownloads = useCallback(() => {
+    setPrivateInfoOpen(false)
     void emitChromeAction({ type: 'toggle-download-panel' })
   }, [])
 
@@ -487,6 +508,25 @@ export function ChromeApp() {
   ])
   return (
     <>
+      {viewMode === 'home' && settings.home.showToolbar && (
+        <RightToolbar
+          onSettings={(anchor) => {
+            void emitChromeAction({ type: 'open-settings', anchor })
+          }}
+          onNotifications={() => {
+            void emitChromeAction({ type: 'toggle-notification-panel' })
+          }}
+          onDownloads={toggleDownloads}
+          onHistory={() => {
+            void emitChromeAction({ type: 'toggle-history-panel' })
+          }}
+          notificationBadge={toolbarUi.notificationBadge}
+          downloadCount={downloadUi.items.length}
+          activeDownloadCount={downloadUi.activeCount}
+          downloadProgress={downloadUi.aggregateProgress}
+        />
+      )}
+
       {viewMode === 'browsing' && sensitiveUsageSummary && (
         <div
           className={styles.privacyIndicator}
@@ -527,7 +567,7 @@ export function ChromeApp() {
         <div
           className={[
             styles.zoomIndicator,
-            sensitiveUsageSummary ? styles.zoomIndicatorShifted : '',
+            sensitiveUsageSummary ? styles.indicatorBelow : '',
           ].filter(Boolean).join(' ')}
           role="status"
           aria-live="polite"
@@ -615,6 +655,14 @@ export function ChromeApp() {
       }}
       openTabIds={openTabIds}
       activeTabId={catalog.activeTabId}
+      activeTabPrivate={privateIndicatorVisible}
+      privateInfoOpen={privateInfoOpen}
+      onPrivateInfoClick={() => {
+        setSiteInfoOpen(false)
+        setTabSearchOpen(false)
+        closeDownloads()
+        setPrivateInfoOpen((current) => !current)
+      }}
       getTab={getTab}
       onToggleMute={toggleMute}
       isMuted={isMuted}
@@ -627,6 +675,7 @@ export function ChromeApp() {
       activeUrl={activeUrl}
       siteInfoOpen={siteInfoOpen}
       onSiteInfoClick={() => {
+        setPrivateInfoOpen(false)
         setSiteInfoOpen((current) => !current)
         void emitChromeAction({ type: 'request-site-info' })
       }}
@@ -671,7 +720,7 @@ export function ChromeApp() {
       activeDownloadCount={downloadUi.activeCount}
       downloadProgress={downloadUi.aggregateProgress}
       downloadPanelOpen={browsingDownloadPanelOpen}
-      forceOpen={browsingDownloadPanelOpen}
+      forceOpen={browsingDownloadPanelOpen || privateInfoOpen}
       tutorialExpansion={
         guidedTutorial.open && guidedTutorial.step === 1
           ? true
@@ -689,6 +738,18 @@ export function ChromeApp() {
           : null
       }
       />
+
+      {privateInfoOpen && viewMode === 'browsing' && (
+        <PrivateBrowsingPanel
+          tabs={privateTabs}
+          top={adaptiveLunar.height + 12}
+          onClose={closePrivateInfo}
+          onEnd={() => {
+            void emitChromeAction({ type: 'end-private-browsing' })
+            closePrivateInfo()
+          }}
+        />
+      )}
 
       {siteInfoOpen && effectiveSiteInfoState.hostname && effectiveSiteInfoState.origin && effectiveSiteInfoState.shortcutId && (
         <SiteInfoPanel

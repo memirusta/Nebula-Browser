@@ -96,6 +96,22 @@ async function applyHomeMode(
 
   if (!isCurrentTransition(requestId)) return
 
+  // Present Home's interactive chrome before doing any work on the old renderer.
+  // A busy page can take time to acknowledge suspension, but it must never delay
+  // the Semi-Lunar controls that let the user recover from that page.
+  await traceTransitionCall(
+    traceId,
+    'mode.home.show-chrome',
+    {},
+    () => showChromeWebview(SEMI_LUNAR_HIT_ZONE_HEIGHT),
+  )
+
+  if (!isCurrentTransition(requestId)) return
+
+  await stackBrowsingChromeAboveBrowser(null)
+
+  if (!isCurrentTransition(requestId)) return
+
   // Browser tabs simply disappear and reveal the already-mounted Home underneath.
   try {
     await traceTransitionCall(
@@ -111,19 +127,6 @@ async function applyHomeMode(
   }
 
   if (!isCurrentTransition(requestId)) return
-
-  // Dedicated chrome owns Semi-Lunar in every ordinary mode. ChromeApp will
-  // resize this initial strip to its exact expanded/collapsed bounds.
-  await traceTransitionCall(
-    traceId,
-    'mode.home.show-chrome',
-    {},
-    () => showChromeWebview(SEMI_LUNAR_HIT_ZONE_HEIGHT),
-  )
-
-  if (!isCurrentTransition(requestId)) return
-
-  await stackBrowsingChromeAboveBrowser(null)
 
   await writeTransitionLog('mode.home', 'ok', { traceId, requestId })
 }
@@ -255,16 +258,8 @@ async function applyBrowsingMode(
 
     if (!isCurrentTransition(requestId)) return
 
-    cancelScheduledStack()
-    await traceTransitionCall(
-      traceId,
-      'mode.browsing.stack-separated-surfaces',
-      { tabId: tab.tabId },
-      () =>
-        stackBrowsingChromeAboveBrowser(
-          tab.tabId,
-        ),
-    )
+    // activateBrowseTab already established the final stack. Bounds sync only
+    // schedules a repair when geometry actually changed.
   }
 
   if (!isCurrentTransition(requestId)) return

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { downloadProgress, isDownloadActive, startDownloadDrag, type DownloadAction, type DownloadItem } from '../../core/download'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './DownloadManager.module.css'
+import floatingPanel from '../../styles/floatingPanel.module.css'
 
 
 interface DownloadTelemetry {
@@ -43,6 +44,14 @@ function formatBytes(bytes: number): string {
 
 function formatTransferRate(bytesPerSecond: number): string {
   return `${formatBytes(bytesPerSecond)}/s`
+}
+
+function downloadOrigin(sourceUrl: string): string {
+  try {
+    return new URL(sourceUrl).hostname.replace(/^www\./i, '')
+  } catch {
+    return '—'
+  }
 }
 
 function formatEta(
@@ -123,7 +132,7 @@ export function DownloadManager({
   const [keepConfirmationId, setKeepConfirmationId] = useState<string | null>(null)
   const [telemetryById, setTelemetryById] = useState<Record<string, DownloadTelemetry>>({})
   const telemetrySamplesRef = useRef<Map<string, DownloadSample>>(new Map())
-  const hasFinished = items.some((item) => !isDownloadActive(item))
+  const hasFinished = items.some((item) => !isDownloadActive(item) && !item.requiresConfirmation)
 
   useEffect(() => {
     const now = Date.now()
@@ -220,7 +229,7 @@ export function DownloadManager({
   }
 
   const beginNativeDrag = (event: DragEvent<HTMLElement>, item: DownloadItem) => {
-    if (item.state !== 'completed') {
+    if (item.state !== 'completed' || item.requiresConfirmation) {
       event.preventDefault()
       return
     }
@@ -238,8 +247,8 @@ export function DownloadManager({
   return (
     <section
       data-nebula-download-panel="true"
-      className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
-      style={variant === 'browsing' ? { top: browsingTop } : undefined}
+      className={[styles.panel, floatingPanel.viewportBound, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
+      style={variant === 'browsing' ? { '--panel-anchor-top': `${browsingTop}px` } as CSSProperties : undefined}
       role="dialog"
       aria-label={t('downloads')}
     >
@@ -278,6 +287,8 @@ export function DownloadManager({
             const progress = downloadProgress(item)
             const active = isDownloadActive(item)
             const completed = item.state === 'completed'
+            const canOpen = completed && !item.requiresConfirmation
+            const needsReview = item.requiresConfirmation
             const status = item.requiresConfirmation
               ? t('downloadNeedsReview')
               : item.state === 'paused'
@@ -300,25 +311,34 @@ export function DownloadManager({
             const showSize = variant === 'home' || item.state !== 'in_progress'
 
             return (
-              <article key={item.id} className={styles.item}>
+              <article
+                key={item.id}
+                className={[styles.item, needsReview ? styles.itemReview : ''].filter(Boolean).join(' ')}
+              >
                 <div
                   className={[
                     styles.fileGlyph,
                     completed ? styles.fileGlyphCompleted : '',
                     !active && !completed ? styles.fileGlyphFailed : '',
-                    completed ? styles.fileDragSource : '',
+                    canOpen ? styles.fileDragSource : '',
                   ].filter(Boolean).join(' ')}
-                  draggable={completed}
+                  draggable={canOpen}
                   onDragStart={(event) => beginNativeDrag(event, item)}
                 >
                   <DownloadGlyph state={item.state} />
                 </div>
                 <div className={styles.itemBody}>
+                  {needsReview && (
+                    <div className={styles.reviewHeader}>
+                      <span className={styles.reviewBadge}>{status}</span>
+                      <span>{tf('downloadReviewSource', { source: downloadOrigin(item.sourceUrl) })}</span>
+                    </div>
+                  )}
                   <button
                     type="button"
-                    className={[styles.fileName, completed ? styles.fileDragSource : ''].filter(Boolean).join(' ')}
-                    disabled={!completed}
-                    draggable={completed}
+                    className={[styles.fileName, canOpen ? styles.fileDragSource : ''].filter(Boolean).join(' ')}
+                    disabled={!canOpen}
+                    draggable={canOpen}
                     onDragStart={(event) => beginNativeDrag(event, item)}
                     onClick={() => void runAction(item.id, 'open')}
                     title={item.fileName}
@@ -326,7 +346,7 @@ export function DownloadManager({
                     {item.fileName}
                   </button>
                   <div className={styles.meta}>
-                    <span>{status}</span>
+                    {!needsReview && <span className={styles.statusChip}>{status}</span>}
                     {showSize && (
                       <>
                         <span className={styles.metaDot}>•</span>
@@ -335,7 +355,10 @@ export function DownloadManager({
                     )}
                   </div>
                   {item.requiresConfirmation && (
-                    <p className={styles.riskMessage}>{t('downloadRiskyFileHint')}</p>
+                    <>
+                      <p className={styles.riskMessage}>{t('downloadRiskyFileHint')}</p>
+                      <p className={styles.reviewHint}>{t('downloadReviewHint')}</p>
+                    </>
                   )}
                   {telemetry && (
                     <div
@@ -368,7 +391,7 @@ export function DownloadManager({
                     <>
                       <button
                         type="button"
-                        className={styles.actionText}
+                        className={[styles.actionText, styles.actionKeep].join(' ')}
                         onClick={() => void keepDangerousDownload(item)}
                       >
                         {keepConfirmationId === item.id
@@ -412,7 +435,7 @@ export function DownloadManager({
                       <ActionIcon action="reveal" />
                     </button>
                   )}
-                  {!active && (
+                  {!active && !item.requiresConfirmation && (
                     <button type="button" onClick={() => onRemove(item.id)} title={t('downloadRemove')} aria-label={t('downloadRemove')}>
                       <ActionIcon action="remove" />
                     </button>

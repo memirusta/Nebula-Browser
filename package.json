@@ -16,6 +16,8 @@
     "perf:stress": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/perf-stress.ps1",
     "perf:summary": "node scripts/perf-log-summary.mjs",
     "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "test:ui-panels": "node scripts/ui-panel-smoke.mjs",
+    "test:ui-tutorial": "node scripts/ui-panel-smoke.mjs --tutorial",
     "test:regression": "node --test --experimental-strip-types tests/*.test.ts",
     "test:native-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native-smoke.ps1",
     "test:release-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-smoke.ps1",

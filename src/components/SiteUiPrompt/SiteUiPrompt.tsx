@@ -699,6 +699,7 @@ export function SiteUiPrompt({
   }, [copy, isInternalLocation, locale, request])
 
   const submit = () => {
+    if (request.requestType === 'basic-auth' && !username.trim()) return
     onRespond({
       accepted: true,
       text,
@@ -734,7 +735,13 @@ export function SiteUiPrompt({
             reject()
           }
 
-          if (event.key === 'Enter' && !event.shiftKey) {
+          if (
+            event.key === 'Enter' &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing &&
+            event.target instanceof HTMLInputElement &&
+            (event.target.type === 'text' || event.target.type === 'password')
+          ) {
             event.preventDefault()
             submit()
           }

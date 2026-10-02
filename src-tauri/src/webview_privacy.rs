@@ -39,6 +39,8 @@ mod imp {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct PrivacyOptions {
+        #[serde(default)]
+        pub private_mode: bool,
         pub block_trackers: bool,
         pub strict_cookies: bool,
         pub https_only: bool,
@@ -861,6 +863,9 @@ mod imp {
                 "privacy settings are limited to browser tabs and popup content".to_string(),
             );
         }
+        if next.private_mode {
+            crate::notification_history::remember_private_tab(label)?;
+        }
         let previous = OPTIONS
             .lock()
             .map_err(|error| error.to_string())?
@@ -1478,6 +1483,76 @@ impl TryFrom<&str> for BrowsingDataKind {
             _ => Err(format!("unsupported browsing data kind '{value}'")),
         }
     }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileStorageUsage {
+    pub total_bytes: u64,
+    pub cache_bytes: u64,
+}
+
+fn directory_size(path: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+
+    entries
+        .flatten()
+        .map(|entry| {
+            let Ok(file_type) = entry.file_type() else {
+                return 0;
+            };
+            if file_type.is_file() {
+                return entry.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+            }
+            if file_type.is_dir() {
+                return directory_size(&entry.path());
+            }
+            0
+        })
+        .sum()
+}
+
+pub fn profile_storage_usage(app: &tauri::AppHandle) -> Result<ProfileStorageUsage, String> {
+    use tauri::Manager;
+
+    let profile_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("EBWebView");
+
+    let mut cache_bytes = ["ShaderCache", "GrShaderCache", "GPUPersistentCache"]
+        .into_iter()
+        .map(|name| directory_size(&profile_root.join(name)))
+        .sum();
+
+    let profile_cache_directories = [
+        "Cache",
+        "Code Cache",
+        "GPUCache",
+        "DawnWebGPUCache",
+        "DawnGraphiteCache",
+    ];
+    if let Ok(entries) = std::fs::read_dir(&profile_root) {
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            for cache_directory in profile_cache_directories {
+                cache_bytes += directory_size(&entry.path().join(cache_directory));
+            }
+        }
+    }
+
+    Ok(ProfileStorageUsage {
+        total_bytes: directory_size(&profile_root),
+        cache_bytes,
+    })
 }
 
 #[cfg(target_os = "windows")]

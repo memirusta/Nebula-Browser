@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type {
   SiteInfoStatePayload,
   SitePermissionState,
 } from '../../core/nebulaBridge'
 import { getLocaleCopy } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
-import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
+import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './SiteInfoPanel.module.css'
+import floatingPanel from '../../styles/floatingPanel.module.css'
 
 interface SiteInfoPanelProps {
   state: SiteInfoStatePayload
@@ -370,72 +371,15 @@ export function SiteInfoPanel({
   const panelRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [confirmClear, setConfirmClear] = useState(false)
-  const [resolvedTop, setResolvedTop] = useState(top)
   const secure = state.url?.startsWith('https://') === true
-  useModalFocusTrap(panelRef, true)
-  
+  useDialogFocusTrap({ active: true, containerRef: panelRef, initialFocusRef: closeRef, onEscape: onClose })
   useEffect(() => {
-  const panel =
-    panelRef.current
-
-  if (!panel) {
-    return
-  }
-
-  const updatePosition = () => {
-    const height =
-      panel.getBoundingClientRect().height
-
-    const maxTop =
-      window.innerHeight -
-      height -
-      12
-
-    setResolvedTop(
-      Math.max(
-        12,
-        Math.min(top, maxTop),
-      ),
-    )
-  }
-
-  updatePosition()
-
-  const observer =
-    new ResizeObserver(
-      updatePosition,
-    )
-
-  observer.observe(panel)
-
-  window.addEventListener(
-    'resize',
-    updatePosition,
-  )
-
-  return () => {
-    observer.disconnect()
-
-    window.removeEventListener(
-      'resize',
-      updatePosition,
-    )
-  }
-}, [top])
-  
-  useEffect(() => {
-    closeRef.current?.focus()
     const onPointerDown = (event: PointerEvent) => {
       if (!panelRef.current?.contains(event.target as Node)) onClose()
     }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
     document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('keydown', onKeyDown, true)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('keydown', onKeyDown, true)
     }
   }, [onClose])
 
@@ -460,11 +404,12 @@ export function SiteInfoPanel({
   return (
     <section
       ref={panelRef}
-      className={styles.panel}
-      style={{ top: resolvedTop }}
+      className={[styles.panel, floatingPanel.viewportBound].join(' ')}
+      style={{ '--panel-preferred-top': `${top}px` } as CSSProperties}
       role="dialog"
       aria-modal="true"
       aria-labelledby="nebula-site-info-title"
+      tabIndex={-1}
     >
       <header className={styles.header}>
         <span className={styles.favicon} aria-hidden="true">

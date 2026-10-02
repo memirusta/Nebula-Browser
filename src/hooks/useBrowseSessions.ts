@@ -18,7 +18,8 @@ export function useBrowseSessions() {
 
   useStorageSync(BROWSE_SESSIONS_KEY, reloadSessions)
 
-  const recordVisit = useCallback((url: string, label?: string) => {
+  const recordVisit = useCallback((url: string, label?: string, isPrivate = false) => {
+    if (isPrivate) return
     setSessions((prev) => {
       let siteLabel = label
       if (!siteLabel) {
@@ -28,7 +29,7 @@ export function useBrowseSessions() {
           siteLabel = url
         }
       }
-      const next = upsertBrowseSession(prev, url, siteLabel!)
+      const next = upsertBrowseSession(prev, url, siteLabel!, isPrivate)
       persistBrowseSessions(next)
       return next
     })

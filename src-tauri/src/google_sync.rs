@@ -347,16 +347,18 @@ pub async fn google_sync_pull(
         .send()
         .await
         .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+    let status = response.status();
+    let bytes = crate::http_response::read_bounded_response(
+        response,
+        MAX_SYNC_BYTES,
+        "Cloud sync data exceeds Nebula's supported size.",
+    )
+    .await?;
+    if !status.is_success() {
+        let body = String::from_utf8_lossy(&bytes);
         return Err(format!("Google Drive download failed ({status}): {body}"));
     }
-    let bytes = response.bytes().await.map_err(|error| error.to_string())?;
-    if bytes.len() > MAX_SYNC_BYTES {
-        return Err("Cloud sync data exceeds Nebula's supported size.".to_string());
-    }
-    let content = String::from_utf8(bytes.to_vec()).map_err(|error| error.to_string())?;
+    let content = String::from_utf8(bytes).map_err(|error| error.to_string())?;
     Ok(Some(GoogleSyncCloudData {
         content,
         modified_time: file.modified_time,

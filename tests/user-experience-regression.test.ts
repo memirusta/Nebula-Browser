@@ -44,6 +44,25 @@ test('tab search is reachable from site WebViews and supports switch, close, and
   assert.match(tabSearch, /onCloseTab\(tab\.shortcutId\)/)
 })
 
+test('Tauri Home toolbar lives in the top chrome surface and routes every action', () => {
+  const bridge = read('src/core/nebulaBridge.ts')
+  const chrome = read('src/ChromeApp.tsx')
+  const shell = read('src/components/BrowserShell/BrowserShell.tsx')
+  const toolbarStyles = read('src/components/RightToolbar/RightToolbar.module.css')
+
+  assert.match(chrome, /viewMode === 'home' && settings\.home\.showToolbar/)
+  assert.match(chrome, /<RightToolbar/)
+  assert.match(chrome, /type: 'open-settings'/)
+  assert.match(chrome, /type: 'toggle-notification-panel'/)
+  assert.match(chrome, /type: 'toggle-history-panel'/)
+  assert.match(bridge, /TOOLBAR_UI_STATE_EVENT/)
+  assert.match(shell, /case 'open-settings':\s*openSettings\(action\.anchor\)/)
+  assert.match(shell, /case 'toggle-notification-panel':\s*toggleNotificationPanel\(\)/)
+  assert.match(shell, /case 'toggle-history-panel':\s*toggleHistoryPanel\(\)/)
+  assert.match(shell, /\(!isTauri \|\| homeEditMode\)/)
+  assert.match(toolbarStyles, /\.root\s*\{[\s\S]*?z-index:\s*400/)
+})
+
 test('Ctrl+H opens history through the overlay and widgets keep a compact scrollbar', () => {
   const shortcuts = read('src/core/browserShortcuts.ts')
   const nativeShortcuts = read('src-tauri/src/tab_shortcuts.rs')
@@ -137,10 +156,7 @@ test('tab performance housekeeping releases lifecycle keys and idle memory polli
     main,
     /prewarmUblockProfile\(\)[\s\S]*?scheduleInitialBrowseWebviewPrewarm\(\)/,
   )
-  assert.match(
-    browser,
-    /browser\.prewarm\.low-memory[\s\S]*?setLowMemoryFallback\(webview\)/,
-  )
+  assert.doesNotMatch(browser, /webview_set_memory_usage|setLowMemoryFallback/)
   assert.match(
     browser,
     /browser\.webview\.adopt\.restore-memory[\s\S]*?restoreWebviewMemory\(webview!\)/,

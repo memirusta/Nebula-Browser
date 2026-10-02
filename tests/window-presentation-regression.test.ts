@@ -109,7 +109,6 @@ test('F11 keeps Semi-Lunar expanded only on Home while ChromeApp owns its bounds
     'src/components/SemiLunarMenu/SemiLunarMenu.tsx',
     'utf8',
   )
-
   assert.match(fullscreen, /BROWSER_FULLSCREEN_CHANGED_EVENT/)
   assert.match(fullscreen, /browserFullscreenChangedEvent\(\)/)
   assert.match(
@@ -176,6 +175,10 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
     'src/components/SemiLunarMenu/SemiLunarMenu.tsx',
     'utf8',
   )
+  const menuCss = readFileSync(
+    'src/components/SemiLunarMenu/SemiLunarMenu.module.css',
+    'utf8',
+  )
   const chrome = readFileSync('src/platform/tauriChromeWebview.ts', 'utf8')
   const permissions = readFileSync(
     'src-tauri/permissions/webview-commands.toml',
@@ -211,10 +214,17 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
     /consecutiveNativeMisses >= 2[\s\S]{0,120}closeFromLostHover\(\)/,
   )
   assert.match(triggerHitTest, /SEMI_LUNAR_HIT_ZONE_HEIGHT \* scaleFactor/)
+  assert.match(triggerHitTest, /windowClientPhysicalSize\(\)/)
+  assert.match(triggerHitTest, /x: 0[\s\S]{0,100}windowSize\.width/)
   assert.doesNotMatch(triggerHitTest, /chromeOverlayLogicalHeight/)
   assert.match(shapeHitTest, /window_cursor_in_client_lunar_shape/)
   assert.match(shapeHitTest, /lunarWidthPx: Math\.max\(1, lunarWidthPx\)/)
   assert.doesNotMatch(shapeHitTest, /windowClientPhysicalSize\(\)|scaleFactor\(\)/)
+  assert.match(menu, /computeViewportLunarSize\([\s\S]*lunarViewport\.width[\s\S]*lunarViewport\.height/)
+  assert.match(menu, /appWindow\.onResized\(\(\) => void syncTauriViewport\(\)\)/)
+  assert.match(chrome, /position: new PhysicalPosition\(0, 0\)[\s\S]{0,100}windowSize\.width/)
+  assert.match(menuCss, /\.root\s*\{[\s\S]{0,120}left: 50%[\s\S]{0,120}translateX\(-50%\)/)
+  assert.match(menuCss, /\.browsingRoot\s*\{[\s\S]{0,140}left: 50%[\s\S]{0,120}translateX\(-50%\)/)
   assert.match(permissions, /"window_cursor_in_client_rect"/)
   assert.match(permissions, /"window_cursor_in_client_lunar_shape"/)
   assert.match(

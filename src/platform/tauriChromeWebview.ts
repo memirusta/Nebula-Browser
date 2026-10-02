@@ -3,6 +3,7 @@ import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { Webview, getCurrentWebview, type WebviewOptions } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
+import { hasUsableWindowClientSize } from '../core/mainWebviewRestore'
 import { debounce } from './debounce'
 import { waitForTauriCreated } from './tauriCreationWait'
 import { getActiveBrowseTabId } from './tauriBrowser'
@@ -31,6 +32,7 @@ interface ShowChromeWebviewOptions {
 let activeChromeWebview: Webview | null = null
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
+let focusUnlisten: (() => void) | null = null
 let resizeDebounceCancel: (() => void) | null = null
 let lastChromeBoundsKey: string | null = null
 // Physical Semi-Lunar bounds are owned only by the #chrome context. The main
@@ -39,18 +41,18 @@ let chromeBoundsListenerBound = false
 let chromeOverlayLogicalWidth: number | null = null
 let chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT
 let chromeOverlayMinimumLogicalHeight = 0
-// Hover preview needs the full client height for its centered card, but its
-// width stays compact and centered. Resizing the chrome WebView from compact
-// width to full width made WebView2 briefly reflow its surface and visibly
-// nudged the Semi-Lunar sideways.
+// Hover preview can temporarily need the full client height. The WebView width
+// stays full-client so the collapsed trigger remains available across the
+// whole top edge; the visual dome itself is centered by CSS.
 let chromeOverlayFullHeight = false
 let chromeVisibilitySuppressed = false
 let chromeVisibilityRequestSequence = 0
-let chromeBoundsSyncQueue: Promise<void> = Promise.resolve()
+let chromeBoundsSyncPromise: Promise<void> | null = null
+let chromeBoundsDirty = false
+let chromeAutoResizeDisabled = false
 
-// Semi-Lunar uses max-width: 98vw. Give its dedicated WebView a tiny logical
-// gutter so a requested 1100px lunar still has 1100px available inside the
-// overlay viewport instead of being shrunk to 98% of itself.
+// Keep a small tolerance around the centered dome for conservative native
+// rectangle checks. The actual WebView remains full-client width.
 const CHROME_OVERLAY_WIDTH_GUTTER = 32
 
 function chromeWebviewUrl(): string {
@@ -67,27 +69,22 @@ function chromeWebviewLabel(): string {
 async function chromePhysicalBounds(): Promise<{
   position: PhysicalPosition
   size: PhysicalSize
+  clientSize: PhysicalSize
 }> {
   const windowSize = await windowClientPhysicalSize()
-
-  const scaleFactor = await getCurrentWindow().scaleFactor()
-  const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1100)
-  const requestedPhysicalWidth = Math.ceil(
-    (requestedLogicalWidth + CHROME_OVERLAY_WIDTH_GUTTER) * scaleFactor,
-  )
   const requestedPhysicalHeight = Math.ceil(
-    Math.max(1, chromeOverlayLogicalHeight, chromeOverlayMinimumLogicalHeight) * scaleFactor,
+    Math.max(1, chromeOverlayLogicalHeight, chromeOverlayMinimumLogicalHeight) *
+      await getCurrentWindow().scaleFactor(),
   )
 
-  const width = Math.max(1, Math.min(windowSize.width, requestedPhysicalWidth))
   const height = chromeOverlayFullHeight
     ? Math.max(1, windowSize.height)
     : Math.max(1, Math.min(windowSize.height, requestedPhysicalHeight))
-  const x = Math.max(0, Math.round((windowSize.width - width) / 2))
 
   return {
-    position: new PhysicalPosition(x, 0),
-    size: new PhysicalSize(width, height),
+    position: new PhysicalPosition(0, 0),
+    size: new PhysicalSize(Math.max(1, windowSize.width), height),
+    clientSize: windowSize,
   }
 }
 
@@ -104,10 +101,11 @@ async function semiLunarPhysicalBounds(): Promise<{
 }> {
   const windowSize = await windowClientPhysicalSize()
   const scaleFactor = await getCurrentWindow().scaleFactor()
-  const requestedLogicalWidth = Math.max(1, chromeOverlayLogicalWidth ?? 1100)
-  const requestedPhysicalWidth = Math.ceil(
-    (requestedLogicalWidth + CHROME_OVERLAY_WIDTH_GUTTER) * scaleFactor,
-  )
+  const requestedPhysicalWidth = chromeOverlayLogicalWidth === null
+    ? windowSize.width
+    : Math.ceil(
+        (Math.max(1, chromeOverlayLogicalWidth) + CHROME_OVERLAY_WIDTH_GUTTER) * scaleFactor,
+      )
   const requestedPhysicalHeight = Math.ceil(
     Math.max(1, chromeOverlayLogicalHeight) * scaleFactor,
   )
@@ -157,8 +155,8 @@ export async function isCursorInsideSemiLunarNativeTrigger(): Promise<boolean | 
   if (!isTauri || !isChromeShell()) return null
 
   try {
-    const [{ position, size }, scaleFactor] = await Promise.all([
-      semiLunarPhysicalBounds(),
+    const [windowSize, scaleFactor] = await Promise.all([
+      windowClientPhysicalSize(),
       getCurrentWindow().scaleFactor(),
     ])
     const height = Math.max(1, Math.ceil(SEMI_LUNAR_HIT_ZONE_HEIGHT * scaleFactor))
@@ -166,9 +164,9 @@ export async function isCursorInsideSemiLunarNativeTrigger(): Promise<boolean | 
 
     return await invoke<boolean>('window_cursor_in_client_rect', {
       windowLabel,
-      x: position.x,
+      x: 0,
       y: 0,
-      width: size.width,
+      width: Math.max(1, windowSize.width),
       height,
     })
   } catch (error) {
@@ -205,47 +203,47 @@ export async function isCursorInsideSemiLunarNativeShape(
   }
 }
 
-async function syncChromeBounds(webview: Webview): Promise<boolean> {
-  let changed = false
+async function syncChromeBounds(webview: Webview): Promise<void> {
+  chromeBoundsDirty = true
+  if (!chromeBoundsSyncPromise) {
+    chromeBoundsSyncPromise = (async () => {
+      while (chromeBoundsDirty) {
+        chromeBoundsDirty = false
+        // Read shared state only when the operation starts, so an older hover
+        // request cannot overwrite a newer compact-bounds request.
+        const { position, size, clientSize } = await chromePhysicalBounds()
+        if (!hasUsableWindowClientSize(clientSize) || await getCurrentWindow().isMinimized()) continue
+        const key = `${position.x},${position.y},${size.width},${size.height}`
+        if (lastChromeBoundsKey === key) continue
 
-  const applyLatestBounds = async () => {
-    // Read the shared target state only when this queued operation starts. A
-    // rapid hover enter/leave can otherwise let an older async resize finish
-    // after the newer compact-bounds request.
-    const { position, size } = await chromePhysicalBounds()
-    const key = `${position.x},${position.y},${size.width},${size.height}`
-    if (lastChromeBoundsKey === key) return
-
-    let appliedAtomically = false
-    try {
-      appliedAtomically = await invoke<boolean>('webview_set_chrome_bounds', {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-      })
-    } catch (error) {
-      console.warn('[nebula] atomic chrome bounds failed; using Webview fallback', error)
-    }
-
-    // Keep the existing cross-platform fallback. Windows uses one SetWindowPos
-    // call above so the compositor never sees mismatched position/size frames.
-    if (!appliedAtomically) {
-      await webview.setPosition(position)
-      await webview.setSize(size)
-    }
-    await webview.setAutoResize(false)
-    lastChromeBoundsKey = key
-    changed = true
+        try {
+          const applied = await invoke<boolean>('webview_set_chrome_bounds', {
+            windowLabel: getCurrentWindow().label,
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+          })
+          if (!applied) throw new Error('atomic chrome bounds unavailable')
+        } catch (error) {
+          if (import.meta.env.DEV) {
+            console.warn('[nebula] atomic chrome bounds failed; using Webview fallback', error)
+          }
+          await webview.setPosition(position)
+          await webview.setSize(size)
+        }
+        if (!chromeAutoResizeDisabled) {
+          await webview.setAutoResize(false)
+          chromeAutoResizeDisabled = true
+        }
+        lastChromeBoundsKey = key
+      }
+    })().finally(() => {
+      chromeBoundsSyncPromise = null
+      if (chromeBoundsDirty) void syncChromeBounds(webview)
+    })
   }
-
-  const queued = chromeBoundsSyncQueue.then(applyLatestBounds, applyLatestBounds)
-  chromeBoundsSyncQueue = queued.then(
-    () => undefined,
-    () => undefined,
-  )
-  await queued
-  return changed
+  await chromeBoundsSyncPromise
 }
 
 function unbindResizeListeners(): void {
@@ -255,6 +253,8 @@ function unbindResizeListeners(): void {
   resizeUnlisten = null
   scaleUnlisten?.()
   scaleUnlisten = null
+  focusUnlisten?.()
+  focusUnlisten = null
   chromeBoundsListenerBound = false
 }
 
@@ -265,9 +265,11 @@ async function bindChromeResize(webview: Webview): Promise<void> {
   chromeBoundsListenerBound = true
 
   const onLayoutChange = debounce(() => {
-  lastChromeBoundsKey = null
-  void syncChromeBounds(webview)
-}, LAYOUT_DEBOUNCE_MS)
+    // Equal cached dimensions do not prove that the controller survived
+    // minimize/restore. Reapply from ChromeApp's own overlay state.
+    lastChromeBoundsKey = null
+    void syncChromeBounds(webview)
+  }, LAYOUT_DEBOUNCE_MS)
 
   await syncChromeBounds(webview)
 
@@ -278,10 +280,15 @@ async function bindChromeResize(webview: Webview): Promise<void> {
     const nextScaleUnlisten = await appWindow.onScaleChanged(onLayoutChange)
     resizeUnlisten = nextResizeUnlisten
     scaleUnlisten = nextScaleUnlisten
+    focusUnlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) onLayoutChange()
+    })
     resizeDebounceCancel = onLayoutChange.cancel
   } catch (error) {
     onLayoutChange.cancel()
     nextResizeUnlisten?.()
+    scaleUnlisten?.()
+    scaleUnlisten = null
     chromeBoundsListenerBound = false
     throw error
   }
@@ -306,9 +313,10 @@ export async function setChromeOverlayMinimumLogicalHeight(
 }
 
 /**
- * Size the dedicated chrome WebView to the Semi-Lunar itself. Home and browser
- * WebViews stay full-client underneath; this is a floating overlay, not layout
- * chrome, so it never pushes site content down.
+ * Size the dedicated chrome WebView to the current chrome height. It remains
+ * full-client width so every point on the top edge can open Semi-Lunar. Home
+ * and browser WebViews stay underneath; this floating surface never pushes
+ * site content down.
  */
 export async function setChromeOverlayLogicalBounds(
   logicalHeight: number,
@@ -371,7 +379,7 @@ export async function getChromeWebview(): Promise<Webview | null> {
  *
  * BrowserShell and ChromeApp have separate JS module state. During a
  * fullscreen handoff, stale hover-preview state in ChromeApp can otherwise
- * leave this transparent WebView full-client and intercept site clicks.
+ * leave this transparent WebView full-height and intercept site clicks.
  */
 export async function forceChromeWebviewCompactBounds(): Promise<void> {
   if (!isTauri) return
@@ -389,23 +397,7 @@ export async function forceChromeWebviewCompactBounds(): Promise<void> {
     await getCurrentWindow()
       .scaleFactor()
 
-  const requestedLogicalWidth =
-    chromeOverlayLogicalWidth ??
-    1100
-  const width =
-    Math.max(
-      1,
-      Math.min(
-        windowSize.width,
-        Math.ceil(
-          (
-            requestedLogicalWidth +
-            CHROME_OVERLAY_WIDTH_GUTTER
-          ) *
-            scaleFactor,
-        ),
-      ),
-    )
+  const width = Math.max(1, windowSize.width)
   const height =
     Math.max(
       1,
@@ -417,30 +409,19 @@ export async function forceChromeWebviewCompactBounds(): Promise<void> {
         ),
       ),
     )
-  const x =
-    Math.max(
-      0,
-      Math.round(
-        (
-          windowSize.width -
-          width
-        ) /
-          2,
-      ),
-    )
-
-  await webview.setPosition(
-    new PhysicalPosition(
-      x,
-      0,
-    ),
-  )
-  await webview.setSize(
-    new PhysicalSize(
+  try {
+    const applied = await invoke<boolean>('webview_set_chrome_bounds', {
+      windowLabel: getCurrentWindow().label,
+      x: 0,
+      y: 0,
       width,
       height,
-    ),
-  )
+    })
+    if (!applied) throw new Error('atomic chrome bounds unavailable')
+  } catch {
+    await webview.setPosition(new PhysicalPosition(0, 0))
+    await webview.setSize(new PhysicalSize(width, height))
+  }
   await webview.setAutoResize(
     false,
   )
@@ -486,6 +467,7 @@ export async function showChromeWebview(
         browserExtensionsEnabled: true,
       }
       webview = new Webview(appWindow, chromeWebviewLabel(), webviewOptions)
+      chromeAutoResizeDisabled = false
       await waitForWebviewCreated(webview)
       await invoke('webview_setup_branding', { label: chromeWebviewLabel() })
     } catch {
@@ -560,6 +542,7 @@ export async function hideChromeWebview(): Promise<void> {
   unbindResizeListeners()
   activeChromeWebview = null
   lastChromeBoundsKey = null
+  chromeAutoResizeDisabled = false
   chromeOverlayFullHeight = false
   chromeOverlayLogicalWidth = null
   chromeOverlayLogicalHeight = SEMI_LUNAR_HIT_ZONE_HEIGHT

@@ -39,6 +39,15 @@ test('the tutorial exposes four complete and uniquely targeted steps in every ap
     const semiLunarStep = copy.steps.find((step) => step.target === 'semi-lunar')
     assert.ok(semiLunarStep, locale)
     assert.match(`${semiLunarStep.body} ${semiLunarStep.action}`, /YouTube/i, locale)
+
+    const searchStep = copy.steps.find((step) => step.target === 'home-search')
+    assert.ok(searchStep, locale)
+    assert.match(`${searchStep.body} ${searchStep.action}`, /Semi-Lunar/i, locale)
+    assert.match(searchStep.body, /Ctrl \+ L/i, locale)
+
+    const toolsStep = copy.steps.find((step) => step.target === 'home-toolbar')
+    assert.ok(toolsStep, locale)
+    assert.match(toolsStep.body, /Semi-Lunar/i, locale)
   }
 })
 

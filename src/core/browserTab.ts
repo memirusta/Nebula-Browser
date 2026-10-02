@@ -8,6 +8,7 @@ import {
   browserWindowIdFromRuntime,
 } from './browserWorkspace.ts'
 import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
+import { isLocalNetworkHostname } from './addressNavigation.ts'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
@@ -22,6 +23,7 @@ export interface BrowserTab {
   title: string
   favicon: string
   navigation: TabNavigationState
+  isPrivate?: boolean
   isLoading?: boolean
   isMuted?: boolean
 }
@@ -64,9 +66,17 @@ export function shortcutIdForTabWebviewLabel(label: string): string | null {
 export function faviconForUrl(url: string): string {
   try {
     const pageUrl = new URL(url)
-    return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(pageUrl.href)}&sz=128`
+    const hostname = pageUrl.hostname.replace(/\.$/, '')
+    if (
+      (pageUrl.protocol !== 'http:' && pageUrl.protocol !== 'https:') ||
+      isLocalNetworkHostname(hostname) ||
+      !hostname.includes('.')
+    ) {
+      return '/nebula-app-logo.png'
+    }
+    return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(`${pageUrl.origin}/`)}&sz=128`
   } catch {
-    return 'https://www.google.com/s2/favicons?domain_url=https%3A%2F%2Fgoogle.com%2F&sz=128'
+    return '/nebula-app-logo.png'
   }
 }
 
@@ -84,6 +94,7 @@ export function createBrowserTab(
   options?: {
     tabId?: string
     navigation?: TabNavigationState
+    isPrivate?: boolean
   },
 ): BrowserTab {
   const shortcutFavicon = shortcut.favicon?.trim()
@@ -100,6 +111,7 @@ export function createBrowserTab(
     navigation:
       options?.navigation ??
       createTabNavigationState(shortcut.url, shortcut.label, favicon),
+    isPrivate: options?.isPrivate === true,
     isLoading: true,
     isMuted: false,
   }

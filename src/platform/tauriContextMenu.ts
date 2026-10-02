@@ -4,6 +4,8 @@ import { isTauri } from './runtime'
 
 export const NEBULA_PRINT_COMMAND_ID = -10_001
 export const NEBULA_INSPECT_COMMAND_ID = -10_002
+export const NEBULA_OPEN_SELECTION_COMMAND_ID = -10_003
+export const NEBULA_PASSWORD_SETTINGS_COMMAND_ID = -10_004
 
 export type SiteContextMenuItemKind = 'command' | 'check' | 'radio' | 'separator' | 'submenu'
 

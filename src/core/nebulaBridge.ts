@@ -12,6 +12,7 @@ export type ChromeShellAction =
   | { type: 'raise-chrome-overlay' }
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
+  | { type: 'end-private-browsing' }
   | { type: 'switch-tab'; shortcutId: string }
   | { type: 'toggle-pin'; shortcut: Shortcut }
   | { type: 'set-tab-muted'; shortcutId: string; muted: boolean }
@@ -22,6 +23,9 @@ export type ChromeShellAction =
       screenY: number
     }
   | { type: 'open-overlay' }
+  | { type: 'open-settings'; anchor: { x: number; y: number } }
+  | { type: 'toggle-notification-panel' }
+  | { type: 'toggle-history-panel' }
   | { type: 'go-back' }
   | { type: 'go-home' }
   | { type: 'toggle-download-panel' }
@@ -52,6 +56,10 @@ export interface DownloadUiStatePayload {
   activeCount: number
   aggregateProgress: number | null
   panelOpen: boolean
+}
+
+export interface ToolbarUiStatePayload {
+  notificationBadge: number
 }
 
 export interface GuidedTutorialStatePayload {
@@ -88,6 +96,7 @@ const ACTIVE_URL_EVENT = 'nebula-active-url'
 const TAB_CATALOG_EVENT = 'nebula-tab-catalog'
 const VIEW_MODE_EVENT = 'nebula-view-mode'
 const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
+const TOOLBAR_UI_STATE_EVENT = 'nebula-toolbar-ui-state'
 const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
 const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
@@ -205,6 +214,22 @@ export function listenDownloadUiState(
   }
 
   return listen<DownloadUiStatePayload>(scoped(DOWNLOAD_UI_STATE_EVENT), (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function emitToolbarUiState(
+  state: ToolbarUiStatePayload,
+): Promise<void> {
+  if (!isTauri) return
+  await emit(scoped(TOOLBAR_UI_STATE_EVENT), state)
+}
+
+export function listenToolbarUiState(
+  handler: (state: ToolbarUiStatePayload) => void,
+): Promise<() => void> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<ToolbarUiStatePayload>(scoped(TOOLBAR_UI_STATE_EVENT), (event) => {
     handler(event.payload)
   })
 }

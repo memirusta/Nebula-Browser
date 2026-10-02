@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { SavedPassword } from '../../core/passwordVault'
 import type { NebulaAccount } from '../../core/nebulaAccount'
 import {
   isGoogleSignInSupported,
@@ -20,8 +21,9 @@ import {
   type ChromiumPasswordSource,
 } from '../../platform/browserPasswordImport'
 import { isTauri } from '../../platform/runtime'
+import { usePasswordReveal } from '../../hooks/usePasswordReveal'
 import { usePasswordVault } from '../../hooks/usePasswordVault'
-import { tf } from '../../core/locale'
+import { getIntlLocale, tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
 
@@ -34,6 +36,26 @@ interface AccountSettingsSectionProps {
   onReopenOnboarding: () => void
   onOpenBrowseUrl?: (url: string) => void
   openBrowseInBackground?: boolean
+}
+
+function passwordDomain(entry: SavedPassword): string {
+  const rawUrl = entry.url?.trim()
+  if (rawUrl) {
+    try {
+      const url = new URL(rawUrl.includes('://') ? rawUrl : `https://${rawUrl}`)
+      return url.hostname.replace(/^www\./i, '') || entry.label.trim()
+    } catch {
+      // Imported entries can contain a label instead of a parseable URL.
+    }
+  }
+  return entry.label.trim() || '—'
+}
+
+function passwordSearchText(entry: SavedPassword): string {
+  return [entry.label, entry.username, entry.url, passwordDomain(entry)]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase()
 }
 
 export function AccountSettingsSection({
@@ -52,13 +74,24 @@ export function AccountSettingsSection({
   const [googleError, setGoogleError] = useState<string | null>(null)
   const [googleConfigHint, setGoogleConfigHint] = useState<string | null>(null)
 
-  const { entries, addEntry, mergeEntries, removeEntry } = usePasswordVault()
+  const { entries, addEntry, mergeEntries, removeEntry, editEntry } = usePasswordVault()
   const [showAddPassword, setShowAddPassword] = useState(false)
+  const [passwordQuery, setPasswordQuery] = useState('')
   const [pwLabel, setPwLabel] = useState('')
   const [pwUrl, setPwUrl] = useState('')
   const [pwUsername, setPwUsername] = useState('')
   const [pwSecret, setPwSecret] = useState('')
-  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set())
+  const [editingPassword, setEditingPassword] = useState<SavedPassword | null>(null)
+  const [passwordEditError, setPasswordEditError] = useState<'conflict' | 'failed' | 'required' | null>(null)
+  const editOperation = useRef(0)
+  const discardPasswordEdit = useCallback(() => {
+    ++editOperation.current
+    setEditingPassword(null)
+  }, [])
+  useEffect(() => () => { ++editOperation.current }, [])
+  const { authorize, isRevealed, toggleReveal, copyPassword, pendingId, lock, error: revealError } =
+    usePasswordReveal(entries, t('accountPasswordVerifyReason'), discardPasswordEdit)
+  const [savingPasswordEdit, setSavingPasswordEdit] = useState(false)
   const [passwordSources, setPasswordSources] = useState<ChromiumPasswordSource[]>([])
   const [importingPasswords, setImportingPasswords] = useState(false)
   const [importMessage, setImportMessage] = useState<string | null>(null)
@@ -66,6 +99,26 @@ export function AccountSettingsSection({
   const [googleSetupEmail, setGoogleSetupEmail] = useState<string | null>(null)
   const [sessionLinkMessage, setSessionLinkMessage] = useState<string | null>(null)
   const csvInputRef = useRef<HTMLInputElement>(null)
+
+  const passwordGroups = useMemo(() => {
+    const query = passwordQuery.trim().toLocaleLowerCase()
+    const groups = new Map<string, SavedPassword[]>()
+    for (const entry of entries) {
+      if (query && !passwordSearchText(entry).includes(query)) continue
+      const domain = passwordDomain(entry)
+      const group = groups.get(domain) ?? []
+      group.push(entry)
+      groups.set(domain, group)
+    }
+    return [...groups.entries()]
+      .sort(([left], [right]) => left.localeCompare(right, getIntlLocale(locale)))
+      .map(([domain, groupedEntries]) => ({ domain, entries: groupedEntries }))
+  }, [entries, locale, passwordQuery])
+
+  const passwordDateFormat = useMemo(
+    () => new Intl.DateTimeFormat(getIntlLocale(locale), { dateStyle: 'medium', timeStyle: 'short' }),
+    [locale],
+  )
 
   useEffect(() => {
     setLocalName(userDisplayName)
@@ -153,22 +206,49 @@ export function AccountSettingsSection({
     setShowAddPassword(false)
   }, [addEntry, pwLabel, pwSecret, pwUrl, pwUsername])
 
-  const toggleReveal = useCallback((id: string) => {
-    setRevealedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [])
 
-  const copyText = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      // ignore
+  const handleEditPassword = useCallback(async (entry: SavedPassword) => {
+    setPasswordEditError(null)
+    // Hello itself can blur the shell, so start the edit session after approval.
+    if (await authorize(entry)) {
+      ++editOperation.current
+      setEditingPassword({ ...entry })
     }
-  }, [])
+  }, [authorize])
+
+  const cancelPasswordEdit = useCallback(() => {
+    // Discard the temporarily revealed value as soon as the edit form closes.
+    lock()
+    setPasswordEditError(null)
+  }, [lock])
+
+  const handleSavePasswordEdit = useCallback(async () => {
+    if (!editingPassword || savingPasswordEdit) return
+    const label = editingPassword.label.trim()
+    const username = editingPassword.username.trim()
+    if (!label || !username || !editingPassword.password) {
+      setPasswordEditError('required')
+      return
+    }
+    const operation = editOperation.current
+    setPasswordEditError(null)
+    setSavingPasswordEdit(true)
+    try {
+      const updated = await editEntry(editingPassword.id, editingPassword.updatedAt, {
+        label,
+        username,
+        password: editingPassword.password,
+        url: editingPassword.url?.trim() || undefined,
+      })
+      if (operation !== editOperation.current) return
+      if (updated) lock()
+      else setPasswordEditError('conflict')
+    } catch {
+      if (operation === editOperation.current) setPasswordEditError('failed')
+    } finally {
+      setSavingPasswordEdit(false)
+    }
+  }, [editEntry, editingPassword, savingPasswordEdit, lock])
 
   useEffect(() => {
     if (!isTauri) return
@@ -341,8 +421,14 @@ export function AccountSettingsSection({
 
       <div className={styles.sectionDivider} />
 
-      <h3 className={styles.subsectionTitle}>{t('accountPasswords')}</h3>
+      <h3 className={styles.subsectionTitle} data-password-settings tabIndex={-1}>{t('accountPasswords')}</h3>
       <p className={styles.accountNote}>{t('accountPasswordsHint')}</p>
+      <p className={styles.accountNote}>{t('accountPasswordHelloHint')}</p>
+      {pendingId && <p className={styles.accountNote} role="status">{t('accountPasswordVerifying')}</p>}
+      {revealError && <p className={styles.accountError} role="alert">
+        {t(revealError === 'unavailable' ? 'accountPasswordHelloUnavailable'
+          : revealError === 'clipboard' ? 'accountPasswordCopyFailed' : 'accountPasswordVerifyFailed')}
+      </p>}
 
       <div className={styles.vaultImportRow}>
         {isTauri &&
@@ -376,6 +462,10 @@ export function AccountSettingsSection({
       </div>
       {importMessage && <p className={styles.accountSuccess}>{importMessage}</p>}
       {importError && <p className={styles.accountError}>{importError}</p>}
+      {passwordEditError && <p role="alert" className={styles.accountError}>
+        {t(passwordEditError === 'conflict' ? 'accountPasswordEditConflict'
+          : passwordEditError === 'required' ? 'accountPasswordEditRequired' : 'accountPasswordEditFailed')}
+      </p>}
       {isTauri && passwordSources.length > 0 && (
         <p className={styles.accountNote}>{t('accountChromeVaultNote')}</p>
       )}
@@ -384,28 +474,97 @@ export function AccountSettingsSection({
         <p className={styles.accountNote}>{t('accountNoPasswords')}</p>
       )}
 
-      {entries.map((entry) => (
+      {entries.length > 0 && (
+        <label className={styles.vaultSearch}>
+          <span>{t('accountPasswordSearch')}</span>
+          <input
+            className={styles.fieldInput}
+            type="search"
+            value={passwordQuery}
+            onChange={(event) => setPasswordQuery(event.target.value)}
+            placeholder={t('accountPasswordSearchPlaceholder')}
+            aria-label={t('accountPasswordSearch')}
+          />
+        </label>
+      )}
+
+      {entries.length > 0 && passwordGroups.length === 0 && (
+        <p className={styles.accountNote}>{t('accountPasswordNoMatch')}</p>
+      )}
+
+      {passwordGroups.map((group) => (
+        <section key={group.domain} className={styles.vaultDomainGroup}>
+          <div className={styles.vaultDomainHeader}>
+            <span className={styles.vaultDomainIcon} aria-hidden="true">
+              {group.domain.slice(0, 1).toLocaleUpperCase()}
+            </span>
+            <span>{group.domain}</span>
+          </div>
+          {group.entries.map((entry) => editingPassword?.id === entry.id ? (
+        <div key={entry.id} className={styles.vaultForm}>
+          <p className={styles.accountNote}>{t('accountPasswordAutoLock')}</p>
+          <label className={styles.fieldLabel}>
+            {t('accountLabel')}
+            <input className={styles.fieldInput} value={editingPassword.label}
+              onChange={(event) => setEditingPassword((current) => current && { ...current, label: event.target.value })} />
+          </label>
+          <label className={styles.fieldLabel}>
+            {t('accountUrl')}
+            <input className={styles.fieldInput} value={editingPassword.url ?? ''}
+              onChange={(event) => setEditingPassword((current) => current && { ...current, url: event.target.value || undefined })} />
+          </label>
+          <label className={styles.fieldLabel}>
+            {t('accountUsername')}
+            <input className={styles.fieldInput} value={editingPassword.username}
+              onChange={(event) => setEditingPassword((current) => current && { ...current, username: event.target.value })} />
+          </label>
+          <label className={styles.fieldLabel}>
+            {t('accountPassword')}
+            <input className={styles.fieldInput} type="text" value={editingPassword.password}
+              onChange={(event) => setEditingPassword((current) => current && { ...current, password: event.target.value })} />
+          </label>
+          <div className={styles.vaultFormActions}>
+            <button type="button" className={styles.actionBtn} disabled={savingPasswordEdit} onClick={cancelPasswordEdit}>
+              {t('cancel')}
+            </button>
+            <button type="button" className={styles.actionBtn} disabled={savingPasswordEdit} onClick={() => void handleSavePasswordEdit()}>
+              {t('save')}
+            </button>
+          </div>
+        </div>
+      ) : (
         <div key={entry.id} className={styles.vaultItem}>
           <div className={styles.vaultItemMain}>
-            <div className={styles.vaultItemTitle}>{entry.label}</div>
+            <div className={styles.vaultItemTitleRow}>
+              <span className={styles.vaultItemTitle}>{entry.label}</span>
+              <span className={styles.vaultUpdated}>
+                {tf(locale, 'accountPasswordUpdated', {
+                  time: passwordDateFormat.format(new Date(entry.updatedAt)),
+                })}
+              </span>
+            </div>
             <div className={styles.vaultItemMeta}>
               {entry.username}
-              {entry.url ? ` · ${entry.url}` : ''}
+              {entry.url ? ` · ${passwordDomain(entry)}` : ''}
             </div>
             <div className={styles.vaultItemSecret}>
-              {revealedIds.has(entry.id) ? entry.password : '••••••••'}
+              {isRevealed(entry) ? entry.password : '••••••••'}
             </div>
           </div>
           <div className={styles.vaultItemActions}>
-            <button type="button" className={styles.actionBtn} onClick={() => toggleReveal(entry.id)}>
-              {revealedIds.has(entry.id) ? t('accountHide') : t('accountShow')}
+            <button type="button" className={styles.actionBtn} disabled={pendingId !== null} onClick={() => void toggleReveal(entry)}>
+              {isRevealed(entry) ? t('accountHide') : t('accountShow')}
             </button>
-            <button type="button" className={styles.actionBtn} onClick={() => void copyText(entry.password)}>
+            <button type="button" className={styles.actionBtn} disabled={pendingId !== null} onClick={() => void copyPassword(entry)}>
               {t('accountCopy')}
+            </button>
+            <button type="button" className={styles.actionBtn} disabled={pendingId !== null} onClick={() => void handleEditPassword(entry)}>
+              {t('accountEdit')}
             </button>
             <button
               type="button"
               className={styles.dangerBtn}
+              disabled={pendingId !== null}
               onClick={() => {
                 void removeEntry(entry.id).catch((error) => {
                   console.error('Password removal failed', error)
@@ -416,6 +575,8 @@ export function AccountSettingsSection({
             </button>
           </div>
         </div>
+          ))}
+        </section>
       ))}
 
       {showAddPassword ? (

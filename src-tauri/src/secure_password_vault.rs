@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const VAULT_FILE_NAME: &str = "password-vault.dpapi";
 const MAX_VAULT_JSON_BYTES: usize = 10 * 1024 * 1024;
@@ -244,15 +244,31 @@ pub fn password_vault_load(app: tauri::AppHandle) -> Result<Option<String>, Stri
 }
 
 #[tauri::command]
-pub fn password_vault_save(app: tauri::AppHandle, json: String) -> Result<(), String> {
+pub fn password_vault_save(
+    app: tauri::AppHandle,
+    json: String,
+    expected_json: Option<String>,
+) -> Result<bool, String> {
     validate_vault_json(&json)?;
 
     let _guard = VAULT_IO_LOCK
         .lock()
         .map_err(|_| "Password vault I/O lock was poisoned.".to_string())?;
     let path = vault_path(&app)?;
+    // Compare and replace under one lock, including writes from other windows.
+    let current = read_with_backup_recovery(&path, |encrypted| {
+        let decrypted = unprotect(encrypted)?;
+        let json = String::from_utf8(decrypted).map_err(|error| error.to_string())?;
+        validate_vault_json(&json)?;
+        Ok(json)
+    })?;
+    if current != expected_json {
+        return Ok(false);
+    }
     let encrypted = protect(json.as_bytes())?;
-    durable_replace(&path, &encrypted, true)
+    durable_replace(&path, &encrypted, true)?;
+    let _ = app.emit("nebula-password-vault-changed", ());
+    Ok(true)
 }
 
 #[tauri::command]
@@ -268,6 +284,7 @@ pub fn password_vault_clear(app: tauri::AppHandle) -> Result<(), String> {
     if backup.is_file() {
         std::fs::remove_file(backup).map_err(|error| error.to_string())?;
     }
+    let _ = app.emit("nebula-password-vault-changed", ());
     Ok(())
 }
 

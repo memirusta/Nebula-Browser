@@ -12,7 +12,8 @@ mod imp {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2ContextMenuItem, ICoreWebView2ContextMenuItemCollection,
         ICoreWebView2ContextMenuRequestedEventArgs, ICoreWebView2ContextMenuRequestedEventHandler,
-        ICoreWebView2Deferral, ICoreWebView2_11, COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND,
+        ICoreWebView2Deferral, ICoreWebView2_11, ICoreWebView2_13,
+        COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND,
     };
     use windows::Win32::Foundation::POINT;
     use windows_core::{Interface, PWSTR};
@@ -21,6 +22,12 @@ mod imp {
     const CONTEXT_MENU_CANCELLED_EVENT: &str = "nebula-site-context-menu-cancelled";
     const NEBULA_PRINT_COMMAND_ID: i32 = -10_001;
     const NEBULA_INSPECT_COMMAND_ID: i32 = -10_002;
+    const NEBULA_OPEN_SELECTION_COMMAND_ID: i32 = -10_003;
+    const NEBULA_PASSWORD_SETTINGS_COMMAND_ID: i32 = -10_004;
+    // Observed in a real password-field menu: WebView2 exposes Import passwords
+    // as Name="other", CommandId=52999, even with its password store disabled.
+    // Keep this fallback scoped to that unnamed command, never its translated label.
+    const WEBVIEW2_IMPORT_PASSWORDS_COMMAND_ID: i32 = 52_999;
     const CONTEXT_MENU_TIMEOUT: Duration = Duration::from_secs(15);
     const MAX_PENDING_CONTEXT_MENUS_PER_TAB: usize = 1;
 
@@ -34,6 +41,8 @@ mod imp {
         tab_label: String,
         args: ICoreWebView2ContextMenuRequestedEventArgs,
         deferral: ICoreWebView2Deferral,
+        selected_url: Option<String>,
+        private_mode: Option<bool>,
     }
 
     thread_local! {
@@ -89,6 +98,62 @@ mod imp {
             .take(limit)
             .count()
             < limit
+    }
+
+    fn selected_web_address(selection: &str) -> Option<String> {
+        let selection = selection.trim();
+        if selection.is_empty()
+            || selection.len() > 8_192
+            || selection
+                .chars()
+                .any(|ch| ch.is_whitespace() || ch.is_control())
+            || selection.contains(['\\', '<', '>', '"'])
+        {
+            return None;
+        }
+        let lower = selection.to_ascii_lowercase();
+        let explicit_scheme = lower.starts_with("https://") || lower.starts_with("http://");
+        let candidate = if explicit_scheme {
+            selection.to_string()
+        } else {
+            format!("https://{selection}")
+        };
+        let mut parsed = url::Url::parse(&candidate).ok()?;
+        if !matches!(parsed.scheme(), "http" | "https")
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+        {
+            return None;
+        }
+        let host = parsed.host_str()?;
+        if !explicit_scheme {
+            // Bare text must look like a DNS hostname, not an email, relative
+            // path, search phrase, or URL scheme.
+            let host = host.trim_end_matches('.');
+            let labels: Vec<_> = host.split('.').collect();
+            let suffix = labels.last()?;
+            if labels.len() < 2
+                || host.len() > 253
+                || labels.iter().any(|label| {
+                    label.is_empty()
+                        || label.len() > 63
+                        || label.starts_with('-')
+                        || label.ends_with('-')
+                        || !label
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                })
+                || suffix.len() < 2
+                || !(suffix.bytes().all(|byte| byte.is_ascii_alphabetic())
+                    || suffix.starts_with("xn--"))
+            {
+                return None;
+            }
+            if crate::network_address::is_local_network_host(host) {
+                parsed.set_scheme("http").ok()?;
+            }
+        }
+        Some(parsed.into())
     }
 
     fn complete_context_request(request: PendingContextMenu) {
@@ -245,6 +310,16 @@ mod imp {
                 payload.command_id = NEBULA_PRINT_COMMAND_ID;
             }
 
+            if payload.name == "importPasswords"
+                || (payload.name == "other"
+                    && payload.command_id == WEBVIEW2_IMPORT_PASSWORDS_COMMAND_ID
+                    && payload.kind == "command")
+            {
+                // Never execute Edge's unsupported edge://settings password UI.
+                payload.command_id = NEBULA_PASSWORD_SETTINGS_COMMAND_ID;
+                payload.name = "nebula-import-passwords".into();
+            }
+
             items.push(payload);
         }
 
@@ -321,6 +396,17 @@ mod imp {
                 let result = (|| -> windows_core::Result<i64> {
                     let core = inner.controller().CoreWebView2()?;
                     let core11 = core.cast::<ICoreWebView2_11>()?;
+                    // A new tab inherits this WebView's actual profile, even
+                    // when the user's default for future tabs has changed.
+                    let private_mode = core
+                        .cast::<ICoreWebView2_13>()
+                        .and_then(|core| core.Profile())
+                        .and_then(|profile| {
+                            let mut value = windows_core::BOOL::default();
+                            profile.IsInPrivateModeEnabled(&mut value)?;
+                            Ok(value.as_bool())
+                        })
+                        .ok();
                     let handler_app = event_app.clone();
                     let handler_label = event_label.clone();
                     let handler =
@@ -340,7 +426,26 @@ mod imp {
                             let payload = (|| -> windows_core::Result<ContextMenuPayload> {
                                 let target = args.ContextMenuTarget()?;
                                 let collection = args.MenuItems()?;
-                                let items = collection_payload(&collection, 0)?;
+                                let mut items = collection_payload(&collection, 0)?;
+                                let selection_text =
+                                    take_string(|value| target.SelectionText(value));
+                                if private_mode.is_some()
+                                    && selected_web_address(&selection_text).is_some()
+                                {
+                                    items.insert(
+                                        0,
+                                        ContextMenuItemPayload {
+                                            command_id: NEBULA_OPEN_SELECTION_COMMAND_ID,
+                                            label: String::new(),
+                                            name: "nebula-open-selected-address".to_string(),
+                                            shortcut: String::new(),
+                                            kind: "command".to_string(),
+                                            enabled: true,
+                                            checked: false,
+                                            children: Vec::new(),
+                                        },
+                                    );
+                                }
                                 let mut location = POINT::default();
                                 let _ = args.Location(&mut location);
                                 let scale = handler_app
@@ -365,9 +470,7 @@ mod imp {
                                     frame_uri: take_string(|value| target.FrameUri(value)),
                                     link_uri: take_string(|value| target.LinkUri(value)),
                                     source_uri: take_string(|value| target.SourceUri(value)),
-                                    selection_text: take_string(|value| {
-                                        target.SelectionText(value)
-                                    }),
+                                    selection_text,
                                     editable: editable.as_bool(),
                                     items,
                                 })
@@ -381,6 +484,7 @@ mod imp {
                                 }
                             };
 
+                            let selected_url = selected_web_address(&payload.selection_text);
                             enqueue_context_request(
                                 &handler_app,
                                 payload,
@@ -388,6 +492,8 @@ mod imp {
                                     tab_label: handler_label.clone(),
                                     args,
                                     deferral,
+                                    selected_url,
+                                    private_mode,
                                 },
                             );
                             Ok(())
@@ -438,6 +544,7 @@ mod imp {
         command_id: Option<i32>,
     ) -> Result<(), String> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let app_for_response = app.clone();
         app.run_on_main_thread(move || {
             let result = PENDING.with(|pending| {
                 let request = pending.borrow_mut().remove(&request_id).ok_or_else(|| {
@@ -453,7 +560,23 @@ mod imp {
                         Ok(())
                     })()
                 };
-                native_result.map_err(|error| error.to_string())
+                native_result.map_err(|error| error.to_string())?;
+                if command_id == Some(NEBULA_OPEN_SELECTION_COMMAND_ID) {
+                    let uri = request
+                        .selected_url
+                        .ok_or("no selected web address in this menu")?;
+                    let private_mode = request
+                        .private_mode
+                        .ok_or("opener profile is unavailable")?;
+                    crate::site_ui::request_new_tab(
+                        &app_for_response,
+                        &request_id,
+                        &request.tab_label,
+                        uri,
+                        private_mode,
+                    )?;
+                }
+                Ok(())
             });
             let _ = tx.send(result);
         })
@@ -521,7 +644,55 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::has_pending_capacity;
+        use super::{has_pending_capacity, selected_web_address};
+
+        #[test]
+        fn selected_addresses_accept_http_www_and_bare_domains() {
+            for (selected, expected) in [
+                (
+                    " https://example.com/path?q=1#part ",
+                    "https://example.com/path?q=1#part",
+                ),
+                ("HTTP://example.com", "http://example.com/"),
+                ("www.example.com", "https://www.example.com/"),
+                ("example.com:8443/path", "https://example.com:8443/path"),
+                ("example.co.uk", "https://example.co.uk/"),
+                ("bücher.de", "https://xn--bcher-kva.de/"),
+                ("router.local", "http://router.local/"),
+                ("http://192.168.1.1", "http://192.168.1.1/"),
+            ] {
+                assert_eq!(
+                    selected_web_address(selected).as_deref(),
+                    Some(expected),
+                    "{selected}"
+                );
+            }
+        }
+
+        #[test]
+        fn selected_addresses_reject_plain_text_email_and_unsafe_schemes() {
+            for selected in [
+                "",
+                "hello world",
+                "example",
+                "example.com other.com",
+                "example.com\nother.com",
+                "hello@example.com",
+                "https://user:password@example.com",
+                "javascript:alert(1)",
+                "data:text/html,hi",
+                "file:///C:/test.html",
+                "ftp://example.com",
+                "/some/path",
+                "C:\\test.html",
+                "example..com",
+                "-example.com",
+                "example.com\\path",
+                "https://example.com/\u{0000}",
+            ] {
+                assert!(selected_web_address(selected).is_none(), "{selected:?}");
+            }
+        }
 
         #[test]
         fn context_menu_queue_allows_only_one_pending_request_per_tab() {
@@ -529,6 +700,15 @@ mod imp {
             assert!(!has_pending_capacity(labels.into_iter(), "tab-a", 1));
             assert!(has_pending_capacity(labels.into_iter(), "tab-c", 1));
         }
+    }
+
+    #[cfg(all(test, feature = "extension-native-smoke"))]
+    mod native_test {
+        include!("context_menu_native_test.rs");
+    }
+    #[cfg(test)]
+    mod native_tests {
+        include!("context_menu_native_test.rs");
     }
 }
 

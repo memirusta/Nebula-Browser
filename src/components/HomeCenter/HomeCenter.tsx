@@ -21,6 +21,7 @@ import type {
 import type { BrowseSession } from '../../core/browseSession'
 import { SEARCH_SIZE_WIDTH } from '../../core/homeLayout'
 import type { Shortcut } from '../../core/types'
+import type { EditPinnedShortcutResult } from '../../core/pinnedShortcuts'
 import { EditModuleChrome } from '../HomeEdit/EditModuleChrome'
 import { ModuleOffsetWrap } from './ModuleOffsetWrap'
 import { PinnedStrip } from './PinnedStrip'
@@ -48,6 +49,11 @@ interface HomeCenterProps {
   profileOffset?: ModuleOffset
   pinnedShortcuts?: Shortcut[]
   onUnpinShortcut?: (id: string) => void
+  onEditPinnedShortcut?: (
+    id: string,
+    title: string,
+    url: string,
+  ) => EditPinnedShortcutResult
   onReorderPins?: (
     fromIndex: number,
     toIndex: number,
@@ -91,6 +97,7 @@ export function HomeCenter({
   profileOffset = { x: 0, y: 0 },
   pinnedShortcuts = [],
   onUnpinShortcut,
+  onEditPinnedShortcut,
   onReorderPins,
   isShortcutMuted,
   onToggleShortcutMute,
@@ -478,6 +485,13 @@ useEffect(() => {
         }
         onUnpin={(id) =>
           onUnpinShortcut?.(id)
+        }
+        onEdit={(id, title, url) =>
+          onEditPinnedShortcut?.(id, title, url) ?? {
+            pins: [],
+            accepted: false,
+            reason: 'not-found',
+          }
         }
         onReorder={(
           from,

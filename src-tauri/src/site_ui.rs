@@ -184,6 +184,40 @@ mod imp {
         features: PopupWindowFeaturesPayload,
     }
 
+    pub(crate) fn request_new_tab(
+        app: &AppHandle,
+        request_id: &str,
+        tab_label: &str,
+        uri: String,
+        private_mode: bool,
+    ) -> Result<(), String> {
+        let webview = app
+            .get_webview(tab_label)
+            .ok_or("opener webview no longer exists")?;
+        let owner = webview.window().label().to_string();
+        app.emit_to(
+            &owner,
+            SITE_NEW_WINDOW_EVENT,
+            NewWindowPayload {
+                request_id: request_id.to_string(),
+                tab_label: tab_label.to_string(),
+                uri,
+                user_initiated: true,
+                private_mode,
+                features: PopupWindowFeaturesPayload {
+                    is_popup: false,
+                    has_position: false,
+                    has_size: false,
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                },
+            },
+        )
+        .map_err(|error| error.to_string())
+    }
+
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
     struct CloseWindowPayload {
@@ -3754,12 +3788,12 @@ if (container) queueCandidate(container);
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) use imp::validated_web_message_source;
-#[cfg(target_os = "windows")]
 pub use imp::{
     attach_popup, cancel_popup, request_permission, respond, setup, setup_main_permission_ui,
     teardown, SiteUiResponse,
 };
+#[cfg(target_os = "windows")]
+pub(crate) use imp::{request_new_tab, validated_web_message_source};
 
 #[cfg(not(target_os = "windows"))]
 #[derive(Clone, Debug, serde::Deserialize)]

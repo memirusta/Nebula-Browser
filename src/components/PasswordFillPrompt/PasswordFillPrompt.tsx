@@ -67,10 +67,6 @@ export function PasswordFillPrompt({
             event.preventDefault()
             onDismiss()
           }
-          if (event.key === 'Enter' && !multipleAccounts && first) {
-            event.preventDefault()
-            onFill(first)
-          }
         }}
       >
         <div className={baseStyles.headerRow}>

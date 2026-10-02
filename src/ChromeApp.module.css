@@ -23,7 +23,7 @@
   animation: zoomIndicatorIn 150ms ease-out;
 }
 
-.zoomIndicatorShifted {
+.indicatorBelow {
   top: 78px;
 }
 

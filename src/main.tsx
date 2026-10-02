@@ -12,6 +12,7 @@ import { syncTauriViewMode } from './platform/tauriBrowsingMode'
 import {
   prewarmUblockProfile,
   scheduleInitialBrowseWebviewPrewarm,
+  initWindowRestoreRepair,
 } from './platform/tauriBrowser'
 import { writeTransitionLog } from './platform/tauriTransitionLog'
 
@@ -32,6 +33,15 @@ if (chromeShell) {
 }
 if (isTauri && !chromeShell) {
   syncTauriViewMode('home', null)
+  // Window restore must be observed even when profile prewarm or WebView
+  // creation stalls. Neither operation is a prerequisite for this listener.
+  try {
+    initWindowRestoreRepair()
+  } catch (error) {
+    void writeTransitionLog('browser.restore-listener.init', 'error', {
+      errorName: error instanceof Error ? error.name : 'Unknown',
+    })
+  }
   void prewarmUblockProfile()
     .then(() => scheduleInitialBrowseWebviewPrewarm())
     .catch(() => undefined)

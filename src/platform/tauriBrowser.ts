@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
+import { PhysicalSize, type PhysicalPosition } from '@tauri-apps/api/dpi'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { Webview, type WebviewOptions } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -10,6 +10,7 @@ import {
   tabWebviewLabel,
 } from '../core/browserTab'
 import { KeyedLifecycleQueue } from '../core/keyedLifecycleQueue'
+import { createCoalescedRestoreRepair, hasUsableWindowClientSize, restoreBrowsingSurfaces } from '../core/mainWebviewRestore'
 import { allSettledOrThrow, LatestPerKeyRunner } from '../core/latestPerKey'
 import {
   prewarmCreationIsCurrent,
@@ -17,6 +18,7 @@ import {
   shouldKeepPrewarmedWebview,
 } from '../core/prewarmProfile'
 import { debounce } from './debounce'
+import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
 import { normalizePageFavicon } from '../core/pageFavicon'
 import { isTauri } from './runtime'
 import {
@@ -30,6 +32,7 @@ import {
 } from './tauriTransitionLog'
 import {
   cancelScheduledStack,
+  isBrowsingChromeExpected,
   scheduleStackBrowsingChromeAboveBrowser,
   stackBrowsingChromeAboveBrowser,
 } from './tauriWebviewStack'
@@ -48,11 +51,11 @@ const PREWARM_ADOPTION_GRACE_MS = 120
 const MEMORY_PRESSURE_POLL_MS = 15_000
 const MEMORY_PRESSURE_MIN_PERCENT = 45
 const MEMORY_PRESSURE_MAX_PERCENT = 95
-const TAB_SLEEP_DELAY_RELAXED_MS = 10 * 60_000
-const TAB_SLEEP_DELAY_PRESSURED_MS = 45_000
+const TAB_SLEEP_DELAY_RELAXED_MS = 90_000
+const TAB_SLEEP_DELAY_PRESSURED_MS = 30_000
 const TAB_SLEEP_RETRY_MS = 60_000
-const TAB_UNLOAD_DELAY_RELAXED_MS = 2 * 60 * 60_000
-const TAB_UNLOAD_DELAY_PRESSURED_MS = 15 * 60_000
+const TAB_UNLOAD_DELAY_RELAXED_MS = 20 * 60_000
+const TAB_UNLOAD_DELAY_PRESSURED_MS = 5 * 60_000
 const TAB_UNLOAD_RETRY_MS = 5 * 60_000
 const MIN_DYNAMIC_TIMER_MS = 1_000
 const TAB_RESTORE_RETRY_MS = 350
@@ -283,6 +286,23 @@ let privacyOptions: BrowserPrivacyOptions = {
 
 let privacyRevision = 0
 const popupPrivacyModes = new Map<string, boolean>()
+const tabPrivacyModes = new Map<string, boolean>()
+
+export function registerBrowseTabPrivateMode(shortcutId: string, isPrivate: boolean): boolean {
+  if (!tabPrivacyModes.has(shortcutId)) tabPrivacyModes.set(shortcutId, isPrivate)
+  return tabPrivacyModes.get(shortcutId)!
+}
+
+export function browseTabIsPrivate(shortcutId: string): boolean {
+  return tabPrivacyModes.get(shortcutId) ?? privacyOptions.privateMode
+}
+
+export function browseWebviewIsPrivate(label: string): boolean {
+  const popupMode = popupPrivacyModes.get(label)
+  if (popupMode !== undefined) return popupMode
+  const id = shortcutIdForTabWebviewLabel(label)
+  return id ? browseTabIsPrivate(id) : privacyOptions.privateMode
+}
 
 function nativePrivacyOptions(options: BrowserPrivacyOptions) {
   return {
@@ -307,7 +327,13 @@ const privacyApplyRunner = new LatestPerKeyRunner(
   async (label: string, options) => {
     await invoke('webview_apply_privacy', {
       label,
-      options,
+      options: {
+        ...options,
+        privateMode: (() => {
+          const id = shortcutIdForTabWebviewLabel(label)
+          return id ? browseTabIsPrivate(id) : options.privateMode
+        })(),
+      },
     })
   },
 )
@@ -434,6 +460,17 @@ export type BrowsingDataKind =
   | 'cache'
   | 'history'
   | 'permissions'
+
+export interface BrowserProfileStorageUsage {
+  totalBytes: number
+  cacheBytes: number
+}
+
+export async function getBrowserProfileStorageUsage(): Promise<BrowserProfileStorageUsage | null> {
+  if (!isTauri) return null
+
+  return invoke<BrowserProfileStorageUsage>('webview_profile_storage_usage')
+}
 
 export async function clearBrowseData(
   shortcutId: string | null,
@@ -576,7 +613,6 @@ let activeWebview: Webview | null = null
 const webviewCache = new Map<string, Webview>()
 const createdTabs = new Set<string>()
 const deferredInitialNavigations = new Map<string, string>()
-const lowMemoryWebviews = new Set<string>()
 const suspendedWebviews = new Set<string>()
 const tabSleepTimers = new Map<string, number>()
 const tabUnloadTimers = new Map<string, number>()
@@ -614,6 +650,8 @@ let prewarmedWebview: Webview | null = null
 let prewarmedPrivateMode: boolean | null = null
 let prewarmPromise: Promise<void> | null = null
 let nextPrewarmTimer: number | null = null
+let unfocusedPrewarmTimer: number | null = null
+let prewarmWindowFocused = true
 let prewarmSequence = 0
 let prewarmGeneration = 0
 let activationSequence = 0
@@ -644,8 +682,8 @@ async function resetPrewarmedWebviewForPrivateModeChange(): Promise<void> {
   scheduleNextBrowseWebviewPrewarm()
 }
 
-async function discardPrewarmedWebviewForMemoryPressure(
-  memoryPressurePercent: number,
+async function discardPrewarmedWebview(
+  reason: 'memory-pressure' | 'inactive-window',
 ): Promise<void> {
   prewarmGeneration += 1
 
@@ -667,21 +705,115 @@ async function discardPrewarmedWebviewForMemoryPressure(
   await destroyTabWebview(ready.label)
 
   await writeTransitionLog(
-    'browser.prewarm.discard-memory-pressure',
+    reason === 'memory-pressure'
+      ? 'browser.prewarm.discard-memory-pressure'
+      : 'browser.prewarm.discard-inactive-window',
     'info',
     {
       label: ready.label,
-      memoryPressurePercent,
+      memoryPressurePercent: systemMemoryPressurePercent,
     },
   )
+}
+
+export function setBrowserWindowPrewarmFocused(focused: boolean): void {
+  prewarmWindowFocused = focused
+  if (unfocusedPrewarmTimer !== null) {
+    window.clearTimeout(unfocusedPrewarmTimer)
+    unfocusedPrewarmTimer = null
+  }
+  if (focused) {
+    if (!prewarmedWebview && !prewarmPromise) scheduleNextBrowseWebviewPrewarm()
+    return
+  }
+  if (nextPrewarmTimer !== null) {
+    window.clearTimeout(nextPrewarmTimer)
+    nextPrewarmTimer = null
+  }
+  unfocusedPrewarmTimer = window.setTimeout(() => {
+    unfocusedPrewarmTimer = null
+    if (!prewarmWindowFocused) {
+      void discardPrewarmedWebview('inactive-window')
+    }
+  }, 30_000)
 }
 
 let resizeUnlisten: (() => void) | null = null
 let scaleUnlisten: (() => void) | null = null
 let resizeDebounceCancel: (() => void) | null = null
 let lastBrowserBoundsKey: string | null = null
+const browserAutoResizeDisabledLabels = new Set<string>()
+type KnownGoodBrowserBounds = {
+  label: string
+  windowLabel: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+let lastKnownGoodBrowserBounds: KnownGoodBrowserBounds | null = null
 let siteFullscreenBounds = false
 let windowMinimizedWebviewLabel: string | null = null
+
+type RestoreTimingEvent = {
+  traceId: string
+  sequence: number
+  stage: string
+  monotonicTsMs: number
+  details?: Record<string, unknown>
+}
+
+const restoreTimingEventsByTraceId = new Map<string, RestoreTimingEvent[]>()
+const restoreTimingSequenceByTraceId = new Map<string, number>()
+
+function isRestoreTimingTrace(traceId: string): boolean {
+  return traceId.startsWith('restore-')
+}
+
+function recordRestoreTiming(
+  traceId: string,
+  stage: string,
+  details?: Record<string, unknown>,
+): void {
+  if (!isRestoreTimingTrace(traceId)) return
+  const sequence =
+    (restoreTimingSequenceByTraceId.get(traceId) ?? 0) + 1
+  restoreTimingSequenceByTraceId.set(traceId, sequence)
+
+  const events = restoreTimingEventsByTraceId.get(traceId) ?? []
+  events.push({
+    traceId,
+    sequence,
+    stage,
+    monotonicTsMs:
+      Math.round(performance.now() * 1000) / 1000,
+    details,
+  })
+  restoreTimingEventsByTraceId.set(traceId, events)
+}
+
+function flushRestoreTiming(
+  traceId: string,
+  status: 'ok' | 'error',
+): void {
+  if (!isRestoreTimingTrace(traceId)) return
+  const events = restoreTimingEventsByTraceId.get(traceId)
+  restoreTimingEventsByTraceId.delete(traceId)
+  restoreTimingSequenceByTraceId.delete(traceId)
+  if (!events || events.length === 0) return
+
+  queueMicrotask(() => {
+    void writeTransitionLog(
+      'browser.restore-repair.timing',
+      status === 'error' ? 'error' : 'info',
+      {
+        traceId,
+        eventCount: events.length,
+        events,
+      },
+    )
+  })
+}
 
 export function setSiteFullscreenBoundsMode(
   active: boolean,
@@ -711,18 +843,100 @@ async function applyBrowserBounds(
   webview: Webview,
   position: PhysicalPosition,
   size: PhysicalSize,
+  traceId = 'background-layout',
 ): Promise<void> {
+  const opId = `${traceId}:${webview.label}:bounds:${Date.now()}`
+  recordRestoreTiming(traceId, 'browser.bounds.apply-entry', {
+    traceId,
+    opId,
+    label: webview.label,
+    x: position.x,
+    y: position.y,
+    width: size.width,
+    height: size.height,
+  })
+
   try {
-    await invoke('webview_set_browser_bounds', {
+    const windowLabel = currentBrowserWindowLabel()
+    recordRestoreTiming(traceId, 'browser.bounds.atomic-invoke-start', {
+      traceId,
+      opId,
       label: webview.label,
-      windowLabel: currentBrowserWindowLabel(),
+      windowLabel,
       x: position.x,
       y: position.y,
       width: size.width,
       height: size.height,
     })
+    const atomicInvokeStartedAt = performance.now()
+    await invoke('webview_set_browser_bounds', {
+      label: webview.label,
+      windowLabel,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+    })
+    const knownGoodCacheSkipReason =
+      _restoreRepairInProgress
+        ? 'restore-in-progress'
+        : siteFullscreenBounds
+          ? 'site-fullscreen'
+          : activeWebview === null
+            ? 'no-active-webview'
+            : activeWebview.label !== webview.label
+              ? 'inactive-webview'
+              : size.width <= 0 || size.height <= 0
+                ? 'invalid-bounds'
+                : null
+    const knownGoodCacheDetails = {
+      traceId,
+      label: webview.label,
+      windowLabel,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+    }
+    if (knownGoodCacheSkipReason) {
+      recordRestoreTiming(
+        traceId,
+        'browser.bounds.known-good-cache-skip',
+        {
+          ...knownGoodCacheDetails,
+          reason: knownGoodCacheSkipReason,
+        },
+      )
+    } else {
+      lastKnownGoodBrowserBounds = {
+        label: webview.label,
+        windowLabel,
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+      }
+      recordRestoreTiming(
+        traceId,
+        'browser.bounds.known-good-cache-write',
+        knownGoodCacheDetails,
+      )
+    }
+    recordRestoreTiming(traceId, 'browser.bounds.atomic-invoke-ok', {
+      traceId,
+      opId,
+      label: webview.label,
+      durationMs:
+        Math.round((performance.now() - atomicInvokeStartedAt) * 1000) / 1000,
+    })
     return
   } catch (error) {
+    recordRestoreTiming(traceId, 'browser.bounds.atomic-invoke-error', {
+      traceId,
+      opId,
+      label: webview.label,
+      ...transitionErrorDetails(error),
+    })
     if (import.meta.env.DEV) {
       console.warn(
         '[nebula] atomic browser bounds failed; using ordered Webview fallback',
@@ -731,25 +945,63 @@ async function applyBrowserBounds(
     }
   }
 
+  recordRestoreTiming(traceId, 'browser.bounds.fallback-start', {
+    traceId,
+    opId,
+    label: webview.label,
+  })
+
   // Size first, position last. After a Windows reparent Wry 0.55 may map the
   // current rectangle through the old parent while handling each split call.
   // Finishing with position guarantees the final origin even on an older
   // native binary where the atomic command is unavailable during HMR.
   await webview.setSize(size)
   await webview.setPosition(position)
+
+  recordRestoreTiming(traceId, 'browser.bounds.fallback-ok', {
+    traceId,
+    opId,
+    label: webview.label,
+  })
 }
 
 async function syncBrowserBounds(
   webview: Webview,
   traceId = 'background-layout',
 ): Promise<boolean> {
-  const { position, size } =
-    await traceTransitionCall(
-      traceId,
-      'browser.bounds.resolve',
-      { label: webview.label },
-      currentBrowserPhysicalBounds,
-    )
+  const opId = `${traceId}:${webview.label}:sync:${Date.now()}`
+  recordRestoreTiming(traceId, 'browser.bounds.sync-entry', {
+    traceId,
+    opId,
+    label: webview.label,
+  })
+
+  let position: PhysicalPosition
+  let size: PhysicalSize
+  try {
+    recordRestoreTiming(traceId, 'browser.bounds.resolve-start', {
+      opId,
+      label: webview.label,
+    })
+    const resolveStartedAt = performance.now()
+    const resolved =
+      await currentBrowserPhysicalBounds()
+    recordRestoreTiming(traceId, 'browser.bounds.resolve-end', {
+      opId,
+      label: webview.label,
+      durationMs:
+        Math.round((performance.now() - resolveStartedAt) * 1000) / 1000,
+    })
+    position = resolved.position
+    size = resolved.size
+  } catch (error) {
+    recordRestoreTiming(traceId, 'browser.bounds.resolve-error', {
+      opId,
+      label: webview.label,
+      ...transitionErrorDetails(error),
+    })
+    throw error
+  }
 
   const key = boundsKey(
     position.x,
@@ -758,44 +1010,135 @@ async function syncBrowserBounds(
     size.height,
   )
 
-  if (lastBrowserBoundsKey === key) {
-    await writeTransitionLog(
-      'browser.bounds.unchanged',
-      'info',
-      {
-        traceId,
-        label: webview.label,
-        bounds: key,
-      },
-    )
+  recordRestoreTiming(traceId, 'browser.bounds.compute-ok', {
+    traceId,
+    opId,
+    label: webview.label,
+    x: position.x,
+    y: position.y,
+    width: size.width,
+    height: size.height,
+    boundsKey: key,
+  })
 
+  // A restored Windows window can briefly expose its minimized bootstrap
+  // client rectangle while reporting isMinimized=false. Never apply or cache
+  // that rectangle for a site WebView.
+  if (!siteFullscreenBounds && !hasUsableWindowClientSize(size)) {
+    recordRestoreTiming(traceId, 'browser.bounds.transient-client-skip', {
+      traceId,
+      opId,
+      label: webview.label,
+      width: size.width,
+      height: size.height,
+    })
     return false
   }
 
-  lastBrowserBoundsKey = key
-
-  await traceTransitionCall(
-    traceId,
-    'browser.bounds.set',
-    {
+  // Native restore owns the authoritative client rectangle. Resize/focus
+  // callbacks can still observe the transient minimized size at this point;
+  // never let them overwrite the native repair with that frontend reading.
+  if (_restoreRepairInProgress) {
+    const skippedBoundsDetails = {
+      traceId,
+      opId,
       label: webview.label,
       x: position.x,
       y: position.y,
       width: size.width,
       height: size.height,
-    },
-    () => applyBrowserBounds(webview, position, size),
-  )
+      reason: 'restore-in-progress',
+    }
+    recordRestoreTiming(
+      traceId,
+      'browser.bounds.set-skip-restore-repair',
+      skippedBoundsDetails,
+    )
+    void writeTransitionLog(
+      'browser.bounds.set-skip-restore-repair',
+      'info',
+      skippedBoundsDetails,
+    )
+    return false
+  }
 
-  await traceTransitionCall(
-    traceId,
-    'browser.bounds.set-auto-resize',
-    {
+  if (lastBrowserBoundsKey === key) {
+    recordRestoreTiming(traceId, 'browser.bounds.unchanged', {
+      traceId,
+      opId,
+      label: webview.label,
+      bounds: key,
+    })
+
+    return false
+  }
+
+  recordRestoreTiming(traceId, 'browser.bounds.set-start', {
+    label: webview.label,
+    x: position.x,
+    y: position.y,
+    width: size.width,
+    height: size.height,
+  })
+  const setStartedAt = performance.now()
+  try {
+    await applyBrowserBounds(webview, position, size, traceId)
+    recordRestoreTiming(traceId, 'browser.bounds.set-ok', {
+      label: webview.label,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      durationMs:
+        Math.round((performance.now() - setStartedAt) * 1000) / 1000,
+    })
+  } catch (error) {
+    recordRestoreTiming(traceId, 'browser.bounds.set-error', {
+      label: webview.label,
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      durationMs:
+        Math.round((performance.now() - setStartedAt) * 1000) / 1000,
+      ...transitionErrorDetails(error),
+    })
+    throw error
+  }
+
+  recordRestoreTiming(traceId, 'browser.bounds.set-auto-resize-start', {
+    label: webview.label,
+    autoResize: false,
+  })
+  const autoResizeStartedAt = performance.now()
+  try {
+    if (!browserAutoResizeDisabledLabels.has(webview.label)) {
+      await webview.setAutoResize(false)
+      browserAutoResizeDisabledLabels.add(webview.label)
+    }
+    recordRestoreTiming(traceId, 'browser.bounds.set-auto-resize-ok', {
       label: webview.label,
       autoResize: false,
-    },
-    () => webview.setAutoResize(false),
-  )
+      durationMs:
+        Math.round((performance.now() - autoResizeStartedAt) * 1000) / 1000,
+    })
+  } catch (error) {
+    recordRestoreTiming(traceId, 'browser.bounds.set-auto-resize-error', {
+      label: webview.label,
+      autoResize: false,
+      durationMs:
+        Math.round((performance.now() - autoResizeStartedAt) * 1000) / 1000,
+      ...transitionErrorDetails(error),
+    })
+    throw error
+  }
+
+  lastBrowserBoundsKey = key
+  recordRestoreTiming(traceId, 'browser.bounds.sync-exit', {
+    traceId,
+    opId,
+    label: webview.label,
+  })
 
   return true
 }
@@ -818,6 +1161,440 @@ async function currentWindowIsMinimized(): Promise<boolean> {
   }
 }
 
+// Detect a real minimize -> restore transition and repair native browsing layout.
+let restoreRepairUnbind: (() => void) | null = null
+let _restoreRepairInProgress = false
+
+export function initWindowRestoreRepair(): (() => void) {
+  if (!isTauri) return () => {}
+  if (restoreRepairUnbind) return restoreRepairUnbind
+
+  let cancelled = false
+  let lastKnownMinimized = false
+  let delayedFocusRepair: ReturnType<typeof setTimeout> | null = null
+  let delayedResizeRepair: ReturnType<typeof setTimeout> | null = null
+  const appWindow = getCurrentWindow()
+
+  async function repairBrowsingSurfacesAfterReturn(reason: string): Promise<void> {
+    const webview = activeWebview
+    const tabId = activeTabId
+    if (!webview || !tabId) return
+    const stillCurrent = () => !cancelled && !siteFullscreenBounds
+      && !_restoreRepairInProgress && isBrowsingChromeExpected()
+      && tabActivationRequests.size === 0
+      && activeWebview === webview && activeTabId === tabId
+    if (!stillCurrent()) return
+    const { size } = await browserWebviewPhysicalBounds()
+    if (!hasUsableWindowClientSize(size)) return
+
+    const restored = await restoreBrowsingSurfaces({
+      canRestore: async () => {
+        const minimized = await currentWindowIsMinimized()
+        return !minimized && stillCurrent()
+      },
+      restoreBounds: async () => {
+        // A detected restore already replayed authoritative native geometry.
+        if (reason === 'native-restore-settled') return true
+        await invoke('webview_restore_browsing_layout', {
+          windowLabel: currentBrowserWindowLabel(),
+          x: 0,
+          y: 0,
+          width: size.width,
+          height: size.height,
+          // The visible site must keep its z-order; lowering it below Home
+          // until the stack call raises it again flashes Home on every focus.
+          activeTabLabel: webview.label,
+        })
+        return true
+      },
+      showTab: () => webview.show(),
+      showChrome: async () => {
+        const { showChromeWebview } = await import('./tauriChromeWebview')
+        if (stillCurrent()) await showChromeWebview(SEMI_LUNAR_HIT_ZONE_HEIGHT, { stack: false })
+      },
+      stack: () => invoke('webview_raise_chrome', {
+        windowLabel: currentBrowserWindowLabel(),
+        activeTabLabel: webview.label,
+        fullRepair: true,
+      }),
+    })
+    if (!restored || !stillCurrent()) return
+    if (windowMinimizedWebviewLabel === webview.label) {
+      windowMinimizedWebviewLabel = null
+    }
+    await writeTransitionLog('browser.restore-visible-surfaces', 'info', {
+      reason,
+      tabActive: true,
+      width: size.width,
+      height: size.height,
+    })
+  }
+
+  const browsingSurfaceRepairs = createCoalescedRestoreRepair(
+    repairBrowsingSurfacesAfterReturn,
+    (reason, error) => {
+      void writeTransitionLog('browser.restore-visible-surfaces', 'error', {
+        reason,
+        ...transitionErrorDetails(error),
+      })
+    },
+  )
+  function requestBrowsingSurfaceRepair(reason: string): void {
+    browsingSurfaceRepairs.request(reason)
+  }
+
+  // Safe local helper: wait for a short layout settle using onResized with timeout.
+  async function waitForWindowLayoutSettleLocal(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      let settled = false
+      let unlisten: (() => void) | undefined
+      let timeout: ReturnType<typeof setTimeout>
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        unlisten?.()
+        resolve()
+      }
+      timeout = setTimeout(finish, 120)
+
+      void appWindow
+        .onResized(finish)
+        .then((dispose) => {
+          if (settled) {
+            dispose()
+            return
+          }
+          unlisten = dispose
+        })
+        .catch(finish)
+    })
+  }
+
+  async function runRestoreRepairIfNeeded(traceId: string): Promise<void> {
+    if (_restoreRepairInProgress) return
+    if (siteFullscreenBounds) return // let site-fullscreen flow own repairs
+
+    _restoreRepairInProgress = true
+    let repairStatus: 'ok' | 'error' = 'ok'
+    try {
+      recordRestoreTiming(traceId, 'browser.restore-repair.start')
+
+      const targetLabel = activeWebview?.label ?? null
+      const cachedBounds = lastKnownGoodBrowserBounds
+      const currentWindowLabel = currentBrowserWindowLabel()
+      let stableRestoreBounds: KnownGoodBrowserBounds | null = null
+      let earlySkipReason: string | null = null
+      if (!cachedBounds) {
+        earlySkipReason = 'no-cache'
+      } else if (!targetLabel) {
+        earlySkipReason = 'no-active-webview'
+      } else if (cachedBounds.label !== targetLabel) {
+        earlySkipReason = 'label-mismatch'
+      } else if (cachedBounds.windowLabel !== currentWindowLabel) {
+        earlySkipReason = 'window-mismatch'
+      } else if (cachedBounds.width <= 0 || cachedBounds.height <= 0) {
+        earlySkipReason = 'invalid-bounds'
+      }
+
+      if (
+        earlySkipReason ||
+        !cachedBounds ||
+        !targetLabel
+      ) {
+        recordRestoreTiming(
+          traceId,
+          'browser.restore-repair.early-cache-skip',
+          {
+            reason:
+              earlySkipReason ??
+              (!cachedBounds
+                ? 'no-cache'
+                : 'no-active-webview'),
+            activeWebviewLabel: targetLabel,
+            currentWindowLabel,
+            cachedLabel: cachedBounds?.label ?? null,
+            cachedWindowLabel:
+              cachedBounds?.windowLabel ?? null,
+          },
+        )
+      } else {
+        recordRestoreTiming(
+          traceId,
+          'browser.restore-repair.early-cache-hit',
+          {
+            label: cachedBounds.label,
+            windowLabel: cachedBounds.windowLabel,
+            x: cachedBounds.x,
+            y: cachedBounds.y,
+            width: cachedBounds.width,
+            height: cachedBounds.height,
+          },
+        )
+
+        if (
+          activeWebview?.label !== targetLabel ||
+          cachedBounds.windowLabel !== currentBrowserWindowLabel()
+        ) {
+          recordRestoreTiming(
+            traceId,
+            'browser.restore-repair.early-cache-skip',
+            {
+              reason: activeWebview?.label !== targetLabel
+                ? 'active-changed'
+                : 'window-mismatch',
+              activeWebviewLabel:
+                activeWebview?.label ?? null,
+              targetLabel,
+              cachedLabel: cachedBounds.label,
+              cachedWindowLabel:
+                cachedBounds.windowLabel,
+              currentWindowLabel:
+                currentBrowserWindowLabel(),
+            },
+          )
+        } else {
+          stableRestoreBounds = cachedBounds
+          try {
+            recordRestoreTiming(
+              traceId,
+              'browser.restore-repair.early-invoke-start',
+              {
+                label: cachedBounds.label,
+                windowLabel:
+                  cachedBounds.windowLabel,
+                x: cachedBounds.x,
+                y: cachedBounds.y,
+                width: cachedBounds.width,
+                height: cachedBounds.height,
+              },
+            )
+            const earlyInvokeStartedAt = performance.now()
+            await invoke('webview_set_browser_bounds', {
+              label: cachedBounds.label,
+              windowLabel: cachedBounds.windowLabel,
+              x: cachedBounds.x,
+              y: cachedBounds.y,
+              width: cachedBounds.width,
+              height: cachedBounds.height,
+            })
+            recordRestoreTiming(
+              traceId,
+              'browser.restore-repair.early-invoke-ok',
+              {
+                label: cachedBounds.label,
+                durationMs:
+                  Math.round(
+                    (performance.now() - earlyInvokeStartedAt) * 1000,
+                  ) / 1000,
+              },
+            )
+          } catch (error) {
+            recordRestoreTiming(
+              traceId,
+              'browser.restore-repair.early-invoke-error',
+              {
+                label: cachedBounds.label,
+                ...transitionErrorDetails(error),
+              },
+            )
+          }
+        }
+      }
+
+      // Wait for native layout to settle
+      await waitForWindowLayoutSettleLocal()
+
+      if (!stableRestoreBounds) {
+        recordRestoreTiming(
+          traceId,
+          'browser.restore-repair.native-invoke-skip',
+          { reason: 'no-stable-cache-bounds' },
+        )
+      } else {
+        // Restore must replay the stable cache snapshot. Reading a fresh client
+        // rect here can observe Windows' transient minimized geometry and undo
+        // the early cache apply with a bootstrap-sized WebView.
+        const maxAttempts = 3
+        const backoffMs = 120
+        let lastErr: any = null
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            recordRestoreTiming(
+              traceId,
+              'browser.restore-repair.native-invoke-start',
+              {
+                attempt,
+                label: stableRestoreBounds.label,
+                windowLabel: stableRestoreBounds.windowLabel,
+                x: stableRestoreBounds.x,
+                y: stableRestoreBounds.y,
+                width: stableRestoreBounds.width,
+                height: stableRestoreBounds.height,
+              },
+            )
+            const invokeStartedAt = performance.now()
+            await invoke('webview_restore_browsing_layout', {
+              windowLabel: stableRestoreBounds.windowLabel,
+              x: stableRestoreBounds.x,
+              y: stableRestoreBounds.y,
+              width: stableRestoreBounds.width,
+              height: stableRestoreBounds.height,
+              activeTabLabel: stableRestoreBounds.label,
+            })
+            recordRestoreTiming(
+              traceId,
+              'browser.restore-repair.native-invoke-ok',
+              {
+                attempt,
+                durationMs:
+                  Math.round((performance.now() - invokeStartedAt) * 1000) / 1000,
+              },
+            )
+            lastErr = null
+            break
+          } catch (error) {
+            lastErr = error
+            recordRestoreTiming(
+              traceId,
+              'browser.restore-repair.native-invoke-error',
+              {
+                attempt,
+                ...transitionErrorDetails(error),
+              },
+            )
+            if (attempt < maxAttempts) {
+              await new Promise((r) => setTimeout(r, backoffMs))
+            }
+          }
+        }
+
+        if (lastErr) {
+          repairStatus = 'error'
+          recordRestoreTiming(
+            traceId,
+            'browser.restore-repair.native-invoke-failed',
+            { ...transitionErrorDetails(lastErr) },
+          )
+        }
+      }
+
+      // The native restore just applied the authoritative client rectangle. Do not
+      // immediately read the frontend window size here: Windows can still report
+      // transient minimized geometry and overwrite the repaired tab bounds.
+      try {
+        const activeTabLabel = activeTabId
+          ? tabWebviewLabel(activeTabId)
+          : null
+        const windowLabel = currentBrowserWindowLabel()
+        recordRestoreTiming(
+          traceId,
+          'browser.restore-repair.native-stack-start',
+          { activeTabId, activeTabLabel, windowLabel },
+        )
+        const stackStartedAt = performance.now()
+        await invoke('webview_raise_chrome', {
+          windowLabel,
+          activeTabLabel,
+          fullRepair: true,
+        })
+        recordRestoreTiming(
+          traceId,
+          'browser.restore-repair.native-stack-ok',
+          {
+            activeTabId,
+            activeTabLabel,
+            windowLabel,
+            durationMs:
+              Math.round((performance.now() - stackStartedAt) * 1000) / 1000,
+          },
+        )
+      } catch (error) {
+        repairStatus = 'error'
+        recordRestoreTiming(
+          traceId,
+          'browser.restore-repair.native-stack-error',
+          transitionErrorDetails(error),
+        )
+      }
+    } catch (error) {
+      repairStatus = 'error'
+      recordRestoreTiming(
+        traceId,
+        'browser.restore-repair.error',
+        transitionErrorDetails(error),
+      )
+    } finally {
+      recordRestoreTiming(traceId, 'browser.restore-repair.end', {
+        status: repairStatus,
+      })
+      _restoreRepairInProgress = false
+      flushRestoreTiming(traceId, repairStatus)
+      requestBrowsingSurfaceRepair('native-restore-settled')
+    }
+  }
+
+  // Handler invoked on focus/resizes; determine real minimize->restore by
+  // sampling isMinimized and previous state.
+  const onTransition = async (_reason: string) => {
+    if (cancelled) return
+    try {
+      const currentMin = await currentWindowIsMinimized()
+      if (lastKnownMinimized && !currentMin) {
+        // Real restore from minimized
+        const traceId = `restore-${Date.now()}`
+        await runRestoreRepairIfNeeded(traceId)
+      }
+      lastKnownMinimized = currentMin
+    } catch {
+      // ignore sampling failures
+    }
+  }
+
+  // Initialize lastKnownMinimized
+  void (async () => {
+    lastKnownMinimized = await currentWindowIsMinimized()
+  })()
+
+  let focusUnlisten: (() => void) | null = null
+  let resizeUnlisten: (() => void) | null = null
+
+  void appWindow.onFocusChanged(({ payload: focused }) => {
+    void onTransition('focus')
+    if (!focused) return
+    // A rapid taskbar minimize/restore can deliver both callbacks after the
+    // window is already restored, so lastKnownMinimized never becomes true.
+    // Home geometry is repaired by the native window event, without JS IPC.
+    requestBrowsingSurfaceRepair('focus')
+    if (delayedFocusRepair !== null) clearTimeout(delayedFocusRepair)
+    delayedFocusRepair = setTimeout(() => {
+      delayedFocusRepair = null
+      requestBrowsingSurfaceRepair('focus-settled')
+    }, 250)
+  }).then((unlisten) => { if (cancelled) unlisten(); else focusUnlisten = unlisten }).catch(() => {})
+
+  void appWindow.onResized(() => {
+    void onTransition('resize')
+    if (delayedResizeRepair !== null) clearTimeout(delayedResizeRepair)
+    delayedResizeRepair = setTimeout(() => {
+      delayedResizeRepair = null
+      requestBrowsingSurfaceRepair('resize-settled')
+    }, LAYOUT_DEBOUNCE_MS)
+  }).then((unlisten) => { if (cancelled) unlisten(); else resizeUnlisten = unlisten }).catch(() => {})
+
+  restoreRepairUnbind = () => {
+    cancelled = true
+    browsingSurfaceRepairs.dispose()
+    if (delayedFocusRepair !== null) clearTimeout(delayedFocusRepair)
+    if (delayedResizeRepair !== null) clearTimeout(delayedResizeRepair)
+    focusUnlisten?.()
+    resizeUnlisten?.()
+    restoreRepairUnbind = null
+  }
+
+  return restoreRepairUnbind
+}
+
 async function showWebviewForCurrentWindowState(
   webview: Webview,
   traceId: string,
@@ -825,7 +1602,13 @@ async function showWebviewForCurrentWindowState(
   if (
     await currentWindowIsMinimized()
   ) {
+    recordRestoreTiming(traceId, 'browser.webview.hide.request', {
+      label: webview.label,
+    })
     await webview.hide()
+    recordRestoreTiming(traceId, 'browser.webview.hide.ok', {
+      label: webview.label,
+    })
     windowMinimizedWebviewLabel =
       webview.label
 
@@ -849,7 +1632,9 @@ async function showWebviewForCurrentWindowState(
       null
   }
 
+  recordRestoreTiming(traceId, 'browser.webview.show.request', { label: webview.label })
   await webview.show()
+  recordRestoreTiming(traceId, 'browser.webview.show.ok', { label: webview.label })
   return true
 }
 
@@ -867,26 +1652,12 @@ async function syncWebviewWindowVisibilityAfterResize(
   if (
     await currentWindowIsMinimized()
   ) {
-    if (
-      windowMinimizedWebviewLabel !==
-      webview.label
-    ) {
-      await webview.hide()
-      windowMinimizedWebviewLabel =
-        webview.label
-
-      await writeTransitionLog(
-        'browser.window-visibility',
-        'info',
-        {
-          traceId,
-          label: webview.label,
-          minimized: true,
-        },
-      )
-    }
+    // Native window events own the active surface's hide/show pair. A delayed
+    // renderer callback must not hide it again after Windows has restored it.
     return false
   }
+
+  if (activeWebview?.label !== webview.label) return false
 
   if (
     windowMinimizedWebviewLabel ===
@@ -894,7 +1665,9 @@ async function syncWebviewWindowVisibilityAfterResize(
   ) {
     windowMinimizedWebviewLabel =
       null
+    recordRestoreTiming(traceId, 'browser.webview.show.request', { label: webview.label })
     await webview.show()
+    recordRestoreTiming(traceId, 'browser.webview.show.ok', { label: webview.label })
 
     await navigateDeferredInitialWebview(
       webview,
@@ -910,6 +1683,13 @@ async function syncWebviewWindowVisibilityAfterResize(
         minimized: false,
       },
     )
+
+    // This callback originated from the minimized window's resize event. The
+    // WebView may still report its transient bootstrap client size here, so
+    // do not feed that stale geometry into syncBrowserBounds or the
+    // known-good cache. The restore repair has already replayed the stable
+    // cached bounds; a later ordinary resize will perform the next sync.
+    return false
   }
 
   return true
@@ -959,6 +1739,7 @@ async function bindBrowserResize(
 
       if (!changed) return
 
+      recordRestoreTiming(resizeTraceId, 'browser.stack.request', { activeTabId })
       scheduleStackBrowsingChromeAboveBrowser(
         activeTabId,
       )
@@ -1077,6 +1858,7 @@ async function configureTabWebview(
 }
 
 function scheduleBrowseWebviewPrewarm(delayMs: number): void {
+  if (import.meta.env.DEV) return
   if (nextPrewarmTimer !== null) return
 
   nextPrewarmTimer =
@@ -1135,6 +1917,7 @@ export async function prewarmBrowseWebview(): Promise<void> {
   ) {
     return
   }
+  if (!prewarmWindowFocused || !(await getCurrentWindow().isFocused())) return
 
   const traceId =
     `prewarm-${Date.now()}-${prewarmSequence + 1}`
@@ -1243,13 +2026,6 @@ export async function prewarmBrowseWebview(): Promise<void> {
         )
         return
       }
-
-      await traceTransitionCall(
-        traceId,
-        'browser.prewarm.low-memory',
-        { label },
-        () => setLowMemoryFallback(webview),
-      )
 
       prewarmedWebview =
         webview
@@ -1486,7 +2262,7 @@ async function refreshSystemMemoryPressure(): Promise<void> {
           rescheduleInactiveTabsForMemoryPressure()
 
           if (!shouldKeepPrewarmedWebview(normalized)) {
-            await discardPrewarmedWebviewForMemoryPressure(normalized)
+            await discardPrewarmedWebview('memory-pressure')
           } else if (
             !shouldKeepPrewarmedWebview(previous) &&
             !prewarmPromise
@@ -1895,6 +2671,19 @@ async function backgroundKeepAliveReason(
   try {
     if (
       await invoke<boolean>(
+        'webview_has_active_download',
+        { label },
+      )
+    ) {
+      return 'download'
+    }
+  } catch {
+    return 'download-state-unavailable'
+  }
+
+  try {
+    if (
+      await invoke<boolean>(
         'webview_is_playing_audio',
         { label },
       )
@@ -1952,36 +2741,6 @@ async function backgroundKeepAliveReason(
   }
 
   return null
-}
-
-async function setLowMemoryFallback(
-  webview: Webview,
-): Promise<void> {
-  if (
-    lowMemoryWebviews.has(
-      webview.label,
-    )
-  ) {
-    return
-  }
-
-  try {
-    await invoke(
-      'webview_set_memory_usage',
-      {
-        label:
-          webview.label,
-        low:
-          true,
-      },
-    )
-
-    lowMemoryWebviews.add(
-      webview.label,
-    )
-  } catch {
-    // ignore
-  }
 }
 
 function scheduleTabSleep(
@@ -2065,10 +2824,6 @@ function scheduleTabSleep(
               label,
             )
 
-            await setLowMemoryFallback(
-              webview,
-            )
-
             await writeTransitionLog(
               'browser.tab-sleep',
               'info',
@@ -2108,10 +2863,6 @@ function scheduleTabSleep(
               )
 
             if (suspended) {
-              lowMemoryWebviews.delete(
-                label,
-              )
-
               suspendedWebviews.add(
                 label,
               )
@@ -2136,10 +2887,6 @@ function scheduleTabSleep(
               label,
             )
 
-            await setLowMemoryFallback(
-              webview,
-            )
-
             await writeTransitionLog(
               'browser.tab-sleep',
               'info',
@@ -2152,13 +2899,13 @@ function scheduleTabSleep(
                 thresholdMs,
               },
             )
+
+            if (activeWebview?.label !== label) {
+              scheduleTabSleep(webview, TAB_SLEEP_RETRY_MS)
+            }
           } catch (error) {
             suspendedWebviews.delete(
               label,
-            )
-
-            await setLowMemoryFallback(
-              webview,
             )
 
             await writeTransitionLog(
@@ -2173,6 +2920,10 @@ function scheduleTabSleep(
                 ),
               },
             )
+
+            if (activeWebview?.label !== label) {
+              scheduleTabSleep(webview, TAB_SLEEP_RETRY_MS)
+            }
           }
         })()
       },
@@ -2224,10 +2975,6 @@ async function unloadTabIfInactive(
   }
 
   if (keepAliveReason) {
-    await setLowMemoryFallback(
-      webview,
-    )
-
     await writeTransitionLog(
       'browser.tab-unload',
       'info',
@@ -2307,10 +3054,6 @@ async function unloadTabIfInactive(
   )
 
   cancelTabSleep(
-    webview.label,
-  )
-
-  lowMemoryWebviews.delete(
     webview.label,
   )
 
@@ -2593,31 +3336,6 @@ async function restoreWebviewMemory(
     webview.label,
   )
 
-  if (
-    !lowMemoryWebviews.has(
-      webview.label,
-    )
-  ) {
-    return
-  }
-
-  try {
-    await invoke(
-      'webview_set_memory_usage',
-      {
-        label:
-          webview.label,
-        low:
-          false,
-      },
-    )
-
-    lowMemoryWebviews.delete(
-      webview.label,
-    )
-  } catch {
-    // best effort
-  }
 }
 
 async function getOrCreateTabWebview(
@@ -2627,6 +3345,7 @@ async function getOrCreateTabWebview(
   traceId: string,
   deferInitialNavigation = false,
 ): Promise<Webview> {
+  const privateMode = registerBrowseTabPrivateMode(shortcutId, browseTabIsPrivate(shortcutId))
   let label =
     tabWebviewLabel(
       shortcutId,
@@ -2707,7 +3426,7 @@ async function getOrCreateTabWebview(
         if (
           !prewarmProfileMatches(
             adoptedPrivateMode,
-            privacyOptions.privateMode,
+            privateMode,
           )
         ) {
           throw new Error(
@@ -2745,7 +3464,7 @@ async function getOrCreateTabWebview(
         if (
           !prewarmProfileMatches(
             adoptedPrivateMode,
-            privacyOptions.privateMode,
+            privateMode,
           )
         ) {
           throw new Error(
@@ -2765,7 +3484,7 @@ async function getOrCreateTabWebview(
         if (
           !prewarmProfileMatches(
             adoptedPrivateMode,
-            privacyOptions.privateMode,
+            privateMode,
           )
         ) {
           throw new Error(
@@ -2844,10 +3563,6 @@ async function getOrCreateTabWebview(
       }
     }
 
-    lowMemoryWebviews.delete(
-      label,
-    )
-
     suspendedWebviews.delete(
       label,
     )
@@ -2893,7 +3608,7 @@ async function getOrCreateTabWebview(
         dragDropEnabled:
           false,
         incognito:
-          privacyOptions.privateMode,
+          privateMode,
         browserExtensionsEnabled:
           true,
       }
@@ -3012,7 +3727,7 @@ async function getOrCreateTabWebview(
           dragDropEnabled:
             false,
           incognito:
-            privacyOptions.privateMode,
+            privateMode,
 
           // Safe fallback: retry without browser extensions.
           browserExtensionsEnabled:
@@ -3219,7 +3934,18 @@ async function navigateDeferredInitialWebview(
 
 async function hideOtherTabs(
   visibleId: string,
+  previouslyActiveTabId: string | null,
 ): Promise<void> {
+  // Background tabs are hidden when created. Normally only the outgoing tab
+  // needs a native hide; retain a full reconciliation for Home/restore.
+  if (previouslyActiveTabId && previouslyActiveTabId !== visibleId) {
+    const outgoing = webviewCache.get(previouslyActiveTabId)
+    if (outgoing) {
+      await hideWebviewSafe(outgoing)
+      return
+    }
+  }
+
   await Promise.all(
     [
       ...webviewCache.entries(),
@@ -3261,10 +3987,19 @@ export async function activateBrowseTab(
   if (!isTauri) return
 
   cancelTabUnload(shortcutId)
+  const queuedAt = performance.now()
+  const traceId = options?.traceId ??
+    `activation-${Date.now()}-${++activationSequence}`
   const callerShouldContinue = options?.shouldContinue ?? (() => true)
   await tabLifecycleQueue.run(shortcutId, async (lease) => {
+    await writeTransitionLog('browser.activation.queue-acquired', 'ok', {
+      traceId,
+      shortcutId,
+      waitMs: Math.round((performance.now() - queuedAt) * 10) / 10,
+    })
     await activateBrowseTabQueued(shortcutId, initialUrl, {
       ...options,
+      traceId,
       shouldContinue: () => lease.isCurrent() && callerShouldContinue(),
     })
   })
@@ -3739,6 +4474,7 @@ async function activateBrowseTabQueued(
       () =>
         hideOtherTabs(
           shortcutId,
+          previouslyActiveTabId,
         ),
     )
 
@@ -3944,23 +4680,69 @@ export async function syncTauriBrowserBounds(): Promise<void> {
 }
 
 /** Force tab HWND + Tauri bounds to match the window after layout transitions. */
-export async function forceSyncActiveTabBounds(): Promise<void> {
+export async function forceSyncActiveTabBounds(traceId = 'force-sync-active-tab-bounds'): Promise<void> {
+  const opId = `${traceId}:${activeWebview?.label ?? 'none'}:${Date.now()}`
+  recordRestoreTiming(traceId, 'browser.force-sync-active.entry', {
+    traceId,
+    opId,
+    activeTabId,
+    activeWebviewLabel: activeWebview?.label ?? null,
+    windowLabel: currentBrowserWindowLabel(),
+  })
+
   if (
     !isTauri ||
     !activeWebview
   ) {
+    recordRestoreTiming(traceId, 'browser.force-sync-active.exit', {
+      traceId,
+      opId,
+      activeTabId,
+      activeWebviewLabel: activeWebview?.label ?? null,
+      skipped: true,
+    })
     return
   }
 
   lastBrowserBoundsKey = null
 
+  recordRestoreTiming(traceId, 'browser.force-sync-active.before-sync', {
+    traceId,
+    opId,
+    label: activeWebview.label,
+  })
   await syncBrowserBounds(
     activeWebview,
+    traceId,
   )
+  recordRestoreTiming(traceId, 'browser.force-sync-active.after-sync', {
+    traceId,
+    opId,
+    label: activeWebview.label,
+  })
 
+  recordRestoreTiming(traceId, 'browser.force-sync-active.before-stack', {
+    traceId,
+    opId,
+    activeTabId,
+  })
+  const stackStartedAt = performance.now()
   await stackBrowsingChromeAboveBrowser(
     activeTabId,
   )
+  recordRestoreTiming(traceId, 'browser.force-sync-active.stack-ok', {
+    traceId,
+    opId,
+    activeTabId,
+    durationMs:
+      Math.round((performance.now() - stackStartedAt) * 1000) / 1000,
+  })
+  recordRestoreTiming(traceId, 'browser.force-sync-active.exit', {
+    traceId,
+    opId,
+    activeTabId,
+    activeWebviewLabel: activeWebview.label,
+  })
 }
 
 export async function navigateBrowseTabBack(
@@ -4279,6 +5061,8 @@ export async function hideAllBrowseTabs(): Promise<void> {
 
   unbindResizeListeners()
 
+  const previouslyActiveWebview = activeWebview
+
   if (activeTabId) {
     tabLastActiveAt.set(
       activeTabId,
@@ -4330,6 +5114,16 @@ export async function hideAllBrowseTabs(): Promise<void> {
   } catch {
     // ignore
   }
+
+  // A tab sent Home is no longer visible, but it was active until this point
+  // and therefore has no inactive-tab timer. Schedule its normal suspension
+  // path immediately so CPU-heavy pages (for example a WebAssembly engine)
+  // cannot keep competing with Home and Semi-Lunar after they are hidden.
+  // The scheduler keeps its existing audio, realtime-site, and notification
+  // exceptions and restores the tab when it becomes active again.
+  if (previouslyActiveWebview) {
+    scheduleTabSleep(previouslyActiveWebview, 0)
+  }
 }
 
 export async function adoptReparentedBrowseTab(
@@ -4337,14 +5131,12 @@ export async function adoptReparentedBrowseTab(
   label: string,
 ): Promise<void> {
   if (!isTauri) return
-  const webview = await Webview.getByLabel(label)
-  if (!webview) throw new Error(`Transferred webview '${label}' was not found.`)
-
-  assignTabWebviewLabel(shortcutId, label)
-  webviewCache.set(shortcutId, webview)
-  createdTabs.add(shortcutId)
-
   try {
+    const webview = await Webview.getByLabel(label)
+    if (!webview) throw new Error(`Transferred webview '${label}' was not found.`)
+    assignTabWebviewLabel(shortcutId, label)
+    webviewCache.set(shortcutId, webview)
+    createdTabs.add(shortcutId)
     await configureTabWebview(
       label,
       `transfer-adopt-${Date.now()}`,
@@ -4354,6 +5146,7 @@ export async function adoptReparentedBrowseTab(
     // window holding a stale cache/label mapping for a webview that the
     // source would subsequently reparent back. Later Home/lifecycle work in
     // this window could then hide the rolled-back tab in its real owner.
+    tabPrivacyModes.delete(shortcutId)
     webviewCache.delete(shortcutId)
     createdTabs.delete(shortcutId)
     configuredWebviews.delete(label)
@@ -4365,12 +5158,13 @@ export async function adoptReparentedBrowseTab(
 }
 
 export function relinquishBrowseTabOwnership(shortcutId: string): void {
+  tabPrivacyModes.delete(shortcutId)
   const label = tabWebviewLabel(shortcutId)
+  browserAutoResizeDisabledLabels.delete(label)
   cancelTabUnload(shortcutId)
   cancelTabSleep(label)
   webviewCache.delete(shortcutId)
   createdTabs.delete(shortcutId)
-  lowMemoryWebviews.delete(label)
   suspendedWebviews.delete(label)
   tabLastActiveAt.delete(shortcutId)
   unloadedTabStates.delete(shortcutId)
@@ -4441,6 +5235,7 @@ async function destroyTabWebview(
   shortcutId?: string,
 ): Promise<void> {
   deferredInitialNavigations.delete(label)
+  browserAutoResizeDisabledLabels.delete(label)
 
   try {
     await invoke(
@@ -4522,6 +5317,7 @@ export async function closeBrowseTab(
     await closeBrowseTabQueued(shortcutId)
   })
   await tabLifecycleQueue.releaseWhenIdle(shortcutId)
+  tabPrivacyModes.delete(shortcutId)
 }
 
 async function closeBrowseTabQueued(
@@ -4568,10 +5364,6 @@ async function closeBrowseTabQueued(
 
   createdTabs.delete(
     shortcutId,
-  )
-
-  lowMemoryWebviews.delete(
-    label,
   )
 
   suspendedWebviews.delete(

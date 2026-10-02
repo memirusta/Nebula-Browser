@@ -25,8 +25,10 @@ import type { BrowseSession } from '../../core/browseSession'
 import type { BrowserTab } from '../../core/browserTab'
 import type { RemoveMemberResult } from '../../hooks/useShortcutFolders'
 import { useShortcutPositions } from '../../hooks/useShortcutPositions'
-import { shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
+import { faviconForUrl, shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
+import { computeViewportLunarSize } from '../../core/lunarSizing'
+import { confirmCursorOutsideLunar } from '../../core/lunarDrop'
 import { isChromeShell } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
 import {
@@ -56,6 +58,7 @@ import { FolderExpandPanel } from './FolderExpandPanel'
 import { ShortcutFolderIcon } from './ShortcutFolderIcon'
 import { LunarWindowDrag } from '../WindowChrome/LunarWindowDrag'
 import { WindowControls } from '../WindowChrome/WindowControls'
+import { PRIVATE_BROWSING_COPY } from '../PrivateBrowsingPanel/privateBrowsingCopy'
 import styles from './SemiLunarMenu.module.css'
 
 type MenuMode = 'home' | 'browsing' | 'overlay'
@@ -65,8 +68,15 @@ const TUTORIAL_DEMO_SHORTCUT: Shortcut = {
   id: 'nebula-tutorial-youtube',
   label: 'YouTube',
   url: 'https://www.youtube.com/',
-  favicon: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2232%22 fill=%22%23151a20%22/%3E%3Crect x=%2212%22 y=%2220%22 width=%2240%22 height=%2226%22 rx=%228%22 fill=%22%23ff0033%22/%3E%3Cpath d=%22M28 26l14 7-14 7z%22 fill=%22white%22/%3E%3C/svg%3E',
+  favicon: faviconForUrl('https://www.youtube.com/'),
 }
+
+const TUTORIAL_DEMO_TABS: Array<Shortcut & { left: string; top: string }> = [
+  { ...TUTORIAL_DEMO_SHORTCUT, left: '27%', top: '56%' },
+  { id: 'nebula-tutorial-wikipedia', label: 'Wikipedia', url: 'https://www.wikipedia.org/', favicon: faviconForUrl('https://www.wikipedia.org/'), left: '43%', top: '49%' },
+  { id: 'nebula-tutorial-netflix', label: 'Netflix', url: 'https://www.netflix.com/', favicon: faviconForUrl('https://www.netflix.com/'), left: '60%', top: '49%' },
+  { id: 'nebula-tutorial-github', label: 'GitHub', url: 'https://github.com/', favicon: faviconForUrl('https://github.com/'), left: '76%', top: '56%' },
+]
 
 interface SemiLunarMenuProps {
   shortcuts: Shortcut[]
@@ -81,6 +91,9 @@ interface SemiLunarMenuProps {
   onTabDragDrop?: (id: string, screenX: number, screenY: number) => void
   openTabIds?: string[]
   activeTabId?: string | null
+  activeTabPrivate?: boolean
+  privateInfoOpen?: boolean
+  onPrivateInfoClick?: () => void
   getTab?: (shortcutId: string) => BrowserTab | null
   onToggleMute?: (id: string) => void
   isMuted?: (id: string) => boolean
@@ -138,6 +151,9 @@ export function SemiLunarMenu({
   onTabDragDrop,
   openTabIds = [],
   activeTabId = null,
+  activeTabPrivate = false,
+  privateInfoOpen = false,
+  onPrivateInfoClick,
   getTab,
   onToggleMute,
   isMuted = () => false,
@@ -154,8 +170,8 @@ export function SemiLunarMenu({
   folderMergeHoldMs = DEFAULT_NEBULA_SETTINGS.semiLunar.folderMergeHoldMs,
   mergeAnimMs = DEFAULT_NEBULA_SETTINGS.semiLunar.mergeAnimMs,
   iconSizePx = DEFAULT_NEBULA_SETTINGS.semiLunar.iconSizePx,
-  lunarWidthPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarWidthPx,
-  lunarHeightPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarHeightPx,
+  lunarWidthPx: configuredLunarWidthPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarWidthPx,
+  lunarHeightPx: configuredLunarHeightPx = DEFAULT_NEBULA_SETTINGS.semiLunar.lunarHeightPx,
   rememberLayout = true,
   onRemoveMemberFromFolder,
   mode = 'home',
@@ -178,10 +194,89 @@ export function SemiLunarMenu({
   siteInfoOpen = false,
   onSiteInfoClick,
 }: SemiLunarMenuProps) {
-  const { t, tf } = useLocale()
+  const { locale, t, tf } = useLocale()
   const isHome = mode === 'home'
   const isBrowsing = mode === 'browsing'
   const usesDedicatedChromeSurface = isChromeShell()
+  const [lunarViewport, setLunarViewport] = useState(() => ({
+    width: typeof window === 'undefined' ? configuredLunarWidthPx : window.innerWidth,
+    height: typeof window === 'undefined' ? configuredLunarHeightPx : window.innerHeight,
+  }))
+
+  useEffect(() => {
+    let disposed = false
+    let unlistenResize: (() => void) | undefined
+    let unlistenScale: (() => void) | undefined
+
+    const syncWebViewport = () => {
+      if (disposed) return
+      setLunarViewport({ width: window.innerWidth, height: window.innerHeight })
+    }
+    const syncTauriViewport = async () => {
+      try {
+        const appWindow = getCurrentWindow()
+        const [size, scaleFactor] = await Promise.all([
+          appWindow.innerSize(),
+          appWindow.scaleFactor(),
+        ])
+        if (!disposed) {
+          setLunarViewport({
+            width: size.width / scaleFactor,
+            height: size.height / scaleFactor,
+          })
+        }
+      } catch {
+        // The regular DOM viewport remains a safe fallback while a window is
+        // being created or destroyed.
+        syncWebViewport()
+      }
+    }
+
+    if (!isTauri) {
+      syncWebViewport()
+      window.addEventListener('resize', syncWebViewport)
+      return () => window.removeEventListener('resize', syncWebViewport)
+    }
+
+    void syncTauriViewport()
+    const appWindow = getCurrentWindow()
+    void appWindow.onResized(() => void syncTauriViewport()).then((unlisten) => {
+      if (disposed) {
+        unlisten()
+        return
+      }
+      unlistenResize = unlisten
+    })
+    void appWindow.onScaleChanged(() => void syncTauriViewport()).then((unlisten) => {
+      if (disposed) {
+        unlisten()
+        return
+      }
+      unlistenScale = unlisten
+    })
+
+    return () => {
+      disposed = true
+      unlistenResize?.()
+      unlistenScale?.()
+    }
+  }, [])
+
+  const { width: lunarWidthPx, height: lunarHeightPx } = useMemo(
+    () =>
+      computeViewportLunarSize(
+        lunarViewport.width,
+        lunarViewport.height,
+        configuredLunarWidthPx,
+        configuredLunarHeightPx,
+      ),
+    [
+      configuredLunarHeightPx,
+      configuredLunarWidthPx,
+      lunarViewport.height,
+      lunarViewport.width,
+    ],
+  )
   const shouldManageNativeChrome = isBrowsing || usesDedicatedChromeSurface
   const [stage, setStage] = useState<MenuStage>(
     isHome && homeAlwaysOpen ? 'expanded' : 'closed',
@@ -256,6 +351,7 @@ export function SemiLunarMenu({
       left:
         onHomeClick
           ? 1 +
+            Number(isBrowsing && activeTabPrivate) +
             Number(isBrowsing && Boolean(onBackClick)) +
             Number(isBrowsing && downloadCount > 0 && Boolean(onDownloadsClick)) +
             Number(isBrowsing && Boolean(activeUrl) && Boolean(onSiteInfoClick))
@@ -267,6 +363,7 @@ export function SemiLunarMenu({
     }),
     [
       activeUrl,
+      activeTabPrivate,
       downloadCount,
       isBrowsing,
       onBackClick,
@@ -926,7 +1023,7 @@ export function SemiLunarMenu({
         .finally(() => {
           nativeCheckInFlight = false
         })
-    }, 60)
+    }, 120)
 
     return () => {
       disposed = true
@@ -1082,6 +1179,20 @@ const handleContextMenuOpen = useCallback(
     if (!menuHoverRef.current) scheduleClose()
   }, [clearMergeHoldTimer, scheduleClose])
 
+  // A tab only leaves the window when it is released outside the visible dome.
+  // Releasing it anywhere inside the Semi-Lunar just repositions the icon.
+  const handleTabReleased = useCallback(
+    async (tabId: string, screenX: number, screenY: number) => {
+      if (!onTabDragDrop) return
+      const outside = await confirmCursorOutsideLunar(
+        () => isCursorInsideSemiLunarNativeShape(lunarWidthPx, lunarHeightPx),
+        (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      )
+      if (outside) onTabDragDrop(tabId, screenX, screenY)
+    },
+    [lunarHeightPx, lunarWidthPx, onTabDragDrop],
+  )
+
 const handleFolderMemberClose = useCallback(
   (folderId: string, shortcut: Shortcut) => {
     const dockId = folderDockId(folderId)
@@ -1171,10 +1282,10 @@ const handleFolderMemberClose = useCallback(
           label: previewTab.title,
           updatedAt: Date.now(),
         }
-      : previewShortcut?.id === TUTORIAL_DEMO_SHORTCUT.id
+      : previewShortcut?.id.startsWith('nebula-tutorial-')
         ? {
-            url: TUTORIAL_DEMO_SHORTCUT.url,
-            label: TUTORIAL_DEMO_SHORTCUT.label,
+            url: previewShortcut.url,
+            label: previewShortcut.label,
             updatedAt: Date.now(),
           }
       : previewShortcut
@@ -1192,11 +1303,11 @@ const handleFolderMemberClose = useCallback(
     tutorialDemoPreviewTimerRef.current = null
   }, [])
 
-  const showTutorialDemoPreview = useCallback(() => {
+  const showTutorialDemoPreview = useCallback((shortcut: Shortcut) => {
     clearTutorialDemoPreviewTimer()
     tutorialDemoPreviewTimerRef.current = setTimeout(() => {
       tutorialDemoPreviewTimerRef.current = null
-      setPreviewShortcut(TUTORIAL_DEMO_SHORTCUT)
+      setPreviewShortcut(shortcut)
       setPreviewTabId(null)
     }, previewDelayMs)
   }, [clearTutorialDemoPreviewTimer, previewDelayMs])
@@ -1204,7 +1315,7 @@ const handleFolderMemberClose = useCallback(
   const hideTutorialDemoPreview = useCallback(() => {
     clearTutorialDemoPreviewTimer()
     setPreviewShortcut((current) =>
-      current?.id === TUTORIAL_DEMO_SHORTCUT.id ? null : current,
+      current?.id.startsWith('nebula-tutorial-') ? null : current,
     )
     setPreviewTabId(null)
   }, [clearTutorialDemoPreviewTimer])
@@ -1856,12 +1967,36 @@ const handleFolderMemberClose = useCallback(
                   )}
                 </button>
               )}
+              {isBrowsing && activeTabPrivate && (
+                <button
+                  type="button"
+                  data-nebula-private-toggle="true"
+                  className={styles.privateTabIndicator}
+                  title={PRIVATE_BROWSING_COPY[locale].title}
+                  aria-label={PRIVATE_BROWSING_COPY[locale].title}
+                  aria-haspopup="dialog"
+                  aria-expanded={privateInfoOpen}
+                  aria-controls={privateInfoOpen ? 'nebula-private-panel' : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onPrivateInfoClick?.()
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="m5 10 2.3-5h9.4l2.3 5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 10h16" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+                    <path d="M3.5 13h5a3 3 0 0 1-6 0Zm12 0h5a3 3 0 0 1-6 0ZM8.5 14h7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
             </div>
           )}
 
           {isTauri && isExpanded && (
             <div className={styles.windowBtnColumn}>
-              <WindowControls buttonClassName={styles.evBtn} />
+              <span className={styles.windowControlsGroup}>
+                <WindowControls buttonClassName={styles.evBtn} />
+              </span>
             </div>
           )}
 
@@ -1876,26 +2011,23 @@ const handleFolderMemberClose = useCallback(
                 .filter(Boolean)
                 .join(' ')}
             >
-              {tutorialDemoTab && (
+              {tutorialDemoTab && TUTORIAL_DEMO_TABS.map((demo) => (
                 <button
+                  key={demo.id}
                   type="button"
-                  className={styles.tutorialDemoTab}
-                  aria-label="YouTube"
-                  onMouseEnter={showTutorialDemoPreview}
+                  className={[styles.tutorialDemoTab, styles.shortcut].join(' ')}
+                  aria-label={demo.label}
+                  style={{ left: demo.left, top: demo.top }}
+                  onMouseEnter={() => showTutorialDemoPreview(demo)}
                   onMouseLeave={hideTutorialDemoPreview}
-                  onFocus={showTutorialDemoPreview}
+                  onFocus={() => showTutorialDemoPreview(demo)}
                   onBlur={hideTutorialDemoPreview}
                 >
-                  <span className={styles.tutorialDemoTabHalo} />
-                  <span className={styles.tutorialDemoTabLogo}>
-                    <svg viewBox="0 0 28 20" aria-hidden="true">
-                      <rect x="0" y="0" width="28" height="20" rx="6" />
-                      <path d="M11 5.5 19 10l-8 4.5z" />
-                    </svg>
+                  <span className={styles.faviconShell}>
+                    <img src={demo.favicon} alt="" className={styles.favicon} draggable={false} />
                   </span>
-                  <span className={styles.tutorialDemoTabLabel}>YouTube</span>
                 </button>
-              )}
+              ))}
 
               {visibleDockItemIds.map((dockId) => {
                 const pos = getPosition(dockId)
@@ -1991,7 +2123,7 @@ const members = memberIds
                     onExternalDrop={
                       tabIsOpen && openTabId
                         ? (screenX, screenY) =>
-                            onTabDragDrop?.(openTabId, screenX, screenY)
+                            void handleTabReleased(openTabId, screenX, screenY)
                         : undefined
                     }
                     onDragMove={(x, y) => setDragHover({ id: dockId, x, y })}
@@ -2154,10 +2286,10 @@ const members = memberIds
       onRemoveFromFolder={handleRemoveFromFolder}
       onCloseShortcut={(shortcut) =>
         handleFolderMemberClose(folder.id, shortcut)
-}     
-    onContextMenu={(shortcut, x, y) =>
-     handleContextMenuOpen(shortcut, x, y, folder.id)
-}
+      }
+      onContextMenu={(shortcut, x, y) =>
+        handleContextMenuOpen(shortcut, x, y, folder.id)
+      }
       closeBtnDelayMs={closeBtnDelayMs}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}

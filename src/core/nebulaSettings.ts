@@ -392,7 +392,7 @@ export function normalizeNebulaSettings(
       scaleX: clampFloat(s?.scaleX, 0.05, 0.5, d.semiLunar.scaleX),
       scaleY: clampFloat(s?.scaleY, 0.05, 0.5, d.semiLunar.scaleY),
       iconSizePx: clampNum(s?.iconSizePx, 32, 64, d.semiLunar.iconSizePx),
-      lunarWidthPx: clampNum(s?.lunarWidthPx, 600, 1400, d.semiLunar.lunarWidthPx),
+      lunarWidthPx: clampNum(s?.lunarWidthPx, 600, 8192, d.semiLunar.lunarWidthPx),
       lunarHeightPx: clampNum(s?.lunarHeightPx, 100, 220, d.semiLunar.lunarHeightPx),
       reducedMotion:
         typeof s?.reducedMotion === 'boolean' ? s.reducedMotion : d.semiLunar.reducedMotion,

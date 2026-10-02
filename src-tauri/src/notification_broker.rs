@@ -593,7 +593,7 @@ fn persist_diagnostic(app: &AppHandle, diagnostic: &NotificationDiagnostic) -> R
 }
 
 fn notification_fingerprint(title: &str, body: &str) -> String {
-    [title, body]
+    let normalized = [title, body]
         .into_iter()
         .map(|value| {
             value
@@ -603,7 +603,11 @@ fn notification_fingerprint(title: &str, body: &str) -> String {
                 .to_ascii_lowercase()
         })
         .collect::<Vec<_>>()
-        .join("\0")
+        .join("\0");
+    // Deduplication needs identity, not a second copy of the message body.
+    let mut hasher = DefaultHasher::new();
+    normalized.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -617,6 +621,9 @@ fn record_diagnostic(
     sequence: Option<u64>,
     error: &str,
 ) {
+    if crate::notification_history::is_private_tab(tab_label) {
+        return;
+    }
     let diagnostic = NotificationDiagnostic {
         timestamp_ms: timestamp_ms(),
         sequence,
@@ -1357,7 +1364,9 @@ fn process_candidate(
             while broker.recent.len() > MAX_RECENT_MARKERS {
                 broker.recent.pop_front();
             }
-            push_replay(&mut broker, event.clone());
+            if !crate::notification_history::is_private_tab(&event.tab_label) {
+                push_replay(&mut broker, event.clone());
+            }
             event
         }
         Err(error) => {
@@ -1366,7 +1375,11 @@ fn process_candidate(
         }
     };
 
-    let center_result = app.emit(NOTIFICATION_EVENT, event.clone());
+    let center_result = if crate::notification_history::is_private_tab(&event.tab_label) {
+        Ok(())
+    } else {
+        app.emit(NOTIFICATION_EVENT, event.clone())
+    };
     record_diagnostic(
         Some(source),
         "notification-center",
@@ -1514,6 +1527,28 @@ pub fn submit(app: &AppHandle, source: NotificationSource, candidate: Notificati
     } else {
         process_candidate(app, source, candidate);
     }
+}
+
+pub fn forget(ids: &[String], all: bool) -> Result<(), String> {
+    let mut broker = BROKER.lock().map_err(|error| error.to_string())?;
+    let mut ids: std::collections::HashSet<String> = ids.iter().cloned().collect();
+    if all {
+        ids.extend(broker.replay.iter().map(|event| event.id.clone()));
+    }
+    crate::notification_history::forget(&ids.iter().cloned().collect::<Vec<_>>())?;
+    let sequences: std::collections::HashSet<u64> = broker
+        .replay
+        .iter()
+        .filter(|event| ids.contains(event.id.as_str()))
+        .map(|event| event.sequence)
+        .collect();
+    broker
+        .replay
+        .retain(|event| !ids.contains(event.id.as_str()));
+    broker
+        .diagnostics
+        .retain(|entry| !entry.sequence.is_some_and(|seq| sequences.contains(&seq)));
+    Ok(())
 }
 
 pub fn replay(app: &AppHandle, after_sequence: Option<u64>) -> Vec<BrokerNotification> {

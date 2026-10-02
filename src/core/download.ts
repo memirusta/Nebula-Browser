@@ -58,6 +58,10 @@ export function isDownloadActive(download: DownloadItem): boolean {
   return download.state === 'in_progress' || download.state === 'paused'
 }
 
+export function canRemoveDownloadFromList(download: DownloadItem): boolean {
+  return !isDownloadActive(download) && !download.requiresConfirmation
+}
+
 export function downloadProgress(download: DownloadItem): number | null {
   if (download.totalBytes <= 0) return null
   return Math.max(0, Math.min(100, (download.receivedBytes / download.totalBytes) * 100))

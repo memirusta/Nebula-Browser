@@ -13,8 +13,7 @@ import {
   getGoogleClientId,
 } from './googleSignIn'
 import {
-  loadPasswordVault,
-  savePasswordVault,
+  updatePasswordVault,
 } from './passwordVault'
 import {
   enableGoogleSyncLoopback,
@@ -115,10 +114,7 @@ export async function applyGoogleSyncRestore(args: {
         syncPassword,
       )
 
-    const localPasswords =
-      await loadPasswordVault()
-
-    await savePasswordVault(
+    await updatePasswordVault((localPasswords) =>
       mergeSyncedPasswords(
         localPasswords,
         remotePasswords,
