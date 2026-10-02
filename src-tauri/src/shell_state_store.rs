@@ -101,6 +101,9 @@ pub struct ApplyResult {
     skipped: Vec<String>,
     key_count: usize,
     bytes: usize,
+    /// Nothing was applied because writes came too fast. Not an error: the caller keeps
+    /// the batch and sends it again a little later.
+    rate_limited: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -349,9 +352,8 @@ impl Runtime {
             self.applies.pop_front();
         }
         if self.applies.len() >= MAX_APPLIES_PER_WINDOW {
-            return Err("the shell state store is receiving changes too fast".to_string());
+            return Ok(self.result(Outcome::default(), true));
         }
-        self.applies.push_back(now);
 
         let current = self.state.as_ref().expect("loaded above");
         let mut next = current.clone();
@@ -361,15 +363,22 @@ impl Runtime {
             // The in-memory copy follows the disk: a failed write changes nothing.
             save_to(path, &next)?;
             self.state = Some(next);
+            // Only writes that reached the disk count against the limit.
+            self.applies.push_back(now);
         }
-        let state = self.state.as_ref().expect("loaded above");
-        Ok(ApplyResult {
+        Ok(self.result(outcome, false))
+    }
+
+    fn result(&self, outcome: Outcome, rate_limited: bool) -> ApplyResult {
+        let state = self.state.as_ref().expect("loaded before use");
+        ApplyResult {
             generation: state.generation,
             accepted: outcome.accepted,
             skipped: outcome.skipped,
             key_count: live_count(&state.entries),
             bytes: live_bytes(&state.entries),
-        })
+            rate_limited,
+        }
     }
 
     fn status(&mut self, path: &Path) -> StoreStatus {
@@ -694,10 +703,21 @@ mod tests {
                     )
                     .unwrap();
             }
-            assert!(runtime.apply(&path, &[set("a", "x", 1000)], now).is_err());
+            let limited = runtime.apply(&path, &[set("a", "x", 1000)], now).unwrap();
+            assert!(limited.rate_limited);
+            assert_eq!(limited.accepted, 0);
+            assert_ne!(
+                live(runtime.state.as_ref().unwrap(), "a").as_deref(),
+                Some("x")
+            );
             // The window moves on.
             let later = now + RATE_WINDOW + Duration::from_secs(1);
-            assert!(runtime.apply(&path, &[set("a", "x", 1000)], later).is_ok());
+            let result = runtime.apply(&path, &[set("a", "x", 1000)], later).unwrap();
+            assert!(!result.rate_limited);
+            assert_eq!(
+                live(runtime.state.as_ref().unwrap(), "a").as_deref(),
+                Some("x")
+            );
         }
 
         #[test]

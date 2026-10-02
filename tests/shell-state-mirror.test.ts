@@ -33,7 +33,7 @@ class FakeStorage {
   }
 }
 
-function setup(options: { failSends?: number } = {}) {
+function setup(options: { failSends?: number; rateLimited?: number } = {}) {
   const storage = new FakeStorage()
   const sent: MirrorOp[][] = []
   const warnings: string[] = []
@@ -41,6 +41,7 @@ function setup(options: { failSends?: number } = {}) {
   let clock = 1_000_000
   let nextHandle = 1
   let failuresLeft = options.failSends ?? 0
+  let limitedLeft = options.rateLimited ?? 0
   let wiped = 0
   const env: MirrorEnvironment = {
     storage: storage as unknown as Storage,
@@ -48,6 +49,10 @@ function setup(options: { failSends?: number } = {}) {
       if (failuresLeft > 0) {
         failuresLeft -= 1
         throw new Error('not allowed')
+      }
+      if (limitedLeft > 0) {
+        limitedLeft -= 1
+        return { rateLimited: true }
       }
       sent.push(ops)
     },
@@ -166,6 +171,15 @@ test('a failed send is retried with the newest value and gives up after repeated
   assert.equal(failing.mirror.disabled, true)
   assert.ok(failing.warnings.some((message) => /giving up/.test(message)))
   assert.equal(warnings.length, 0)
+})
+
+test('a rate-limited answer keeps the batch and is not counted as a failure', async () => {
+  const { mirror, sent, advance, warnings } = setup({ rateLimited: 12 })
+  mirror.noteSet('a', '1')
+  for (let i = 0; i < 20; i += 1) await advance(3_001)
+  assert.equal(mirror.disabled, false)
+  assert.equal(warnings.length, 0)
+  assert.deepEqual(flatten(sent).map((op) => op.key), ['a'])
 })
 
 test('large batches are split and values over the store limit are not sent', async () => {

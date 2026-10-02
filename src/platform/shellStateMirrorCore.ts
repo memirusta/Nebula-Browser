@@ -8,6 +8,8 @@ export type MirrorOp =
 
 export interface MirrorResult {
   skipped?: string[]
+  /** Nothing was applied: the store is receiving changes too fast. Try again later. */
+  rateLimited?: boolean
 }
 
 export interface MirrorEnvironment {
@@ -46,6 +48,7 @@ const MAX_BATCH_OPS = 400
 const MAX_BATCH_BYTES = 3 * 1024 * 1024
 const MAX_VALUE_BYTES = 2 * 1024 * 1024
 const MAX_CONSECUTIVE_FAILURES = 5
+const RATE_LIMIT_RETRY_MS = 3_000
 
 function byteLength(text: string): number {
   // The limits are in UTF-8 bytes; length * 3 is the worst case per UTF-16 unit and
@@ -137,12 +140,15 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
       env.warn('shell state mirror: giving up after repeated failures')
       return
     }
-    if (retryTimer === null) {
-      retryTimer = env.setTimer(() => {
-        retryTimer = null
-        void flush()
-      }, 2_000 * failures)
-    }
+    scheduleRetry(2_000 * failures)
+  }
+
+  function scheduleRetry(ms: number): void {
+    if (disabled || retryTimer !== null) return
+    retryTimer = env.setTimer(() => {
+      retryTimer = null
+      void flush()
+    }, ms)
   }
 
   async function sendPending(): Promise<void> {
@@ -156,6 +162,13 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
       const batch = batches[index]
       try {
         const result = await env.send(batch)
+        if (result?.rateLimited) {
+          // Busy, not broken: keep the batch, wait, and do not count it as a failure.
+          requeue(batch)
+          for (const rest of batches.slice(index + 1)) requeue(rest)
+          scheduleRetry(RATE_LIMIT_RETRY_MS)
+          return
+        }
         failures = 0
         noteSent(batch)
         if (result?.skipped?.length) {

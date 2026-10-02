@@ -144,6 +144,10 @@ try {
   const again = await evaluate(cdp, invokeStatus)
   check('a restarted app loads the store', again.generation >= status.generation && again.keyCount >= status.keyCount - 1, JSON.stringify(again))
   check('an unchanged start does not rewrite the store', again.generation - status.generation <= 3, `generation ${status.generation} -> ${again.generation}`)
+  // The factory reset path: the shell asks for a wipe and nothing of the store is left.
+  await evaluate(cdp, `window.__TAURI_INTERNALS__.invoke('shell_store_wipe').then(() => 1)`)
+  const wiped = await evaluate(cdp, invokeStatus)
+  check('a wipe empties the store and removes its files', wiped.keyCount === 0 && wiped.generation === 0 && !existsSync(storeFile) && !existsSync(`${storeFile}.bak`), JSON.stringify(wiped))
   cdp.ws.close()
 } catch (error) {
   check('second run completed', false, String(error))
