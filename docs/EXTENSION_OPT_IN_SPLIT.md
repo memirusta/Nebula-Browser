@@ -1,7 +1,7 @@
 # Extension isolation as an opt-in: split on first extension, shell state in a Rust-owned store
 
-Status: design, 2026-10-02. Follows `EXTENSION_PROFILE_ISOLATION.md` (findings and spike results).
-No product code exists for this; the spike lives in a separate worktree.
+Status: switch, gate, hydration, rollback and the Settings row are implemented (branch `wip/split-opt-in`); the
+extension install path (section 4) and the evil-extension gate are not. See `docs/CURRENT_STATE.md`.
 
 ## Decisions already made
 

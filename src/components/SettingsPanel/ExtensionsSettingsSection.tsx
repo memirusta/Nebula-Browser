@@ -4,6 +4,7 @@ import { getIntlLocale } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './ExtensionsSettingsSection.module.css'
 import { ExtensionInstallControls } from './ExtensionInstallControls'
+import { ShellIsolationSettings } from './ShellIsolationSettings'
 import { ExtensionCompatibilityDetails } from './ExtensionCompatibilityDetails'
 import { extensionHostCopy } from '../../core/extensionHostCopy'
 import { createExtensionCatalogStatus, type ExtensionCatalogStatus } from '../../core/extensionCatalogStatus'
@@ -45,6 +46,8 @@ export function ExtensionsSettingsSection({ onOpenBrowseUrl }: { onOpenBrowseUrl
   const reset = () => { setQuery(''); setCategory('all') }
 
   return (
+    <>
+    <ShellIsolationSettings />
     <section className={styles.explorer} aria-label={copy.title} data-extension-explorer="true">
       <div className={styles.hero}>
         <div className={styles.orbit} aria-hidden="true">✦</div>
@@ -87,5 +90,6 @@ export function ExtensionsSettingsSection({ onOpenBrowseUrl }: { onOpenBrowseUrl
         <span aria-hidden="true">⌕</span><p>{copy.empty}</p><button type="button" onClick={reset}>{copy.reset}</button>
       </div>}
     </section>
+    </>
   )
 }

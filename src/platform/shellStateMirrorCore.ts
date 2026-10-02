@@ -14,7 +14,9 @@ export interface MirrorResult {
 
 export interface MirrorEnvironment {
   storage: Storage
-  send(ops: MirrorOp[]): Promise<MirrorResult | void>
+  send(ops: MirrorOp[], barrierId?: string): Promise<MirrorResult | void>
+  /** SHA-256 of the bytes. Needed for the migration gate only. */
+  sha256?(data: Uint8Array): Promise<Uint8Array>
   wipe(): Promise<void>
   now(): number
   setTimer(callback: () => void, ms: number): unknown
@@ -22,7 +24,23 @@ export interface MirrorEnvironment {
   warn(message: string): void
 }
 
+/** What a shell webview answers to the migration gate (docs/EXTENSION_OPT_IN_SPLIT.md, 2a). */
+export interface BarrierAnswer {
+  digest: string
+  keyCount: number
+  pendingEmpty: boolean
+  writesSince: number
+  unmirrorable: string[]
+  error?: string
+}
+
 export interface ShellStateMirror {
+  /** Drain, reconcile, and answer with the digest of the live storage. */
+  barrierDrain(id: string): Promise<BarrierAnswer>
+  /** The second question of the gate: did anything change since the drain answer? */
+  barrierCommit(id: string): BarrierAnswer
+  /** The gate ended (aborted); resume normal mirroring. */
+  barrierEnd(id: string): void
   noteSet(key: string, value: string): void
   noteRemove(key: string): void
   /** Sends what is pending now. */
@@ -43,6 +61,49 @@ export interface ShellStateMirror {
 
 /** Same list as EXCLUDED_KEYS in the Rust module: the crash marker of this run. */
 export const MIRROR_EXCLUDED_KEYS: readonly string[] = ['nebula-browser-run-state-v1']
+/** Same as EXCLUDED_PREFIX in Rust: the app's own bookkeeping (the hydration marker). */
+export const MIRROR_EXCLUDED_PREFIX = '__nebula_'
+
+export function isExcludedKey(key: string): boolean {
+  return MIRROR_EXCLUDED_KEYS.includes(key) || key.startsWith(MIRROR_EXCLUDED_PREFIX)
+}
+
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  const length = Math.min(a.length, b.length)
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return a[index] - b[index]
+  }
+  return a.length - b.length
+}
+
+/**
+ * SHA-256 over `key -> value`, sorted by the UTF-8 bytes of the key, each as
+ * `len(key) key len(value) value` with 4-byte big-endian lengths. The same function as
+ * content_digest in src-tauri/src/shell_state_store.rs; golden vectors pin both.
+ */
+export async function contentDigest(
+  entries: Iterable<readonly [string, string]>,
+  sha256: (data: Uint8Array) => Promise<Uint8Array>,
+): Promise<string> {
+  const encoder = new TextEncoder()
+  const list = [...entries].map(([key, value]) => [encoder.encode(key), encoder.encode(value)] as const)
+  list.sort((a, b) => compareBytes(a[0], b[0]))
+  let total = 0
+  for (const [key, value] of list) total += 8 + key.length + value.length
+  const buffer = new Uint8Array(total)
+  const view = new DataView(buffer.buffer)
+  let offset = 0
+  for (const [key, value] of list) {
+    view.setUint32(offset, key.length)
+    buffer.set(key, offset + 4)
+    offset += 4 + key.length
+    view.setUint32(offset, value.length)
+    buffer.set(value, offset + 4)
+    offset += 4 + value.length
+  }
+  const digest = await sha256(buffer)
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 export const DEBOUNCE_MS = 400
 export const FIRST_RECONCILE_MS = 3_000
@@ -81,7 +142,12 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
   let sending: Promise<void> = Promise.resolve()
   const unmirrorable = new Map<string, string>()
 
-  const excluded = (key: string) => MIRROR_EXCLUDED_KEYS.includes(key)
+  const excluded = isExcludedKey
+  // The migration gate: while a barrier is open batches carry its id (the store lifts its
+  // rate limit for them), and writes are counted so the commit question can be answered.
+  let barrierId: string | null = null
+  let barrierWrites = 0
+  let inFlight = 0
 
   function nextSeq(): number {
     lastSeq = Math.max(lastSeq + 1, env.now() * 1000)
@@ -98,6 +164,7 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
 
   function enqueue(op: MirrorOp): void {
     if (disabled || excluded(op.key)) return
+    if (barrierId !== null) barrierWrites += 1
     let reason: string | null = null
     if (!isWellFormed(op.key)) reason = 'the key is not well-formed text'
     else if (op.op === 'set' && !isWellFormed(op.value)) reason = 'the value is not well-formed text'
@@ -176,7 +243,13 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
       if (disabled) return
       const batch = batches[index]
       try {
-        const result = await env.send(batch)
+        inFlight += 1
+        let result: MirrorResult | void
+        try {
+          result = await env.send(batch, barrierId ?? undefined)
+        } finally {
+          inFlight -= 1
+        }
         if (result?.rateLimited) {
           // Busy, not broken: keep the batch, wait, and do not count it as a failure.
           requeue(batch)
@@ -250,7 +323,63 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
     pending.clear()
   }
 
+  async function liveDigest(): Promise<string> {
+    if (!env.sha256) throw new Error('no SHA-256 available')
+    return contentDigest(liveEntries(), env.sha256)
+  }
+
+  function answer(digest: string, error?: string): BarrierAnswer {
+    return {
+      digest,
+      keyCount: liveEntries().size,
+      pendingEmpty: pending.size === 0 && inFlight === 0 && retryTimer === null,
+      writesSince: barrierWrites,
+      unmirrorable: [...unmirrorable.keys()],
+      ...(error ? { error } : {}),
+    }
+  }
+
+  async function barrierDrain(id: string): Promise<BarrierAnswer> {
+    barrierId = id
+    barrierWrites = 0
+    // The drain takes over from a backed-off retry: it sends everything itself, now.
+    if (retryTimer !== null) {
+      env.clearTimer(retryTimer)
+      retryTimer = null
+    }
+    try {
+      if (disabled) return answer('', 'the mirror gave up earlier')
+      // Several rounds: a write that lands while one is being sent is sent by the next.
+      for (let round = 0; round < 5; round += 1) {
+        await reconcile()
+        if (failures > 0) return answer('', 'the store did not accept the changes')
+        if (pending.size === 0 && inFlight === 0) break
+      }
+      // Writes made from here on are what the commit question asks about.
+      barrierWrites = 0
+      const digest = await liveDigest()
+      return answer(digest)
+    } catch (error) {
+      return answer('', String(error))
+    }
+  }
+
+  function barrierCommit(id: string): BarrierAnswer {
+    if (barrierId !== id) return answer('', 'not the open barrier')
+    return answer('')
+  }
+
+  function barrierEnd(id: string): void {
+    if (barrierId === id) {
+      barrierId = null
+      barrierWrites = 0
+    }
+  }
+
   return {
+    barrierDrain,
+    barrierCommit,
+    barrierEnd,
     noteSet(key, value) {
       enqueue({ op: 'set', key, value, seq: nextSeq() })
     },

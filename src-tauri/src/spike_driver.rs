@@ -5,7 +5,7 @@
 //!   NEBULA_SPIKE_PHASES=startup,tabs3   optional subset (default: all)
 //!   NEBULA_SPIKE_OUT=<file>             JSON report
 //!   NEBULA_SPIKE_SCRIPTS=<dir>          repo `scripts` folder (memory sampler)
-//!   NEBULA_SPIKE_SPLIT=0|1              baseline or the split-environment shell
+//!   NEBULA_SHELL_ISOLATION=single|split  baseline or the split-environment shell
 //!
 //! Real input only goes out while one of this process's windows is in the
 //! foreground, so a key press can never land in another program.
@@ -701,7 +701,7 @@ fn phase_f11(app: &tauri::AppHandle, baseline: &Value) -> Result<Value, String> 
         } else {
             let _ = crate::site_fullscreen_window::toggle_browser_fullscreen_window(app, "main");
         }
-        (exited, exit_seconds, off) = poll(app, &initial, 8);
+        (exited, exit_seconds, _) = poll(app, &initial, 8);
         if !exited {
             // Leave the window usable for the phases that follow.
             let _ = crate::site_fullscreen_window::toggle_browser_fullscreen_window(app, "main");
@@ -1081,7 +1081,9 @@ fn phase_ready(app: &tauri::AppHandle) -> Result<Value, String> {
             "millis": started.elapsed().as_millis(),
         }));
     }
-    Ok(json!({ "installedNow": installed_now, "statusBefore": serde_json::to_value(&before).unwrap_or(Value::Null), "samples": samples }))
+    Ok(
+        json!({ "installedNow": installed_now, "statusBefore": serde_json::to_value(&before).unwrap_or(Value::Null), "samples": samples }),
+    )
 }
 
 /// Service-worker lifecycle around the uBO readiness wait. Every scenario reports
@@ -1119,22 +1121,41 @@ fn phase_readylife(app: &tauri::AppHandle) -> Result<Value, String> {
     let worker_count = || -> usize {
         worker::cdp(app, label, None, "Target.getTargets", &json!({}))
             .ok()
-            .and_then(|v| v["targetInfos"].as_array().map(|l| l.iter().filter(|t| t["type"] == "service_worker").count()))
+            .and_then(|v| {
+                v["targetInfos"]
+                    .as_array()
+                    .map(|l| l.iter().filter(|t| t["type"] == "service_worker").count())
+            })
             .unwrap_or(usize::MAX)
     };
 
     // 1. First answer after the install (fresh profile: the worker has never run).
     let (r, ms) = timed(&host_ready);
-    record("first answer after install", matches!(r, Ok(true)), ms, json!({ "installedNow": installed_now, "result": format!("{r:?}") }));
+    record(
+        "first answer after install",
+        matches!(r, Ok(true)),
+        ms,
+        json!({ "installedNow": installed_now, "result": format!("{r:?}") }),
+    );
     // 2. Worker running and initialised.
     let (r, ms) = timed(&host_ready);
-    record("worker already running", matches!(r, Ok(true)) && ms < 1500, ms, json!({ "result": format!("{r:?}") }));
+    record(
+        "worker already running",
+        matches!(r, Ok(true)) && ms < 1500,
+        ms,
+        json!({ "result": format!("{r:?}") }),
+    );
     // 3. Worker stopped (idle shutdown): the check starts it again.
     let stopped = stop_all();
     std::thread::sleep(Duration::from_millis(800));
     let gone = worker_count();
     let (r, ms) = timed(&host_ready);
-    record("worker stopped, then asked", matches!(r, Ok(true)), ms, json!({ "stopCall": stopped.is_ok(), "workersAfterStop": gone, "result": format!("{r:?}") }));
+    record(
+        "worker stopped, then asked",
+        matches!(r, Ok(true)),
+        ms,
+        json!({ "stopCall": stopped.is_ok(), "workersAfterStop": gone, "result": format!("{r:?}") }),
+    );
     // 4. Worker stopped again while the wait is polling: it must re-attach to the next one.
     let _ = stop_all();
     std::thread::sleep(Duration::from_millis(500));
@@ -1143,23 +1164,51 @@ fn phase_readylife(app: &tauri::AppHandle) -> Result<Value, String> {
         std::thread::spawn(move || {
             for delay in [350u64, 900] {
                 std::thread::sleep(Duration::from_millis(delay));
-                let _ = crate::extension_worker::cdp(&app, crate::browser_profile::OWNER_LABEL, None, "ServiceWorker.stopAllWorkers", &json!({}));
+                let _ = crate::extension_worker::cdp(
+                    &app,
+                    crate::browser_profile::OWNER_LABEL,
+                    None,
+                    "ServiceWorker.stopAllWorkers",
+                    &json!({}),
+                );
             }
         })
     };
     let (r, ms) = timed(&host_ready);
     let _ = killer.join();
-    record("worker stopped twice during the wait", matches!(r, Ok(true)), ms, json!({ "result": format!("{r:?}") }));
+    record(
+        "worker stopped twice during the wait",
+        matches!(r, Ok(true)),
+        ms,
+        json!({ "result": format!("{r:?}") }),
+    );
     // 5. A condition that never becomes true ends at its deadline, not later, not never.
-    let (r, ms) = timed(&|| worker::wait_for_condition(app, label, &id, "false", Duration::from_secs(2)));
-    record("never-true condition ends at the deadline", matches!(r, Ok(false)) && (1900..6000).contains(&ms), ms, json!({ "result": format!("{r:?}") }));
+    let (r, ms) =
+        timed(&|| worker::wait_for_condition(app, label, &id, "false", Duration::from_secs(2)));
+    record(
+        "never-true condition ends at the deadline",
+        matches!(r, Ok(false)) && (1900..6000).contains(&ms),
+        ms,
+        json!({ "result": format!("{r:?}") }),
+    );
     // 6. An extension that is not there: no hang, no error, "not ready".
     let bogus = "a".repeat(32);
-    let (r, ms) = timed(&|| worker::wait_for_condition(app, label, &bogus, flag, Duration::from_secs(2)));
-    record("unknown extension id ends at the deadline", matches!(r, Ok(false)) && ms < 15000, ms, json!({ "result": format!("{r:?}") }));
+    let (r, ms) =
+        timed(&|| worker::wait_for_condition(app, label, &bogus, flag, Duration::from_secs(2)));
+    record(
+        "unknown extension id ends at the deadline",
+        matches!(r, Ok(false)) && ms < 15000,
+        ms,
+        json!({ "result": format!("{r:?}") }),
+    );
     // 7. And the real one still works afterwards.
     let (r, ms) = timed(&host_ready);
-    record("ready again after the failures", matches!(r, Ok(true)), ms, json!({ "result": format!("{r:?}") }));
+    record(
+        "ready again after the failures",
+        matches!(r, Ok(true)),
+        ms,
+        json!({ "result": format!("{r:?}") }),
+    );
     let all_ok = scenarios.iter().all(|s| s["ok"] == true);
     Ok(json!({ "allOk": all_ok, "installedNow": installed_now, "scenarios": scenarios }))
 }
@@ -1251,7 +1300,10 @@ pub fn start(app: tauri::AppHandle) {
         }
         let mut report = serde_json::Map::new();
         report.insert("driver".into(), json!(name));
-        report.insert("split".into(), json!(crate::shell_split::enabled()));
+        report.insert(
+            "split".into(),
+            json!(crate::shell_isolation::split_active()),
+        );
         let mut baseline = Value::Null;
         let started = Instant::now();
         for phase in &phases {

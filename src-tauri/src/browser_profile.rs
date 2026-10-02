@@ -45,6 +45,7 @@ static DESTROYED: AtomicU64 = AtomicU64::new(0);
 static CREATE_MICROS: AtomicU64 = AtomicU64::new(0);
 
 /// (owners created, owners destroyed, total microseconds spent creating them).
+#[cfg(feature = "split-driver")]
 pub fn churn_counters() -> (u64, u64, u64) {
     (
         CREATED.load(Ordering::Relaxed),

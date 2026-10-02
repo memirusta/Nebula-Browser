@@ -48,6 +48,10 @@ pub fn create_window(
     if !valid_workspace_label(&window_id) {
         return Err("invalid Nebula workspace window label".to_string());
     }
+    // A shell window created while the migration gate runs would not be part of its proof.
+    if crate::shell_isolation::barrier_open() {
+        return Err("Nebula is switching its environment; try again in a moment".to_string());
+    }
 
     if let Some(existing) = app.get_webview_window(&window_id) {
         existing.show().map_err(|error| error.to_string())?;
@@ -81,9 +85,9 @@ pub fn create_window(
         .disable_drag_drop_handler()
         .browser_extensions_enabled(true);
     // SPIKE: shell windows live in the trusted environment, extensions off.
-    if crate::shell_split::enabled() {
+    if crate::shell_isolation::split_active() {
         builder = builder
-            .data_directory(crate::shell_split::trusted_dir(app)?)
+            .data_directory(crate::shell_isolation::trusted_dir(app)?)
             .browser_extensions_enabled(false);
     }
     let window = builder.build().map_err(|error| error.to_string())?;

@@ -17,6 +17,7 @@ import {
   initWindowRestoreRepair,
 } from './platform/tauriBrowser'
 import { writeTransitionLog } from './platform/tauriTransitionLog'
+import { announceShellIsolationNotice } from './platform/shellIsolation'
 
 const chromeShell = isChromeShell()
 
@@ -44,6 +45,7 @@ if (isTauri && !chromeShell) {
       errorName: error instanceof Error ? error.name : 'Unknown',
     })
   }
+  void announceShellIsolationNotice().catch(() => undefined)
   void prewarmUblockProfile()
     .then(() => scheduleInitialBrowseWebviewPrewarm())
     .catch(() => undefined)

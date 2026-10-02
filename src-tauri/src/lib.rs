@@ -44,11 +44,12 @@ mod restore_visibility;
 #[cfg(target_os = "windows")]
 mod restore_visibility_state;
 mod secure_password_vault;
+mod shell_isolation;
 mod shell_split;
 mod shell_state_store;
 mod site_fullscreen_window;
 mod site_ui;
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "split-driver"))]
 mod spike_driver;
 mod system_stats;
 mod tab_error_page;
@@ -1883,9 +1884,11 @@ pub fn run() {
     }
 
     let mut context = tauri::generate_context!();
-    // SPIKE: in split mode the config windows are created in `setup`, in the trusted
-    // environment. Otherwise they stay exactly as configured.
-    let shell_windows = if shell_split::enabled() {
+    shell_isolation::initialize(&context.config().identifier);
+    // When the shell is not where the config puts it (split) or has to be seeded
+    // (hydration), the config windows are created in `setup`. Otherwise they stay
+    // exactly as configured.
+    let shell_windows = if shell_split::takes_over_config_windows() {
         std::mem::take(&mut context.config_mut().app.windows)
     } else {
         Vec::new()
@@ -1915,6 +1918,7 @@ pub fn run() {
             load_runtime_env();
             ui_watchdog::start(app.handle().clone());
             shell_split::create_config_windows(app, &shell_windows)?;
+            shell_isolation::start_hydration_watchdog(app.handle());
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             external_open::capture_startup_args();
@@ -1938,7 +1942,7 @@ pub fn run() {
                 )?;
             }
 
-            #[cfg(target_os = "windows")]
+            #[cfg(all(target_os = "windows", feature = "split-driver"))]
             spike_driver::start(app.handle().clone());
 
             Ok(())
@@ -1946,7 +1950,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             default_browser::open_default_browser_settings,
             browser_create_window,
-            shell_split::shell_split_enabled,
+            shell_isolation::shell_split_enabled,
+            shell_isolation::shell_isolation_status,
+            shell_isolation::shell_isolation_ack_notice,
+            shell_isolation::shell_isolation_hydrated,
+            shell_isolation::shell_isolation_barrier_ack,
+            shell_isolation::shell_isolation_switch,
             shell_split::shell_chrome_webview_create,
             browser_window_at_cursor,
             browser_tab_transfers::browser_tab_transfer_store,

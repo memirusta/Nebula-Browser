@@ -120,5 +120,10 @@ description = "Allow the trusted shell to mirror its localStorage into the Rust-
 commands.allow = [
   "shell_store_apply",
   "shell_store_status",
-  "shell_store_wipe"
+  "shell_store_wipe",
+  "shell_isolation_status",
+  "shell_isolation_ack_notice",
+  "shell_isolation_hydrated",
+  "shell_isolation_barrier_ack",
+  "shell_isolation_switch"
 ]

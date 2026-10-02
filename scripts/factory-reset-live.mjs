@@ -14,6 +14,14 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Cdp } from './e2e-cdp.mjs'
 
+
+/** Ends every process of the build under test (the single-instance plugin would hand a new start to a dying one). */
+function killByExe(path) {
+  const escaped = path.split('/').join(String.fromCharCode(92)).replace(/'/g, "''")
+  spawnSync('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq '" + escaped + "' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], { stdio: 'ignore' })
+  spawnSync('powershell', ['-NoProfile', '-Command', 'Start-Sleep -Seconds 2'], { stdio: 'ignore' })
+}
+
 const [exe, identifier, portArg] = process.argv.slice(2)
 if (!exe || !identifier) {
   console.error('usage: node scripts/factory-reset-live.mjs <app.exe> <identifier> [port]')
@@ -86,6 +94,7 @@ async function evaluate(expression) {
 }
 const status = () => evaluate(`window.__TAURI_INTERNALS__.invoke('shell_store_status')`)
 
+killByExe(exe)
 const child = spawn(exe, [], {
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   stdio: 'ignore',
@@ -196,7 +205,7 @@ try {
   check('the live run completed', false, String(error?.stack ?? error))
 } finally {
   try { cdp?.ws.close() } catch { /* gone */ }
-  spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+  killByExe(exe)
 }
 
 const failed = results.filter((r) => !r.ok)

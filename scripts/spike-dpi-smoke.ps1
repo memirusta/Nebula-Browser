@@ -27,12 +27,12 @@ $dismiss = Join-Path $env:TEMP 'nebula-spike-dismiss.js'
 $out = Join-Path $env:TEMP "nebula-spike-dpi-$Mode.json"
 if (Test-Path $out) { Remove-Item $out -Force }
 $env:NEBULA_SPIKE_DRIVER = 'dpi'; $env:NEBULA_SPIKE_OUT = $out
-$env:NEBULA_SPIKE_SCRIPTS = $PSScriptRoot; $env:NEBULA_SPIKE_SPLIT = $(if ($Mode -eq 'split') { '1' } else { '0' })
+$env:NEBULA_SPIKE_SCRIPTS = $PSScriptRoot; $env:NEBULA_SHELL_ISOLATION = $(if ($Mode -eq 'split') { 'split' } else { 'single' })
 $env:NEBULA_SPIKE_PHASES = 'startup,eval,tabs3,minrestore,popup,f11'
 $env:NEBULA_SPIKE_EVAL = $dismiss; $env:NEBULA_SPIKE_EVAL_WAIT = '1'; $env:NEBULA_SPIKE_EVAL_GAP = '2'
 $process = Start-Process -FilePath $Exe -PassThru
 if (-not $process.WaitForExit(300000)) { Stop-Process -Id $process.Id -Force; Write-Host 'The run did not finish in 5 minutes.' }
-foreach ($name in 'NEBULA_SPIKE_DRIVER', 'NEBULA_SPIKE_OUT', 'NEBULA_SPIKE_SCRIPTS', 'NEBULA_SPIKE_SPLIT', 'NEBULA_SPIKE_PHASES', 'NEBULA_SPIKE_EVAL', 'NEBULA_SPIKE_EVAL_WAIT', 'NEBULA_SPIKE_EVAL_GAP') { Set-Item "Env:$name" $null }
+foreach ($name in 'NEBULA_SPIKE_DRIVER', 'NEBULA_SPIKE_OUT', 'NEBULA_SPIKE_SCRIPTS', 'NEBULA_SHELL_ISOLATION', 'NEBULA_SPIKE_PHASES', 'NEBULA_SPIKE_EVAL', 'NEBULA_SPIKE_EVAL_WAIT', 'NEBULA_SPIKE_EVAL_GAP') { Set-Item "Env:$name" $null }
 if (-not (Test-Path $out)) { throw 'No report was written.' }
 $r = Get-Content $out -Raw | ConvertFrom-Json
 

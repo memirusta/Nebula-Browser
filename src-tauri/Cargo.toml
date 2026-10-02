@@ -16,6 +16,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 extension-native-smoke = []
+# The split driver evaluates scripts in Nebula's webviews from environment variables.
+# A test harness, never part of a product build.
+split-driver = []
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

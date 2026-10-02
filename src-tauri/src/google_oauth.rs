@@ -302,9 +302,9 @@ pub(crate) fn open_google_oauth_popup(
 
     // SPIKE: sign-in runs in the trusted environment: persistent, extensions off, and
     // no capability matches its label, so no IPC.
-    if crate::shell_split::enabled() {
+    if crate::shell_isolation::split_active() {
         builder = builder
-            .data_directory(crate::shell_split::trusted_dir(app)?)
+            .data_directory(crate::shell_isolation::trusted_dir(app)?)
             .browser_extensions_enabled(false);
     }
 

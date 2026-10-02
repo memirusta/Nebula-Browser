@@ -39,6 +39,28 @@ const MAX_APPLIES_PER_WINDOW: usize = 40;
 /// Keys the store never holds. The run-state marker describes the current process; a
 /// restored copy would be a lie.
 const EXCLUDED_KEYS: &[&str] = &["nebula-browser-run-state-v1"];
+/// Keys of the app's own bookkeeping (the hydration marker) are never user state.
+const EXCLUDED_PREFIX: &str = "__nebula_";
+
+pub(crate) fn is_excluded(key: &str) -> bool {
+    EXCLUDED_KEYS.contains(&key) || key.starts_with(EXCLUDED_PREFIX)
+}
+
+/// SHA-256 over `key -> value` pairs, sorted by the UTF-8 bytes of the key, each as
+/// `len(key) key len(value) value` with 4-byte big-endian lengths. The shell computes the
+/// same function over its `localStorage` (shellStateMirrorCore.ts); golden vectors pin both.
+pub(crate) fn content_digest<'a>(entries: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    let mut list: Vec<(&str, &str)> = entries.into_iter().collect();
+    list.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let mut hasher = Sha256::new();
+    for (key, value) in list {
+        hasher.update((key.len() as u32).to_be_bytes());
+        hasher.update(key.as_bytes());
+        hasher.update((value.len() as u32).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    format!("{:x}", hasher.finalize())
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Entry {
@@ -149,7 +171,7 @@ impl State {
                 outcome.skipped.push("key size".to_string());
                 continue;
             }
-            if EXCLUDED_KEYS.contains(&key) {
+            if is_excluded(key) {
                 outcome.skipped.push(format!("excluded key {key}"));
                 continue;
             }
@@ -300,6 +322,9 @@ fn keep_unreadable(path: &Path) {
 
 #[derive(Default)]
 struct Runtime {
+    /// Id of the migration barrier that is open, if any. Batches that carry it are
+    /// exempt from the write rate limit (never from the size caps).
+    barrier: Option<String>,
     state: Option<State>,
     disabled: Option<String>,
     applies: VecDeque<Instant>,
@@ -339,7 +364,18 @@ impl Runtime {
         }
     }
 
+    #[cfg(test)]
     fn apply(&mut self, path: &Path, ops: &[Op], now: Instant) -> Result<ApplyResult, String> {
+        self.apply_with(path, ops, now, false)
+    }
+
+    fn apply_with(
+        &mut self,
+        path: &Path,
+        ops: &[Op],
+        now: Instant,
+        rate_exempt: bool,
+    ) -> Result<ApplyResult, String> {
         self.ensure_loaded(path);
         if let Some(reason) = &self.disabled {
             return Err(format!("the shell state store is disabled: {reason}"));
@@ -351,7 +387,7 @@ impl Runtime {
         {
             self.applies.pop_front();
         }
-        if self.applies.len() >= MAX_APPLIES_PER_WINDOW {
+        if !rate_exempt && self.applies.len() >= MAX_APPLIES_PER_WINDOW {
             return Ok(self.result(Outcome::default(), true));
         }
 
@@ -379,6 +415,22 @@ impl Runtime {
             bytes: live_bytes(&state.entries),
             rate_limited,
         }
+    }
+
+    /// What the store holds right now, as the digest the shells are compared against.
+    fn live_digest(&mut self, path: &Path) -> Result<(u64, usize, String), String> {
+        self.ensure_loaded(path);
+        if let Some(reason) = &self.disabled {
+            return Err(format!("the shell state store is disabled: {reason}"));
+        }
+        let state = self.state.as_ref().expect("loaded above");
+        let digest = content_digest(
+            state
+                .entries
+                .iter()
+                .filter_map(|(key, entry)| entry.v.as_deref().map(|value| (key.as_str(), value))),
+        );
+        Ok((state.generation, live_count(&state.entries), digest))
     }
 
     fn status(&mut self, path: &Path) -> StoreStatus {
@@ -428,13 +480,117 @@ fn locked() -> Result<std::sync::MutexGuard<'static, Runtime>, String> {
         .map_err(|_| "the shell state store lock was poisoned".to_string())
 }
 
+/// Everything the migration gate needs to know about the store as it is on disk.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskCheck {
+    pub generation: u64,
+    pub key_count: usize,
+    pub digest: String,
+}
+
+/// Reads the store back from disk through the real load path: the primary file must
+/// decrypt, pass its checksum and its schema (no silent recovery from the previous copy),
+/// and the previous copy must decode too if it exists. A store from a newer app, or one
+/// that had to be set aside as unreadable, is not a restore source.
+pub(crate) fn disk_check_at(path: &Path) -> Result<DiskCheck, String> {
+    let decode_file = |file: &Path| -> Result<State, String> {
+        let bytes = std::fs::read(file).map_err(|error| format!("{}: {error}", file.display()))?;
+        let plain = crate::secure_password_vault::unprotect(&bytes)?;
+        match decode(&plain)? {
+            Decoded::State(state) => Ok(state),
+            Decoded::Newer(schema) => Err(format!("the store has a newer schema ({schema})")),
+        }
+    };
+    let mut aside = path.as_os_str().to_os_string();
+    aside.push(".unreadable");
+    if PathBuf::from(aside).exists() {
+        return Err("an unreadable store was set aside earlier in this installation".to_string());
+    }
+    let state = decode_file(path)?;
+    let mut backup = path.as_os_str().to_os_string();
+    backup.push(".bak");
+    let backup = PathBuf::from(backup);
+    if backup.exists() {
+        decode_file(&backup).map_err(|error| format!("the previous copy is invalid: {error}"))?;
+    }
+    let digest = content_digest(
+        state
+            .entries
+            .iter()
+            .filter_map(|(key, entry)| entry.v.as_deref().map(|value| (key.as_str(), value))),
+    );
+    Ok(DiskCheck {
+        generation: state.generation,
+        key_count: live_count(&state.entries),
+        digest,
+    })
+}
+
+/// The store as an app-level value for hydration.
+pub(crate) struct Snapshot {
+    pub entries: BTreeMap<String, String>,
+}
+
+pub(crate) fn snapshot_at(path: &Path) -> Result<Snapshot, String> {
+    let mut runtime = locked()?;
+    runtime.ensure_loaded(path);
+    if let Some(reason) = &runtime.disabled {
+        return Err(format!("the shell state store is disabled: {reason}"));
+    }
+    let state = runtime.state.as_ref().expect("loaded above");
+    Ok(Snapshot {
+        entries: state
+            .entries
+            .iter()
+            .filter_map(|(key, entry)| entry.v.clone().map(|value| (key.clone(), value)))
+            .collect(),
+    })
+}
+
+pub(crate) fn store_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    store_path(app)
+}
+
+/// Same as `store_file`, before an `AppHandle` exists (startup).
+pub(crate) fn store_file_in(local_data_dir: &Path) -> PathBuf {
+    local_data_dir.join(FILE_NAME)
+}
+
+pub(crate) fn live_digest(app: &tauri::AppHandle) -> Result<(u64, usize, String), String> {
+    let path = store_path(app)?;
+    locked()?.live_digest(&path)
+}
+
+pub(crate) fn open_barrier(id: &str) -> Result<(), String> {
+    let mut runtime = locked()?;
+    if runtime.barrier.is_some() {
+        return Err("a migration barrier is already open".to_string());
+    }
+    runtime.barrier = Some(id.to_string());
+    Ok(())
+}
+
+pub(crate) fn close_barrier() {
+    if let Ok(mut runtime) = locked() {
+        runtime.barrier = None;
+    }
+}
+
 /// Reports a batch of `localStorage` changes. Only trusted shell webviews can call it
 /// (see `capabilities/shell-state-store.json`).
 #[tauri::command]
-pub async fn shell_store_apply(app: tauri::AppHandle, ops: Vec<Op>) -> Result<ApplyResult, String> {
+pub async fn shell_store_apply(
+    app: tauri::AppHandle,
+    ops: Vec<Op>,
+    barrier_id: Option<String>,
+) -> Result<ApplyResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = store_path(&app)?;
-        locked()?.apply(&path, &ops, Instant::now())
+        let mut runtime = locked()?;
+        // Only a batch that names the barrier that is open is exempt from the rate limit.
+        let exempt = barrier_id.is_some() && runtime.barrier == barrier_id;
+        runtime.apply_with(&path, &ops, Instant::now(), exempt)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -762,6 +918,165 @@ mod tests {
                 .is_err());
             assert!(runtime.status(&path).disabled.is_some());
             assert_eq!(std::fs::read(&path).unwrap(), protected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    fn set(key: &str, value: &str, seq: u64) -> Op {
+        Op::Set {
+            key: key.into(),
+            value: value.into(),
+            seq,
+        }
+    }
+
+    #[test]
+    fn digest_matches_the_golden_vectors_shared_with_the_shell() {
+        // The same vectors are asserted in tests/shell-state-mirror.test.ts.
+        assert_eq!(
+            content_digest([]),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            content_digest([("a", "1"), ("\u{fc}", "\u{1F600}"), ("b", "")]),
+            "00f64d2628d1741c1fe96fdd42f26314b5b01110963e3c4d721b6a9d81769b06"
+        );
+        // Byte order of UTF-8, not UTF-16 code unit order: U+FF5E sorts after U+1F600 in
+        // UTF-16 but before it in UTF-8.
+        assert_eq!(
+            content_digest([("\u{FF5E}", "x"), ("\u{1F600}", "y")]),
+            "463860628de3947241b8c3d2f0c6d6ebfbd4b6d4ee134538850f1997c1746636"
+        );
+    }
+
+    #[test]
+    fn digest_does_not_depend_on_input_order() {
+        assert_eq!(
+            content_digest([("a", "1"), ("b", "2")]),
+            content_digest([("b", "2"), ("a", "1")])
+        );
+        assert_ne!(content_digest([("a", "12")]), content_digest([("a1", "2")]));
+    }
+
+    #[test]
+    fn bookkeeping_keys_are_never_stored() {
+        let mut state = State::default();
+        let outcome = state.apply(&[
+            set("__nebula_hydration_id", "x", 1),
+            set("nebula-browser-run-state-v1", "{}", 1),
+            set("nebula-settings-v1", "{}", 1),
+        ]);
+        assert_eq!(outcome.accepted, 1);
+        assert!(is_excluded("__nebula_anything"));
+        assert!(!is_excluded("nebula-settings-v1"));
+    }
+
+    #[cfg(target_os = "windows")]
+    mod on_disk {
+        use super::*;
+
+        fn temp_path(name: &str) -> PathBuf {
+            let dir = std::env::temp_dir()
+                .join(format!("nebula-shell-gate-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            dir.join(FILE_NAME)
+        }
+
+        #[test]
+        fn disk_check_reads_the_real_file_and_agrees_with_memory() {
+            let path = temp_path("agree");
+            let mut runtime = Runtime::default();
+            runtime
+                .apply(
+                    &path,
+                    &[set("a", "1", 1), set("b", "\u{fc}", 1)],
+                    Instant::now(),
+                )
+                .unwrap();
+            runtime
+                .apply(&path, &[set("a", "2", 2)], Instant::now())
+                .unwrap();
+            let (generation, count, digest) = runtime.live_digest(&path).unwrap();
+            let check = disk_check_at(&path).unwrap();
+            assert_eq!(
+                check,
+                DiskCheck {
+                    generation,
+                    key_count: count,
+                    digest
+                }
+            );
+        }
+
+        #[test]
+        fn disk_check_refuses_a_damaged_primary_even_when_the_copy_is_good() {
+            let path = temp_path("damaged-primary");
+            let mut runtime = Runtime::default();
+            for seq in 1..=2 {
+                runtime
+                    .apply(&path, &[set("a", &seq.to_string(), seq)], Instant::now())
+                    .unwrap();
+            }
+            std::fs::write(&path, b"garbage").unwrap();
+            // The daily load path would recover from the copy; the gate must not.
+            assert!(disk_check_at(&path).is_err());
+        }
+
+        #[test]
+        fn disk_check_refuses_a_damaged_previous_copy() {
+            let path = temp_path("damaged-copy");
+            let mut runtime = Runtime::default();
+            for seq in 1..=2 {
+                runtime
+                    .apply(&path, &[set("a", &seq.to_string(), seq)], Instant::now())
+                    .unwrap();
+            }
+            let mut backup = path.as_os_str().to_os_string();
+            backup.push(".bak");
+            std::fs::write(PathBuf::from(backup), b"garbage").unwrap();
+            let error = disk_check_at(&path).unwrap_err();
+            assert!(error.contains("previous copy"), "{error}");
+        }
+
+        #[test]
+        fn disk_check_refuses_a_store_that_was_once_set_aside() {
+            let path = temp_path("aside");
+            let mut runtime = Runtime::default();
+            runtime
+                .apply(&path, &[set("a", "1", 1)], Instant::now())
+                .unwrap();
+            let mut aside = path.as_os_str().to_os_string();
+            aside.push(".unreadable");
+            std::fs::write(PathBuf::from(aside), b"x").unwrap();
+            assert!(disk_check_at(&path).is_err());
+        }
+
+        #[test]
+        fn only_the_open_barrier_lifts_the_rate_limit() {
+            let path = temp_path("barrier");
+            let mut runtime = Runtime::default();
+            let now = Instant::now();
+            for index in 0..MAX_APPLIES_PER_WINDOW {
+                runtime
+                    .apply(
+                        &path,
+                        &[set("a", &index.to_string(), index as u64 + 1)],
+                        now,
+                    )
+                    .unwrap();
+            }
+            let limited = runtime.apply(&path, &[set("a", "x", 1000)], now).unwrap();
+            assert!(limited.rate_limited);
+            let exempt = runtime
+                .apply_with(&path, &[set("a", "x", 1000)], now, true)
+                .unwrap();
+            assert!(!exempt.rate_limited);
+            assert_eq!(exempt.accepted, 1);
         }
     }
 }

@@ -14,6 +14,14 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Cdp } from './e2e-cdp.mjs'
 
+
+/** Ends every process of the build under test (the single-instance plugin would hand a new start to a dying one). */
+function killByExe(path) {
+  const escaped = path.split('/').join(String.fromCharCode(92)).replace(/'/g, "''")
+  spawnSync('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq '" + escaped + "' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], { stdio: 'ignore' })
+  spawnSync('powershell', ['-NoProfile', '-Command', 'Start-Sleep -Seconds 2'], { stdio: 'ignore' })
+}
+
 const [exe, identifier, portArg] = process.argv.slice(2)
 if (!exe || !identifier) {
   console.error('usage: node scripts/shell-state-store-live.mjs <app.exe> <identifier> [port]')
@@ -78,7 +86,7 @@ function decryptStore() {
 }
 
 function stop(child) {
-  spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+  killByExe(exe)
 }
 
 if (existsSync(storeFile)) {
@@ -87,6 +95,7 @@ if (existsSync(storeFile)) {
 }
 
 // ---- first run -------------------------------------------------------------------
+killByExe(exe)
 let child = start()
 let live
 let status
@@ -121,7 +130,7 @@ if (live && existsSync(storeFile)) {
   check('the file on disk is not plain text', !raw.includes(Buffer.from('nebula-live-check-a')) && !raw.includes(Buffer.from('"entries"')))
   const doc = decryptStore()
   const entries = doc.entries
-  const keys = Object.keys(live).filter((k) => k !== 'nebula-browser-run-state-v1' && k !== 'nebula-live-check-big')
+  const keys = Object.keys(live).filter((k) => k !== 'nebula-browser-run-state-v1' && k !== 'nebula-live-check-big' && !k.startsWith('__nebula_'))
   const missing = keys.filter((k) => entries[k]?.v !== live[k])
   check('every live key (but the excluded and oversized) is in the store with the same value', missing.length === 0, missing.join(', '))
   check('the crash marker is not in the store', !('nebula-browser-run-state-v1' in entries))

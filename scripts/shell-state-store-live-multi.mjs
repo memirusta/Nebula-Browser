@@ -19,6 +19,14 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Cdp } from './e2e-cdp.mjs'
 
+
+/** Ends every process of the build under test (the single-instance plugin would hand a new start to a dying one). */
+function killByExe(path) {
+  const escaped = path.split('/').join(String.fromCharCode(92)).replace(/'/g, "''")
+  spawnSync('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq '" + escaped + "' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], { stdio: 'ignore' })
+  spawnSync('powershell', ['-NoProfile', '-Command', 'Start-Sleep -Seconds 2'], { stdio: 'ignore' })
+}
+
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'))
 const fast = process.argv.includes('--fast')
 const [exe, identifier, portArg] = args
@@ -94,15 +102,28 @@ if (existsSync(storeFile)) {
   rmSync(storeFile, { force: true })
   rmSync(`${storeFile}.bak`, { force: true })
 }
+killByExe(exe)
 const child = spawn(exe, [], {
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   stdio: 'ignore',
 })
 
 try {
-  const mainTarget = await waitFor('the shell page', (list) =>
-    list.find((t) => t.type === 'page' && /^https?:\/\/tauri\.localhost/.test(t.url)),
-  )
+  // The shell has several webviews (main, chrome overlay); pick the one labelled main.
+  let mainTarget = null
+  await waitFor('the main shell page', async (list) => {
+    for (const target of list.filter((t) => t.type === 'page' && /^https?:\/\/tauri\.localhost/.test(t.url))) {
+      const probe = await connect(target)
+      if ((await label(probe)) === 'main') {
+        mainTarget = target
+        return true
+      }
+      probe.ws.close()
+      connections.delete(target.id)
+    }
+    return false
+  })
+  connections.delete(mainTarget.id)
   const main = await connect(mainTarget)
   check('the first shell window is main', (await label(main)) === 'main')
   await sleep(5000) // past the first reconcile
@@ -130,10 +151,15 @@ try {
           apply: await attempt('shell_store_apply', { ops: [{ op: 'set', key: 'nebula-evil', value: 'x', seq: Date.now() * 1000 }] }),
           status: await attempt('shell_store_status', {}),
           wipe: await attempt('shell_store_wipe', {}),
+          isolationStatus: await attempt('shell_isolation_status', {}),
+          isolationSwitch: await attempt('shell_isolation_switch', { target: 'split' }),
+          isolationHydrated: await attempt('shell_isolation_hydrated', { report: { id: 'x', digest: 'x', keyCount: 0 } }),
+          isolationBarrier: await attempt('shell_isolation_barrier_ack', { ack: { id: 'x', phase: 'drain' } }),
+          isolationNotice: await attempt('shell_isolation_ack_notice', {}),
         }
       })()`,
     )
-    const refused = ['apply', 'status', 'wipe'].every((k) => String(outcome[k]).startsWith('denied'))
+    const refused = ['apply', 'status', 'wipe', 'isolationStatus', 'isolationSwitch', 'isolationHydrated', 'isolationBarrier', 'isolationNotice'].every((k) => String(outcome[k]).startsWith('denied'))
     check(`${webviewLabel}: every store command is refused`, refused, JSON.stringify(outcome))
     await evaluate(main, `window.__TAURI_INTERNALS__.invoke('plugin:webview|webview_close', { label: '${webviewLabel}' }).then(() => 'closed', () => 'close failed')`)
   }
@@ -181,7 +207,7 @@ try {
   const compare = () => {
     const entries = decryptStore().entries
     const wrong = Object.keys(live)
-      .filter((k) => k !== 'nebula-browser-run-state-v1' && k !== 'nebula-race-shared')
+      .filter((k) => k !== 'nebula-browser-run-state-v1' && k !== 'nebula-race-shared' && k !== 'nebula-live-check-big' && !k.startsWith('__nebula_'))
       .filter((k) => entries[k]?.v !== live[k])
     const resurrected = Object.entries(entries).filter(([k, e]) => e.v !== null && !(k in live))
     return { entries, wrong, resurrected }
@@ -234,7 +260,7 @@ try {
   for (const cdp of connections.values()) {
     try { cdp.ws.close() } catch { /* already closed */ }
   }
-  spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+  killByExe(exe)
   server.close()
 }
 

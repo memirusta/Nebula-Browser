@@ -48,6 +48,7 @@ fn queue_external_urls(urls: Vec<String>) -> bool {
 }
 
 /// SPIKE: what a second launch with links does, from inside the process.
+#[cfg(feature = "split-driver")]
 pub(crate) fn spike_open_urls(app: &tauri::AppHandle, urls: Vec<String>) {
     if queue_external_urls(urls) {
         let target = crate::browser_workspace::most_recent_window_label(app);

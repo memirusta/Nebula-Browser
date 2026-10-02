@@ -81,7 +81,7 @@ fn extension_cache_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("uBlock data directory unavailable: {error}"))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "split-driver"))]
 pub(crate) fn ublock_extension_id(app: &AppHandle) -> Option<String> {
     install_marker(app).map(|marker| marker.extension_id)
 }
@@ -243,7 +243,9 @@ fn remove_stale_ublock_extensions_blocking(
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn ublock_extension_install_blocking(app: AppHandle) -> Result<UblockRuntimeStatus, String> {
+pub(crate) fn ublock_extension_install_blocking(
+    app: AppHandle,
+) -> Result<UblockRuntimeStatus, String> {
     use std::time::Duration;
 
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile7, ICoreWebView2_13};
@@ -350,7 +352,9 @@ pub fn ublock_extension_install(
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn ublock_extension_status_blocking(app: AppHandle) -> Result<UblockRuntimeStatus, String> {
+pub(crate) fn ublock_extension_status_blocking(
+    app: AppHandle,
+) -> Result<UblockRuntimeStatus, String> {
     use std::time::Duration;
 
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile7, ICoreWebView2_13};

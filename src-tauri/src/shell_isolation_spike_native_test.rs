@@ -132,10 +132,7 @@ impl Collector {
                 let mut bytes = Vec::new();
                 let mut chunk = [0u8; 4096];
                 let (mut head_end, mut length) = (None, 0usize);
-                loop {
-                    let Ok(read) = connection.read(&mut chunk) else {
-                        break;
-                    };
+                while let Ok(read) = connection.read(&mut chunk) {
                     if read == 0 {
                         break;
                     }
