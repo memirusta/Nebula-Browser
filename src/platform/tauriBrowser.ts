@@ -42,8 +42,10 @@ import {
   browserWebviewPhysicalBounds,
 } from './windowClientBounds'
 
+// Native wait is 15 s (UBLOCK_READY_TIMEOUT); this one only covers the IPC round trip
+// on top of it, so a hung host cannot hold tab creation forever.
+const UBLOCK_READY_TIMEOUT_MS = 18_000
 const LAYOUT_DEBOUNCE_MS = 120
-const UBLOCK_READY_TIMEOUT_MS = 4_000
 const WEBVIEW_CREATE_TIMEOUT_MS = 15_000
 const INITIAL_PREWARM_DELAY_MS = 5_000
 const NEXT_PREWARM_DELAY_MS = 1_500
@@ -118,36 +120,19 @@ type ExtensionWebviewOptions = WebviewOptions & {
 let ublockInfoPromise: Promise<UblockExtensionInfo> | null = null
 let ublockProfileReadyPromise: Promise<void> | null = null
 
+/** Asks the host whether uBO Lite's background has finished starting. The host reads it
+ * from the extension's own worker in the browser profile, so it does not depend on the
+ * shell's page or on which environment the shell runs in. Bounded: failing to confirm
+ * only loses the "rules are in place before the first page" guarantee. */
 async function waitForUblockRules(): Promise<void> {
-  if (document.documentElement.dataset.nebulaUblockReady === 'true') return
-
-  await new Promise<void>((resolve) => {
-    let settled = false
-
-    const finish = () => {
-      if (settled) return
-      settled = true
-      observer.disconnect()
-      window.clearTimeout(timeout)
-      resolve()
-    }
-
-    const observer = new MutationObserver(() => {
-      if (document.documentElement.dataset.nebulaUblockReady === 'true') {
-        finish()
-      }
-    })
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-nebula-ublock-ready'],
-    })
-
-    const timeout = window.setTimeout(
-      finish,
-      UBLOCK_READY_TIMEOUT_MS,
-    )
-  })
+  try {
+    await Promise.race([
+      invoke<boolean>('ublock_extension_ready'),
+      new Promise<void>((resolve) => window.setTimeout(resolve, UBLOCK_READY_TIMEOUT_MS)),
+    ])
+  } catch {
+    // Not ready is not an error for the caller; the first navigation still works.
+  }
 }
 
 export function getUblockExtensionInfo(): Promise<UblockExtensionInfo> {

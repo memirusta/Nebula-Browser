@@ -47,6 +47,14 @@ fn queue_external_urls(urls: Vec<String>) -> bool {
     true
 }
 
+/// SPIKE: what a second launch with links does, from inside the process.
+pub(crate) fn spike_open_urls(app: &tauri::AppHandle, urls: Vec<String>) {
+    if queue_external_urls(urls) {
+        let target = crate::browser_workspace::most_recent_window_label(app);
+        let _ = app.emit_to(target, EXTERNAL_URL_PENDING_EVENT, ());
+    }
+}
+
 /// Capture HTTP/HTTPS arguments from the first process.
 ///
 /// The frontend is not ready yet at this point, so the URLs remain queued until

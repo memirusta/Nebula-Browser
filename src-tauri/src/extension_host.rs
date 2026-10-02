@@ -388,19 +388,23 @@ fn page_path(manifest: &Value, kind: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn extension_host_list(
     app: tauri::AppHandle,
-    webview: tauri::Webview,
+    _webview: tauri::Webview,
 ) -> Result<Vec<InstalledExtension>, String> {
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, webview);
+        let _ = (app, _webview);
         Err("Browser extensions require Windows".into())
     }
     #[cfg(target_os = "windows")]
     {
-        let label = webview.window().label().to_string();
         tauri::async_runtime::spawn_blocking(move || {
             let mut installed = Vec::new();
-            let regular = crate::extension_install::enumerate(app.clone(), label)?;
+            // The browser profile's extensions are asked of its owner, never of the shell
+            // window that called: the shell's environment may not allow extensions at all.
+            let regular = crate::extension_install::enumerate(
+                app.clone(),
+                crate::browser_profile::owner_label(&app)?,
+            )?;
             let has_catalog_install = crate::extension_discovery::DISCOVERY.iter().any(|entry| {
                 crate::extension_registry::package(&entry.id).is_err()
                     && root_for(&app, &entry.id)
@@ -471,43 +475,6 @@ pub async fn extension_host_list(
 }
 
 #[cfg(target_os = "windows")]
-fn profile_directory(app: &tauri::AppHandle, label: &str) -> Result<PathBuf, String> {
-    use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2Environment7, ICoreWebView2_2,
-    };
-    use windows_core::{Interface, PWSTR};
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    app.get_webview(label)
-        .ok_or("Browser window unavailable")?
-        .with_webview(move |inner| unsafe {
-            let result = (|| -> Result<PathBuf, String> {
-                let environment = inner
-                    .controller()
-                    .CoreWebView2()
-                    .and_then(|core| core.cast::<ICoreWebView2_2>())
-                    .and_then(|core| core.Environment())
-                    .and_then(|env| env.cast::<ICoreWebView2Environment7>())
-                    .map_err(|e| e.to_string())?;
-                let mut value = PWSTR::null();
-                let result = environment.UserDataFolder(&mut value);
-                let path = value.to_string().unwrap_or_default();
-                if !value.is_null() {
-                    windows::Win32::System::Com::CoTaskMemFree(Some(value.as_ptr().cast()));
-                }
-                result.map_err(|e| e.to_string())?;
-                if path.is_empty() {
-                    return Err("Missing regular browser profile".into());
-                }
-                Ok(PathBuf::from(path))
-            })();
-            let _ = tx.send(result);
-        })
-        .map_err(|e| e.to_string())?;
-    rx.recv_timeout(std::time::Duration::from_secs(5))
-        .map_err(|_| "Profile query timed out".to_string())?
-}
-
-#[cfg(target_os = "windows")]
 pub(crate) fn open_controls(
     app: &tauri::AppHandle,
     owners: (&str, &str),
@@ -556,8 +523,10 @@ pub(crate) fn open_controls_page(
     }
     let profile = if owners.1 == "extension-catalog-host" {
         catalog_profile_directory(app)?
+    } else if crate::browser_profile::is_owner(owners.1) {
+        crate::browser_profile::user_data_folder(app)?
     } else {
-        profile_directory(app, owners.1)?
+        return Err("Unknown extension profile".into());
     };
     // How this window looks is decided by what the extension declared (see
     // extension_window_profile): a toolbar popup is a frameless box that follows
@@ -669,7 +638,7 @@ pub async fn extension_host_open(
             let profile_label = if crate::extension_registry::package(&id).is_err() {
                 catalog_host(&app)?
             } else {
-                owner.clone()
+                crate::browser_profile::owner_label(&app)?
             };
             let status = crate::extension_install::operate(
                 app.clone(),
@@ -722,7 +691,7 @@ pub async fn extension_host_click(
             let profile_label = if crate::extension_registry::package(&id).is_err() {
                 catalog_host(&app)?
             } else {
-                owner.clone()
+                crate::browser_profile::owner_label(&app)?
             };
             let status = crate::extension_install::operate(
                 app.clone(),

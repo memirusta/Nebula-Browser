@@ -1515,8 +1515,14 @@ fn directory_size(path: &std::path::Path) -> u64 {
 }
 
 pub fn profile_storage_usage(app: &tauri::AppHandle) -> Result<ProfileStorageUsage, String> {
+    #[cfg(not(target_os = "windows"))]
     use tauri::Manager;
 
+    // The browsing profile's own folder (it used to be looked for under Roaming, where
+    // WebView2 keeps nothing).
+    #[cfg(target_os = "windows")]
+    let profile_root = crate::browser_profile::user_data_folder(app)?.join("EBWebView");
+    #[cfg(not(target_os = "windows"))]
     let profile_root = app
         .path()
         .app_data_dir()
@@ -1556,11 +1562,7 @@ pub fn profile_storage_usage(app: &tauri::AppHandle) -> Result<ProfileStorageUsa
 }
 
 #[cfg(target_os = "windows")]
-pub async fn clear_browsing_data(
-    app: &tauri::AppHandle,
-    label: &str,
-    kind: &str,
-) -> Result<(), String> {
+pub async fn clear_browsing_data(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
         COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
@@ -1576,10 +1578,10 @@ pub async fn clear_browsing_data(
         BrowsingDataKind::All => COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
     };
 
-    clear_profile_data_and_wait(app, label, data_kind).await?;
+    clear_profile_data_and_wait(app, data_kind).await?;
 
     if matches!(kind, BrowsingDataKind::Permissions | BrowsingDataKind::All) {
-        clear_non_default_permissions_and_wait(app, label).await?;
+        clear_non_default_permissions_and_wait(app).await?;
     }
 
     Ok(())
@@ -1588,7 +1590,6 @@ pub async fn clear_browsing_data(
 #[cfg(target_os = "windows")]
 async fn non_default_permission_settings(
     app: &tauri::AppHandle,
-    label: &str,
 ) -> Result<
     Vec<(
         webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
@@ -1599,7 +1600,6 @@ async fn non_default_permission_settings(
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::GetNonDefaultPermissionSettingsCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Profile4, ICoreWebView2_13, COREWEBVIEW2_PERMISSION_KIND,
@@ -1607,9 +1607,7 @@ async fn non_default_permission_settings(
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows_core::{Interface, PWSTR};
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(app)?;
     let (sender, receiver) = tokio::sync::oneshot::channel::<
         Result<Vec<(COREWEBVIEW2_PERMISSION_KIND, String)>, String>,
     >();
@@ -1691,30 +1689,26 @@ async fn non_default_permission_settings(
 
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
-        .map_err(|_| format!("timed out reading WebView permissions for '{label}'"))?
-        .map_err(|_| format!("permission settings callback was dropped for '{label}'"))?
+        .map_err(|_| "timed out reading the browser profile's permissions".to_string())?
+        .map_err(|_| "permission settings callback was dropped".to_string())?
 }
 
 #[cfg(target_os = "windows")]
 async fn set_permission_default_and_wait(
     app: &tauri::AppHandle,
-    label: &str,
     permission_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
     origin: String,
 ) -> Result<(), String> {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Profile4, ICoreWebView2_13, COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
     };
     use webview2_com::SetPermissionStateCompletedHandler;
     use windows_core::{Interface, HSTRING, PCWSTR};
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(app)?;
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let callback_sender = Arc::clone(&sender);
@@ -1755,38 +1749,31 @@ async fn set_permission_default_and_wait(
 
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
-        .map_err(|_| format!("timed out resetting WebView permission for '{label}'"))?
-        .map_err(|_| format!("permission reset callback was dropped for '{label}'"))?
+        .map_err(|_| "timed out resetting a WebView permission".to_string())?
+        .map_err(|_| "permission reset callback was dropped".to_string())?
 }
 
 #[cfg(target_os = "windows")]
-async fn clear_non_default_permissions_and_wait(
-    app: &tauri::AppHandle,
-    label: &str,
-) -> Result<(), String> {
-    for (permission_kind, origin) in non_default_permission_settings(app, label).await? {
-        set_permission_default_and_wait(app, label, permission_kind, origin).await?;
+async fn clear_non_default_permissions_and_wait(app: &tauri::AppHandle) -> Result<(), String> {
+    for (permission_kind, origin) in non_default_permission_settings(app).await? {
+        set_permission_default_and_wait(app, permission_kind, origin).await?;
     }
     Ok(())
 }
 
-pub async fn clear_site_permissions(
-    app: &tauri::AppHandle,
-    label: &str,
-    origin: &str,
-) -> Result<(), String> {
+pub async fn clear_site_permissions(app: &tauri::AppHandle, origin: &str) -> Result<(), String> {
     let parsed = url::Url::parse(origin).map_err(|error| error.to_string())?;
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
         return Err("site permission origin must be HTTP or HTTPS".to_string());
     }
     let target_origin = parsed.origin().ascii_serialization();
 
-    for (permission_kind, permission_origin) in non_default_permission_settings(app, label).await? {
+    for (permission_kind, permission_origin) in non_default_permission_settings(app).await? {
         let matches_target = url::Url::parse(&permission_origin)
             .map(|value| value.origin().ascii_serialization() == target_origin)
             .unwrap_or(false);
         if matches_target {
-            set_permission_default_and_wait(app, label, permission_kind, permission_origin).await?;
+            set_permission_default_and_wait(app, permission_kind, permission_origin).await?;
         }
     }
     Ok(())
@@ -1795,20 +1782,25 @@ pub async fn clear_site_permissions(
 #[cfg(target_os = "windows")]
 async fn clear_profile_data_and_wait(
     app: &tauri::AppHandle,
-    label: &str,
     data_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS,
+) -> Result<(), String> {
+    let owner = crate::browser_profile::owner(app)?;
+    clear_profile_data_through(owner.webview().clone(), data_kind, "the browser profile").await
+}
+
+#[cfg(target_os = "windows")]
+async fn clear_profile_data_through(
+    webview: tauri::Webview,
+    data_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS,
+    what: &str,
 ) -> Result<(), String> {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::ClearBrowsingDataCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13};
     use windows_core::Interface;
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let callback_sender = Arc::clone(&sender);
@@ -1843,8 +1835,8 @@ async fn clear_profile_data_and_wait(
 
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
-        .map_err(|_| format!("timed out clearing WebView profile for '{label}'"))?
-        .map_err(|_| format!("profile clear callback was dropped for '{label}'"))?
+        .map_err(|_| format!("timed out clearing {what}"))?
+        .map_err(|_| format!("clearing {what} was dropped before it finished"))?
 }
 
 #[cfg(target_os = "windows")]
@@ -1854,6 +1846,8 @@ pub async fn factory_reset_profiles(app: &tauri::AppHandle) -> Result<(), String
     use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE;
 
+    // The browsing profile always has a webview to clear through.
+    crate::browser_profile::owner(app)?;
     let mut labels = app
         .webviews()
         .into_keys()
@@ -1865,9 +1859,17 @@ pub async fn factory_reset_profiles(app: &tauri::AppHandle) -> Result<(), String
         return Err("no WebView profiles are available to clear".to_string());
     }
 
+    // Factory reset wipes every environment: each webview's own profile.
     for label in labels {
-        clear_profile_data_and_wait(app, &label, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE)
-            .await?;
+        let webview = app
+            .get_webview(&label)
+            .ok_or_else(|| format!("webview '{label}' not found"))?;
+        clear_profile_data_through(
+            webview,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
+            &label,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1915,11 +1917,7 @@ pub fn notification_delivery_policy(_label: &str, _origin: &str) -> Notification
 }
 
 #[cfg(not(target_os = "windows"))]
-pub async fn clear_browsing_data(
-    _app: &tauri::AppHandle,
-    _label: &str,
-    kind: &str,
-) -> Result<(), String> {
+pub async fn clear_browsing_data(_app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     BrowsingDataKind::try_from(kind)?;
     Ok(())
 }

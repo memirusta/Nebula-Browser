@@ -44,7 +44,8 @@ while ($true) {
   $os = Get-CimInstance Win32_OperatingSystem
   $usedGb = [math]::Round(($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB, 1)
   $all = @(Get-CimInstance Win32_Process)
-  $tree = @(Get-Tree $AppPid $all)
+  # Spike: the sampler's own powershell.exe is a child of the app; do not count it.
+  $tree = @(Get-Tree $AppPid $all | Where-Object { $_.Name -ne 'powershell.exe' })
   $mb = [math]::Round((($tree | Measure-Object WorkingSetSize -Sum).Sum) / 1MB)
   $top = $tree | Sort-Object WorkingSetSize -Descending | Select-Object -First 4 | ForEach-Object {
     $extension = if ($_.CommandLine -match 'chrome-extension://([a-p]{32})') { " [$($Matches[1])]" } else { '' }

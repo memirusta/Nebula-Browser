@@ -778,7 +778,7 @@ pub async fn extension_package_manage(
         #[cfg(target_os = "windows")]
         let runtime = {
             let handle = app.clone();
-            let label = webview.label().to_string();
+            let label = crate::browser_profile::owner_label(&app)?;
             tauri::async_runtime::spawn_blocking(move || {
                 crate::extension_runtime::read_version(handle, &label)
             })
@@ -805,8 +805,12 @@ pub async fn extension_package_manage(
         .await
         .map_err(|e| e.to_string())??;
     }
-    // Use the local shell's regular profile, never a selected private tab's profile.
-    let label = webview.window().label().to_string();
+    // The browser profile's owner, never the shell window that called and never a
+    // selected private tab's profile.
+    #[cfg(target_os = "windows")]
+    let label = crate::browser_profile::owner_label(&app)?;
+    #[cfg(not(target_os = "windows"))]
+    let label = String::new();
     #[cfg(target_os = "windows")]
     return tauri::async_runtime::spawn_blocking(move || {
         operate(

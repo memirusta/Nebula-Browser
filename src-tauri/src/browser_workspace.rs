@@ -68,7 +68,7 @@ pub fn create_window(
 
     let url = workspace_url(app, &window_id, transfer_id.as_deref())?;
 
-    let window = tauri::WebviewWindowBuilder::new(app, window_id.clone(), url)
+    let mut builder = tauri::WebviewWindowBuilder::new(app, window_id.clone(), url)
         .title("Nebula")
         .inner_size(1280.0, 800.0)
         .prevent_overflow()
@@ -79,9 +79,14 @@ pub fn create_window(
         .visible(true)
         .drag_and_drop(false)
         .disable_drag_drop_handler()
-        .browser_extensions_enabled(true)
-        .build()
-        .map_err(|error| error.to_string())?;
+        .browser_extensions_enabled(true);
+    // SPIKE: shell windows live in the trusted environment, extensions off.
+    if crate::shell_split::enabled() {
+        builder = builder
+            .data_directory(crate::shell_split::trusted_dir(app)?)
+            .browser_extensions_enabled(false);
+    }
+    let window = builder.build().map_err(|error| error.to_string())?;
 
     // The WebviewWindow is already successfully built at this point. On Windows,
     // `with_webview` setup callbacks for a freshly-created WebView2 can complete

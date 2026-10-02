@@ -1,6 +1,7 @@
 mod app_lifecycle;
 mod browser_bookmarks;
 mod browser_passwords;
+mod browser_profile;
 mod browser_tab_transfers;
 mod browser_workspace;
 mod context_menu;
@@ -43,9 +44,12 @@ mod restore_visibility;
 #[cfg(target_os = "windows")]
 mod restore_visibility_state;
 mod secure_password_vault;
+mod shell_split;
 mod shell_state_store;
 mod site_fullscreen_window;
 mod site_ui;
+#[cfg(target_os = "windows")]
+mod spike_driver;
 mod system_stats;
 mod tab_error_page;
 mod tab_fullscreen;
@@ -771,13 +775,15 @@ fn webview_apply_force_dark_pages(
     force_dark_pages::apply(&app, &label, options)
 }
 
+/// `label` is only kept so callers need no change: clearing data always acts on the
+/// browser profile (through its owner), never on the webview the label names.
 #[tauri::command]
 async fn webview_clear_browsing_data(
     app: tauri::AppHandle,
-    label: String,
+    _label: String,
     kind: String,
 ) -> Result<(), String> {
-    webview_privacy::clear_browsing_data(&app, &label, &kind).await
+    webview_privacy::clear_browsing_data(&app, &kind).await
 }
 
 #[tauri::command]
@@ -789,13 +795,15 @@ async fn webview_profile_storage_usage(
         .map_err(|error| error.to_string())?
 }
 
+/// `label` is only kept so callers need no change: site permissions are always the
+/// browser profile's (through its owner), never those of the webview the label names.
 #[tauri::command]
 async fn webview_clear_site_permissions(
     app: tauri::AppHandle,
-    label: String,
+    _label: String,
     origin: String,
 ) -> Result<(), String> {
-    webview_privacy::clear_site_permissions(&app, &label, &origin).await
+    webview_privacy::clear_site_permissions(&app, &origin).await
 }
 
 #[tauri::command]
@@ -1874,6 +1882,15 @@ pub fn run() {
         eprintln!("media.session identity-error: {error}");
     }
 
+    let mut context = tauri::generate_context!();
+    // SPIKE: in split mode the config windows are created in `setup`, in the trusted
+    // environment. Otherwise they stay exactly as configured.
+    let shell_windows = if shell_split::enabled() {
+        std::mem::take(&mut context.config_mut().app.windows)
+    } else {
+        Vec::new()
+    };
+
     let builder = tauri::Builder::default();
 
     #[cfg(target_os = "windows")]
@@ -1894,9 +1911,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
+        .setup(move |app| {
             load_runtime_env();
             ui_watchdog::start(app.handle().clone());
+            shell_split::create_config_windows(app, &shell_windows)?;
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             external_open::capture_startup_args();
@@ -1920,11 +1938,16 @@ pub fn run() {
                 )?;
             }
 
+            #[cfg(target_os = "windows")]
+            spike_driver::start(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             default_browser::open_default_browser_settings,
             browser_create_window,
+            shell_split::shell_split_enabled,
+            shell_split::shell_chrome_webview_create,
             browser_window_at_cursor,
             browser_tab_transfers::browser_tab_transfer_store,
             browser_mark_window_active,
@@ -1999,6 +2022,7 @@ pub fn run() {
             extension_runtime::extension_runtime_version,
             ublock_extension::ublock_extension_install,
             ublock_extension::ublock_extension_status,
+            ublock_extension::ublock_extension_ready,
             webview_setup_branding,
             webview_apply_browser_identity,
             webview_execute_script,
@@ -2029,6 +2053,6 @@ pub fn run() {
             google_sync::google_sync_push,
             google_sync::google_sync_forget,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

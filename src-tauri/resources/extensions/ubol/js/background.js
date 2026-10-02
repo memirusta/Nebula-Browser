@@ -324,9 +324,6 @@ async function onMessage(request, sender) {
 
     switch ( request.what ) {
 
-    case 'nebulaReady':
-        return { ready: true };
-
     case 'toggleToolbarIcon': {
         if ( tabId ) {
             toggleToolbarIcon(tabId);
@@ -863,7 +860,12 @@ const isFullyInitialized = start().then(( ) => {
         return localWrite('goodStart', false).then(( ) => true);
     });
 }).then(restart => {
-    if ( restart !== true ) { return; }
+    if ( restart !== true ) {
+        // Nebula integration: the host reads this flag through the DevTools
+        // protocol (see ublock_extension_ready); it needs no page and no message.
+        globalThis.nebulaInitialized = true;
+        return;
+    }
     runtime.reload();
 });
 

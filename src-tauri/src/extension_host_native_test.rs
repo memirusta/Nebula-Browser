@@ -1498,3 +1498,6 @@ fn native_extension_lab_setup() {
     std::fs::write(&output, serde_json::to_string_pretty(&report).unwrap()).unwrap();
     println!("Report: {}", output.display());
 }
+
+#[path = "shell_isolation_spike_native_test.rs"]
+mod shell_spike;

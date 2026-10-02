@@ -335,19 +335,6 @@
     "managed_schema": "managed_storage.json"
   },
   "version": "2026.804.1653",
-  "content_scripts": [
-    {
-      "matches": [
-        "*://tauri.localhost/*",
-        "*://nebula.localhost/*"
-      ],
-      "js": [
-        "/js/nebula-ready.js"
-      ],
-      "run_at": "document_start",
-      "all_frames": false
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [

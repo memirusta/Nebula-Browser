@@ -8,8 +8,22 @@ pub struct WebviewProcessSnapshot {
     frame_kinds: Vec<&'static str>,
 }
 
+/// The processes of every WebView2 environment the app runs: the shell's and the
+/// browsing profile's. With one environment (today) both ask the same one, so each
+/// process is listed once.
 #[cfg(target_os = "windows")]
 fn process_snapshot_blocking(app: AppHandle) -> Result<Vec<WebviewProcessSnapshot>, String> {
+    let shell = crate::browser_profile::shell_webview(&app)?;
+    let owner = crate::browser_profile::owner(&app)?;
+    let mut all = environment_processes(shell)?;
+    let mut browsing = environment_processes(owner.webview().clone())?;
+    browsing.retain(|process| !all.iter().any(|known| known.pid == process.pid));
+    all.append(&mut browsing);
+    Ok(all)
+}
+
+#[cfg(target_os = "windows")]
+fn environment_processes(webview: tauri::Webview) -> Result<Vec<WebviewProcessSnapshot>, String> {
     use std::sync::mpsc::sync_channel;
     use std::time::Duration;
     use webview2_com::GetProcessExtendedInfosCompletedHandler;
@@ -18,9 +32,6 @@ fn process_snapshot_blocking(app: AppHandle) -> Result<Vec<WebviewProcessSnapsho
     };
     use windows_core::{Interface, BOOL, PWSTR};
 
-    let webview = app
-        .get_webview("main")
-        .ok_or_else(|| "main webview not found".to_string())?;
     let (tx, rx) = sync_channel(1);
     webview
         .with_webview(move |inner| unsafe {

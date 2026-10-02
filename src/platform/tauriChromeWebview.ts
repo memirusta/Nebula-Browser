@@ -66,6 +66,13 @@ function chromeWebviewLabel(): string {
   return currentChromeWebviewLabel()
 }
 
+let shellSplit: Promise<boolean> | null = null
+/** SPIKE: whether the shell runs in its own WebView2 environment. */
+function shellSplitEnabled(): Promise<boolean> {
+  shellSplit ??= invoke<boolean>('shell_split_enabled').catch(() => false)
+  return shellSplit
+}
+
 async function chromePhysicalBounds(): Promise<{
   position: PhysicalPosition
   size: PhysicalSize
@@ -456,19 +463,34 @@ export async function showChromeWebview(
 
   if (!webview) {
     try {
-      const webviewOptions: ExtensionEnabledWebviewOptions = {
-        url: chromeWebviewUrl(),
-        x: bounds.position.x,
-        y: bounds.position.y,
-        width: bounds.size.width,
-        height: bounds.size.height,
-        transparent: true,
-        focus: false,
-        browserExtensionsEnabled: true,
+      if (await shellSplitEnabled()) {
+        // SPIKE: a JS-created webview cannot be placed in the trusted folder.
+        await invoke('shell_chrome_webview_create', {
+          windowLabel: appWindow.label,
+          label: chromeWebviewLabel(),
+          url: chromeWebviewUrl(),
+          x: bounds.position.x,
+          y: bounds.position.y,
+          width: bounds.size.width,
+          height: bounds.size.height,
+        })
+        webview = await Webview.getByLabel(chromeWebviewLabel())
+        if (!webview) throw new Error('chrome webview missing after native creation')
+      } else {
+        const webviewOptions: ExtensionEnabledWebviewOptions = {
+          url: chromeWebviewUrl(),
+          x: bounds.position.x,
+          y: bounds.position.y,
+          width: bounds.size.width,
+          height: bounds.size.height,
+          transparent: true,
+          focus: false,
+          browserExtensionsEnabled: true,
+        }
+        webview = new Webview(appWindow, chromeWebviewLabel(), webviewOptions)
+        await waitForWebviewCreated(webview)
       }
-      webview = new Webview(appWindow, chromeWebviewLabel(), webviewOptions)
       chromeAutoResizeDisabled = false
-      await waitForWebviewCreated(webview)
       await invoke('webview_setup_branding', { label: chromeWebviewLabel() })
     } catch {
       webview = await Webview.getByLabel(chromeWebviewLabel())

@@ -3,6 +3,8 @@ identifier = "allow-nebula-webview-commands"
 description = "Allow Nebula custom webview commands"
 commands.allow = [
   "browser_create_window",
+  "shell_split_enabled",
+  "shell_chrome_webview_create",
   "browser_window_at_cursor",
   "browser_tab_transfer_store",
   "browser_mark_window_active",
@@ -75,6 +77,7 @@ commands.allow = [
   "extension_runtime_version",
   "ublock_extension_install",
   "ublock_extension_status",
+  "ublock_extension_ready",
   "webview_setup_branding",
   "webview_apply_browser_identity",
   "webview_execute_script",

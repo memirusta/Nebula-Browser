@@ -8,7 +8,7 @@ mod cache;
 const UBLOCK_FOLDER: &str = "ubol";
 const UBLOCK_VERSION: &str = "2026.804.1653";
 const UBLOCK_SHA256: &str = "4cbfae11caf3a3a8d2e98d9c0844229d0ef7d1334785232d4fc667117a526193";
-const UBLOCK_BUILD_REVISION: u32 = 3;
+const UBLOCK_BUILD_REVISION: u32 = 4;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,8 +21,8 @@ pub struct UblockExtensionInfo {
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UblockRuntimeStatus {
-    installed: bool,
-    enabled: bool,
+    pub(crate) installed: bool,
+    pub(crate) enabled: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -82,6 +82,11 @@ fn extension_cache_root(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) fn ublock_extension_id(app: &AppHandle) -> Option<String> {
+    install_marker(app).map(|marker| marker.extension_id)
+}
+
+#[cfg(target_os = "windows")]
 fn install_marker(app: &AppHandle) -> Option<UblockInstallMarker> {
     let path = extension_cache_root(app).ok()?.join("current.json");
     let marker: UblockInstallMarker = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
@@ -117,21 +122,17 @@ pub fn ublock_extension_info(app: AppHandle) -> Result<UblockExtensionInfo, Stri
 #[cfg(target_os = "windows")]
 fn remove_stale_ublock_extensions_blocking(
     app: &AppHandle,
-    label: &str,
     keep_id: &str,
 ) -> Result<usize, String> {
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile7, ICoreWebView2_13};
     use webview2_com::{
         BrowserExtensionRemoveCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
     };
     use windows_core::{Interface, PWSTR};
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(app)?;
     let keep_id = keep_id.to_string();
     let (count_tx, count_rx) = std::sync::mpsc::sync_channel(1);
     let (completion_tx, completion_rx) = std::sync::mpsc::channel();
@@ -242,10 +243,7 @@ fn remove_stale_ublock_extensions_blocking(
 }
 
 #[cfg(target_os = "windows")]
-fn ublock_extension_install_blocking(
-    app: AppHandle,
-    label: String,
-) -> Result<UblockRuntimeStatus, String> {
+pub(crate) fn ublock_extension_install_blocking(app: AppHandle) -> Result<UblockRuntimeStatus, String> {
     use std::time::Duration;
 
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile7, ICoreWebView2_13};
@@ -256,9 +254,7 @@ fn ublock_extension_install_blocking(
     let cache_root = extension_cache_root(&app)?;
     let extension_dir = cache::prepare(&bundled_extension, &cache_root, UBLOCK_VERSION)
         .map_err(|error| format!("Could not prepare writable uBlock extension: {error}"))?;
-    let webview = app
-        .get_webview(&label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(&app)?;
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
 
     webview
@@ -323,21 +319,23 @@ fn ublock_extension_install_blocking(
     let installed = rx
         .recv_timeout(Duration::from_secs(10))
         .map_err(|_| "timed out installing uBlock Origin Lite".to_string())??;
-    remove_stale_ublock_extensions_blocking(&app, &label, &installed.extension_id)?;
+    remove_stale_ublock_extensions_blocking(&app, &installed.extension_id)?;
     write_install_marker(&app, &installed.extension_id)?;
     Ok(installed.status)
 }
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
+/// `label` is only kept so callers need no change: the profile owner is always used,
+/// never the webview the label names.
 pub async fn ublock_extension_install(
     app: AppHandle,
-    label: String,
+    _label: String,
 ) -> Result<UblockRuntimeStatus, String> {
     // The WebView2 completion handler is dispatched on the UI thread. Waiting
     // in a synchronous Tauri command blocks that thread and guarantees a
     // timeout, so only the channel wait belongs on the blocking pool.
-    tauri::async_runtime::spawn_blocking(move || ublock_extension_install_blocking(app, label))
+    tauri::async_runtime::spawn_blocking(move || ublock_extension_install_blocking(app))
         .await
         .map_err(|error| error.to_string())?
 }
@@ -352,13 +350,9 @@ pub fn ublock_extension_install(
 }
 
 #[cfg(target_os = "windows")]
-fn ublock_extension_status_blocking(
-    app: AppHandle,
-    label: String,
-) -> Result<UblockRuntimeStatus, String> {
+pub(crate) fn ublock_extension_status_blocking(app: AppHandle) -> Result<UblockRuntimeStatus, String> {
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile7, ICoreWebView2_13};
     use webview2_com::ProfileGetBrowserExtensionsCompletedHandler;
     use windows_core::{Interface, BOOL, PWSTR};
@@ -367,9 +361,7 @@ fn ublock_extension_status_blocking(
         return Ok(UblockRuntimeStatus::default());
     };
     let expected_id = marker.extension_id;
-    let webview = app
-        .get_webview(&label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(&app)?;
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
 
     webview
@@ -442,12 +434,14 @@ fn ublock_extension_status_blocking(
 }
 
 #[cfg(target_os = "windows")]
+/// `label` is only kept so callers need no change: the profile owner is always used,
+/// never the webview the label names.
 #[tauri::command]
 pub async fn ublock_extension_status(
     app: AppHandle,
-    label: String,
+    _label: String,
 ) -> Result<UblockRuntimeStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || ublock_extension_status_blocking(app, label))
+    tauri::async_runtime::spawn_blocking(move || ublock_extension_status_blocking(app))
         .await
         .map_err(|error| error.to_string())?
 }
@@ -461,6 +455,53 @@ pub fn ublock_extension_status(
     Ok(UblockRuntimeStatus::default())
 }
 
+/// How long the readiness check waits for uBO Lite's background to finish starting. A fresh
+/// install measured 8 s to the first answer (the worker's first start and the install
+/// both run then); an installed extension answers in well under a second.
+#[cfg(target_os = "windows")]
+pub(crate) const UBLOCK_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Set by the vendored background script when its initialisation has completed.
+#[cfg(target_os = "windows")]
+const UBLOCK_READY_EXPRESSION: &str = "globalThis.nebulaInitialized === true";
+
+/// True once uBO Lite's background worker has finished initialising, so its rules are
+/// in place before the first page loads. The check runs in the browser profile (the
+/// owner), through the extension's own worker: it needs no page of ours and no content
+/// script, so it does not depend on which environment the shell lives in.
+#[cfg(target_os = "windows")]
+pub(crate) fn ublock_extension_ready_blocking(app: AppHandle) -> Result<bool, String> {
+    let Some(marker) = install_marker(&app) else {
+        return Ok(false);
+    };
+    let owner = crate::browser_profile::owner(&app)?;
+    let label = owner.webview().label().to_string();
+    // `owner` stays alive (leased) for the whole wait.
+    let ready = crate::extension_worker::wait_for_condition(
+        &app,
+        &label,
+        &marker.extension_id,
+        UBLOCK_READY_EXPRESSION,
+        UBLOCK_READY_TIMEOUT,
+    );
+    drop(owner);
+    ready
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn ublock_extension_ready(app: AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || ublock_extension_ready_blocking(app))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn ublock_extension_ready(_app: AppHandle) -> Result<bool, String> {
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,11 +512,18 @@ mod tests {
             .join("resources")
             .join("extensions");
         assert!(contains_extension(&root));
-        assert!(root
+        // Readiness is read from the worker by the host; no page or content script
+        // of the shell takes part in it.
+        assert!(!root
             .join(UBLOCK_FOLDER)
             .join("js")
             .join("nebula-ready.js")
-            .is_file());
+            .exists());
+        let background =
+            std::fs::read_to_string(root.join(UBLOCK_FOLDER).join("js").join("background.js"))
+                .expect("uBlock background should be readable");
+        assert!(background.contains("globalThis.nebulaInitialized = true"));
+        assert!(!background.contains("nebulaReady"));
 
         let mode_manager =
             std::fs::read_to_string(root.join(UBLOCK_FOLDER).join("js").join("mode-manager.js"))
@@ -490,9 +538,9 @@ mod tests {
         let manifest: serde_json::Value =
             serde_json::from_str(&manifest).expect("uBlock manifest should be valid JSON");
         assert_eq!(manifest["version"], UBLOCK_VERSION);
-        assert_eq!(
-            manifest["content_scripts"][0]["js"][0],
-            "/js/nebula-ready.js"
+        assert!(
+            manifest.get("content_scripts").is_none(),
+            "the extension must not inject anything into Nebula's own pages"
         );
         let rule_resources = manifest["declarative_net_request"]["rule_resources"]
             .as_array()
