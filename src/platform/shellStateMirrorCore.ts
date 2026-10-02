@@ -36,6 +36,9 @@ export interface ShellStateMirror {
   /** Factory reset: forget what is pending, stop mirroring, empty the store. */
   wipe(): Promise<void>
   readonly disabled: boolean
+  /** Keys whose current value cannot be mirrored, with the reason. A migration that
+   * restores from the store would lose them (see docs/EXTENSION_OPT_IN_SPLIT.md, 2a). */
+  unmirrorable(): ReadonlyMap<string, string>
 }
 
 /** Same list as EXCLUDED_KEYS in the Rust module: the crash marker of this run. */
@@ -49,6 +52,14 @@ const MAX_BATCH_BYTES = 3 * 1024 * 1024
 const MAX_VALUE_BYTES = 2 * 1024 * 1024
 const MAX_CONSECUTIVE_FAILURES = 5
 const RATE_LIMIT_RETRY_MS = 3_000
+
+/** A lone surrogate cannot cross the IPC (JSON on the Rust side rejects it, and the whole
+ * batch with it), so such a key or value is not mirrored instead of poisoning the batch. */
+export function isWellFormed(text: string): boolean {
+  const native = (text as unknown as { isWellFormed?: () => boolean }).isWellFormed
+  if (typeof native === 'function') return native.call(text)
+  return !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)
+}
 
 function byteLength(text: string): number {
   // The limits are in UTF-8 bytes; length * 3 is the worst case per UTF-16 unit and
@@ -68,7 +79,7 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
   let retryTimer: unknown = null
   let reconcileTimer: unknown = null
   let sending: Promise<void> = Promise.resolve()
-  const oversize = new Set<string>()
+  const unmirrorable = new Map<string, string>()
 
   const excluded = (key: string) => MIRROR_EXCLUDED_KEYS.includes(key)
 
@@ -87,16 +98,20 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
 
   function enqueue(op: MirrorOp): void {
     if (disabled || excluded(op.key)) return
-    if (op.op === 'set' && byteLength(op.value) > MAX_VALUE_BYTES) {
-      if (!oversize.has(op.key)) {
-        oversize.add(op.key)
-        env.warn(`shell state mirror: ${op.key} is too large to mirror`)
+    let reason: string | null = null
+    if (!isWellFormed(op.key)) reason = 'the key is not well-formed text'
+    else if (op.op === 'set' && !isWellFormed(op.value)) reason = 'the value is not well-formed text'
+    else if (op.op === 'set' && byteLength(op.value) > MAX_VALUE_BYTES) reason = 'the value is too large'
+    if (reason) {
+      if (!unmirrorable.has(op.key)) {
+        env.warn(`shell state mirror: ${op.key.slice(0, 80)} is not mirrored: ${reason}`)
       }
+      unmirrorable.set(op.key, reason)
       // The store keeps the last value it accepted; a removal must still go through.
       pending.delete(op.key)
       return
     }
-    oversize.delete(op.key)
+    unmirrorable.delete(op.key)
     pending.set(op.key, op)
     schedule(DEBOUNCE_MS)
   }
@@ -256,6 +271,9 @@ export function createShellStateMirror(env: MirrorEnvironment): ShellStateMirror
     },
     get disabled() {
       return disabled
+    },
+    unmirrorable() {
+      return unmirrorable
     },
   }
 }

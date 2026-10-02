@@ -84,22 +84,87 @@ fresh trusted `localStorage` if its `__nebula_seed_generation` marker differs fr
 generation, then records the marker. It is synchronous, needs no IPC, and does not exist as a
 race with the app's first read.
 
+## 2a. The migration gate (store as a restore source)
+
+Status: design only. Release N mirrors for daily safety; nothing restores from the store.
+The 60 s reconcile is a healing mechanism, not a guarantee: after a burst of writes a mirror can
+be seconds behind (a live test with four webviews writing for 15 s needed about 3.5 s to catch up,
+because of retry after the rate limit), a window can be hung, and one value can be unmirrorable.
+The store becomes a restore source only through the gate below, and the result of the restore is
+checked a second time, in the trusted environment.
+
+**Defined terms.** *Content digest*: SHA-256 over the live entries `key -> value`, sorted by key,
+each as `len(key) key len(value) value` with UTF-8 and 4-byte big-endian lengths; the same function
+in Rust (over the store's live entries) and in the shell (over `localStorage`, minus the excluded
+keys). Golden vectors, including non-ASCII, are tested on both sides. *Shell webview*: every
+webview the `shell-state-store` capability covers, enumerated natively at the moment of the gate.
+
+**Gate (native coordinator, runs before `pending: "split"` is written; any failure leaves the app in
+single mode, nothing restarted, nothing activated, and says which step failed):**
+
+1. **Barrier.** Native opens a barrier with an id and refuses to create new shell windows while it
+   is open. It tells every shell webview to join (event with the id).
+2. **Drain, per webview.** The shim stops the debounce, sends everything pending with the barrier id
+   (barrier batches are exempt from the write rate limit, never from the size caps), waits for the
+   answer, then runs a full reconcile (live storage against what the store was told) and sends the
+   difference the same way. It acknowledges with `{ barrier id, content digest of its live storage,
+   key count, pending: 0, in-flight: 0, unmirrorable keys, writes since the barrier opened }`.
+3. **Agreement.** Native needs an acknowledgement from every enumerated webview within 10 s. All
+   digests must be equal (they read one storage), and equal to the digest of the store's live
+   entries. A key that cannot be mirrored (over the size caps, a value that is not well-formed
+   UTF-16, a full store) fails the gate by name: the migration would lose it. No silent skip.
+4. **Disk check.** The store is read back from disk through the real load path (DPAPI decrypt,
+   checksum, schema) and its digest compared again. The previous copy (`.bak`) must decode too.
+5. **Commit.** Native asks every webview once more for `writes since the barrier opened`. If any
+   webview wrote, the barrier closes and the gate restarts (at most three rounds). If none did,
+   native writes `pending: "split"` together with `{ generation, key count, digest }` and
+   relaunches. Writes after this point are lost by design; the window is milliseconds, and step 7
+   would notice.
+6. **Failure and timeout.** No acknowledgement, a digest mismatch, a skipped key, a failed disk
+   check or three busy rounds: the barrier is closed, the shells go back to normal mirroring, the
+   notice names the cause, the user stays in single mode and can retry.
+7. **Hydration check (second proof).** After the relaunch the trusted shell seeds its fresh
+   `localStorage` from the store, computes the digest of what it now holds and reports it. Native
+   compares it with the digest recorded at the commit. Equal: `mode: "split"`. Different, or no
+   report within 15 s: automatic rollback to single (the old profile was never touched).
+
+**Rules that follow:**
+
+- The store never becomes a restore source on its own age or generation; only a gate that passed in
+  this process, for this exact generation and digest, authorises it.
+- A store written by a newer schema, a store that failed to load (`.unreadable` exists), or a
+  mirror that disabled itself blocks the gate with that reason.
+- The periodic reconcile stays, as healing for writes that bypassed the hooks and for ties between
+  windows. It is never part of the proof.
+- Unmirrorable values are found early, not at migration: the shim reports them in the barrier
+  acknowledgement and in the store status, so the settings screen can say "this value will not
+  survive the switch" before the user decides to enable an extension.
+
+**Tests the gate needs:** Rust: barrier state machine with fake webviews (all acknowledge; one hung;
+one disagrees; one writes after its acknowledgement; a window created during the barrier; three busy
+rounds), digest golden vectors, disk-check failures (corrupt primary, corrupt `.bak`, newer schema),
+rate-limit exemption only with a live barrier id. TypeScript: the shim drains a backlog that was
+rate-limited, reconciles, acknowledges the right digest, counts writes after the acknowledgement,
+reports unmirrorable keys. Live (extending `shell-state-store-live-multi.mjs`): four webviews writing
+while the gate runs; it must either pass with equal digests or fail cleanly, never pass with a
+stale store.
+
 ## 3. The switch (single to split)
 
 1. The user enables the first extension. The app asks once, in plain words: Nebula will restart to
    keep extensions away from its own screens; tabs and settings come back.
 2. On confirm, one native command (trusted shell only):
-   flush the mirror and verify the store (checksum, and key count equal to the live `localStorage`),
+   pass the migration gate of section 2a (barrier, drain, equal digests, disk check, commit with the recorded digest),
    mark the run state clean, write `pending: "split"` with the extension to activate, relaunch with
    the process plugin (`relaunch`, as the updater does).
 3. On start with `pending: "split"`: create the shell windows in the trusted folder with the
-   seed. When the shell reports ready, it sends `shell_isolation_hydrated(keyCount)`.
-   Rust checks it against the store; on success it writes `mode: "split"`, clears `pending`, then
+   seed. When the shell reports ready, it sends `shell_isolation_hydrated(digest, keyCount)`.
+   Rust checks the digest against the one recorded by the gate (section 2a, step 7); on success it writes `mode: "split"`, clears `pending`, then
    - cleans the residue: a temporary no-IPC webview in the browsing environment at the app's origin
      runs `localStorage.clear()` (origin-scoped, unlike a profile-wide clear), so the shell's old
      data does not stay in the profile extensions run in; and
    - activates the chosen extension through the profile owner.
-4. If hydration does not report within 15 s or the counts differ: write `pending: "single"`, relaunch
+4. If hydration does not report within 15 s or the digest differs: write `pending: "single"`, relaunch
    into the old layout (its data was never touched), show a notice. The store is kept.
 
 Back to single (Settings, "return to the standard mode", only offered when no extension is

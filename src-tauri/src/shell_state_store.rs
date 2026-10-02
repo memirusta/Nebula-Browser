@@ -599,6 +599,16 @@ mod tests {
     }
 
     #[test]
+    fn a_lone_surrogate_cannot_cross_the_ipc_so_the_shell_never_sends_one() {
+        // The shell filters these (isWellFormed in shellStateMirrorCore.ts) because the whole
+        // batch would be rejected here, and a rejected batch is a failure for the mirror.
+        let batch = r#"[{"op":"set","key":"k","value":"a\ud800b","seq":1}]"#;
+        assert!(serde_json::from_str::<Vec<Op>>(batch).is_err());
+        let fine = r#"[{"op":"set","key":"k","value":"\ud83d\ude00","seq":1}]"#;
+        assert!(serde_json::from_str::<Vec<Op>>(fine).is_ok());
+    }
+
+    #[test]
     fn a_newer_schema_is_recognised_not_misread() {
         let json = serde_json::json!({
             "schema": SCHEMA + 1, "generation": 1, "writtenAt": 1,

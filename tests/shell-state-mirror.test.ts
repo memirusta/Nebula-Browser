@@ -5,6 +5,7 @@ import {
   createShellStateMirror,
   DEBOUNCE_MS,
   hookStorage,
+  isWellFormed,
   MIRROR_EXCLUDED_KEYS,
   RECONCILE_MS,
   type MirrorEnvironment,
@@ -180,6 +181,40 @@ test('a rate-limited answer keeps the batch and is not counted as a failure', as
   assert.equal(mirror.disabled, false)
   assert.equal(warnings.length, 0)
   assert.deepEqual(flatten(sent).map((op) => op.key), ['a'])
+})
+
+test('values that cannot cross the IPC are reported, not sent, and do not poison the batch', async () => {
+  const { mirror, sent, advance, warnings } = setup()
+  mirror.noteSet('good', 'fine')
+  mirror.noteSet('lone-high', 'a\ud800b')
+  mirror.noteSet('lone-low', '\udc00')
+  mirror.noteSet('emoji', '\u{1F600}')
+  mirror.noteSet('bad\ud800key', 'x')
+  await advance(DEBOUNCE_MS + 1)
+  assert.deepEqual(flatten(sent).map((op) => op.key).sort(), ['emoji', 'good'])
+  assert.deepEqual([...mirror.unmirrorable().keys()].sort(), ['bad\ud800key', 'lone-high', 'lone-low'])
+  assert.equal(warnings.length, 3)
+  // Once the value is fixed it is mirrored and no longer listed.
+  mirror.noteSet('lone-high', 'fixed')
+  await advance(DEBOUNCE_MS + 1)
+  assert.equal(mirror.unmirrorable().has('lone-high'), false)
+  assert.ok(flatten(sent).some((op) => op.key === 'lone-high'))
+})
+
+test('the well-formedness check also works without String.isWellFormed', () => {
+  const proto = String.prototype as unknown as { isWellFormed?: () => boolean }
+  const original = proto.isWellFormed
+  try {
+    proto.isWellFormed = undefined
+    assert.equal(isWellFormed('plain'), true)
+    assert.equal(isWellFormed('\u{1F600} \u00fc'), true)
+    assert.equal(isWellFormed('a\ud800b'), false)
+    assert.equal(isWellFormed('\udc00'), false)
+    assert.equal(isWellFormed('\udc00\ud800'), false)
+    assert.equal(isWellFormed('x\ud800'), false)
+  } finally {
+    proto.isWellFormed = original
+  }
 })
 
 test('large batches are split and values over the store limit are not sent', async () => {
