@@ -78,6 +78,8 @@ const TUTORIAL_DEMO_TABS: Array<Shortcut & { left: string; top: string }> = [
   { id: 'nebula-tutorial-github', label: 'GitHub', url: 'https://github.com/', favicon: faviconForUrl('https://github.com/'), left: '76%', top: '56%' },
 ]
 
+import { extensionHostCopy } from '../../core/extensionHostCopy'
+
 interface SemiLunarMenuProps {
   shortcuts: Shortcut[]
   dockItemIds: string[]
@@ -93,6 +95,8 @@ interface SemiLunarMenuProps {
   activeTabId?: string | null
   activeTabPrivate?: boolean
   privateInfoOpen?: boolean
+  extensionsOpen?: boolean
+  onExtensionsClick?: () => void
   onPrivateInfoClick?: () => void
   getTab?: (shortcutId: string) => BrowserTab | null
   onToggleMute?: (id: string) => void
@@ -153,6 +157,8 @@ export function SemiLunarMenu({
   activeTabId = null,
   activeTabPrivate = false,
   privateInfoOpen = false,
+  extensionsOpen = false,
+  onExtensionsClick,
   onPrivateInfoClick,
   getTab,
   onToggleMute,
@@ -354,7 +360,8 @@ export function SemiLunarMenu({
             Number(isBrowsing && activeTabPrivate) +
             Number(isBrowsing && Boolean(onBackClick)) +
             Number(isBrowsing && downloadCount > 0 && Boolean(onDownloadsClick)) +
-            Number(isBrowsing && Boolean(activeUrl) && Boolean(onSiteInfoClick))
+            Number(isBrowsing && Boolean(activeUrl) && Boolean(onSiteInfoClick)) +
+            Number(isBrowsing && Boolean(onExtensionsClick))
           : 0,
       // Persist positions against the eventual expanded layout even while the
       // menu is collapsed. Toggling these exclusions with the open state moved
@@ -369,6 +376,7 @@ export function SemiLunarMenu({
       onBackClick,
       onDownloadsClick,
       onHomeClick,
+      onExtensionsClick,
       onSiteInfoClick,
     ],
   )
@@ -1965,6 +1973,26 @@ const handleFolderMemberClose = useCallback(
                       <span className={styles.siteSecurityWarning} aria-hidden="true">!</span>
                     </>
                   )}
+                </button>
+              )}
+              {isBrowsing && onExtensionsClick && (
+                <button
+                  type="button"
+                  data-nebula-extensions-toggle="true"
+                  className={styles.privateTabIndicator}
+                  title={extensionHostCopy(locale).title}
+                  aria-label={extensionHostCopy(locale).title}
+                  aria-haspopup="dialog"
+                  aria-expanded={extensionsOpen}
+                  aria-controls={extensionsOpen ? 'nebula-extensions-panel' : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onExtensionsClick()
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M9 4H5a1 1 0 0 0-1 1v4h2a2 2 0 1 1 0 4H4v6a1 1 0 0 0 1 1h4v-2a2 2 0 1 1 4 0v2h6a1 1 0 0 0 1-1v-6h-2a2 2 0 1 1 0-4h2V5a1 1 0 0 0-1-1h-6V3a2 2 0 1 0-4 0Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                  </svg>
                 </button>
               )}
               {isBrowsing && activeTabPrivate && (

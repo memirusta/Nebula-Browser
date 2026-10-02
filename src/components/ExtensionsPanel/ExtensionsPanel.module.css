@@ -1,0 +1,31 @@
+.panel { position: fixed; z-index: 12000; max-width: calc(100vw - 24px); display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; padding: 8px; border: 1px solid rgba(192,154,245,.3); border-radius: 12px; background: rgba(23,19,32,.98); color: #f2edf9; box-shadow: 0 12px 36px rgba(0,0,0,.45); font-size: 12px; line-height: 1.5; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 0 0 auto; padding-left: 2px; }
+.header h2 { margin: 0; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.headerButtons { display: flex; align-items: center; gap: 2px; }
+.close { width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
+.content { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.content p { color: #bdb3cb; margin: 8px 0; }
+.grid { list-style: none; margin: 6px 0 0; padding: 0; display: grid; justify-content: start; }
+.tile { position: relative; }
+.tileMain { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 9px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.tileMain .icon { width: 28px; height: 28px; flex: none; border: 0; border-radius: 7px; background: transparent; font-size: 11px; }
+.tileMain .icon img { width: 24px; height: 24px; }
+.selected .tileMain { background: rgba(149,94,219,.3); box-shadow: inset 0 0 0 1px rgba(197,152,252,.6); }
+.off .tileMain { opacity: .45; }
+.off .icon img { filter: grayscale(1); }
+.details { margin-top: 8px; padding: 10px; border: 1px solid rgba(190,148,243,.22); border-radius: 10px; background: rgba(255,255,255,.03); }
+.details p { margin: 8px 0 0; }
+.identity { display: flex; align-items: center; gap: 10px; }
+.identity > div { min-width: 0; overflow-wrap: anywhere; }
+.icon { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border: 1px solid rgba(190,148,243,.25); border-radius: 10px; color: #ddc2ff; background: rgba(149,94,219,.15); font-weight: 650; }
+.icon img { display: block; width: 22px; height: 22px; object-fit: contain; }
+.panel small { display: block; color: #bdb3cb; font-size: 11px; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.actions button { min-height: 30px; border: 1px solid rgba(190,148,243,.25); border-radius: 8px; padding: 5px 9px; font: inherit; color: inherit; background: rgba(149,94,219,.12); cursor: pointer; }
+.panel button:hover:not(:disabled) { background: rgba(149,94,219,.3); }
+.panel button:disabled { opacity: .5; cursor: default; }
+.panel button:focus-visible { outline: 2px solid #c598fc; outline-offset: 2px; }
+.content .limitation { color: #e3c998; font-size: 11px; }
+.content .experimental { color: #cdb6ee; font-size: 11px; }
+.content .profileStatus { color: #bdb3cb; font-size: 11px; }
+.content .error { color: #ffa5b5; }

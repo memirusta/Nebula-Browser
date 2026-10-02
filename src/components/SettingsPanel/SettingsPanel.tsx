@@ -33,6 +33,8 @@ import {
 } from './SettingControls'
 import { AboutUpdateSection } from './AboutUpdateSection'
 import { AccountSettingsSection } from './AccountSettingsSection'
+import { ExtensionsSettingsSection } from './ExtensionsSettingsSection'
+import { EXTENSION_COPY } from '../../core/extensionCatalog'
 import styles from './SettingsPanel.module.css'
 import type { NebulaAccount } from '../../core/nebulaAccount'
 import type {
@@ -182,6 +184,7 @@ interface SettingsSearchEntry {
 }
 
 const SETTINGS_SEARCH_KEYS: Record<SettingsCategoryId, readonly LocaleMessageKey[]> = {
+  extensions: [],
   appearance: [
     'settingsLanguage',
     'theme',
@@ -302,6 +305,19 @@ function localizedSettingsSearchEntry(
 }
 
 const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
+  {
+    categoryId: 'extensions',
+    tr: EXTENSION_COPY.tr.title,
+    en: EXTENSION_COPY.en.title,
+    es: EXTENSION_COPY.es.title,
+    de: EXTENSION_COPY.de.title,
+    fr: EXTENSION_COPY.fr.title,
+    id: EXTENSION_COPY.id.title,
+    ru: EXTENSION_COPY.ru.title,
+    it: EXTENSION_COPY.it.title,
+    ja: EXTENSION_COPY.ja.title,
+    keywords: 'extensions addons eklenti Bitwarden Dark Reader SponsorBlock LanguageTool',
+  },
   ...Object.entries(SETTINGS_SEARCH_KEYS).flatMap(([categoryId, keys]) =>
     keys.map((key) => localizedSettingsSearchEntry(categoryId as SettingsCategoryId, key)),
   ),
@@ -782,6 +798,7 @@ function ShortcutReference({
 
 interface SettingsPanelProps {
   passwordSettingsRequest?: number
+  extensionsSettingsRequest?: number
   open: boolean
   anchor: SettingsAnchor | null
   onClose: () => void
@@ -1503,6 +1520,8 @@ function CategoryContent({
           onResetAll={onResetAllShortcutBindings}
         />
       )
+    case 'extensions':
+      return <ExtensionsSettingsSection onOpenBrowseUrl={onOpenBrowseUrl} />
     case 'account':
       return (
         <AccountSettingsSection
@@ -1779,6 +1798,7 @@ function CategoryContent({
 
 export function SettingsPanel({
   passwordSettingsRequest = 0,
+  extensionsSettingsRequest = 0,
   open,
   anchor: _anchor,
   onClose,
@@ -1826,6 +1846,14 @@ export function SettingsPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const activeNavRef = useRef<HTMLButtonElement>(null)
   const appliedPasswordRequest = useRef(0)
+  const appliedExtensionsRequest = useRef(0)
+  useEffect(() => {
+    if (!open || !extensionsSettingsRequest || appliedExtensionsRequest.current === extensionsSettingsRequest) return
+    setActiveId('extensions')
+    setSearchQuery('')
+    appliedExtensionsRequest.current = extensionsSettingsRequest
+  }, [open, extensionsSettingsRequest])
+
   useEffect(() => {
     if (!open || !passwordSettingsRequest || appliedPasswordRequest.current === passwordSettingsRequest) return
     setActiveId('account')

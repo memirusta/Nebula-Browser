@@ -1471,6 +1471,7 @@ export function BrowserShell() {
   ] = useState(false)
 
   const [passwordSettingsRequest, setPasswordSettingsRequest] = useState(0)
+  const [extensionsSettingsRequest, setExtensionsSettingsRequest] = useState(0)
 
   const [
     settingsAnchor,
@@ -6118,6 +6119,13 @@ export function BrowserShell() {
             openOverlay()
             break
 
+          case 'open-extensions':
+            openOverlay()
+            setSettingsActivated(true)
+            setExtensionsSettingsRequest(value => value + 1)
+            setSettingsOpen(true)
+            break
+
           case 'open-settings':
             openSettings(action.anchor)
             break
@@ -7802,6 +7810,7 @@ export function BrowserShell() {
         >
           <SettingsPanel
             passwordSettingsRequest={passwordSettingsRequest}
+            extensionsSettingsRequest={extensionsSettingsRequest}
             open={
               settingsOpen
             }

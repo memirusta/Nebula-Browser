@@ -281,5 +281,8 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
     menu.indexOf('const innerRimPath'),
   )
   assert.doesNotMatch(controlCounts, /isExpanded/)
-  assert.match(controlCounts, /right: isTauri \? 3 : 0/)
+  assert.match(
+    controlCounts,
+    /left:[\s\S]*Number\(isBrowsing && Boolean\(onExtensionsClick\)\)[\s\S]*right: isTauri \? 3 : 0/,
+  )
 })

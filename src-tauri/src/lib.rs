@@ -1,3 +1,4 @@
+mod app_lifecycle;
 mod browser_bookmarks;
 mod browser_passwords;
 mod browser_tab_transfers;
@@ -6,6 +7,19 @@ mod context_menu;
 mod default_browser;
 mod devtools_bridge;
 mod download_manager;
+mod extension_compat;
+mod extension_compatibility;
+mod extension_discovery;
+mod extension_download;
+mod extension_host;
+mod extension_install;
+mod extension_popup_size;
+mod extension_registry;
+mod extension_runtime;
+mod extension_trace;
+mod extension_window_policy;
+mod extension_window_profile;
+mod extension_worker;
 mod external_open;
 mod force_dark_pages;
 mod google_oauth;
@@ -785,7 +799,9 @@ async fn webview_clear_site_permissions(
 
 #[tauri::command]
 async fn webview_factory_reset_profiles(app: tauri::AppHandle) -> Result<(), String> {
-    webview_privacy::factory_reset_profiles(&app).await
+    extension_host::unregister_all(&app).await?;
+    webview_privacy::factory_reset_profiles(&app).await?;
+    extension_host::finish_factory_reset(&app).await
 }
 
 #[tauri::command]
@@ -1864,10 +1880,12 @@ pub fn run() {
         main_webview_layout::on_window_event(window, event);
         restore_visibility::on_window_event(window, event);
         restore_diagnostics::on_window_event(window, event);
+        app_lifecycle::on_window_event(window, event);
     });
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        app_lifecycle::on_second_instance(app);
         external_open::handle_second_instance(app, &args);
     }));
 
@@ -1971,6 +1989,13 @@ pub fn run() {
             webview_clear_site_permissions,
             webview_factory_reset_profiles,
             ublock_extension::ublock_extension_info,
+            extension_download::extension_download_checked,
+            extension_install::extension_package_manage,
+            extension_host::extension_host_list,
+            extension_host::extension_host_open,
+            extension_host::extension_host_click,
+            extension_host::extension_host_browse,
+            extension_runtime::extension_runtime_version,
             ublock_extension::ublock_extension_install,
             ublock_extension::ublock_extension_status,
             webview_setup_branding,

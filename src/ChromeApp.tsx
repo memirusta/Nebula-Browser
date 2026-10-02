@@ -3,6 +3,7 @@ import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { TabSearch } from './components/TabSearch/TabSearch'
 import { SiteInfoPanel } from './components/SiteInfoPanel/SiteInfoPanel'
 import { PrivateBrowsingPanel } from './components/PrivateBrowsingPanel/PrivateBrowsingPanel'
+import { ExtensionsPanel } from './components/ExtensionsPanel/ExtensionsPanel'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
 import { RightToolbar } from './components/RightToolbar/RightToolbar'
 import {
@@ -105,6 +106,10 @@ export function ChromeApp() {
   const [tabSearchOpen, setTabSearchOpen] = useState(false)
   const [siteInfoOpen, setSiteInfoOpen] = useState(false)
   const [privateInfoOpen, setPrivateInfoOpen] = useState(false)
+  const extensionsContext = `${viewMode}:${catalog.activeTabId ?? ''}`
+  const [extensionsOpenFor, setExtensionsOpenFor] = useState<string | null>(null)
+  const extensionsOpen = extensionsOpenFor === extensionsContext
+  const closeExtensions = useCallback(() => setExtensionsOpenFor(null), [])
   const privateTabs = useMemo(() => catalog.tabs.filter((tab) => tab.isPrivate), [catalog.tabs])
   const privateIndicatorVisible = settings.privacy.privateMode || privateTabs.length > 0
   const closePrivateInfo = useCallback(() => setPrivateInfoOpen(false), [])
@@ -176,7 +181,7 @@ export function ChromeApp() {
       () => listenToolbarUiState(setToolbarUi),
       () => listenGuidedTutorialState(setGuidedTutorial),
       () => listenZoomIndicator(showZoomIndicator),
-      () => listenTabSearchRequests(() => { setPrivateInfoOpen(false); setTabSearchOpen(true) }),
+      () => listenTabSearchRequests(() => { setExtensionsOpenFor(null); setPrivateInfoOpen(false); setTabSearchOpen(true) }),
       () => listenSiteInfoState(setSiteInfoState),
       () => listenSensitiveFeatureUsage((usage) => {
         setSensitiveUsageByTab((current) => {
@@ -342,6 +347,7 @@ export function ChromeApp() {
     const floatingPanelHeight = chromeOverlayMinimumHeight({
       siteInfoOpen,
       privateInfoOpen,
+      extensionsOpen,
       tabSearchOpen,
       isBrowsing: viewMode === 'browsing',
       hasZoom: zoomIndicatorPercent !== null,
@@ -360,7 +366,7 @@ export function ChromeApp() {
         return emitChromeAction({ type: 'raise-chrome-overlay' })
       }
     })
-  }, [catalog.activeTabId, downloadUi.items.length, sensitiveUsageSummary, settings.home.showToolbar, siteInfoOpen, privateInfoOpen, tabSearchOpen, viewMode, zoomIndicatorPercent])
+  }, [catalog.activeTabId, downloadUi.items.length, sensitiveUsageSummary, settings.home.showToolbar, siteInfoOpen, privateInfoOpen, extensionsOpen, tabSearchOpen, viewMode, zoomIndicatorPercent])
 
   useEffect(() => {
     if (viewMode !== 'browsing' || !privateIndicatorVisible) setPrivateInfoOpen(false)
@@ -460,6 +466,7 @@ export function ChromeApp() {
 
   const toggleDownloads = useCallback(() => {
     setPrivateInfoOpen(false)
+    setExtensionsOpenFor(null)
     void emitChromeAction({ type: 'toggle-download-panel' })
   }, [])
 
@@ -657,7 +664,16 @@ export function ChromeApp() {
       activeTabId={catalog.activeTabId}
       activeTabPrivate={privateIndicatorVisible}
       privateInfoOpen={privateInfoOpen}
+      extensionsOpen={extensionsOpen}
+      onExtensionsClick={() => {
+        setSiteInfoOpen(false)
+        setTabSearchOpen(false)
+        setPrivateInfoOpen(false)
+        closeDownloads()
+        setExtensionsOpenFor(value => value === extensionsContext ? null : extensionsContext)
+      }}
       onPrivateInfoClick={() => {
+        setExtensionsOpenFor(null)
         setSiteInfoOpen(false)
         setTabSearchOpen(false)
         closeDownloads()
@@ -675,6 +691,7 @@ export function ChromeApp() {
       activeUrl={activeUrl}
       siteInfoOpen={siteInfoOpen}
       onSiteInfoClick={() => {
+        setExtensionsOpenFor(null)
         setPrivateInfoOpen(false)
         setSiteInfoOpen((current) => !current)
         void emitChromeAction({ type: 'request-site-info' })
@@ -720,7 +737,7 @@ export function ChromeApp() {
       activeDownloadCount={downloadUi.activeCount}
       downloadProgress={downloadUi.aggregateProgress}
       downloadPanelOpen={browsingDownloadPanelOpen}
-      forceOpen={browsingDownloadPanelOpen || privateInfoOpen}
+      forceOpen={browsingDownloadPanelOpen || privateInfoOpen || extensionsOpen}
       tutorialExpansion={
         guidedTutorial.open && guidedTutorial.step === 1
           ? true
@@ -738,6 +755,16 @@ export function ChromeApp() {
           : null
       }
       />
+
+      {extensionsOpen && viewMode === 'browsing' && (
+        <ExtensionsPanel top={adaptiveLunar.height + 12}
+          activeUrl={activeUrl ?? undefined}
+          privateTab={!!tabById.get(catalog.activeTabId ?? '')?.isPrivate}
+          onClose={closeExtensions} onManage={() => {
+            closeExtensions()
+            void emitChromeAction({ type: 'open-extensions' })
+          }} />
+      )}
 
       {privateInfoOpen && viewMode === 'browsing' && (
         <PrivateBrowsingPanel

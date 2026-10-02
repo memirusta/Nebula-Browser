@@ -23,6 +23,7 @@ export type ChromeShellAction =
       screenY: number
     }
   | { type: 'open-overlay' }
+  | { type: 'open-extensions' }
   | { type: 'open-settings'; anchor: { x: number; y: number } }
   | { type: 'toggle-notification-panel' }
   | { type: 'toggle-history-panel' }
