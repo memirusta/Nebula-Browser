@@ -111,3 +111,25 @@ test('every language has the texts for the waiting extension and the legacy noti
     }
   }
 })
+
+test('a failed trial cleanup keeps the new install and stays retryable', () => {
+  const activation = production(read('src-tauri/src/extension_activation.rs'))
+  const migrate = flat(activation.slice(activation.indexOf('async fn migrate_one('), activation.indexOf('async fn migrate_legacy(')))
+  // The owed removal is recorded BEFORE it is attempted, and a failure only logs: the install that
+  // was just registered with the browsing profile is never rolled back because the old copy stayed.
+  const recorded = migrate.indexOf('request_cleanup(&root, &old_id)?')
+  const attempted = migrate.indexOf('remove_old_registration(app, id, &old_id).await')
+  assert.ok(recorded > 0 && attempted > recorded, 'the record comes first')
+  assert.match(migrate, /Err\(error\) => \{ eprintln!\(\s*"\[extension-migration\] \{id\}: moved, trial cleanup pending/)
+  assert.doesNotMatch(migrate.slice(attempted), /record_error|return Err/)
+
+  const legacy = flat(activation.slice(activation.indexOf('async fn migrate_legacy('), activation.indexOf('fn remove_trial_profile(')))
+  // Leftovers from an earlier start are retried first, and the trial profile is only deleted when
+  // nothing is left to move and nothing is owed.
+  assert.ok(legacy.indexOf('finish_legacy_cleanups(app).await?') < legacy.indexOf('migrate_one('))
+  assert.match(legacy, /legacy_installs\(app\)\?\.is_empty\(\) && !cleanup_pending_anywhere\(app\)/)
+  // The fault hook exists only in the harness build.
+  const hook = activation.indexOf('NEBULA_FIXTURE_FAIL_LEGACY_CLEANUP')
+  assert.ok(hook > 0)
+  assert.match(activation.slice(Math.max(0, hook - 200), hook), /feature = "split-driver"/)
+})

@@ -18,7 +18,11 @@
 //! - `installed-profile`: `browsing` once the extension is registered with the browsing
 //!   profile. An installed extension without it is a legacy trial-profile install;
 //! - `activation-error`: why the last activation failed (shown, then replaced on retry);
-//! - `migration-review`: why a legacy install could not be moved without a new review.
+//! - `migration-review`: why a legacy install could not be moved without a new review;
+//! - `legacy-cleanup`: the old trial-profile registration id of an extension that already
+//!   moved, whose removal from the trial profile has not succeeded yet. The new install is
+//!   kept; the removal is retried at the next start and the trial profile stays until it is
+//!   done.
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +42,7 @@ const PENDING: &str = "pending-activation";
 const PROFILE: &str = "installed-profile";
 const ERROR: &str = "activation-error";
 const REVIEW: &str = "migration-review";
+const CLEANUP: &str = "legacy-cleanup";
 
 /// What the install, enable and status commands answer.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -150,6 +155,22 @@ pub(crate) fn forget(root: &Path) {
 /// profile, not with the browsing profile. Registry packages never lived there.
 pub(crate) fn is_legacy(root: &Path, is_registry_package: bool) -> bool {
     !is_registry_package && root.join("installed-id").is_file() && !is_browsing(root)
+}
+
+/// Remembers that the old trial-profile registration `old_id` still has to be removed.
+pub(crate) fn request_cleanup(root: &Path, old_id: &str) -> Result<(), String> {
+    write_atomic(root, CLEANUP, old_id.as_bytes())
+}
+
+/// The old registration id waiting to be removed from the trial profile, if any.
+pub(crate) fn pending_cleanup(root: &Path) -> Option<String> {
+    let id = std::fs::read_to_string(root.join(CLEANUP)).ok()?;
+    let id = id.trim();
+    crate::extension_discovery::valid_store_id(id).then(|| id.to_string())
+}
+
+pub(crate) fn clear_cleanup(root: &Path) {
+    remove_record(root, CLEANUP);
 }
 
 pub(crate) fn needs_review(root: &Path) -> Option<String> {
@@ -342,6 +363,69 @@ async fn activate_pending(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Removes the old registration `old_id` from the trial profile. Its id travels in a scratch
+/// folder, because `operate` finds an extension by the id recorded next to its folder. Removing
+/// something that is not registered any more succeeds.
+#[cfg(target_os = "windows")]
+async fn remove_old_registration(
+    app: &tauri::AppHandle,
+    tag: &str,
+    old_id: &str,
+) -> Result<(), String> {
+    use crate::extension_install::{operate, InstallationLocation};
+    // Harness only: the live test makes this step fail to prove the new install survives it and
+    // that the removal is retried at the next start.
+    #[cfg(feature = "split-driver")]
+    if std::env::var("NEBULA_FIXTURE_FAIL_LEGACY_CLEANUP").is_ok() {
+        return Err("fault injected: the trial profile could not be cleaned".into());
+    }
+    let scratch = std::env::temp_dir().join(format!("nebula-legacy-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
+    std::fs::write(scratch.join("installed-id"), old_id).map_err(|e| e.to_string())?;
+    let (remove_app, remove_scratch) = (app.clone(), scratch.clone());
+    let removal = tauri::async_runtime::spawn_blocking(move || {
+        let label = crate::extension_host::catalog_host(&remove_app)?;
+        operate(
+            remove_app,
+            label,
+            InstallationLocation {
+                folder: remove_scratch.join("none"),
+                root: remove_scratch,
+            },
+            "remove".into(),
+            None,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string());
+    let _ = std::fs::remove_dir_all(&scratch);
+    removal?.map(|_| ())
+}
+
+/// Retries the removals that did not succeed at an earlier start. The new installs they belong
+/// to are already in place; only the old trial-profile copies are left.
+#[cfg(target_os = "windows")]
+async fn finish_legacy_cleanups(app: &tauri::AppHandle) -> Result<(), String> {
+    for id in known_ids().map(str::to_string).collect::<Vec<_>>() {
+        let root = root_of(app, &id)?;
+        let Some(old_id) = pending_cleanup(&root) else {
+            continue;
+        };
+        match remove_old_registration(app, &id, &old_id).await {
+            Ok(()) => clear_cleanup(&root),
+            Err(error) => {
+                eprintln!("[extension-migration] {id}: trial cleanup still pending: {error}")
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn cleanup_pending_anywhere(app: &tauri::AppHandle) -> bool {
+    known_ids().any(|id| root_of(app, id).is_ok_and(|root| pending_cleanup(&root).is_some()))
+}
+
 /// Moves one trial-profile install to the browsing profile WITHOUT touching its profile
 /// files: the package that was reviewed and installed is fetched again from the same
 /// allowlisted source, and only if its digest is still the recorded one is it prepared
@@ -349,7 +433,7 @@ async fn activate_pending(app: &tauri::AppHandle) -> Result<(), String> {
 /// trial profile. The extension's own data (a login) does not move.
 #[cfg(target_os = "windows")]
 async fn migrate_one(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
-    use crate::extension_install::{operate, InstallationLocation, MutationGuard};
+    use crate::extension_install::{operate, MutationGuard};
     use sha2::Digest;
     let entry = crate::extension_discovery::extension(id)?;
     let root = root_of(app, id)?;
@@ -425,35 +509,16 @@ async fn migrate_one(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     .map_err(|e| e.to_string())??;
     mark_browsing(&root)?;
 
-    // Remove the old registration from the trial profile. Its id is the one that was recorded
-    // before the install rewrote the pointer; a scratch folder carries it to `operate`.
-    let scratch = std::env::temp_dir().join(format!("nebula-legacy-{}-{id}", std::process::id()));
-    std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
-    std::fs::write(scratch.join("installed-id"), &old_id).map_err(|e| e.to_string())?;
-    let (remove_app, remove_scratch) = (app.clone(), scratch.clone());
-    let removal = tauri::async_runtime::spawn_blocking(move || {
-        let label = crate::extension_host::catalog_host(&remove_app)?;
-        operate(
-            remove_app,
-            label,
-            InstallationLocation {
-                folder: remove_scratch.join("none"),
-                root: remove_scratch,
-            },
-            "remove".into(),
-            None,
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_dir_all(&scratch);
-    if let Err(error) = removal {
-        // Registered in both profiles is not harmful to the shell (the trial profile is its own
-        // environment); say so and let the next start try the removal again.
-        record_error(
-            &root,
-            &format!("moved, but the old copy could not be removed: {error}"),
-        );
+    // The new install is in place. The old trial-profile registration is removed now; if that
+    // fails, the record below keeps the removal retryable at the next start and the trial profile
+    // is not deleted until it is done. Being registered in both profiles does not touch the shell
+    // (the trial profile is its own environment).
+    request_cleanup(&root, &old_id)?;
+    match remove_old_registration(app, id, &old_id).await {
+        Ok(()) => clear_cleanup(&root),
+        Err(error) => {
+            eprintln!("[extension-migration] {id}: moved, trial cleanup pending: {error}")
+        }
     }
 
     if !before.enabled {
@@ -472,6 +537,8 @@ async fn migrate_one(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 async fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
+    // What a previous start could not clean up comes first.
+    finish_legacy_cleanups(app).await?;
     for item in legacy_installs(app)? {
         if item.needs_review.is_some() {
             continue;
@@ -485,8 +552,8 @@ async fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
             );
         }
     }
-    // The trial profile goes when nothing is left in it.
-    if legacy_installs(app)?.is_empty() {
+    // The trial profile goes when nothing is left in it: no install to move, no removal waiting.
+    if legacy_installs(app)?.is_empty() && !cleanup_pending_anywhere(app) {
         remove_trial_profile(app);
     }
     Ok(())
@@ -697,6 +764,35 @@ mod tests {
         assert!(
             root.join("installed-id").exists(),
             "the pointers belong to the removal itself"
+        );
+    }
+
+    #[test]
+    fn a_cleanup_that_failed_stays_recorded_until_it_succeeds() {
+        let root = dir("cleanup");
+        assert_eq!(pending_cleanup(&root), None);
+        let old = "abcdefghijklmnopabcdefghijklmnop";
+        request_cleanup(&root, old).unwrap();
+        assert_eq!(pending_cleanup(&root).as_deref(), Some(old));
+        // The new install's own records do not touch it: it belongs to the trial profile.
+        mark_browsing(&root).unwrap();
+        clear_pending(&root);
+        assert_eq!(pending_cleanup(&root).as_deref(), Some(old));
+        // Removing the extension later does not forget a cleanup that is still owed.
+        forget(&root);
+        assert_eq!(pending_cleanup(&root).as_deref(), Some(old));
+        clear_cleanup(&root);
+        assert_eq!(pending_cleanup(&root), None);
+    }
+
+    #[test]
+    fn a_damaged_cleanup_record_is_not_acted_on() {
+        let root = dir("cleanup-bad");
+        std::fs::write(root.join(CLEANUP), "../../somewhere").unwrap();
+        assert_eq!(
+            pending_cleanup(&root),
+            None,
+            "only a valid registration id is ever used"
         );
     }
 

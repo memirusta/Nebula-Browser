@@ -254,6 +254,46 @@ try {
   }
 
   // ============================== C: the new install path, real CRX3 ==============================
+  // ============================== D: the trial cleanup fails (fault injection) ==============================
+  if (wants('D')) {
+  console.log('--- D: the new install succeeds but removing the old trial registration fails')
+  await makeLegacy(`${ENABLED_ID}:enabled`, [ENABLED_ID])
+  const oldRegistration = record(ENABLED_ID, 'installed-id')
+  const folderD = record(ENABLED_ID, 'installed-folder')
+  // The harness makes the cleanup step fail for this whole run (the restart into split inherits it).
+  launch({ NEBULA_FIXTURE_FAIL_LEGACY_CLEANUP: '1' })
+  main = await mainPage()
+  await sleep(5000)
+  const switchedD = await call(main, 'shell_isolation_switch', { target: 'split' })
+  check('D: the migration gate passes', switchedD === null || switchedD === undefined, JSON.stringify(switchedD))
+  main = await afterRestart((s) => s.mode === 'split' && !s.hydrating && s.pending === null)
+  await until('the move with a pending cleanup', async () => record(ENABLED_ID, 'installed-profile') === 'browsing' && existsSync(join(extensionRoot(ENABLED_ID), 'legacy-cleanup')), 300_000, 2000)
+  await sleep(8000) // and it must stay pending: nothing quietly "succeeds"
+  const movedD = await listed(main)
+  check('D: the new install is kept: registered with the browsing profile and still enabled', movedD[ENABLED_ID] && !movedD[ENABLED_ID].isolatedProfile && movedD[ENABLED_ID].enabled, JSON.stringify([movedD[ENABLED_ID]?.isolatedProfile, movedD[ENABLED_ID]?.enabled]))
+  const statusD = await status(main, ENABLED_ID)
+  check('D: its status answers from the browsing profile', statusD?.installed && statusD?.enabled, JSON.stringify(statusD))
+  check('D: it keeps the reviewed package', record(ENABLED_ID, 'installed-folder') === folderD)
+  check('D: the cleanup is recorded as retryable, with the old registration id', record(ENABLED_ID, 'legacy-cleanup') === oldRegistration, `${record(ENABLED_ID, 'legacy-cleanup')} vs ${oldRegistration}`)
+  check('D: the trial profile is not deleted while a cleanup is owed', existsSync(trialProfile))
+  check('D: it is not treated as a failed move (no review record, no legacy install left)', !existsSync(join(extensionRoot(ENABLED_ID), 'migration-review')) && (await legacy(main)).length === 0)
+  check('D: the failure is not shown to the user as an activation error', !existsSync(join(extensionRoot(ENABLED_ID), 'activation-error')))
+  await stopApp()
+
+  // The next start: no fault. The committed split retries the removal.
+  launch()
+  main = await mainPage()
+  await until('the cleanup to complete at the next start', async () => !existsSync(join(extensionRoot(ENABLED_ID), 'legacy-cleanup')), 180_000, 2000)
+  const afterD = await listed(main)
+  check('D: the next start completed the cleanup (record gone)', !existsSync(join(extensionRoot(ENABLED_ID), 'legacy-cleanup')))
+  await until('the trial profile to be removed', async () => !existsSync(trialProfile), 90_000)
+  check('D: and the trial profile is gone now that nothing is owed', !existsSync(trialProfile))
+  check('D: the extension survived the cleanup, still enabled in the browsing profile', afterD[ENABLED_ID] && !afterD[ENABLED_ID].isolatedProfile && afterD[ENABLED_ID].enabled && record(ENABLED_ID, 'installed-profile') === 'browsing', JSON.stringify(afterD[ENABLED_ID]?.enabled))
+  const statusAfterD = await status(main, ENABLED_ID)
+  check('D: and still answers from the browsing profile', statusAfterD?.installed && statusAfterD?.enabled, JSON.stringify(statusAfterD))
+  await stopApp()
+  }
+
   if (wants('C')) {
   console.log('--- C: new install with a real Chrome Web Store package (CRX3)')
   await resetFixture()

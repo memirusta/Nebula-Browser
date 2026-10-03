@@ -220,10 +220,12 @@ never copied. The move re-creates the install from what was recorded:
    extension is marked `migration-review` and stays where it is until the user reviews and installs it again.
 3. Same checks as an install (isolated load check, package check, folder preparation), then registration
    with the browsing profile through the owner; the previous enabled/disabled state is kept.
-4. Remove the old registration from the trial profile (its id is carried from before the install rewrote
-   the pointer). If that fails the extension works from the browsing profile, the failure is recorded, and the
-   next start tries again; two registrations do not touch the shell (the trial profile is its own environment).
-5. When no legacy install is left, the trial profile's host window and folder are removed.
+4. Remove the old registration from the trial profile (its id is carried from before the install
+   rewrote the pointer). The owed removal is recorded (`legacy-cleanup`) before it is attempted. If it
+   fails the new install is kept (registered in both profiles does not touch the shell: the trial profile
+   is its own environment), nothing is shown as an error, the removal is retried first thing at every later
+   start, and the trial profile is not deleted until no removal is owed.
+5. When no legacy install is left and no removal is owed, the trial profile's host window and folder are removed.
 6. The extension's own data (a login inside it) does not move; the user signs in again.
 
 The trial-site window (`extension_host_browse`) opens in the browsing profile once nothing is legacy, and
