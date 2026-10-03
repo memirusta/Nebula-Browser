@@ -41,7 +41,9 @@ test('generic installation is bound to reviewed bytes and an isolated profile', 
   assert.match(host, /extension-browsing-profile/)
   assert.match(host, /if digest != expected/)
   assert.match(host, /The store package changed/)
-  assert.match(host, /profile_label = if crate::extension_registry::package\(&id\)\.is_err\(\)/)
+  // New installs register with the browsing profile; only a legacy (trial-profile) install
+  // is still addressed through the catalog host until it is moved.
+  assert.match(host, /profile_label = if crate::extension_activation::is_legacy\(/)
   assert.match(controls, /data-extension-review/)
   assert.match(controls, /compatibility\.sha256/)
 })

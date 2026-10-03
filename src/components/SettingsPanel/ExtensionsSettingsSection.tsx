@@ -8,7 +8,7 @@ import { ShellIsolationSettings } from './ShellIsolationSettings'
 import { ExtensionCompatibilityDetails } from './ExtensionCompatibilityDetails'
 import { extensionHostCopy } from '../../core/extensionHostCopy'
 import { createExtensionCatalogStatus, type ExtensionCatalogStatus } from '../../core/extensionCatalogStatus'
-import { extensionRuntimeVersion, installedExtensions } from '../../platform/extensionDownload'
+import { extensionRuntimeVersion, installedExtensions, pendingActivations } from '../../platform/extensionDownload'
 import type { ExtensionDownloadResult, ExtensionStatus } from '../../platform/extensionDownload'
 
 export function ExtensionsSettingsSection({ onOpenBrowseUrl }: { onOpenBrowseUrl?: (url: string, options?: { activate?: boolean }) => void }) {
@@ -26,8 +26,14 @@ export function ExtensionsSettingsSection({ onOpenBrowseUrl }: { onOpenBrowseUrl
     let cancelled = false
     void extensionRuntimeVersion().then(version => { if (!cancelled) setRuntimeVersion(version) }).catch(() => { /* report remains unverified */ })
     const controller = createExtensionCatalogStatus(async () => {
-      const items = await installedExtensions()
-      return Object.fromEntries(items.map(item => [item.id, { installed: true, enabled: item.enabled }]))
+      const [items, waiting] = await Promise.all([installedExtensions(), pendingActivations().catch(() => [])])
+      const statuses: Record<string, ExtensionStatus> = Object.fromEntries(items.map(item => [item.id, { installed: true, enabled: item.enabled }]))
+      // Packages that are ready but wait for Nebula's own screens to be separated, and starts that failed.
+      for (const item of waiting) {
+        if (statuses[item.id]) continue
+        statuses[item.id] = { installed: item.action === 'enable', enabled: false, pendingActivation: item.action !== '', activationError: item.error }
+      }
+      return statuses
     }, setStatusState)
     statusController.current = controller
     const refresh = () => void controller.refresh()

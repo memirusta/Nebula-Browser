@@ -1263,6 +1263,9 @@ fn native_extension_lab_diagnose() {
         .map(|id| id.trim().to_string())
         .filter(|id| !id.is_empty())
         .collect();
+    // The lab installs catalog extensions into the catalog profile on purpose, to see what
+    // they do; that is a registration the isolation guard refuses in the product.
+    std::env::set_var("NEBULA_FIXTURE_ALLOW_SHARED_PROFILE", "1");
     let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", server.local_addr().unwrap());
     server.set_nonblocking(true).unwrap();

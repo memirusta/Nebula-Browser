@@ -250,6 +250,54 @@ pub fn split_active() -> bool {
     mode() == Mode::Split
 }
 
+/// The shell lives in its own environment AND that was verified: nothing is pending, the
+/// hydration digest matched. Only then may extension code start in the browsing profile.
+/// A forced mode (tests) counts, because there nothing is hydrated and nothing can fail.
+pub fn split_committed() -> bool {
+    // The fixture build of the acceptance test also needs the control: an extension that
+    // does start in the shared profile, to prove the check can fail. Never in a product build.
+    #[cfg(any(test, feature = "split-driver"))]
+    if std::env::var("NEBULA_FIXTURE_ALLOW_SHARED_PROFILE").is_ok() {
+        return true;
+    }
+    let Some(run) = run() else {
+        return false;
+    };
+    if run.mode != Mode::Split {
+        return false;
+    }
+    if run.forced {
+        return true;
+    }
+    if hydrating() {
+        return false;
+    }
+    MARKER
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .as_ref()
+                .map(|m| m.mode == Mode::Split && m.pending.is_none())
+        })
+        .unwrap_or(false)
+}
+
+/// Runs what waits for a committed split: activations of extensions that were installed
+/// in the single environment, and the move of legacy trial-profile installs. Call from
+/// a thread: it talks to the browsing profile and the network.
+pub fn run_after_commit(app: &tauri::AppHandle) {
+    if !split_committed() {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Let the shell come up first; this talks to the browsing profile and the network.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        crate::extension_activation::run_after_commit(app).await;
+    });
+}
+
 pub(crate) fn trusted_dir<M: Manager<tauri::Wry>>(manager: &M) -> Result<PathBuf, String> {
     let dir = manager
         .path()
@@ -301,6 +349,7 @@ pub fn initialize(identifier: &str) {
     } else {
         decide(&local)
     };
+    eprintln!("[shell-isolation] run mode {:?}", state.mode);
     let _ = RUN.set(state);
 }
 
@@ -542,6 +591,7 @@ pub fn shell_isolation_hydrated(
     HYDRATED.store(true, Ordering::Release);
     if target == Mode::Split {
         clear_browsing_residue(&app);
+        run_after_commit(&app);
     }
     Ok(true)
 }

@@ -9,7 +9,33 @@ export async function downloadExtension(id: string): Promise<ExtensionDownloadRe
   return checkedExtensionDownload(await invoke<unknown>('extension_download_checked', { id }))
 }
 
-export interface ExtensionStatus { installed: boolean; enabled: boolean }
+export interface ExtensionStatus {
+  installed: boolean
+  enabled: boolean
+  /** The package is ready; starting it waits for Nebula's own screens to be separated (restart). */
+  pendingActivation?: boolean
+  /** Why starting it after the restart failed. */
+  activationError?: string | null
+}
+
+export interface PendingActivation { id: string; action: 'install' | 'enable' | ''; error: string | null }
+
+/** Extensions waiting for the separated shell, and those whose last start failed. */
+export async function pendingActivations(): Promise<PendingActivation[]> {
+  if (!isTauri) return []
+  return invoke<PendingActivation[]>('extension_pending_activations')
+}
+
+export interface LegacyInstall { id: string; needsReview: string | null }
+
+/** Installs from the old separate trial profile that have not moved to the main profile yet. */
+export async function legacyExtensionInstalls(): Promise<LegacyInstall[]> {
+  if (!isTauri) return []
+  return invoke<LegacyInstall[]>('extension_legacy_installs')
+}
+
+/** The host's refusal when extension code is asked to start before the shell is separated. */
+export const NEEDS_ISOLATION_PREFIX = 'needs-isolation'
 
 export async function extensionRuntimeVersion(): Promise<string> {
   if (!isTauri) throw new Error('Runtime version requires the desktop app')

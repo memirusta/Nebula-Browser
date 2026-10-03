@@ -14,10 +14,19 @@ pub(crate) struct DiscoveryExtension {
 }
 
 pub(crate) static DISCOVERY: LazyLock<Vec<DiscoveryExtension>> = LazyLock::new(|| {
-    let catalog: DiscoveryCatalog = serde_json::from_str(include_str!(
+    #[allow(unused_mut)]
+    let mut catalog: DiscoveryCatalog = serde_json::from_str(include_str!(
         "../../src/core/extensionDiscoveryCatalog.json"
     ))
     .expect("invalid bundled extension discovery catalog");
+    // Harness build only: the fixture extension of the acceptance test is a catalog entry too.
+    #[cfg(feature = "split-driver")]
+    for id in crate::extension_registry::fixture_package_ids() {
+        catalog.entries.push(DiscoveryExtension {
+            id,
+            store_id: "p".repeat(32),
+        });
+    }
     let mut ids = std::collections::HashSet::new();
     let mut store_ids = std::collections::HashSet::new();
     for entry in &catalog.entries {

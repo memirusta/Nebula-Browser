@@ -71,6 +71,8 @@ commands.allow = [
   "extension_download_checked",
   "extension_package_manage",
   "extension_host_list",
+  "extension_pending_activations",
+  "extension_legacy_installs",
   "extension_host_open",
   "extension_host_click",
   "extension_host_browse",

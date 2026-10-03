@@ -178,17 +178,65 @@ split starts with no Google session in the trusted folder: sign-in is repeated o
 copied through the cookie manager during the switch: decision below), pinned shortcuts and
 wallpaper (wallpaper files are native; settings come with the seed).
 
-## 4. Extensions after the switch
+## 4. Extensions: install, activation, and the old trial profile
 
-- Extensions install into the browsing profile through the owner; the separate catalog profile
-  and the "try this site" window go away. Existing catalog installs (only the developer's today)
-  are re-registered from their folders; their in-extension data (a Windscribe login) lives in the old
-  profile and is not carried over.
-- uBO Lite readiness: replace the shell content-script signal with a native check against uBO's
-  service worker before the split ships (see the isolation note); the shell keeps working
-  without it but loses the "rules loaded before the first page" guarantee.
-- Release gate: the evil-extension fixture (the five channels) must pass against the real app, with
-  its control (shell in the browsing environment) failing, on every dependency update.
+Status: implemented (`src-tauri/src/extension_activation.rs`); evil-extension acceptance in
+`scripts/evil-extension-acceptance.mjs`.
+
+### 4.1 Installing is two halves
+
+- **Getting the package** (download, digest/signature check, the isolated load check in a
+  temporary profile of its own, unpacking into `extensions/<id>/`) only writes files. It runs at any
+  time, in either environment.
+- **Activation** (registering the package with the browsing profile, where the tabs live) is the
+  half that starts extension code. It is allowed only when the split is committed
+  (`shell_isolation::split_committed()`: shell in its own environment, nothing pending, the hydration
+  digest matched). The rule is enforced where the registration happens, in `extension_install::operate`
+  (`extension_activation::require_split`): any install or enable that targets the browsing profile's
+  owner or the old catalog host is refused with `needs-isolation` while the shell shares the profile. The
+  built-in uBO Lite has its own install code and is not subject to it (it does not count as a third-party
+  extension).
+- An install or enable in the single environment therefore ends with the package ready and a record,
+  `extensions/<id>/pending-activation` (`{ action: install | enable }`), and the answer
+  `{ installed, enabled: false, pendingActivation: true }`. The shell asks once ("Nebula restarts once;
+  the extension turns on after that"), then runs the normal switch (gate, restart, hydration check).
+  After the switch is final (right after the hydration report, and again at every start of a committed
+  split, to retry) the pending records are activated through the profile owner. A failed activation is
+  recorded (`activation-error`), shown, and not retried in a loop.
+- Removing a pending-only extension deletes its records and prepared folder; nothing was registered.
+- Records per extension: `pending-activation`, `installed-profile` (`browsing` once registered with the
+  browsing profile), `activation-error`, `migration-review`.
+
+### 4.2 Extensions installed in the old trial profile (metadata-based migration)
+
+Until now catalog extensions registered with a separate "trial" profile (its own WebView2 environment).
+An installed extension without the `installed-profile` marker is a **legacy install**. Profile files are
+never copied. The move re-creates the install from what was recorded:
+
+1. Only after the split is final. Legacy extensions stay manageable (status, disable, remove) in the trial
+   profile until then; enabling one is refused with `needs-migration`.
+2. Fetch the package again from the same allowlisted source. If its digest is not the recorded one
+   (`installed-folder`), the store changed it since the user reviewed it: nothing is installed, the
+   extension is marked `migration-review` and stays where it is until the user reviews and installs it again.
+3. Same checks as an install (isolated load check, package check, folder preparation), then registration
+   with the browsing profile through the owner; the previous enabled/disabled state is kept.
+4. Remove the old registration from the trial profile (its id is carried from before the install rewrote
+   the pointer). If that fails the extension works from the browsing profile, the failure is recorded, and the
+   next start tries again; two registrations do not touch the shell (the trial profile is its own environment).
+5. When no legacy install is left, the trial profile's host window and folder are removed.
+6. The extension's own data (a login inside it) does not move; the user signs in again.
+
+The trial-site window (`extension_host_browse`) opens in the browsing profile once nothing is legacy, and
+only while the split is committed.
+
+### 4.3 Release gate
+
+The evil-extension fixture (content script on every page, `tabs`, `scripting` in the main world,
+`debugger`, `cookies`, `declarativeNetRequest`) is installed through the product install path in two runs:
+a control, where the harness lets it start in the shared profile with the shell in it, and it must reach the
+shell; and the product run, where the install must wait, the switch must make the split final, and only then
+does it start, reaching the tabs but none of the shell through any channel. It runs on every dependency
+update (`scripts/evil-extension-acceptance.mjs`, harness build with the `split-driver` feature).
 
 ## 5. Tests
 

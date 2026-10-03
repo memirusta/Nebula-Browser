@@ -103,6 +103,10 @@ if (existsSync(storeFile)) {
   rmSync(`${storeFile}.bak`, { force: true })
 }
 killByExe(exe)
+// This script needs the single environment (tabs share the shell's DevTools port there). Other
+// scripts may have left the fixture identity in the split one: go back to the default.
+rmSync(join(process.env.LOCALAPPDATA, identifier, 'shell-isolation.json'), { force: true })
+rmSync(join(process.env.LOCALAPPDATA, identifier, 'trusted'), { recursive: true, force: true })
 const child = spawn(exe, [], {
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
   stdio: 'ignore',

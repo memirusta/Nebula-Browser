@@ -59,8 +59,31 @@ struct ProbeEvidence {
 type ArchiveEntries = Vec<(PathBuf, Vec<u8>)>;
 
 fn verify_existing_directory(target: &Path, entries: &ArchiveEntries) -> Result<(), String> {
+    // Name what differs: "were modified" alone does not say whether a file was added, changed
+    // or removed, which is exactly what is needed to tell a tampered cache from one the
+    // browser wrote into.
+    let modified = |what: &str, path: &Path| {
+        format!(
+            "Cached extension files were modified ({what}: {})",
+            path.display()
+        )
+    };
+    // `_metadata` is the browser's reserved folder (the store's content-verification data).
+    // Registering an unpacked extension makes the browser delete or rewrite it, so a folder
+    // that was registered once never matches the package there. It holds no extension code
+    // (the browser refuses it as a resource), so it is left out of the comparison on both
+    // sides; every other file must still match byte for byte. Without this a registered
+    // folder could never be reused, so removing and installing a store extension again, or
+    // moving it to another profile, failed.
+    let reserved = |relative: &Path| {
+        relative
+            .components()
+            .next()
+            .is_some_and(|c| c.as_os_str() == "_metadata")
+    };
     let mut expected = entries
         .iter()
+        .filter(|(path, _)| !reserved(path))
         .map(|(path, content)| (path.clone(), content))
         .collect::<std::collections::HashMap<_, _>>();
     let mut directories = vec![target.to_path_buf()];
@@ -68,15 +91,18 @@ fn verify_existing_directory(target: &Path, entries: &ArchiveEntries) -> Result<
         for item in std::fs::read_dir(&directory).map_err(|e| e.to_string())? {
             let item = item.map_err(|e| e.to_string())?;
             let file_type = item.file_type().map_err(|e| e.to_string())?;
+            if item.path().strip_prefix(target).is_ok_and(&reserved) {
+                continue;
+            }
             if file_type.is_symlink() {
-                return Err("Cached extension files were modified".into());
+                return Err(modified("link", &item.path()));
             }
             if file_type.is_dir() {
                 directories.push(item.path());
                 continue;
             }
             if !file_type.is_file() {
-                return Err("Cached extension files were modified".into());
+                return Err(modified("not a file", &item.path()));
             }
             let relative = item
                 .path()
@@ -85,7 +111,7 @@ fn verify_existing_directory(target: &Path, entries: &ArchiveEntries) -> Result<
                 .to_path_buf();
             let content = expected
                 .remove(&relative)
-                .ok_or("Cached extension files were modified")?;
+                .ok_or_else(|| modified("unexpected file", &relative))?;
             let mut current = Vec::new();
             std::fs::File::open(item.path())
                 .map_err(|e| e.to_string())?
@@ -93,12 +119,12 @@ fn verify_existing_directory(target: &Path, entries: &ArchiveEntries) -> Result<
                 .read_to_end(&mut current)
                 .map_err(|e| e.to_string())?;
             if current != *content {
-                return Err("Cached extension files were modified".into());
+                return Err(modified("different content", &relative));
             }
         }
     }
-    if !expected.is_empty() {
-        return Err("Cached extension files were modified".into());
+    if let Some(missing) = expected.keys().next() {
+        return Err(modified("missing file", missing));
     }
     Ok(())
 }
@@ -586,6 +612,10 @@ pub(crate) fn operate(
         ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
     };
     use windows_core::{Interface, BOOL, HSTRING, PWSTR};
+    // Extension code never starts in the profile the tabs live in while the shell lives
+    // there too. Everything else (status, disable, remove, the isolated load check's own
+    // temporary profiles) is unaffected.
+    crate::extension_activation::require_split(&action, &label)?;
     let marker = target.root.join("installed-id");
     let expected = std::fs::read_to_string(&marker).unwrap_or_default();
     let webview = app
@@ -732,7 +762,8 @@ pub async fn extension_package_manage(
     action: String,
     id: String,
     expected_sha256: Option<String>,
-) -> Result<ExtensionStatus, String> {
+) -> Result<crate::extension_activation::ManageResult, String> {
+    use crate::extension_activation::{self as activation, Activation, ManageResult};
     if package(&id).is_err() {
         return crate::extension_host::manage_discovery(app, webview, action, id, expected_sha256)
             .await;
@@ -755,11 +786,19 @@ pub async fn extension_package_manage(
         .map_err(|e| e.to_string())?
         .join("extensions")
         .join(&package.id);
-    if action == "status" && !root.join("installed-id").is_file() {
-        return Ok(ExtensionStatus::default());
+    let installed = root.join("installed-id").is_file();
+    if action == "status" && !installed {
+        let mut result = activation::pending_result(&root).unwrap_or_default();
+        result.activation_error = activation::activation_error(&root);
+        return Ok(result);
     }
     if matches!(action.as_str(), "disable" | "remove") {
         crate::extension_host::close_controls(&app, &id)?;
+    }
+    if action == "remove" && !installed {
+        // A prepared package that was waiting to start: nothing is registered.
+        activation::forget(&root);
+        return Ok(ManageResult::default());
     }
     if action == "install" {
         let cached = read_package(package, &root.join("package.zip")).or_else(|| {
@@ -785,6 +824,8 @@ pub async fn extension_package_manage(
             .await
             .map_err(|e| e.to_string())??
         };
+        // Everything up to the registration only writes files and loads the package in a
+        // temporary profile of its own; nothing runs in the browsing profile yet.
         tauri::async_runtime::spawn_blocking(move || {
             #[cfg(target_os = "windows")]
             {
@@ -805,24 +846,47 @@ pub async fn extension_package_manage(
         .await
         .map_err(|e| e.to_string())??;
     }
+    // Starting extension code waits for the isolated shell.
+    if matches!(action.as_str(), "install" | "enable")
+        && activation::decide(&root, &action)? == Activation::Waiting
+    {
+        return Ok(activation::pending_result(&root).unwrap_or_default());
+    }
     // The browser profile's owner, never the shell window that called and never a
     // selected private tab's profile.
     #[cfg(target_os = "windows")]
     let label = crate::browser_profile::owner_label(&app)?;
     #[cfg(not(target_os = "windows"))]
     let label = String::new();
+    // The other platform's block below is the function's value there; on Windows this one is.
+    #[allow(clippy::needless_return)]
     #[cfg(target_os = "windows")]
-    return tauri::async_runtime::spawn_blocking(move || {
-        operate(
-            app,
-            label,
-            InstallationLocation::registered(root, package),
-            action,
-            guard,
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    {
+        let done = action.clone();
+        let cleanup_root = root.clone();
+        let status = tauri::async_runtime::spawn_blocking(move || {
+            operate(
+                app,
+                label,
+                InstallationLocation::registered(root, package),
+                action,
+                guard,
+            )
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        match done.as_str() {
+            "install" if status.installed => activation::mark_browsing(&cleanup_root)?,
+            "remove" => activation::forget(&cleanup_root),
+            _ => {}
+        }
+        let mut result = ManageResult::from(status);
+        if done == "status" {
+            result.pending_activation = activation::pending_action(&cleanup_root).is_some();
+            result.activation_error = activation::activation_error(&cleanup_root);
+        }
+        return Ok(result);
+    }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (app, label, root, guard);
@@ -834,6 +898,94 @@ pub async fn extension_package_manage(
 mod tests {
     use super::*;
     use std::io::Write;
+
+    fn entries(files: &[(&str, &str)]) -> ArchiveEntries {
+        files
+            .iter()
+            .map(|(path, content)| (PathBuf::from(path), content.as_bytes().to_vec()))
+            .collect()
+    }
+
+    fn write_folder(root: &Path, files: &[(&str, &str)]) {
+        for (path, content) in files {
+            let target = root.join(path);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::write(target, content).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_folder_the_browser_registered_still_verifies_without_its_reserved_metadata() {
+        let package = [
+            ("manifest.json", "{}"),
+            ("background.js", "run()"),
+            ("_metadata/verified_contents.json", "signed"),
+        ];
+        // As prepared: exactly the package.
+        let fresh = tempfile::tempdir().unwrap();
+        write_folder(fresh.path(), &package);
+        verify_existing_directory(fresh.path(), &entries(&package)).unwrap();
+        // After the browser registered it: it removed its reserved folder.
+        let registered = tempfile::tempdir().unwrap();
+        write_folder(registered.path(), &package[..2]);
+        verify_existing_directory(registered.path(), &entries(&package)).unwrap();
+        // Or rewrote something in it.
+        write_folder(
+            registered.path(),
+            &[("_metadata/computed_hashes.json", "browser made")],
+        );
+        verify_existing_directory(registered.path(), &entries(&package)).unwrap();
+    }
+
+    #[test]
+    fn everything_else_in_a_cached_folder_must_still_match_exactly() {
+        let package = [("manifest.json", "{}"), ("background.js", "run()")];
+        let changed = tempfile::tempdir().unwrap();
+        write_folder(
+            changed.path(),
+            &[("manifest.json", "{}"), ("background.js", "steal()")],
+        );
+        let error = verify_existing_directory(changed.path(), &entries(&package)).unwrap_err();
+        assert!(
+            error.contains("different content") && error.contains("background.js"),
+            "{error}"
+        );
+
+        let extra = tempfile::tempdir().unwrap();
+        write_folder(
+            extra.path(),
+            &[
+                ("manifest.json", "{}"),
+                ("background.js", "run()"),
+                ("extra.js", "x"),
+            ],
+        );
+        let error = verify_existing_directory(extra.path(), &entries(&package)).unwrap_err();
+        assert!(
+            error.contains("unexpected file") && error.contains("extra.js"),
+            "{error}"
+        );
+
+        let missing = tempfile::tempdir().unwrap();
+        write_folder(missing.path(), &[("manifest.json", "{}")]);
+        let error = verify_existing_directory(missing.path(), &entries(&package)).unwrap_err();
+        assert!(
+            error.contains("missing file") && error.contains("background.js"),
+            "{error}"
+        );
+
+        // A file that merely sits next to the reserved folder is not exempt.
+        let lookalike = tempfile::tempdir().unwrap();
+        write_folder(
+            lookalike.path(),
+            &[
+                ("manifest.json", "{}"),
+                ("background.js", "run()"),
+                ("_metadata.js", "x"),
+            ],
+        );
+        assert!(verify_existing_directory(lookalike.path(), &entries(&package)).is_err());
+    }
 
     #[test]
     fn removal_clears_registration_pointers_but_preserves_verified_cache() {

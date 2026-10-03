@@ -13,6 +13,13 @@ export interface ShellIsolationCopy {
   failed: string
   /** Shown once after the app went back to its previous setup because a switch did not verify. */
   notice: string
+  /** An extension was installed while the shell still shares the browsing profile. */
+  extensionConfirm: string
+  extensionWaiting: string
+  extensionRestart: string
+  activationFailed: string
+  /** Extensions of the old trial profile wait for the switch to move. */
+  legacyNotice: string
 }
 
 const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
@@ -28,6 +35,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula yeniden başlayacak ve tek alana dönecek. Sekmelerin ve ayarların geri gelecek. Devam edilsin mi?',
     failed: 'Geçiş yapılamadı. Nebula olduğu gibi çalışmaya devam ediyor, verilerine dokunulmadı.',
     notice: 'Ayırma işlemi doğrulanamadı, bu yüzden Nebula önceki düzenine döndü. Verilerin yerinde.',
+    extensionConfirm: "Eklentiler ancak Nebula kendi ekranlarını onlardan ayırdıktan sonra çalışabilir. Nebula bir kez yeniden başlayacak ve eklenti bundan sonra açılacak. Devam edilsin mi?",
+    extensionWaiting: "Hazır. Nebula ekranlarını ayırıp yeniden başladıktan sonra açılır.",
+    extensionRestart: "Açmak için yeniden başlat",
+    activationFailed: "Yeniden başlatmadan sonra açılamadı:",
+    legacyNotice: "Eski deneme profilindeki eklentiler, ayırma işleminden sonra ana profile taşınır. Kendi verileri (oturumlar gibi) taşınmaz.",
   },
   en: {
     title: 'Keep Nebula’s own screens away from extensions',
@@ -41,6 +53,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula will restart and go back to a single space. Your tabs and settings will come back. Continue?',
     failed: 'The switch could not be made. Nebula keeps working as it was and your data was not touched.',
     notice: 'The switch could not be verified, so Nebula went back to its previous setup. Your data is untouched.',
+    extensionConfirm: "Extensions can only run after Nebula separates its own screens from them. Nebula will restart once and the extension turns on after that. Continue?",
+    extensionWaiting: "Ready. It turns on after Nebula restarts with its own screens separated.",
+    extensionRestart: "Restart to turn on",
+    activationFailed: "It could not be turned on after the restart:",
+    legacyNotice: "Extensions from the old trial profile move to the main profile after the switch. Their own data (such as logins) does not move.",
   },
   de: {
     title: 'Nebulas eigene Bildschirme von Erweiterungen trennen',
@@ -54,6 +71,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula startet neu und kehrt zu einem einzigen Bereich zurück. Tabs und Einstellungen kommen zurück. Fortfahren?',
     failed: 'Der Wechsel war nicht möglich. Nebula läuft unverändert weiter, deine Daten wurden nicht angetastet.',
     notice: 'Der Wechsel konnte nicht bestätigt werden, deshalb ist Nebula zur vorherigen Einrichtung zurückgekehrt. Deine Daten sind unverändert.',
+    extensionConfirm: "Erweiterungen können erst laufen, nachdem Nebula seine eigenen Bildschirme von ihnen getrennt hat. Nebula startet einmal neu und die Erweiterung wird danach aktiviert. Fortfahren?",
+    extensionWaiting: "Bereit. Sie wird nach dem Neustart von Nebula mit getrennten Bildschirmen aktiviert.",
+    extensionRestart: "Neu starten und aktivieren",
+    activationFailed: "Nach dem Neustart konnte sie nicht aktiviert werden:",
+    legacyNotice: "Erweiterungen aus dem alten Testprofil wechseln nach der Trennung in das Hauptprofil. Ihre eigenen Daten (z. B. Anmeldungen) wechseln nicht.",
   },
   es: {
     title: 'Mantener las pantallas de Nebula lejos de las extensiones',
@@ -67,6 +89,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula se reiniciará y volverá a un solo espacio. Tus pestañas y ajustes volverán. ¿Continuar?',
     failed: 'No se pudo hacer el cambio. Nebula sigue funcionando como antes y tus datos no se tocaron.',
     notice: 'No se pudo verificar el cambio, así que Nebula volvió a su configuración anterior. Tus datos están intactos.',
+    extensionConfirm: "Las extensiones solo pueden funcionar después de que Nebula separe sus propias pantallas de ellas. Nebula se reiniciará una vez y la extensión se activará después. ¿Continuar?",
+    extensionWaiting: "Lista. Se activa cuando Nebula se reinicia con sus pantallas separadas.",
+    extensionRestart: "Reiniciar para activar",
+    activationFailed: "No se pudo activar tras el reinicio:",
+    legacyNotice: "Las extensiones del antiguo perfil de prueba pasan al perfil principal tras el cambio. Sus propios datos (como sesiones) no se mueven.",
   },
   fr: {
     title: 'Séparer les écrans de Nebula des extensions',
@@ -80,6 +107,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula va redémarrer et revenir à un seul espace. Vos onglets et réglages reviendront. Continuer ?',
     failed: 'Le changement n’a pas pu être fait. Nebula continue comme avant, vos données n’ont pas été touchées.',
     notice: 'Le changement n’a pas pu être vérifié, Nebula est donc revenu à sa configuration précédente. Vos données sont intactes.',
+    extensionConfirm: "Les extensions ne peuvent fonctionner qu’après que Nebula a séparé ses propres écrans d’elles. Nebula redémarrera une fois et l’extension s’activera ensuite. Continuer ?",
+    extensionWaiting: "Prête. Elle s’active quand Nebula redémarre avec ses écrans séparés.",
+    extensionRestart: "Redémarrer pour activer",
+    activationFailed: "Elle n’a pas pu être activée après le redémarrage :",
+    legacyNotice: "Les extensions de l’ancien profil d’essai passent au profil principal après le changement. Leurs propres données (connexions, etc.) ne sont pas déplacées.",
   },
   id: {
     title: 'Pisahkan layar Nebula dari ekstensi',
@@ -93,6 +125,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula akan dimulai ulang dan kembali ke satu ruang. Tab dan pengaturanmu akan kembali. Lanjutkan?',
     failed: 'Peralihan tidak dapat dilakukan. Nebula tetap berjalan seperti semula dan datamu tidak disentuh.',
     notice: 'Peralihan tidak dapat diverifikasi, jadi Nebula kembali ke pengaturan sebelumnya. Datamu aman.',
+    extensionConfirm: "Ekstensi hanya dapat berjalan setelah Nebula memisahkan layarnya dari ekstensi. Nebula akan dimulai ulang sekali dan ekstensi aktif setelahnya. Lanjutkan?",
+    extensionWaiting: "Siap. Aktif setelah Nebula dimulai ulang dengan layar yang terpisah.",
+    extensionRestart: "Mulai ulang untuk mengaktifkan",
+    activationFailed: "Tidak dapat diaktifkan setelah dimulai ulang:",
+    legacyNotice: "Ekstensi dari profil uji lama dipindahkan ke profil utama setelah peralihan. Data miliknya (seperti sesi masuk) tidak dipindahkan.",
   },
   ru: {
     title: 'Отделить экраны Nebula от расширений',
@@ -106,6 +143,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula перезапустится и вернётся к одному пространству. Вкладки и настройки вернутся. Продолжить?',
     failed: 'Переключиться не удалось. Nebula работает как раньше, твои данные не затронуты.',
     notice: 'Переключение не удалось проверить, поэтому Nebula вернулась к прежней настройке. Твои данные не затронуты.',
+    extensionConfirm: "Расширения могут работать только после того, как Nebula отделит от них свои экраны. Nebula один раз перезапустится, и после этого расширение включится. Продолжить?",
+    extensionWaiting: "Готово. Включится после перезапуска Nebula с отделёнными экранами.",
+    extensionRestart: "Перезапустить и включить",
+    activationFailed: "Не удалось включить после перезапуска:",
+    legacyNotice: "Расширения из прежнего тестового профиля переносятся в основной профиль после переключения. Их собственные данные (например, входы) не переносятся.",
   },
   it: {
     title: 'Tieni le schermate di Nebula lontane dalle estensioni',
@@ -119,6 +161,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula si riavvierà e tornerà a un solo spazio. Schede e impostazioni torneranno. Continuare?',
     failed: 'Non è stato possibile cambiare. Nebula continua a funzionare come prima e i tuoi dati non sono stati toccati.',
     notice: 'Non è stato possibile verificare il cambio, quindi Nebula è tornato alla configurazione precedente. I tuoi dati sono intatti.',
+    extensionConfirm: "Le estensioni possono funzionare solo dopo che Nebula ha separato da esse le proprie schermate. Nebula si riavvierà una volta e l’estensione si attiverà dopo. Continuare?",
+    extensionWaiting: "Pronta. Si attiva quando Nebula si riavvia con le schermate separate.",
+    extensionRestart: "Riavvia per attivare",
+    activationFailed: "Non è stato possibile attivarla dopo il riavvio:",
+    legacyNotice: "Le estensioni del vecchio profilo di prova passano al profilo principale dopo il cambio. I loro dati (come gli accessi) non vengono spostati.",
   },
   ja: {
     title: 'Nebula の画面を拡張機能から分離する',
@@ -132,6 +179,11 @@ const COPY: Record<NebulaLocale, ShellIsolationCopy> = {
     confirmOff: 'Nebula が再起動し、単一の領域に戻ります。タブと設定は元に戻ります。続けますか？',
     failed: '切り替えできませんでした。Nebula はそのまま動作し、データには触れていません。',
     notice: '切り替えを確認できなかったため、Nebula は以前の構成に戻りました。データはそのままです。',
+    extensionConfirm: "拡張機能は、Nebula が自身の画面を分離した後にのみ動作できます。Nebula は一度再起動し、その後に拡張機能がオンになります。続けますか？",
+    extensionWaiting: "準備完了。Nebula が画面を分離して再起動した後にオンになります。",
+    extensionRestart: "再起動してオンにする",
+    activationFailed: "再起動後にオンにできませんでした：",
+    legacyNotice: "以前のテスト用プロファイルの拡張機能は、切り替え後にメインプロファイルへ移されます。拡張機能自身のデータ（ログインなど）は移されません。",
   },
 }
 

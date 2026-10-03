@@ -70,9 +70,17 @@ impl ExtensionPackage {
 }
 
 pub(crate) static PACKAGES: LazyLock<Vec<ExtensionPackage>> = LazyLock::new(|| {
-    let packages: Vec<ExtensionPackage> =
+    #[allow(unused_mut)]
+    let mut packages: Vec<ExtensionPackage> =
         serde_json::from_str(include_str!("../../src/core/extensionPackages.json"))
             .expect("invalid bundled extension registry");
+    // The acceptance test installs a fixture extension through the real install path: its
+    // package comes from a file (and is pre-placed in the extension's cache, so nothing is
+    // downloaded). Only in the harness build, never in a product build.
+    #[cfg(feature = "split-driver")]
+    if let Some(extra) = fixture_packages() {
+        packages.extend(extra);
+    }
     let mut ids = std::collections::HashSet::new();
     for package in &packages {
         package
@@ -82,6 +90,21 @@ pub(crate) static PACKAGES: LazyLock<Vec<ExtensionPackage>> = LazyLock::new(|| {
     }
     packages
 });
+
+#[cfg(feature = "split-driver")]
+fn fixture_packages() -> Option<Vec<ExtensionPackage>> {
+    let path = std::env::var_os("NEBULA_FIXTURE_PACKAGES")?;
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// The ids of the fixture packages (harness build only), for the discovery catalog.
+#[cfg(feature = "split-driver")]
+pub(crate) fn fixture_package_ids() -> Vec<String> {
+    fixture_packages()
+        .map(|packages| packages.into_iter().map(|package| package.id).collect())
+        .unwrap_or_default()
+}
 
 pub(crate) fn package(id: &str) -> Result<&'static ExtensionPackage, String> {
     PACKAGES

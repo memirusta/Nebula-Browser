@@ -9,6 +9,8 @@ import { extensionDownloadCheckCopy } from '../../core/extensionDownloadCheckCop
 import { assessExtensionManifest, isKnownGap } from '../../core/extensionCompatibility'
 import { extensionCompatibilityCopy } from '../../core/extensionCompatibilityCopy'
 import { isTauri } from '../../platform/runtime'
+import { shellIsolationCopy } from '../../core/shellIsolationCopy'
+import { offerIsolationForExtension } from '../../platform/extensionIsolation'
 import styles from './ExtensionsSettingsSection.module.css'
 
 export function ExtensionInstallControls({ entry, downloaded, knownStatus, onStatusChange, onDownloaded }: {
@@ -23,6 +25,7 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
   const { locale } = useLocale()
   const copy = extensionInstallCopy(locale)
   const hostCopy = extensionHostCopy(locale)
+  const isolationCopy = shellIsolationCopy(locale)
   const [reviewing, setReviewing] = useState(false)
   const downloadCopy = EXTENSION_DOWNLOAD_COPY[locale]
   const checkCopy = extensionDownloadCheckCopy(locale)
@@ -69,7 +72,10 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
       setMutatedStatus(value)
       onStatusChange?.(value)
       setReviewing(false)
-      if (action === 'install' && !value.enabled) setFailed(true)
+      // The package is ready but may only start once Nebula's own screens are separated from
+      // it: offer the switch (restart) instead of reporting a failure.
+      if (value.pendingActivation) void offerIsolationForExtension()
+      else if (action === 'install' && !value.enabled) setFailed(true)
     } catch (error) {
       setFailed(true)
       setFailureMessage(error instanceof Error ? error.message : String(error))
@@ -97,16 +103,18 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
   return <div className={styles.install}>
     <>
       <div className={styles.installActions}>
-        {status?.installed && status.enabled
+        {status?.pendingActivation
+          ? <button type="button" data-extension-restart={id} disabled={!!pending} onClick={() => void offerIsolationForExtension()}>{isolationCopy.extensionRestart}</button>
+          : status?.installed && status.enabled
           ? <span className={styles.installed}>{copy.installed}</span>
           : <button type="button" data-extension-install={id} disabled={!isTauri || checking || !!pending || download.status === 'pending' || reviewing}
             onClick={() => void requestInstall()}>{checking ? copy.checking : pending === 'install' ? copy.installing : status?.installed ? copy.enable : copy.install}</button>}
-        {status?.installed && <button type="button" disabled={!!pending || download.status === 'pending'} onClick={() => void run('remove')}>
+        {(status?.installed || status?.pendingActivation) && <button type="button" disabled={!!pending || download.status === 'pending'} onClick={() => void run('remove')}>
           {pending === 'remove' ? copy.removing : copy.remove}
         </button>}
       </div>
       <div className={styles.downloadStatus} role="status" aria-live="polite">
-        {failed ? <>{copy.failed}{failureMessage && <span>{failureMessage}</span>}</> : status?.enabled ? extension ? copy.reload : hostCopy.separateSession : extension ? <>{copy.access}: {extension.access.map(pattern => pattern === '*://*/*' || pattern === '<all_urls>' ? copy.allSites : pattern.replace(/^https?:\/\//, '').replace(/\/\*$/, '')).join(', ')}</> : null}
+        {failed ? <>{copy.failed}{failureMessage && <span>{failureMessage}</span>}</> : status?.pendingActivation ? isolationCopy.extensionWaiting : status?.activationError ? <>{isolationCopy.activationFailed}<span>{status.activationError}</span></> : status?.enabled ? extension ? copy.reload : hostCopy.separateSession : extension ? <>{copy.access}: {extension.access.map(pattern => pattern === '*://*/*' || pattern === '<all_urls>' ? copy.allSites : pattern.replace(/^https?:\/\//, '').replace(/\/\*$/, '')).join(', ')}</> : null}
       </div>
     </>
     {reviewing && download.result && <section className={styles.compatibilityReport} aria-label={hostCopy.review} data-extension-review={id}>

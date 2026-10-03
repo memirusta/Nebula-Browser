@@ -1,5 +1,5 @@
 //! Common host for catalog extensions. No extension-specific scripts or privileged IPC.
-use crate::extension_install::{ExtensionStatus, InstallationLocation};
+use crate::extension_install::InstallationLocation;
 use serde::Serialize;
 use serde_json::Value;
 use std::{
@@ -16,14 +16,14 @@ mod native_tests;
 #[path = "extension_host_windows.rs"]
 mod popup_windows;
 
-fn valid_digest(value: &str) -> bool {
+pub(crate) fn valid_digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-fn root_for(app: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
+pub(crate) fn root_for(app: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
     // Never interpret arbitrary IPC input as an on-disk path.
     crate::extension_discovery::extension(id)?;
     Ok(app
@@ -34,7 +34,7 @@ fn root_for(app: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
         .join(id))
 }
 
-fn location(root: PathBuf, id: &str) -> Result<InstallationLocation, String> {
+pub(crate) fn location(root: PathBuf, id: &str) -> Result<InstallationLocation, String> {
     if let Ok(package) = crate::extension_registry::package(id) {
         return Ok(InstallationLocation::registered(root, package));
     }
@@ -49,7 +49,7 @@ fn location(root: PathBuf, id: &str) -> Result<InstallationLocation, String> {
     Ok(InstallationLocation { root, folder })
 }
 
-fn write_record(root: &Path, name: &str, value: &[u8]) -> Result<(), String> {
+pub(crate) fn write_record(root: &Path, name: &str, value: &[u8]) -> Result<(), String> {
     let mut file = tempfile::NamedTempFile::new_in(root).map_err(|e| e.to_string())?;
     file.write_all(value).map_err(|e| e.to_string())?;
     file.as_file().sync_all().map_err(|e| e.to_string())?;
@@ -57,7 +57,7 @@ fn write_record(root: &Path, name: &str, value: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-fn catalog_profile_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn catalog_profile_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app
         .path()
         .app_local_data_dir()
@@ -79,7 +79,7 @@ pub(crate) fn close_controls(app: &tauri::AppHandle, id: &str) -> Result<(), Str
 /// Catalog code must not share the privileged React shell's profile. The
 /// dedicated coordinator has no capability entry and never navigates to app UI.
 #[cfg(target_os = "windows")]
-fn catalog_host(app: &tauri::AppHandle) -> Result<String, String> {
+pub(crate) fn catalog_host(app: &tauri::AppHandle) -> Result<String, String> {
     static CREATING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _creating = CREATING
         .lock()
@@ -119,7 +119,7 @@ pub(crate) async fn manage_discovery(
     action: String,
     id: String,
     expected_sha256: Option<String>,
-) -> Result<ExtensionStatus, String> {
+) -> Result<crate::extension_activation::ManageResult, String> {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (app, webview, action, id, expected_sha256);
@@ -127,6 +127,7 @@ pub(crate) async fn manage_discovery(
     }
     #[cfg(target_os = "windows")]
     {
+        use crate::extension_activation::{self as activation, Activation, ManageResult};
         use crate::extension_install::{operate, MutationGuard};
         use sha2::Digest;
         let entry = crate::extension_discovery::extension(&id)?;
@@ -142,34 +143,59 @@ pub(crate) async fn manage_discovery(
             Some(MutationGuard::acquire(&id)?)
         };
         let root = root_for(&app, &id)?;
-        if action == "status" && !root.join("installed-id").is_file() {
-            return Ok(ExtensionStatus::default());
+        let installed = root.join("installed-id").is_file();
+        // Installed before extensions moved to the browsing profile: registered with the
+        // separate catalog profile. It stays manageable there until it is moved.
+        let legacy = activation::is_legacy(&root, false);
+        let _ = webview;
+        if action == "status" && !installed {
+            let mut result = activation::pending_result(&root).unwrap_or_default();
+            result.activation_error = activation::activation_error(&root);
+            return Ok(result);
         }
         if matches!(action.as_str(), "disable" | "remove") {
             close_controls(&app, &id)?;
         }
-        let _ = webview;
+        if action == "remove" && !installed {
+            // Only a prepared package that was waiting to start: nothing is registered.
+            activation::forget(&root);
+            let _ = std::fs::remove_file(root.join("installed-folder"));
+            return Ok(ManageResult::default());
+        }
+        if action == "enable" && legacy {
+            return Err(activation::NEEDS_MIGRATION.into());
+        }
+        // The profile the extension is registered with now: the browsing profile through
+        // its owner, or (legacy) the catalog host.
         let host_app = app.clone();
-        let label = tauri::async_runtime::spawn_blocking(move || catalog_host(&host_app))
-            .await
-            .map_err(|e| e.to_string())??;
+        let label = tauri::async_runtime::spawn_blocking(move || {
+            if legacy {
+                catalog_host(&host_app)
+            } else {
+                crate::browser_profile::owner_label(&host_app)
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())??;
         if action == "install" {
             let expected = expected_sha256
                 .filter(|value| valid_digest(value))
                 .ok_or("Review the downloaded package before installing it")?;
-            let status_app = app.clone();
-            let status_label = label.clone();
-            let target = location(root.clone(), &id)?;
-            let current = tauri::async_runtime::spawn_blocking(move || {
-                operate(status_app, status_label, target, "status".into(), None)
-            })
-            .await
-            .map_err(|e| e.to_string())??;
-            if current.installed {
-                return Err(
-                    "Extension is already installed; enable it or remove it before reinstalling"
-                        .into(),
-                );
+            if installed {
+                let status_app = app.clone();
+                let status_label = label.clone();
+                let target = location(root.clone(), &id)?;
+                let current = tauri::async_runtime::spawn_blocking(move || {
+                    operate(status_app, status_label, target, "status".into(), None)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                if current.installed {
+                    return Err(
+                        "Extension is already installed; enable it or remove it before reinstalling"
+                            .into(),
+                    );
+                }
             }
             // Re-fetch from the same allowlisted source, then bind installation
             // to the exact bytes whose manifest the user reviewed. A store update
@@ -190,6 +216,7 @@ pub(crate) async fn manage_discovery(
             let store_id = entry.store_id.clone();
             // Each step names itself: a bare "Access is denied" from WebView2 does
             // not say whether the package check, the folder or the registration failed.
+            // Everything up to here only writes files; nothing runs yet.
             tauri::async_runtime::spawn_blocking(move || {
                 crate::extension_install::probe_discovery_download(
                     prepare_app,
@@ -211,20 +238,45 @@ pub(crate) async fn manage_discovery(
             .await
             .map_err(|e| e.to_string())??;
         }
-        let target = location(root, &id)?;
+        // Starting extension code waits for the isolated shell.
+        if matches!(action.as_str(), "install" | "enable")
+            && activation::decide(&root, &action)? == Activation::Waiting
+        {
+            return Ok(activation::pending_result(&root).unwrap_or_default());
+        }
+        let target = location(root.clone(), &id)?;
         let stage = action.clone();
-        tauri::async_runtime::spawn_blocking(move || operate(app, label, target, action, guard))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| {
-                // Installation errors keep their own wording; only label the step.
-                if stage == "install" {
-                    format!("Registration failed: {e}")
-                } else {
-                    e
-                }
-            })
+        let done = action.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            operate(app, label, target, action, guard)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            // Installation errors keep their own wording; only label the step.
+            if stage == "install" {
+                format!("Registration failed: {e}")
+            } else {
+                e
+            }
+        })?;
+        match done.as_str() {
+            "install" if result.installed => activation::mark_browsing(&root)?,
+            "remove" => activation::forget(&root),
+            _ => {}
+        }
+        let mut result = ManageResult::from(result);
+        if action_is_status(&done) {
+            result.pending_activation = activation::pending_action(&root).is_some();
+            result.activation_error = activation::activation_error(&root);
+        }
+        Ok(result)
     }
+}
+
+#[cfg(target_os = "windows")]
+fn action_is_status(action: &str) -> bool {
+    action == "status"
 }
 
 #[derive(Debug, Serialize)]
@@ -406,9 +458,12 @@ pub async fn extension_host_list(
                 crate::browser_profile::owner_label(&app)?,
             )?;
             let has_catalog_install = crate::extension_discovery::DISCOVERY.iter().any(|entry| {
-                crate::extension_registry::package(&entry.id).is_err()
-                    && root_for(&app, &entry.id)
-                        .is_ok_and(|root| root.join("installed-id").is_file())
+                root_for(&app, &entry.id).is_ok_and(|root| {
+                    crate::extension_activation::is_legacy(
+                        &root,
+                        crate::extension_registry::package(&entry.id).is_ok(),
+                    )
+                })
             });
             let catalog = if has_catalog_install {
                 let label = catalog_host(&app)?;
@@ -422,7 +477,10 @@ pub async fn extension_host_list(
                     continue;
                 }
                 let target = location(root, &entry.id)?;
-                let isolated_profile = crate::extension_registry::package(&entry.id).is_err();
+                let isolated_profile = crate::extension_activation::is_legacy(
+                    &target.root,
+                    crate::extension_registry::package(&entry.id).is_ok(),
+                );
                 let runtime_id = std::fs::read_to_string(target.root.join("installed-id"))
                     .map_err(|e| e.to_string())?;
                 let enabled = if isolated_profile {
@@ -635,7 +693,10 @@ pub async fn extension_host_open(
         let owner = webview.window().label().to_string();
         tauri::async_runtime::spawn_blocking(move || {
             let _keep_alive = guard;
-            let profile_label = if crate::extension_registry::package(&id).is_err() {
+            let profile_label = if crate::extension_activation::is_legacy(
+                &target.root,
+                crate::extension_registry::package(&id).is_ok(),
+            ) {
                 catalog_host(&app)?
             } else {
                 crate::browser_profile::owner_label(&app)?
@@ -688,7 +749,10 @@ pub async fn extension_host_click(
         let owner = webview.window().label().to_string();
         tauri::async_runtime::spawn_blocking(move || {
             let _keep_alive = guard;
-            let profile_label = if crate::extension_registry::package(&id).is_err() {
+            let profile_label = if crate::extension_activation::is_legacy(
+                &target.root,
+                crate::extension_registry::package(&id).is_ok(),
+            ) {
                 catalog_host(&app)?
             } else {
                 crate::browser_profile::owner_label(&app)?
@@ -747,22 +811,35 @@ pub async fn extension_host_browse(app: tauri::AppHandle, url: String) -> Result
     }
     #[cfg(target_os = "windows")]
     tauri::async_runtime::spawn_blocking(move || {
-        catalog_host(&app)?;
-        let profile = catalog_profile_directory(&app)?;
+        // Legacy installs still run in the trial profile; everything else is registered
+        // with the browsing profile, which only runs extension code after the split.
+        let legacy = crate::extension_activation::legacy_installs(&app)?;
+        let profile = if legacy.is_empty() {
+            if !crate::shell_isolation::split_committed() {
+                return Err(crate::extension_activation::NEEDS_ISOLATION.into());
+            }
+            None
+        } else {
+            catalog_host(&app)?;
+            Some(catalog_profile_directory(&app)?)
+        };
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let nonce = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let window = tauri::WebviewWindowBuilder::new(
+        let mut builder = tauri::WebviewWindowBuilder::new(
             &app,
             format!("extension-trial-site-{nonce}"),
             tauri::WebviewUrl::External("about:blank".parse().unwrap()),
         )
         .title("Nebula · Extension trial")
         .inner_size(1100.0, 760.0)
-        .data_directory(profile)
-        .browser_extensions_enabled(true)
-        .on_navigation(|url| url.as_str() == "about:blank" || website_url(url))
-        .build()
-        .map_err(|e| e.to_string())?;
+        .browser_extensions_enabled(true);
+        if let Some(profile) = profile {
+            builder = builder.data_directory(profile);
+        }
+        let window = builder
+            .on_navigation(|url| url.as_str() == "about:blank" || website_url(url))
+            .build()
+            .map_err(|e| e.to_string())?;
         if let Err(error) = popup_windows::attach(&app, &window, true) {
             let _ = window.destroy();
             return Err(error);
@@ -791,19 +868,29 @@ fn website_url(url: &tauri::Url) -> bool {
 pub(crate) async fn unregister_all(app: &tauri::AppHandle) -> Result<(), String> {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let catalog_label = catalog_host(&app)?;
+        let mut catalog_label: Option<String> = None;
         for entry in crate::extension_discovery::DISCOVERY.iter() {
             let root = root_for(&app, &entry.id)?;
             if !root.join("installed-id").is_file() {
+                // A prepared package that was waiting to start leaves nothing registered.
+                crate::extension_activation::forget(&root);
                 continue;
             }
             let guard = crate::extension_install::MutationGuard::acquire(&entry.id)?;
             close_controls(&app, &entry.id)?;
-            let label = if crate::extension_registry::package(&entry.id).is_ok() {
-                "main".to_string()
+            let legacy = crate::extension_activation::is_legacy(
+                &root,
+                crate::extension_registry::package(&entry.id).is_ok(),
+            );
+            let label = if legacy {
+                if catalog_label.is_none() {
+                    catalog_label = Some(catalog_host(&app)?);
+                }
+                catalog_label.clone().unwrap_or_default()
             } else {
-                catalog_label.clone()
+                crate::browser_profile::owner_label(&app)?
             };
+            let forget_root = root.clone();
             crate::extension_install::operate(
                 app.clone(),
                 label,
@@ -811,6 +898,7 @@ pub(crate) async fn unregister_all(app: &tauri::AppHandle) -> Result<(), String>
                 "remove".into(),
                 Some(guard),
             )?;
+            crate::extension_activation::forget(&forget_root);
         }
         Ok(())
     })

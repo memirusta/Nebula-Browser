@@ -8,6 +8,7 @@ mod context_menu;
 mod default_browser;
 mod devtools_bridge;
 mod download_manager;
+mod extension_activation;
 mod extension_compat;
 mod extension_compatibility;
 mod extension_discovery;
@@ -1919,6 +1920,11 @@ pub fn run() {
             ui_watchdog::start(app.handle().clone());
             shell_split::create_config_windows(app, &shell_windows)?;
             shell_isolation::start_hydration_watchdog(app.handle());
+            // A committed split retries what could not finish last time (a pending
+            // activation, a trial-profile install that was waiting).
+            shell_isolation::run_after_commit(app.handle());
+            #[cfg(all(target_os = "windows", feature = "split-driver"))]
+            extension_activation::fixture_legacy_installs_from_env(app.handle());
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             external_open::capture_startup_args();
@@ -2025,6 +2031,8 @@ pub fn run() {
             extension_download::extension_download_checked,
             extension_install::extension_package_manage,
             extension_host::extension_host_list,
+            extension_activation::extension_pending_activations,
+            extension_activation::extension_legacy_installs,
             extension_host::extension_host_open,
             extension_host::extension_host_click,
             extension_host::extension_host_browse,
