@@ -23,6 +23,7 @@ commands.allow = [
   "webview_go_forward",
   "webview_reload",
   "webview_process_snapshot",
+  "webview_layout_audit",
   "webview_zoom",
   "webview_set_zoom",
   "webview_list_printers",

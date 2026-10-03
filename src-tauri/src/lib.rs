@@ -28,6 +28,7 @@ mod google_oauth;
 mod google_sync;
 mod http_response;
 #[cfg(target_os = "windows")]
+mod layout_audit;
 mod main_webview_layout;
 mod media_session;
 #[cfg(target_os = "windows")]
@@ -2007,6 +2008,7 @@ pub fn run() {
             window_exit_site_fullscreen,
             window_toggle_browser_fullscreen,
             webview_restore_browsing_layout,
+            layout_audit::webview_layout_audit,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,
             webview_setup_main_site_permissions,

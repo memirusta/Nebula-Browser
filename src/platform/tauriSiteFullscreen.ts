@@ -8,6 +8,7 @@ import {
 } from '../core/browserTab'
 import { registerListenerGroup } from '../core/listenerGroup'
 import { isTauri } from './runtime'
+import { browserWebviewPhysicalBounds } from './windowClientBounds'
 import { debounce } from './debounce'
 import {
   setSiteFullscreenBoundsMode,
@@ -394,8 +395,16 @@ async function exitSiteFullscreen(): Promise<void> {
   setSiteFullscreenBoundsMode(false)
 
   try {
+    // The command needs the rectangle to restore: it used to be called with the window label only,
+    // so every exit from site fullscreen was refused ("missing required key x") and never repaired.
+    const { position, size } = await browserWebviewPhysicalBounds()
     await invoke('webview_restore_browsing_layout', {
       windowLabel: currentBrowserWindowLabel(),
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+      activeTabLabel: returningTabId ? tabWebviewLabel(returningTabId) : null,
     })
     await writeTransitionLog('site-fullscreen.exit.restore-layout', 'ok', {
       traceId,

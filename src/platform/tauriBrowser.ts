@@ -11,6 +11,7 @@ import {
 } from '../core/browserTab'
 import { KeyedLifecycleQueue } from '../core/keyedLifecycleQueue'
 import { createCoalescedRestoreRepair, hasUsableWindowClientSize, restoreBrowsingSurfaces } from '../core/mainWebviewRestore'
+import { createLayoutAuditor, findLayoutFaults, type LayoutAudit } from '../core/layoutAudit'
 import { allSettledOrThrow, LatestPerKeyRunner } from '../core/latestPerKey'
 import {
   prewarmCreationIsCurrent,
@@ -24,6 +25,7 @@ import { isTauri } from './runtime'
 import {
   currentBrowserWindowId,
   currentBrowserWindowLabel,
+  currentChromeWebviewLabel,
 } from './browserWindowScope'
 import {
   traceTransitionCall,
@@ -1567,8 +1569,63 @@ export function initWindowRestoreRepair(): (() => void) {
     }, LAYOUT_DEBOUNCE_MS)
   }).then((unlisten) => { if (cancelled) unlisten(); else resizeUnlisten = unlisten }).catch(() => {})
 
+  // The repairs above wait for an event (focus, resize, restore). Windows does not always send the one
+  // that matters (a window brought forward can change geometry without a resize, and focus can return
+  // to a child window so this one never reports Focused). So the layout is also looked at now and then,
+  // as Windows has it, and a difference that stays is repaired the same way.
+  const layoutAuditor = createLayoutAuditor({
+    intervalMs: 2_000,
+    confirmations: 2,
+    cooldownMs: 6_000,
+    now: () => Date.now(),
+    setTimer: (callback, ms) => setTimeout(callback, ms),
+    clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    read: async () => {
+      const webview = activeWebview
+      // Only while a site is shown and nothing else owns the geometry.
+      if (
+        cancelled || !webview || !activeTabId || siteFullscreenBounds ||
+        _restoreRepairInProgress || !isBrowsingChromeExpected() ||
+        tabActivationRequests.size > 0 || await currentWindowIsMinimized()
+      ) {
+        return null
+      }
+      const windowLabel = currentBrowserWindowLabel()
+      const audit = await invoke<LayoutAudit>('webview_layout_audit', { windowLabel })
+      // The answer is only worth anything if the same tab is still the one shown.
+      if (activeWebview !== webview || siteFullscreenBounds) return null
+      return findLayoutFaults(audit, {
+        mainLabel: windowLabel,
+        chromeLabel: currentChromeWebviewLabel(),
+        activeTabLabel: webview.label,
+      })
+    },
+    onFault: async (faults) => {
+      await writeTransitionLog('browser.layout-audit', 'error', {
+        windowLabel: currentBrowserWindowLabel(),
+        faults,
+      })
+      requestBrowsingSurfaceRepair('layout-audit')
+      // The overlay positions itself from its own cached bounds, which say "unchanged": put it where
+      // Windows should have it, from the audit, not from that cache.
+      const chromeLabel = currentChromeWebviewLabel()
+      for (const fault of faults) {
+        if (fault.label !== chromeLabel || fault.reason === 'missing') continue
+        await invoke('webview_set_chrome_bounds', {
+          windowLabel: currentBrowserWindowLabel(),
+          x: fault.fix.x,
+          y: fault.fix.y,
+          width: fault.fix.width,
+          height: fault.fix.height,
+        }).catch(() => undefined)
+      }
+    },
+  })
+  layoutAuditor.start()
+
   restoreRepairUnbind = () => {
     cancelled = true
+    layoutAuditor.stop()
     browsingSurfaceRepairs.dispose()
     if (delayedFocusRepair !== null) clearTimeout(delayedFocusRepair)
     if (delayedResizeRepair !== null) clearTimeout(delayedResizeRepair)
