@@ -1376,7 +1376,7 @@ console.log('✓ Keyboard shortcuts reference')
     })()`), 'The extensions box must be small and sit under its button')
     await cdp.eval(`document.querySelector('[data-extension-primary="bitwarden"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`)
     await poll('extension details', () => cdp.eval(`
-      /Trial profile|Deneme profili/.test(document.querySelector('[data-extension-detail="bitwarden"]')?.textContent || '')
+      /trial profile|deneme profili/i.test(document.querySelector('[data-extension-detail="bitwarden"]')?.textContent || '')
     `))
     // An action without a popup now has a real entry point: Nebula emulates the
     // toolbar click. It is labelled Beta with the activeTab caveat, and the old

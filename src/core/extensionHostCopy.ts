@@ -13,16 +13,28 @@ const messages: Record<NebulaLocale, Copy> = {
   ja: ['拡張機能', 'インストール済みの拡張機能はありません。', '拡張機能を管理', '操作画面を開く', 'オプション', '無効にする', '無効', 'この初期バージョンでは、アクティブなタブの操作や一部のログインが機能しない場合があります。', '必要なアクションやサイドパネルはまだサポートされていません。', 'プライベートタブでは拡張機能を利用できません。', 'インストール前に確認', '権限', 'キャンセル', 'ダウンロードの確認に成功しました。すべての機能の動作を保証するものではありません。'],
 }
 
+const runtime: Record<NebulaLocale, readonly [string, string]> = {
+  tr: ["Sekmelerinle birlikte çalışır. Nebula’nın kendi ekranları (geçmiş, parolalar, ayarlar) erişiminin dışında kalır.", "Bu eklenti sekmelerinle birlikte çalışır ve açtığın sitelerdeki içeriği okuyabilir. Nebula’nın kendi ekranları (geçmiş, parolalar, ayarlar) erişiminin dışında tutulur; bunun için Nebula bir kez yeniden başlar ve eklenti bundan sonra açılır."],
+  en: ["Runs with your tabs. Nebula’s own screens (history, passwords, settings) stay out of its reach.", "This extension runs together with your tabs and can read the websites you open. Nebula’s own screens (history, passwords, settings) are kept out of its reach; for that Nebula restarts once and the extension turns on after that."],
+  de: ["Läuft zusammen mit deinen Tabs. Nebulas eigene Bildschirme (Verlauf, Passwörter, Einstellungen) bleiben außerhalb seiner Reichweite.", "Diese Erweiterung läuft zusammen mit deinen Tabs und kann die geöffneten Websites lesen. Nebulas eigene Bildschirme (Verlauf, Passwörter, Einstellungen) bleiben außerhalb ihrer Reichweite; dafür startet Nebula einmal neu und die Erweiterung wird danach aktiviert."],
+  es: ["Funciona junto con tus pestañas. Las pantallas propias de Nebula (historial, contraseñas, ajustes) quedan fuera de su alcance.", "Esta extensión funciona junto con tus pestañas y puede leer los sitios que abres. Las pantallas propias de Nebula (historial, contraseñas, ajustes) quedan fuera de su alcance; para ello Nebula se reinicia una vez y la extensión se activa después."],
+  fr: ["Fonctionne avec vos onglets. Les écrans propres à Nebula (historique, mots de passe, réglages) restent hors de sa portée.", "Cette extension fonctionne avec vos onglets et peut lire les sites que vous ouvrez. Les écrans propres à Nebula (historique, mots de passe, réglages) restent hors de sa portée ; pour cela Nebula redémarre une fois et l’extension s’active ensuite."],
+  id: ["Berjalan bersama tabmu. Layar milik Nebula (riwayat, kata sandi, pengaturan) tetap di luar jangkauannya.", "Ekstensi ini berjalan bersama tabmu dan dapat membaca situs yang kamu buka. Layar milik Nebula (riwayat, kata sandi, pengaturan) tetap di luar jangkauannya; untuk itu Nebula dimulai ulang sekali dan ekstensi aktif setelahnya."],
+  ru: ["Работает вместе с твоими вкладками. Собственные экраны Nebula (история, пароли, настройки) ему недоступны.", "Это расширение работает вместе с твоими вкладками и может читать открываемые сайты. Собственные экраны Nebula (история, пароли, настройки) остаются вне его досягаемости; для этого Nebula один раз перезапускается, и после этого расширение включается."],
+  it: ["Funziona insieme alle tue schede. Le schermate di Nebula (cronologia, password, impostazioni) restano fuori dalla sua portata.", "Questa estensione funziona insieme alle tue schede e può leggere i siti che apri. Le schermate di Nebula (cronologia, password, impostazioni) restano fuori dalla sua portata; per questo Nebula si riavvia una volta e l’estensione si attiva dopo."],
+  ja: ["タブと一緒に動作します。Nebula 自身の画面（履歴、パスワード、設定）には触れられません。", "この拡張機能はタブと一緒に動作し、開いたサイトを読み取れます。Nebula 自身の画面（履歴、パスワード、設定）は届かない場所に保たれます。そのために Nebula は一度再起動し、その後に拡張機能がオンになります。"],
+}
+
 const trial: Record<NebulaLocale, readonly [string, string, string]> = {
-  tr: ['Deneme profili', 'Bu siteyi eklentilerle dene', 'Katalog eklentileri ayrı bir deneme profiline kurulur. Bu profilde site oturumları ayrıdır; normal sekmelerin etkilenmez.'],
-  en: ['Trial profile', 'Try this site with extensions', 'Catalog extensions install in a separate trial profile. Website sign-ins are separate; regular tabs are unaffected.'],
-  de: ['Testprofil', 'Diese Website mit Erweiterungen testen', 'Katalogerweiterungen werden in einem separaten Testprofil installiert. Website-Anmeldungen sind getrennt; normale Tabs bleiben unverändert.'],
-  es: ['Perfil de prueba', 'Probar este sitio con extensiones', 'Las extensiones del catálogo se instalan en un perfil de prueba separado. Las sesiones son independientes; las pestañas normales no cambian.'],
-  fr: ['Profil d’essai', 'Tester ce site avec les extensions', 'Les extensions du catalogue sont installées dans un profil d’essai distinct. Les connexions sont séparées ; les onglets habituels restent inchangés.'],
-  id: ['Profil uji', 'Coba situs ini dengan ekstensi', 'Ekstensi katalog dipasang di profil uji terpisah. Sesi masuk situs terpisah; tab biasa tidak terpengaruh.'],
-  ru: ['Тестовый профиль', 'Проверить сайт с расширениями', 'Расширения каталога устанавливаются в отдельный тестовый профиль. Вход на сайты отдельный; обычные вкладки не затрагиваются.'],
-  it: ['Profilo di prova', 'Prova questo sito con le estensioni', 'Le estensioni del catalogo si installano in un profilo di prova separato. Gli accessi ai siti sono separati; le schede normali non cambiano.'],
-  ja: ['テスト用プロファイル', 'このサイトで拡張機能を試す', 'カタログの拡張機能は別のテスト用プロファイルにインストールされます。サイトへのログインは別管理で、通常のタブには影響しません。'],
+  tr: ['Deneme profili', 'Bu siteyi eklentilerle dene', 'Bu eklenti hâlâ eski deneme profilinde çalışıyor. Nebula kendi ekranlarını eklentilerden ayırınca ana profile taşınacak; kendi verisi (oturumlar gibi) taşınmaz.'],
+  en: ['Trial profile', 'Try this site with extensions', 'This extension still runs in the old trial profile. It moves to your main profile once Nebula separates its own screens from extensions; its own data (such as sign-ins) does not move.'],
+  de: ['Testprofil', 'Diese Website mit Erweiterungen testen', 'Diese Erweiterung läuft noch im alten Testprofil. Sie wechselt in dein Hauptprofil, sobald Nebula seine eigenen Bildschirme von Erweiterungen trennt; ihre eigenen Daten (z. B. Anmeldungen) wechseln nicht.'],
+  es: ['Perfil de prueba', 'Probar este sitio con extensiones', 'Esta extensión aún funciona en el antiguo perfil de prueba. Pasará a tu perfil principal cuando Nebula separe sus propias pantallas de las extensiones; sus propios datos (como sesiones) no se mueven.'],
+  fr: ['Profil d’essai', 'Tester ce site avec les extensions', 'Cette extension fonctionne encore dans l’ancien profil d’essai. Elle passera dans votre profil principal quand Nebula aura séparé ses propres écrans des extensions ; ses propres données (connexions, etc.) ne sont pas déplacées.'],
+  id: ['Profil uji', 'Coba situs ini dengan ekstensi', 'Ekstensi ini masih berjalan di profil uji lama. Akan dipindahkan ke profil utamamu setelah Nebula memisahkan layarnya sendiri dari ekstensi; datanya sendiri (seperti sesi masuk) tidak dipindahkan.'],
+  ru: ['Тестовый профиль', 'Проверить сайт с расширениями', 'Это расширение пока работает в прежнем тестовом профиле. Оно перейдёт в основной профиль, когда Nebula отделит от расширений свои экраны; собственные данные расширения (например, входы) не переносятся.'],
+  it: ['Profilo di prova', 'Prova questo sito con le estensioni', 'Questa estensione funziona ancora nel vecchio profilo di prova. Passerà al profilo principale quando Nebula avrà separato le proprie schermate dalle estensioni; i suoi dati (come gli accessi) non vengono spostati.'],
+  ja: ['テスト用プロファイル', 'このサイトで拡張機能を試す', 'この拡張機能はまだ以前のテスト用プロファイルで動作しています。Nebula が自身の画面を拡張機能から分離すると、メインプロファイルへ移されます。拡張機能自身のデータ（ログインなど）は移されません。'],
 }
 const statusUnavailable: Record<NebulaLocale, string> = {
   tr: 'Kurulu eklentiler okunamadı. Pencereye yeniden odaklandığında tekrar denenecek.',
@@ -93,7 +105,8 @@ const details: Record<NebulaLocale, string> = {
 export function extensionHostCopy(locale: NebulaLocale) {
   const [title, empty, manage, open, options, disable, disabled, limited, missingHost, privateUnavailable, review, permissions, cancel, loadOnly] = messages[locale]
   const [trialProfile, trySite, separateSession] = trial[locale]
+  const [runsWithTabs, reviewNote] = runtime[locale]
   const [openPanel, experimentalPanel, missingActionHost, missingSidePanel, runsInProfile] = hostStatus[locale]
   const [clickLabel, clickBeta, clickNoResponse] = clickAction[locale]
-  return { title, empty, manage, open, options, disable, disabled, limited, missingHost, privateUnavailable, review, permissions, cancel, loadOnly, trialProfile, trySite, separateSession, openPanel, experimentalPanel, missingActionHost, missingSidePanel, runsInProfile, clickLabel, clickBeta, clickNoResponse, details: details[locale], requiresNativeApp: nativeApp[locale], statusUnavailable: statusUnavailable[locale], metadataUnavailable: metadataUnavailable[locale] }
+  return { title, empty, manage, open, options, disable, disabled, limited, missingHost, privateUnavailable, review, permissions, cancel, loadOnly, trialProfile, trySite, separateSession, runsWithTabs, reviewNote, openPanel, experimentalPanel, missingActionHost, missingSidePanel, runsInProfile, clickLabel, clickBeta, clickNoResponse, details: details[locale], requiresNativeApp: nativeApp[locale], statusUnavailable: statusUnavailable[locale], metadataUnavailable: metadataUnavailable[locale] }
 }

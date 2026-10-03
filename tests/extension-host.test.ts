@@ -144,3 +144,22 @@ test('hidden extension windows cannot keep the process alive after the last brow
   assert.match(lifecycle, /BACKGROUND_PREFIX: &str = "extension-"/)
   assert.match(lifecycle, /app\.exit\(0\)/)
 })
+
+test('the install texts describe the browsing profile, and only a legacy install talks about the trial profile', () => {
+  for (const locale of ['tr', 'en', 'de', 'es', 'fr', 'id', 'ru', 'it', 'ja'] as const) {
+    const copy = extensionHostCopy(locale)
+    assert.ok(copy.reviewNote.length > 40 && copy.runsWithTabs.length > 20, locale)
+    // New installs no longer go to a separate trial profile: these must not say so.
+    assert.doesNotMatch(`${copy.reviewNote} ${copy.runsWithTabs}`, /trial|deneme|Test|prueba|essai|uji|тестов|prova|テスト/i, locale)
+    // The old text stays for installs that still live there, and now says they will move.
+    assert.ok(copy.separateSession.length > 60, locale)
+  }
+  assert.match(extensionHostCopy('en').separateSession, /old trial profile/)
+  assert.match(extensionHostCopy('tr').separateSession, /eski deneme profili/)
+  const controls = read('src/components/SettingsPanel/ExtensionInstallControls.tsx')
+  assert.doesNotMatch(controls, /hostCopy\.separateSession/)
+  assert.match(controls, /hostCopy\.reviewNote/)
+  assert.match(controls, /hostCopy\.runsWithTabs/)
+  const panel = read('src/components/ExtensionsPanel/ExtensionsPanel.tsx')
+  assert.match(panel, /item\.isolatedProfile && <p>\{copy\.separateSession\}<\/p>/)
+})

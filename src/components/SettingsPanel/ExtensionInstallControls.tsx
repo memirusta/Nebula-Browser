@@ -114,12 +114,12 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
         </button>}
       </div>
       <div className={styles.downloadStatus} role="status" aria-live="polite">
-        {failed ? <>{copy.failed}{failureMessage && <span>{failureMessage}</span>}</> : status?.pendingActivation ? isolationCopy.extensionWaiting : status?.activationError ? <>{isolationCopy.activationFailed}<span>{status.activationError}</span></> : status?.enabled ? extension ? copy.reload : hostCopy.separateSession : extension ? <>{copy.access}: {extension.access.map(pattern => pattern === '*://*/*' || pattern === '<all_urls>' ? copy.allSites : pattern.replace(/^https?:\/\//, '').replace(/\/\*$/, '')).join(', ')}</> : null}
+        {failed ? <>{copy.failed}{failureMessage && <span>{failureMessage}</span>}</> : status?.pendingActivation ? isolationCopy.extensionWaiting : status?.activationError ? <>{isolationCopy.activationFailed}<span>{status.activationError}</span></> : status?.enabled ? extension ? copy.reload : hostCopy.runsWithTabs : extension ? <>{copy.access}: {extension.access.map(pattern => pattern === '*://*/*' || pattern === '<all_urls>' ? copy.allSites : pattern.replace(/^https?:\/\//, '').replace(/\/\*$/, '')).join(', ')}</> : null}
       </div>
     </>
     {reviewing && download.result && <section className={styles.compatibilityReport} aria-label={hostCopy.review} data-extension-review={id}>
       <h4>{hostCopy.review} · {download.result.version}</h4>
-      <p>{hostCopy.separateSession}</p>
+      <p>{hostCopy.reviewNote}</p>
       <p>{hostCopy.loadOnly}</p><p>{hostCopy.limited}</p>
       <strong>{hostCopy.permissions}</strong>
       <p>{manifestStrings('permissions') || '—'}</p>
