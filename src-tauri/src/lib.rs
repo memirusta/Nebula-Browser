@@ -66,6 +66,7 @@ mod weather_location;
 mod webview_branding;
 mod webview_controls;
 mod webview_privacy;
+mod youtube_player_recovery;
 
 static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -601,6 +602,7 @@ fn teardown_tab_webview_integrations(app: &tauri::AppHandle, label: &str) {
     site_ui::teardown(app, label);
     media_session::teardown(app, label);
     force_dark_pages::teardown(app, label);
+    youtube_player_recovery::teardown(label);
     download_manager::teardown_tab_downloads(app, label);
     webview_privacy::teardown(app, label);
     tab_error_page::teardown_tab_error_page(app, label);
@@ -621,6 +623,11 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
         site_ui::setup(&app, &label)?;
         media_session::setup(&app, &label)?;
         force_dark_pages::setup(&app, &label)?;
+        // A convenience for one site: a failure here must never keep a tab from opening.
+        if let Err(_error) = youtube_player_recovery::setup(&app, &label) {
+            #[cfg(debug_assertions)]
+            eprintln!("[nebula youtube recovery] {label}: {_error}");
+        }
         // Context-menu interception requires a newer WebView2 interface. Keep tab
         // creation resilient on an unexpectedly old runtime; in that case the
         // branding layer still leaves the native Edge menu disabled.
