@@ -130,6 +130,10 @@ export function HomeCenter({
     useRef<HTMLInputElement>(null)
   const selectAllOnNextClickRef =
     useRef(true)
+  // The window lost focus while the field was being edited (Alt+Tab, another app). Nothing was
+  // decided about the text: it stays, and it is not selected when the window comes back.
+  const windowLostFocusWhileEditingRef =
+    useRef(false)
 
   /*
    * ---------------------------------------------------------
@@ -665,14 +669,30 @@ onFocus={(event) => {
   setIsEditing(true)
   setActiveSuggestion(-1)
 
+  if (windowLostFocusWhileEditingRef.current) {
+    windowLostFocusWhileEditingRef.current = false
+    return
+  }
+
   event.currentTarget.select()
 }}
 
-onBlur={() => {
-  selectAllOnNextClickRef.current = true
+onBlur={(event) => {
+  const input = event.currentTarget
 
-  setIsEditing(false)
-  setActiveSuggestion(-1)
+  // When only the window loses focus the field stays the document's active element; when focus
+  // moves inside the page it does not. Decide after the event, once the active element is known.
+  window.setTimeout(() => {
+    if (document.activeElement === input) {
+      windowLostFocusWhileEditingRef.current = true
+      return
+    }
+
+    selectAllOnNextClickRef.current = true
+
+    setIsEditing(false)
+    setActiveSuggestion(-1)
+  }, 0)
 }}
           onKeyDown={
             handleSearchKeyDown
