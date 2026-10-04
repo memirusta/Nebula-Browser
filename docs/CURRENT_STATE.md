@@ -8,6 +8,16 @@ Bu belge güncel yerel kod ve ölçülmüş test durumunu özetler. Önceki v1.8
 
 ## Güncel durum
 
+### Store ağacına eşitleme (D:Projects
+ebula-store) — 2026-10-04
+- **Ne yapıldı:** repodaki v1.8.5'ten bu yana tüm kaynak değişiklikleri (HEAD `4d51903`) Store ağacına taşındı: 112 dosya olduğu gibi alındı, 134 yeni dosya eklendi, 1 dosya silindi (`ubol/js/nebula-ready.js`), 6 ortak dosya üç yönlü birleştirildi (`package.json`, `Cargo.toml`, `Cargo.lock`, `lib.rs`, `tauri.conf.json`, `SettingsPanel.tsx`). Taban sürüm dosya karşılaştırmasıyla v1.8.5 bulundu (Store `package.json` sürümü 1.8.4 yazıyor ve değiştirilmedi).
+- **Yedek:** `D:Projects
+ebula-store-backup-20261004101844` (dokunulan her dosyanın özgün hâli + `MANIFEST.json`; ayrıca `store_update.rs`); sonradan eklenen iki design doc (`EXTENSION_OPT_IN_SPLIT.md`, `EXTENSION_PROFILE_ISOLATION.md`) yeni dosya olduğu için yedeği yok, silinirse geri alınır.
+- **Korunan Store'a özel dosyalar (repodan farklı kalıyor, bilerek):** `README.md`, `package-lock.json`, `package.json` (updater script'i yok, `audit:store-updater-free` var), `Cargo.toml` (`Services_Store` özelliği), `Cargo.lock`, `capabilities/desktop.json`, `lib.rs` (`store_update` modülü, updater eklentisi yok), `tauri.conf.json`, `App.tsx`, `SettingsPanel.tsx`, `tests/branding-regression.test.ts`; `Package.appxmanifest` ve `store_update.rs` zaten yalnızca Store'da. Repoda olup Store'a bilerek getirilmeyenler: `AGENTS.md`, repo docs'ları, updater dosyaları (`appUpdater.ts`, `AppUpdatePrompt*`, `AboutUpdateSection.tsx`, `updater-remote-smoke.mjs`).
+- **Store'a özel iki düzeltme:** (1) `store_update.rs` kabuğun `"main"` etiketini adıyla çağırıyordu; yeni mimari testi buna izin vermiyor, artık `browser_workspace::most_recent_window_label` ile son kullanılan tarayıcı penceresini alıyor. (2) `lib.rs` birleştirmesinden sonra `cargo fmt` mod sırası düzeltildi.
+- **Kanıt (Store ağacında):** `npm.cmd run audit:store-updater-free` 6/6 PASS; `npm.cmd run build` (tsc + vite) temiz; `lint` temiz; regresyon 373/373; `cargo check --all-targets` temiz; `cargo fmt --check` temiz; `clippy -D warnings` temiz; Rust lib 254 geçti / 25 ignored; kaynak eşitliği: repo HEAD ile Store arasında 1494 dosya birebir aynı, fark yalnızca yukarıdaki Store'a özel dosyalar.
+- **Yapılmadı (bilerek):** MSIX üretimi, imzalama, WACK, Partner Center, sürüm artırımı, tag. Bunların hiçbiri Store sürümü yayınlandı anlamına gelmiyor.
+
 ### VPN eklentileri (chrome.proxy): sekmeler eklentinin proxy ayarını KULLANIYOR — 2026-10-04
 - **Geri çekilen sonuç:** aynı gün yazdığım "WebView2 eklentinin proxy ayarını sekmelere uygulamıyor" bulgusu yanlıştı. İlk ölçümde sayfa olarak eklentinin açtığı bir pencere kullanmıştım ve probe aynı kaynağa (https://example.org) worker'ın önceki isteğinden sonra gitmişti; bağlantı yeniden kullanılmış olabilir. Bu bir tahmin, ayrıca doğrulanmadı.
 - **Düzgün ölçüm (harness derlemesi, Proton VPN kurulu, gerçek sekme: ikinci bir başlatmayla verilen URL):** komut satırı proxy'si YOKKEN eklenti `chrome.proxy.settings.set` ile canlı bir test proxy'si ayarlayınca sekmenin `CONNECT example.org:443` isteği o proxy'ye ulaştı (worker'ınki de). Yani sekmeler eklentinin proxy ayarını uyguluyor.
