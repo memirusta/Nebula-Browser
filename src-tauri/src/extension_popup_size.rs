@@ -279,6 +279,7 @@ pub(crate) fn close_on_blur(app: &tauri::AppHandle, window: &tauri::WebviewWindo
                 .webview_windows()
                 .keys()
                 .any(|name| name.starts_with(&prefix))
+                && !crate::extension_host::window_request_pending(&label)
             {
                 let _ = target.destroy();
             }

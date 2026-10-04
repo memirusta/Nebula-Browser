@@ -163,3 +163,17 @@ test('the install texts describe the browsing profile, and only a legacy install
   const panel = read('src/components/ExtensionsPanel/ExtensionsPanel.tsx')
   assert.match(panel, /item\.isolatedProfile && <p>\{copy\.separateSession\}<\/p>/)
 })
+
+test('a new window is bound to its opener only while the opener is alive', () => {
+  // The WebView2 runtime crashes (access violation) when SetNewWindow is called on an opener that is
+  // already gone, and a popup that opens a window usually closes itself right after.
+  const windows = read('src-tauri/src/extension_host_windows.rs')
+  const alive = windows.indexOf('if !opener_alive(')
+  const bind = windows.indexOf('request.args.SetNewWindow(&core)')
+  assert.ok(alive > 0 && bind > alive, 'the opener must be checked before the window is bound to it')
+  assert.match(windows, /mark_closing\(&label\)/)
+  // The fallback opens the address itself, with no opener.
+  assert.match(windows, /core\.Navigate\(/)
+  // A popup's own focus-loss close waits for a request that is still being handled.
+  assert.match(read('src-tauri/src/extension_popup_size.rs'), /window_request_pending\(&label\)/)
+})

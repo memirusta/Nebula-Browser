@@ -16,6 +16,13 @@ mod native_tests;
 #[path = "extension_host_windows.rs"]
 mod popup_windows;
 
+/// Whether a request for a new window opened by `label` is still being handled: that window must
+/// not be closed yet (see `extension_host_windows`).
+#[cfg(target_os = "windows")]
+pub(crate) fn window_request_pending(label: &str) -> bool {
+    popup_windows::has_pending(label)
+}
+
 pub(crate) fn valid_digest(value: &str) -> bool {
     value.len() == 64
         && value

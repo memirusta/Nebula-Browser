@@ -1,6 +1,15 @@
 //! Popup requests retain WebView2's native opener and profile. The queue avoids
 //! nested synchronous WebView creation while the first builder pumps messages.
+//!
+//! A page that opens a window (`chrome.tabs.create`, `window.open`) often closes itself right
+//! after, and wry destroys the closing window at once. `SetNewWindow` on an opener that is
+//! already gone does not fail: the runtime crashes with an access violation inside its own
+//! code, which ends the whole browser. So the window is bound to its opener only while the
+//! opener is alive; when it is closing, the window the page asked for is opened on its address
+//! on its own (there is no opener left to belong to).
 use super::website_url;
+use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, Mutex};
 use std::{cell::RefCell, collections::VecDeque};
 use tauri::Manager;
 use webview2_com::{
@@ -17,6 +26,7 @@ struct Request {
     deferral: ICoreWebView2Deferral,
     environment: ICoreWebView2Environment,
     owner: String,
+    url: tauri::Url,
     title: String,
     visible: bool,
     width: f64,
@@ -33,6 +43,59 @@ struct Queue {
 thread_local! {
     // COM objects stay on the UI apartment, including deferral completion.
     static QUEUE: RefCell<Queue> = RefCell::new(Queue::default());
+}
+
+/// How many requests of each opener are in flight: from the moment one is queued until its
+/// deferral is completed. Shared across threads (a popup's focus watcher asks too).
+static PENDING: LazyLock<Mutex<HashMap<String, usize>>> = LazyLock::new(Mutex::default);
+/// Windows that were asked to close. Wry destroys such a window straight away; a request of
+/// it that is still queued must not be bound to it.
+static CLOSING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+
+/// Whether `owner` has a request in flight. Closing it by hand now would lose that window.
+pub(crate) fn has_pending(owner: &str) -> bool {
+    PENDING
+        .lock()
+        .is_ok_and(|pending| pending.get(owner).is_some_and(|count| *count > 0))
+}
+
+fn begin_request(owner: &str) {
+    if let Ok(mut pending) = PENDING.lock() {
+        *pending.entry(owner.to_string()).or_insert(0) += 1;
+    }
+}
+
+fn end_request(owner: &str) {
+    if let Ok(mut pending) = PENDING.lock() {
+        match pending.get_mut(owner) {
+            Some(count) if *count > 1 => *count -= 1,
+            _ => {
+                pending.remove(owner);
+            }
+        }
+    }
+}
+
+fn mark_closing(label: &str) {
+    if let Ok(mut closing) = CLOSING.lock() {
+        closing.insert(label.to_string());
+    }
+}
+
+/// A label is reused by the next window of the same extension view.
+fn clear_closing(label: &str) {
+    if let Ok(mut closing) = CLOSING.lock() {
+        closing.remove(label);
+    }
+}
+
+fn is_closing(label: &str) -> bool {
+    CLOSING.lock().is_ok_and(|closing| closing.contains(label))
+}
+
+/// Whether the new window can still be bound to the page that asked for it.
+fn opener_alive(app: &tauri::AppHandle, owner: &str) -> bool {
+    !is_closing(owner) && app.get_webview(owner).is_some()
 }
 
 fn schedule(app: &tauri::AppHandle) {
@@ -56,9 +119,11 @@ fn configure(
     owner: String,
     visible: bool,
 ) -> windows_core::Result<()> {
+    clear_closing(&label);
     let environment = unsafe { core.cast::<ICoreWebView2_2>()?.Environment()? };
     let close_app = app.clone();
     let close_handler = WindowCloseRequestedEventHandler::create(Box::new(move |_, _| {
+        mark_closing(&label);
         // Wry destroys the HWND. Also tell Tauri to remove its managed window
         // and webview records; a native DestroyWindow alone leaves stale entries.
         if let Some(window) = close_app.get_webview_window(&label) {
@@ -158,6 +223,7 @@ fn configure(
                 }
             };
         let deferral = args.GetDeferral()?;
+        begin_request(&owner);
         QUEUE.with(|queue| {
             queue.borrow_mut().requests.push_back(Request {
                 args,
@@ -165,6 +231,7 @@ fn configure(
                 environment: environment.clone(),
                 owner: owner.clone(),
                 title: url.host_str().unwrap_or("Nebula · Extension").to_string(),
+                url,
                 visible,
                 width,
                 height,
@@ -218,6 +285,7 @@ fn process_next(app: tauri::AppHandle) {
         unsafe {
             let _ = request.deferral.Complete();
         }
+        end_request(&request.owner);
         finish(&app);
         return;
     }
@@ -243,6 +311,7 @@ fn process_next(app: tauri::AppHandle) {
             unsafe {
                 let _ = request.deferral.Complete();
             }
+            end_request(&request.owner);
             finish(&app);
             return;
         }
@@ -257,19 +326,20 @@ fn process_next(app: tauri::AppHandle) {
             return;
         };
         let result = (|| -> windows_core::Result<()> {
-            if completion_app.get_webview(&request.owner).is_none() {
-                return Err(windows_core::Error::from_hresult(windows_core::HRESULT(
-                    0x80004004_u32 as i32,
-                )));
-            }
             let core = inner.controller().CoreWebView2()?;
             configure(
                 &completion_app,
                 &core,
                 completion_window.label().to_string(),
-                request.owner,
+                request.owner.clone(),
                 request.visible,
             )?;
+            if !opener_alive(&completion_app, &request.owner) {
+                // The page that asked is closing (it often closes itself right after asking).
+                // Binding the window to it would crash the runtime, so the window the page
+                // wanted is opened on its own address, with no opener.
+                return core.Navigate(&windows_core::HSTRING::from(request.url.as_str()));
+            }
             request.args.SetNewWindow(&core)
         })();
         if let Err(error) = result {
@@ -277,6 +347,7 @@ fn process_next(app: tauri::AppHandle) {
             let _ = completion_window.destroy();
         }
         let _ = request.deferral.Complete();
+        end_request(&request.owner);
         finish(&completion_app);
     }) {
         eprintln!("Extension popup dispatch failed: {error}");
@@ -285,7 +356,43 @@ fn process_next(app: tauri::AppHandle) {
             unsafe {
                 let _ = request.deferral.Complete();
             }
+            end_request(&request.owner);
         }
         finish(&app);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requests_in_flight_are_counted_per_opener() {
+        let owner = "test-opener-1";
+        assert!(!has_pending(owner));
+        begin_request(owner);
+        begin_request(owner);
+        assert!(has_pending(owner));
+        end_request(owner);
+        assert!(has_pending(owner), "one request is still in flight");
+        end_request(owner);
+        assert!(!has_pending(owner));
+        // An end without a begin is harmless, and openers do not affect each other.
+        end_request(owner);
+        begin_request("test-opener-2");
+        assert!(!has_pending("test-opener-3"));
+        end_request("test-opener-2");
+    }
+
+    #[test]
+    fn a_window_asked_to_close_stays_closing_until_its_label_is_reused() {
+        let label = "extension-ui-test-popup";
+        assert!(!is_closing(label));
+        mark_closing(label);
+        assert!(is_closing(label));
+        assert!(!is_closing("extension-ui-test-other"));
+        // The next window of the same view gets the same label and must not inherit the mark.
+        clear_closing(label);
+        assert!(!is_closing(label));
     }
 }
