@@ -858,14 +858,12 @@ async function run() {
     })()`), 'Extension cards must link to a known official or Chrome Web Store page')
     assert(await cdp.eval(`(() => {
       const section = document.querySelector('[data-extension-explorer]')
-      const download = section.querySelector('[data-extension-download="sponsorblock"]')
       const install = section.querySelector('[data-extension-install="sponsorblock"]')
       const darkInstall = section.querySelector('[data-extension-install="dark-reader"]')
-      const darkDownload = section.querySelector('[data-extension-download="dark-reader"]')
+      // There is one way in: Install. A separate Download button confused its progress with Install's.
       return section.querySelectorAll('[data-extension-install]').length === 200 &&
-        section.querySelectorAll('[data-extension-download]').length === 200 &&
-        darkInstall?.disabled === true && darkDownload?.disabled === true &&
-        install?.disabled === true && download?.disabled === true &&
+        section.querySelectorAll('[data-extension-download]').length === 0 &&
+        darkInstall?.disabled === true && install?.disabled === true &&
         !/Discovery preview|Keşif önizlemesi/.test(section.textContent)
     })()`), 'Extension downloads require the desktop runtime and the preview badge must be removed')
     console.log('✓ Extension discovery search, category filter, empty state and reset')

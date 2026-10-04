@@ -4,7 +4,6 @@ import { extensionHostCopy } from '../../core/extensionHostCopy'
 import { useLocale } from '../../hooks/useLocale'
 import { manageExtension, downloadExtension, type ExtensionStatus, type ExtensionDownloadResult } from '../../platform/extensionDownload'
 import { extensionPackage, type ExtensionCatalogEntry } from '../../core/extensionCatalog'
-import { EXTENSION_DOWNLOAD_COPY } from '../../core/extensionDownloadCopy'
 import { extensionDownloadCheckCopy } from '../../core/extensionDownloadCheckCopy'
 import { assessExtensionManifest, isKnownGap } from '../../core/extensionCompatibility'
 import { extensionCompatibilityCopy } from '../../core/extensionCompatibilityCopy'
@@ -27,7 +26,6 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
   const hostCopy = extensionHostCopy(locale)
   const isolationCopy = shellIsolationCopy(locale)
   const [reviewing, setReviewing] = useState(false)
-  const downloadCopy = EXTENSION_DOWNLOAD_COPY[locale]
   const checkCopy = extensionDownloadCheckCopy(locale)
   const reportCopy = extensionCompatibilityCopy(locale)
   const [download, setDownload] = useState<{ status: 'idle' | 'pending' | 'saved' | 'failed'; result?: ExtensionDownloadResult; error?: string }>(
@@ -108,13 +106,13 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
           : status?.installed && status.enabled
           ? <span className={styles.installed}>{copy.installed}</span>
           : <button type="button" data-extension-install={id} disabled={!isTauri || checking || !!pending || download.status === 'pending' || reviewing}
-            onClick={() => void requestInstall()}>{checking ? copy.checking : pending === 'install' ? copy.installing : status?.installed ? copy.enable : copy.install}</button>}
+            onClick={() => void requestInstall()}>{checking ? copy.checking : download.status === 'pending' ? checkCopy.pending : pending === 'install' ? copy.installing : status?.installed ? copy.enable : copy.install}</button>}
         {(status?.installed || status?.pendingActivation) && <button type="button" disabled={!!pending || download.status === 'pending'} onClick={() => void run('remove')}>
           {pending === 'remove' ? copy.removing : copy.remove}
         </button>}
       </div>
       <div className={styles.downloadStatus} role="status" aria-live="polite">
-        {failed ? <>{copy.failed}{failureMessage && <span>{failureMessage}</span>}</> : status?.pendingActivation ? isolationCopy.extensionWaiting : status?.activationError ? <>{isolationCopy.activationFailed}<span>{status.activationError}</span></> : status?.enabled ? extension ? copy.reload : hostCopy.runsWithTabs : extension ? <>{copy.access}: {extension.access.map(pattern => pattern === '*://*/*' || pattern === '<all_urls>' ? copy.allSites : pattern.replace(/^https?:\/\//, '').replace(/\/\*$/, '')).join(', ')}</> : null}
+        {failed ? <>{copy.failed}{failureMessage && <span>{failureMessage}</span>}</> : status?.pendingActivation ? isolationCopy.extensionWaiting : status?.activationError ? <>{isolationCopy.activationFailed}<span>{status.activationError}</span></> : download.status === 'failed' ? <>{checkCopy.failed}<span>{download.error}</span></> : status?.enabled ? extension ? copy.reload : hostCopy.runsWithTabs : extension ? <>{copy.access}: {extension.access.map(pattern => pattern === '*://*/*' || pattern === '<all_urls>' ? copy.allSites : pattern.replace(/^https?:\/\//, '').replace(/\/\*$/, '')).join(', ')}</> : null}
       </div>
     </>
     {reviewing && download.result && <section className={styles.compatibilityReport} aria-label={hostCopy.review} data-extension-review={id}>
@@ -136,15 +134,7 @@ export function ExtensionInstallControls({ entry, downloaded, knownStatus, onSta
       </div>
     </section>}
     <div className={styles.download}>
-      <button type="button" data-extension-download={id} disabled={!isTauri || !!pending || reviewing || download.status === 'pending'}
-        title={!isTauri ? downloadCopy.desktop : undefined} onClick={() => void startDownload()}>
-        {download.status === 'pending' ? checkCopy.pending : downloadCopy.download}
-      </button>
       <span className={styles.package}>{download.result?.version ?? extension?.version ?? entry.version ?? '—'} · {extension ? 'ZIP' : 'Chrome Web Store'}</span>
-      <div role="status" aria-live="polite" className={styles.downloadStatus}>
-        {download.status === 'saved' && <>{checkCopy.passed}<span>{download.result?.path}</span></>}
-        {download.status === 'failed' && <>{checkCopy.failed}<span>{download.error}</span></>}
-      </div>
       {download.result && manifestReport && <details className={styles.compatibilityReport} data-extension-download-report={id}>
         <summary>{reportCopy.title} · {download.result.version}</summary>
         <p>{checkCopy.scope}</p>
