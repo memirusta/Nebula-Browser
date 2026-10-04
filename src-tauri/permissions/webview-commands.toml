@@ -130,3 +130,10 @@ commands.allow = [
   "shell_isolation_barrier_ack",
   "shell_isolation_switch"
 ]
+
+[[permission]]
+identifier = "allow-favicon-fetch"
+description = "Allow the trusted shell to fetch the icon of a site the user visited, for the address field suggestions"
+commands.allow = [
+  "favicon_fetch"
+]

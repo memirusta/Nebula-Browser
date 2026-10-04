@@ -41,6 +41,7 @@
     "dialog:allow-open",
     "allow-nebula-webview-commands",
     "allow-search-suggestions",
+    "allow-favicon-fetch",
     "core:event:allow-listen"
   ]
 }

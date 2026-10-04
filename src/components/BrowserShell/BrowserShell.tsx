@@ -195,6 +195,7 @@ import {
   type BrowserSessionSnapshot,
   type ClosedTabEntry,
 } from '../../core/browsingHistory'
+import { rememberFavicon } from '../../core/faviconCache'
 import {
   primarySessionWindow,
   sessionWindowById,
@@ -2265,6 +2266,12 @@ export function BrowserShell() {
             snapshot.shortcutId,
             snapshot.url,
             snapshot.favicon,
+          )
+          // The icon the page gave is kept on this machine for the address field's suggestions.
+          void rememberFavicon(
+            snapshot.url,
+            snapshot.favicon,
+            currentTab?.isPrivate === true,
           )
         }
 

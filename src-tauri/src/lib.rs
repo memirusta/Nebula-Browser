@@ -23,6 +23,7 @@ mod extension_window_policy;
 mod extension_window_profile;
 mod extension_worker;
 mod external_open;
+mod favicon_fetch;
 mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
@@ -1984,6 +1985,7 @@ pub fn run() {
             notification_broker_diagnostics,
             write_transition_log,
             search_suggestions,
+            favicon_fetch::favicon_fetch,
             webview_set_shortcut_bindings,
             webview_navigate,
             webview_close_tab,
