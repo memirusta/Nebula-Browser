@@ -25,6 +25,8 @@ import type { BrowseSession } from '../../core/browseSession'
 import type { BrowserTab } from '../../core/browserTab'
 import type { RemoveMemberResult } from '../../hooks/useShortcutFolders'
 import { useShortcutPositions } from '../../hooks/useShortcutPositions'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { faviconForUrl, shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
 import { computeViewportLunarSize } from '../../core/lunarSizing'
@@ -204,6 +206,7 @@ export function SemiLunarMenu({
   const isHome = mode === 'home'
   const isBrowsing = mode === 'browsing'
   const usesDedicatedChromeSurface = isChromeShell()
+  useFaviconRefresh()
   const [lunarViewport, setLunarViewport] = useState(() => ({
     width: typeof window === 'undefined' ? configuredLunarWidthPx : window.innerWidth,
     height: typeof window === 'undefined' ? configuredLunarHeightPx : window.innerHeight,
@@ -2052,7 +2055,7 @@ const handleFolderMemberClose = useCallback(
                   onBlur={hideTutorialDemoPreview}
                 >
                   <span className={styles.faviconShell}>
-                    <img src={demo.favicon} alt="" className={styles.favicon} draggable={false} />
+                    <img src={siteIconSource(demo.favicon, demo.url)} alt="" className={styles.favicon} draggable={false} />
                   </span>
                 </button>
               ))}
@@ -2102,7 +2105,9 @@ const members = memberIds
                 const tabIsActive = openTabId !== null && activeTabId === openTabId
                 const tab = resolveTabForDock(dockId)
                 const tabIsLoading = tab?.isLoading === true
-                const displayFavicon = tab?.favicon ?? item.favicon
+                const displayFavicon = tab
+                  ? siteIconSource(tab.favicon, tab.url, { isPrivate: tab.isPrivate })
+                  : siteIconSource(item.favicon, item.url)
                 const displayTitle = tab ? truncateTabTitle(tab.title) : item.label
                 const hoverTitle = tab?.title ?? item.label
 
@@ -2174,7 +2179,7 @@ const members = memberIds
                     }}
                   >
                     {mergeAnim.sourceShortcut.favicon ? (
-                      <img src={mergeAnim.sourceShortcut.favicon} alt="" draggable={false} />
+                      <img src={siteIconSource(mergeAnim.sourceShortcut.favicon, mergeAnim.sourceShortcut.url)} alt="" draggable={false} />
                     ) : (
                       mergeAnim.sourceShortcut.label[0]
                     )}
@@ -2189,7 +2194,7 @@ const members = memberIds
                     }}
                   >
                     {mergeAnim.targetShortcut.favicon ? (
-                      <img src={mergeAnim.targetShortcut.favicon} alt="" draggable={false} />
+                      <img src={siteIconSource(mergeAnim.targetShortcut.favicon, mergeAnim.targetShortcut.url)} alt="" draggable={false} />
                     ) : (
                       mergeAnim.targetShortcut.label[0]
                     )}

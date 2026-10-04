@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import {
   entryMatchesHistoryFilters,
   type BrowserSessionSnapshot,
@@ -69,6 +71,7 @@ export function HistoryPanel({
   onClose,
 }: HistoryPanelProps) {
   const { t, locale } = useLocale()
+  useFaviconRefresh()
   const [query, setQuery] = useState('')
   const [host, setHost] = useState('all')
   const [time, setTime] = useState<HistoryTimeFilter>('all')
@@ -194,7 +197,7 @@ export function HistoryPanel({
                   <div className={styles.closedList}>
                     {closedTabs.slice(0, 6).map((entry) => (
                       <button key={entry.id} type="button" className={styles.closedItem} onClick={() => onOpenClosedTab(entry)} title={entry.url}>
-                        {entry.favicon ? <img src={entry.favicon} alt="" /> : <span className={styles.faviconFallback}>{hostLabel(entry.url).slice(0, 1).toUpperCase()}</span>}
+                        {entry.favicon ? <img src={siteIconSource(entry.favicon, entry.url)} alt="" /> : <span className={styles.faviconFallback}>{hostLabel(entry.url).slice(0, 1).toUpperCase()}</span>}
                         <span><strong>{entry.title}</strong><small>{hostLabel(entry.url)} · {dateTimeFormatter.format(entry.closedAt)}</small></span>
                       </button>
                     ))}

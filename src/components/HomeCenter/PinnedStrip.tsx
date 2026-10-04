@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { createPortal } from 'react-dom'
 import type { ModuleSize } from '../../core/homeLayout'
 import type { BrowseSession } from '../../core/browseSession'
@@ -91,6 +93,7 @@ export function PinnedStrip({
 }: PinnedStripProps) {
   const { t, tf } = useLocale()
   const listRef = useRef<HTMLUListElement>(null)
+  useFaviconRefresh()
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
   const [editingShortcut, setEditingShortcut] = useState<Shortcut | null>(null)
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -394,7 +397,7 @@ export function PinnedStrip({
             aria-hidden="true"
           >
             {draggedShortcut.favicon ? (
-              <img src={draggedShortcut.favicon} alt="" draggable={false} />
+              <img src={siteIconSource(draggedShortcut.favicon, draggedShortcut.url)} alt="" draggable={false} />
             ) : (
               <span>{draggedShortcut.label.charAt(0)}</span>
             )}
@@ -482,7 +485,7 @@ export function PinnedStrip({
                     <span className={styles.iconWrap}>
                       {shortcut.favicon ? (
                         <img
-                          src={shortcut.favicon}
+                          src={siteIconSource(shortcut.favicon, shortcut.url)}
                           alt=""
                           className={styles.favicon}
                           draggable={false}

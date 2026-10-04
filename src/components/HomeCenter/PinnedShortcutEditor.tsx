@@ -1,4 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { createPortal } from 'react-dom'
 import type { EditPinnedShortcutResult } from '../../core/pinnedShortcuts'
 import type { Shortcut } from '../../core/types'
@@ -20,6 +22,7 @@ export function PinnedShortcutEditor({
   const { t } = useLocale()
   const panelRef = useRef<HTMLDivElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
+  useFaviconRefresh()
   const [title, setTitle] = useState(shortcut.label)
   const [url, setUrl] = useState(shortcut.url)
   const [error, setError] = useState<
@@ -72,7 +75,7 @@ export function PinnedShortcutEditor({
           <div className={styles.identity}>
             <span className={styles.icon} aria-hidden="true">
               {shortcut.favicon ? (
-                <img src={shortcut.favicon} alt="" draggable={false} />
+                <img src={siteIconSource(shortcut.favicon, shortcut.url)} alt="" draggable={false} />
               ) : (
                 shortcut.label.charAt(0).toUpperCase()
               )}

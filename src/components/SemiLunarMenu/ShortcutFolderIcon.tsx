@@ -1,4 +1,6 @@
 import type { Shortcut } from '../../core/types'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import styles from './ShortcutFolderIcon.module.css'
 
 interface ShortcutFolderIconProps {
@@ -9,6 +11,7 @@ interface ShortcutFolderIconProps {
 }
 
 export function ShortcutFolderIcon({ members, merging, dropHover, dropTarget }: ShortcutFolderIconProps) {
+  useFaviconRefresh()
   const preview = members.slice(0, 4)
 
   return (
@@ -26,7 +29,7 @@ export function ShortcutFolderIcon({ members, merging, dropHover, dropTarget }: 
         {preview.map((s) => (
           <span key={s.id} className={styles.mini}>
             {s.favicon ? (
-              <img src={s.favicon} alt="" draggable={false} />
+              <img src={siteIconSource(s.favicon, s.url)} alt="" draggable={false} />
             ) : (
               <span>{s.label[0]}</span>
             )}

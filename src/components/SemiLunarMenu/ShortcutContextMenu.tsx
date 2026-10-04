@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { createPortal } from 'react-dom'
 import { fitContextMenuPosition } from '../../core/contextMenuPosition'
 import type { Shortcut } from '../../core/types'
@@ -46,6 +48,7 @@ export function ShortcutContextMenu({
 }: ShortcutContextMenuProps) {
   const { t, tf } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
+  useFaviconRefresh()
   const [position, setPosition] = useState({ left: x, top: y })
   const [positioned, setPositioned] = useState(false)
   let host = ''
@@ -171,7 +174,7 @@ export function ShortcutContextMenu({
       <div className={styles.header}>
         <span className={styles.favicon} aria-hidden="true">
           {shortcut.favicon ? (
-            <img src={shortcut.favicon} alt="" draggable={false} />
+            <img src={siteIconSource(shortcut.favicon, shortcut.url)} alt="" draggable={false} />
           ) : (
             shortcut.label.charAt(0).toUpperCase()
           )}

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import type { BrowserTab } from '../../core/browserTab'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { useLocale } from '../../hooks/useLocale'
@@ -32,6 +34,7 @@ export function TabSearch({
   onClose,
 }: TabSearchProps) {
   const { t } = useLocale()
+  useFaviconRefresh()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const panelRef = useRef<HTMLElement>(null)
@@ -142,7 +145,7 @@ export function TabSearch({
                   onClick={() => selectTab(tab.shortcutId)}
                 >
                   <span className={styles.favicon}>
-                    {tab.favicon ? <img src={tab.favicon} alt="" /> : tab.title.slice(0, 1)}
+                    {tab.favicon ? <img src={siteIconSource(tab.favicon, tab.url, { isPrivate: tab.isPrivate })} alt="" /> : tab.title.slice(0, 1)}
                   </span>
                   <span className={styles.resultText}>
                     <strong>{tab.title}</strong>

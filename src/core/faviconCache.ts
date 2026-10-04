@@ -63,6 +63,13 @@ export function createFaviconCache(
 ) {
   let memory: Stored | null = null
   const running = new Map<string, Promise<string | null>>()
+  // Rows that show icons are told when one arrives, so they draw it.
+  let version = 0
+  const listeners = new Set<() => void>()
+  const notify = () => {
+    version += 1
+    for (const listener of [...listeners]) listener()
+  }
 
   const load = (): Stored => {
     if (memory) return memory
@@ -138,6 +145,7 @@ export function createFaviconCache(
       stored.icons[host] = { icon: small, at: now() }
       delete stored.missing[host]
       save()
+      notify()
       return true
     },
 
@@ -172,6 +180,22 @@ export function createFaviconCache(
     size(): number {
       return Object.keys(load().icons).length
     },
+
+    /** Changes whenever an icon is added or the cache was reloaded. */
+    version: () => version,
+
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+
+    /** Another window changed the stored cache: read it again. */
+    reload(): void {
+      memory = null
+      notify()
+    },
   }
   return api
 }
@@ -197,9 +221,22 @@ async function fetchWithNative(host: string): Promise<string | null> {
   return invoke<string | null>('favicon_fetch', { host })
 }
 
+/**
+ * The browser's local storage. A write also tells the other Nebula windows (the overlay and the browser
+ * windows show icons too), which read the cache again. Imported late so the cache needs no Tauri to be tested.
+ */
 function browserStorage(): FaviconStorage | null {
   try {
-    return typeof localStorage === 'undefined' ? null : localStorage
+    if (typeof localStorage === 'undefined') return null
+    return {
+      getItem: (key) => localStorage.getItem(key),
+      setItem: (key, value) => {
+        localStorage.setItem(key, value)
+        void import('./storageSync')
+          .then(({ persistLocalStorage }) => persistLocalStorage(key, value))
+          .catch(() => undefined)
+      },
+    }
   } catch {
     return null
   }
@@ -216,3 +253,7 @@ export const rememberFavicon = (url: string, icon: string, isPrivate: boolean): 
 
 /** The icon of the site, asking the native side once if there is none yet. */
 export const ensureFavicon = (url: string): Promise<string | null> => sharedCache().ensure(url)
+
+export const subscribeFavicons = (listener: () => void): (() => void) => sharedCache().subscribe(listener)
+export const faviconVersion = (): number => sharedCache().version()
+export const reloadFavicons = (): void => sharedCache().reload()

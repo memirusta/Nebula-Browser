@@ -174,3 +174,29 @@ test('the favicon command is registered, permitted and open to the shell only', 
   assert.match(native, /is_local_network_host/)
   assert.match(native, /MAX_ICON_BYTES/)
 })
+
+test('rows that show icons are told when one is kept, and when another window changed the cache', async () => {
+  const storage = fakeStorage()
+  const cache = createFaviconCache(storage, keep)
+  let told = 0
+  const stop = cache.subscribe(() => {
+    told += 1
+  })
+  const before = cache.version()
+  assert.equal(await cache.remember('https://a.example.com/', ICON, false), true)
+  assert.equal(told, 1)
+  assert.ok(cache.version() > before)
+  // Nothing new kept: nobody is told.
+  assert.equal(await cache.remember('https://a.example.com/', ICON, false), false)
+  assert.equal(told, 1)
+  // Another window kept an icon: read the stored cache again.
+  const other = createFaviconCache(storage, keep)
+  await other.remember('https://b.example.com/', ICON, false)
+  assert.equal(cache.lookup('https://b.example.com/'), null, 'not known until it is read again')
+  cache.reload()
+  assert.equal(told, 2)
+  assert.equal(cache.lookup('https://b.example.com/'), ICON)
+  stop()
+  cache.reload()
+  assert.equal(told, 2, 'a row that stopped listening is not told')
+})
