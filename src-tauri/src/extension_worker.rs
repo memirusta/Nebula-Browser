@@ -91,6 +91,9 @@ pub(crate) const CLICK_SCRIPT: &str = r#"(async () => {
 /// Readiness probe, also constant. A just-started worker is listed as a target
 /// before its global scope is complete: at that moment neither `chrome` nor even
 /// `setTimeout` exists, so waiting has to be polled from outside the worker.
+/// Who controls the browser's proxy, asked of an extension's own worker: what
+/// `chrome.proxy.settings.get` answers for `levelOfControl`. Read-only and fixed.
+pub(crate) const PROXY_CONTROL_SCRIPT: &str = "new Promise((resolve) => { try { chrome.proxy.settings.get({}, (details) => resolve(details ? details.levelOfControl : null)) } catch (error) { resolve(null) } })";
 pub(crate) const READY_SCRIPT: &str = "typeof chrome !== 'undefined' && typeof setTimeout === 'function' && !!(chrome.runtime && chrome.runtime.id)";
 
 /// A side-panel path from an extension is untrusted input. Keep only a plain
@@ -113,7 +116,7 @@ pub(crate) fn safe_package_path(path: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 mod imp {
-    use super::{safe_package_path, ActionClick, CLICK_SCRIPT, READY_SCRIPT};
+    use super::{safe_package_path, ActionClick, CLICK_SCRIPT, PROXY_CONTROL_SCRIPT, READY_SCRIPT};
     use serde_json::{json, Value};
     use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, Instant};
@@ -321,6 +324,34 @@ mod imp {
             .ok_or_else(|| "The extension worker refused the connection".to_string())
     }
 
+    /// Whether this extension controls the browser's proxy right now. `label` is a WebView
+    /// in the profile the extension is installed in. Starts the extension's worker if it
+    /// is not running; call it off the main thread.
+    pub(crate) fn proxy_control(
+        app: &tauri::AppHandle,
+        label: &str,
+        runtime_id: &str,
+    ) -> Result<bool, String> {
+        let session = attach_worker(app, label, runtime_id)?;
+        let evaluated = wait_ready(app, label, &session).and_then(|()| {
+            cdp(
+                app,
+                label,
+                Some(&session),
+                "Runtime.evaluate",
+                &json!({ "expression": PROXY_CONTROL_SCRIPT, "returnByValue": true, "awaitPromise": true }),
+            )
+        });
+        let _ = cdp(
+            app,
+            label,
+            None,
+            "Target.detachFromTarget",
+            &json!({ "sessionId": session }),
+        );
+        Ok(evaluated?["result"]["value"] == "controlled_by_this_extension")
+    }
+
     /// Emulate a click on the extension's toolbar icon. `label` is a WebView in
     /// the profile the extension is installed in; `runtime_id` is validated by
     /// the caller as a 32-character extension identifier.
@@ -388,7 +419,7 @@ mod imp {
 #[cfg(all(test, target_os = "windows", feature = "extension-native-smoke"))]
 pub(crate) use imp::ensure_worker;
 #[cfg(target_os = "windows")]
-pub(crate) use imp::{cdp, click_action, wait_for_condition};
+pub(crate) use imp::{cdp, click_action, proxy_control, wait_for_condition};
 
 #[cfg(test)]
 mod tests {
@@ -425,11 +456,15 @@ mod tests {
         // A `const`, with no template placeholders: no caller data can be
         // interpolated into what runs inside an extension worker.
         assert!(CLICK_SCRIPT.contains("chrome.action.onClicked"));
-        for constant in [CLICK_SCRIPT, READY_SCRIPT] {
+        for constant in [CLICK_SCRIPT, READY_SCRIPT, PROXY_CONTROL_SCRIPT] {
             assert!(!constant.contains("${") && !constant.contains('`'));
         }
         // Polled from Rust because a starting worker has no `setTimeout` yet.
         assert!(READY_SCRIPT.contains("typeof setTimeout"));
+        // The proxy question only reads: it never sets or clears anything.
+        assert!(PROXY_CONTROL_SCRIPT.contains("settings.get"));
+        assert!(!PROXY_CONTROL_SCRIPT.contains("settings.set"));
+        assert!(!PROXY_CONTROL_SCRIPT.contains("settings.clear"));
         assert!(!CLICK_SCRIPT.contains("${"));
         assert!(!CLICK_SCRIPT.contains("`"));
     }

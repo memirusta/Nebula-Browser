@@ -11,6 +11,8 @@ struct DiscoveryCatalog {
 pub(crate) struct DiscoveryExtension {
     pub id: String,
     pub store_id: String,
+    #[serde(default)]
+    pub name: String,
 }
 
 pub(crate) static DISCOVERY: LazyLock<Vec<DiscoveryExtension>> = LazyLock::new(|| {
@@ -25,6 +27,7 @@ pub(crate) static DISCOVERY: LazyLock<Vec<DiscoveryExtension>> = LazyLock::new(|
         catalog.entries.push(DiscoveryExtension {
             id,
             store_id: "p".repeat(32),
+            name: String::new(),
         });
     }
     let mut ids = std::collections::HashSet::new();

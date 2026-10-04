@@ -39,6 +39,7 @@ mod notification_broker;
 mod notification_history;
 mod password_reveal;
 mod password_webview;
+mod proxy_error_hint;
 #[cfg(target_os = "windows")]
 mod restore_diagnostics;
 #[cfg(target_os = "windows")]

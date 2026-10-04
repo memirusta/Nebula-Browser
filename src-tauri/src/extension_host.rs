@@ -311,6 +311,64 @@ fn has_permission(manifest: &Value, permission: &str) -> bool {
         .is_some_and(|permissions| permissions.iter().any(|value| value == permission))
 }
 
+/// Display names of the enabled extensions of the browsing profile that control the browser's
+/// proxy right now (a VPN extension that is connected). Almost always empty: only extensions
+/// that declare the `proxy` permission are looked at, and only then is anything asked of the
+/// browser. Blocks on DevTools calls; never call it from the main thread.
+#[cfg(target_os = "windows")]
+pub(crate) fn proxy_controlling_extensions(app: &tauri::AppHandle) -> Vec<String> {
+    let mut candidates = Vec::new();
+    for entry in crate::extension_discovery::DISCOVERY.iter() {
+        let Ok(root) = root_for(app, &entry.id) else {
+            continue;
+        };
+        if !root.join("installed-id").is_file()
+            || crate::extension_activation::is_legacy(
+                &root,
+                crate::extension_registry::package(&entry.id).is_ok(),
+            )
+        {
+            continue;
+        }
+        let Ok(target) = location(root, &entry.id) else {
+            continue;
+        };
+        let manifest = manifest_at(&target.folder).unwrap_or(Value::Null);
+        if !has_permission(&manifest, "proxy") {
+            continue;
+        }
+        let Ok(runtime_id) = std::fs::read_to_string(target.root.join("installed-id")) else {
+            continue;
+        };
+        let runtime_id = runtime_id.trim().to_string();
+        if !crate::extension_discovery::valid_store_id(&runtime_id) {
+            continue;
+        }
+        let name = if entry.name.is_empty() {
+            entry.id.clone()
+        } else {
+            entry.name.clone()
+        };
+        candidates.push((name, runtime_id));
+    }
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    let Ok(label) = crate::browser_profile::owner_label(app) else {
+        return Vec::new();
+    };
+    let Ok(enabled) = crate::extension_install::enumerate(app.clone(), label.clone()) else {
+        return Vec::new();
+    };
+    candidates
+        .into_iter()
+        .filter(|(_, id)| enabled.get(id) == Some(&true))
+        .take(4)
+        .filter(|(_, id)| crate::extension_worker::proxy_control(app, &label, id).unwrap_or(false))
+        .map(|(name, _)| name)
+        .collect()
+}
+
 fn runs_in_profile(manifest: &Value) -> bool {
     manifest["content_scripts"]
         .as_array()

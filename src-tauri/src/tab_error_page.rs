@@ -315,6 +315,27 @@ mod imp {
         }
     }
 
+    /// Failures a proxy that cannot be reached can look like: worth saying that an extension is
+    /// routing the connection.
+    fn may_come_from_a_proxy(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
+        matches!(
+            error_kind(status),
+            ErrorKind::TimedOut | ErrorKind::Network | ErrorKind::NameNotResolved
+        )
+    }
+
+    /// After a network-type error page was shown: name an extension that controls the proxy, if any.
+    fn offer_proxy_hint(
+        app: &AppHandle,
+        label: &str,
+        status: COREWEBVIEW2_WEB_ERROR_STATUS,
+        locale: &str,
+    ) {
+        if may_come_from_a_proxy(status) {
+            crate::proxy_error_hint::offer(app, label, locale);
+        }
+    }
+
     fn should_offer_compatibility_retry(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
         matches!(
             status,
@@ -713,6 +734,7 @@ mod imp {
                     let locale = current_ui_locale();
                     let error_url = build_error_page_url(&failed_url, error_status, &locale);
                     navigate_webview(&core, &error_url);
+                    offer_proxy_hint(&app_for_main, &label, error_status, &locale);
                     emit_compatibility_request(&app_for_main, &label, &failed_url, error_status);
                 });
             });
@@ -834,6 +856,12 @@ mod imp {
                         let locale = current_ui_locale();
                         let error_url = build_error_page_url(&failed_url, error_status, &locale);
                         navigate_webview(&webview, &error_url);
+                        offer_proxy_hint(
+                            &app_for_handler,
+                            &label_for_handler,
+                            error_status,
+                            &locale,
+                        );
                         emit_compatibility_request(
                             &app_for_handler,
                             &label_for_handler,
