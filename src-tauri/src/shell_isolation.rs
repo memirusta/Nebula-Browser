@@ -114,16 +114,52 @@ pub(crate) fn trusted_folder_in(local_data_dir: &Path) -> PathBuf {
     local_data_dir.join(TRUSTED_FOLDER)
 }
 
-/// A missing, unreadable or newer-schema marker means `Single`: the safe default that is
-/// also what every installation was before this existed.
-fn read_marker(local_data_dir: &Path) -> Marker {
-    let Ok(bytes) = std::fs::read(marker_path(local_data_dir)) else {
-        return Marker::default();
-    };
-    match serde_json::from_slice::<Marker>(&bytes) {
-        Ok(marker) if marker.schema == SCHEMA => marker,
-        _ => Marker::default(),
+/// What reading the marker showed. Only `Present` is evidence of what this installation is:
+/// every other outcome runs as `Single` (the safe default, and what every installation was
+/// before this existed) but must not be taken for "the user is in the single environment",
+/// because that is what decides whether the trusted folder (the shell's own data) is deleted.
+#[derive(Debug, PartialEq)]
+enum MarkerRead {
+    Present(Marker),
+    Absent,
+    /// There, but not a marker this build understands (damaged, or written by a newer app).
+    Unusable,
+    /// Could not be read at all, even after retries: a lock held by another program (a
+    /// scanner, a backup tool) or a failing disk. Says nothing about what the file holds.
+    Unreadable,
+}
+
+const MARKER_READ_TRIES: u32 = 5;
+const MARKER_READ_PAUSE: Duration = Duration::from_millis(200);
+
+fn read_marker_state(local_data_dir: &Path) -> MarkerRead {
+    read_marker_state_with(local_data_dir, MARKER_READ_TRIES, MARKER_READ_PAUSE)
+}
+
+fn read_marker_state_with(local_data_dir: &Path, tries: u32, pause: Duration) -> MarkerRead {
+    for attempt in 0..tries {
+        match std::fs::read(marker_path(local_data_dir)) {
+            Ok(bytes) => {
+                return match serde_json::from_slice::<Marker>(&bytes) {
+                    Ok(marker) if marker.schema == SCHEMA => MarkerRead::Present(marker),
+                    _ => MarkerRead::Unusable,
+                };
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return MarkerRead::Absent;
+            }
+            Err(_) if attempt + 1 < tries => std::thread::sleep(pause),
+            Err(_) => {}
+        }
     }
+    MarkerRead::Unreadable
+}
+
+/// The trusted folder goes when the shell is back in the single environment, or before a
+/// fresh switch into split. Only a marker that was really read can say the former: with a
+/// marker that is missing, damaged or locked, the folder may hold the only copy of the data.
+fn should_remove_trusted_folder(run_mode: Mode, fresh: bool, read: &MarkerRead) -> bool {
+    fresh || (run_mode == Mode::Single && matches!(read, MarkerRead::Present(_)))
 }
 
 fn write_marker(local_data_dir: &Path, marker: &Marker) -> Result<(), String> {
@@ -235,6 +271,10 @@ struct Run {
 static RUN: OnceLock<Run> = OnceLock::new();
 static MARKER: Mutex<Option<Marker>> = Mutex::new(None);
 static HYDRATED: AtomicBool = AtomicBool::new(false);
+/// The marker could not be read at startup. The file is left exactly as it is until the
+/// next start: writing the default over a marker that may say `split` would turn a
+/// passing read error into a lasting change.
+static MARKER_LEFT_ALONE: AtomicBool = AtomicBool::new(false);
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn run() -> Option<&'static Run> {
@@ -354,7 +394,15 @@ pub fn initialize(identifier: &str) {
 }
 
 fn decide(local: &Path) -> Run {
-    let mut plan = plan(read_marker(local));
+    let read = read_marker_state(local);
+    let mut plan = plan(match &read {
+        MarkerRead::Present(marker) => marker.clone(),
+        _ => Marker::default(),
+    });
+    if read == MarkerRead::Unreadable {
+        eprintln!("[shell-isolation] the marker could not be read; running as single and leaving it alone");
+        MARKER_LEFT_ALONE.store(true, Ordering::Release);
+    }
     let mut seed = None;
     if let Some(hydration) = &plan.hydration {
         match load_seed(local, hydration) {
@@ -381,8 +429,12 @@ fn decide(local: &Path) -> Run {
     // fresh for a switch into split, and removed whenever the shell is not in it.
     let trusted = trusted_folder_in(local);
     let fresh = plan.run_mode == Mode::Split && plan.hydration.is_some();
-    if (plan.run_mode == Mode::Single || fresh) && trusted.exists() {
-        remove_trusted_folder(trusted, fresh);
+    if trusted.exists() {
+        if should_remove_trusted_folder(plan.run_mode, fresh, &read) {
+            remove_trusted_folder(trusted, fresh);
+        } else if plan.run_mode == Mode::Single {
+            eprintln!("[shell-isolation] keeping the trusted folder: the marker is {read:?}");
+        }
     }
     *MARKER.lock().expect("marker lock") = Some(plan.marker.clone());
     Run {
@@ -452,6 +504,9 @@ fn load_seed(local: &Path, hydration: &Hydration) -> Result<String, String> {
 // ---- marker updates at runtime ------------------------------------------------------------
 
 fn update_marker(change: impl FnOnce(&mut Marker)) -> Result<Marker, String> {
+    if MARKER_LEFT_ALONE.load(Ordering::Acquire) {
+        return Err("the marker could not be read at startup; restart Nebula first".to_string());
+    }
     let local = run()
         .map(|run| run.local_data_dir.clone())
         .ok_or("shell isolation is not initialised")?;
@@ -1048,22 +1103,50 @@ mod tests {
     }
 
     #[test]
-    fn the_marker_round_trips_and_bad_files_mean_single() {
+    fn the_marker_round_trips_and_every_read_outcome_is_told_apart() {
         let dir = std::env::temp_dir().join(format!("nebula-isolation-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(read_marker(&dir), Marker::default());
+        let quick = |dir: &Path| read_marker_state_with(dir, 2, Duration::from_millis(1));
+        assert_eq!(quick(&dir), MarkerRead::Absent);
         let marker = pending(Mode::Split, 1);
         write_marker(&dir, &marker).unwrap();
-        assert_eq!(read_marker(&dir), marker);
+        assert_eq!(quick(&dir), MarkerRead::Present(marker));
         std::fs::write(marker_path(&dir), b"not json").unwrap();
-        assert_eq!(read_marker(&dir), Marker::default());
+        assert_eq!(quick(&dir), MarkerRead::Unusable);
         std::fs::write(marker_path(&dir), br#"{"schema":99,"mode":"split"}"#).unwrap();
         assert_eq!(
-            read_marker(&dir),
-            Marker::default(),
+            quick(&dir),
+            MarkerRead::Unusable,
             "a newer schema is not guessed at"
         );
+        // A path that exists but cannot be read as a file stands in for a file that is locked.
+        std::fs::remove_file(marker_path(&dir)).unwrap();
+        std::fs::create_dir_all(marker_path(&dir)).unwrap();
+        assert_eq!(quick(&dir), MarkerRead::Unreadable);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_trusted_folder_is_only_removed_on_the_word_of_a_marker_that_was_read() {
+        let present = MarkerRead::Present(Marker::default());
+        // Back in single, marker says so: privacy hygiene, remove.
+        assert!(should_remove_trusted_folder(Mode::Single, false, &present));
+        // A fresh switch into split starts from an empty folder whatever was there.
+        assert!(should_remove_trusted_folder(Mode::Split, true, &present));
+        // Committed split: the folder is the shell's data.
+        assert!(!should_remove_trusted_folder(Mode::Split, false, &present));
+        // Single only because the marker was missing, damaged or locked: the folder may hold
+        // the only copy of the user's data, so it stays.
+        for read in [
+            MarkerRead::Absent,
+            MarkerRead::Unusable,
+            MarkerRead::Unreadable,
+        ] {
+            assert!(
+                !should_remove_trusted_folder(Mode::Single, false, &read),
+                "{read:?}"
+            );
+        }
     }
 
     #[test]
