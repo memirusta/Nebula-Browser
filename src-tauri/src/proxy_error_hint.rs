@@ -9,6 +9,16 @@
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+/// When the hint is offered to the page again after the check: the page it belongs to may not exist yet.
+const PLACEMENT_PAUSES: [Duration; 6] = [
+    Duration::from_millis(100),
+    Duration::from_millis(300),
+    Duration::from_millis(600),
+    Duration::from_millis(1000),
+    Duration::from_millis(2000),
+    Duration::from_millis(4000),
+];
+
 /// How long the answer of the last check is reused.
 const ANSWER_LIFETIME: Duration = Duration::from_secs(20);
 
@@ -104,9 +114,18 @@ pub(crate) fn offer(app: &tauri::AppHandle, label: &str, locale: &str) {
         if names.is_empty() {
             return;
         }
+        eprintln!("[proxy-hint] {label}: {names:?} control the proxy; adding the hint");
         let script = hint_script(&hint_text(&locale, &join_names(&names)));
-        if let Some(webview) = tauri::Manager::get_webview(&app, &label) {
-            let _ = webview.eval(script);
+        // The error page is a navigation that has only been started when this runs: the script is
+        // offered again a few times (it adds the line once, and only to the error page itself).
+        for pause in PLACEMENT_PAUSES {
+            std::thread::sleep(pause);
+            match tauri::Manager::get_webview(&app, &label) {
+                Some(webview) => {
+                    let _ = webview.eval(script.clone());
+                }
+                None => return,
+            }
         }
     });
 }
