@@ -25,6 +25,8 @@ export interface DownloadItem {
   dangerReason: 'dangerous_file_type' | null
   requiresConfirmation: boolean
   startedAtMs: number
+  /** False for a tab that never showed a page: it was opened for the download and only that. */
+  tabShownPage?: boolean
 }
 
 export type DownloadAction =

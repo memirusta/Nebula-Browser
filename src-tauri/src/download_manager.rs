@@ -171,6 +171,9 @@ mod imp {
         danger_reason: Option<String>,
         requires_confirmation: bool,
         started_at_ms: u64,
+        /// Whether the tab the download came from has ever shown a page. A tab that only existed to start the
+        /// download (a link that opens in a new tab and answers with a file) never has.
+        tab_shown_page: bool,
     }
 
     struct DownloadControlDiagnostic {
@@ -335,6 +338,7 @@ mod imp {
                 requires_confirmation: danger_reason.is_some(),
                 danger_reason,
                 started_at_ms,
+                tab_shown_page: crate::tab_metadata::tab_has_shown_page(label),
             }
         }
     }
@@ -1206,11 +1210,12 @@ mod imp {
         OsStr::new(value).encode_wide().chain(Some(0)).collect()
     }
 
-    unsafe fn shell_open(file: &str, parameters: Option<&str>) -> Result<(), String> {
-        let verb = wide("open");
+    /// What ShellExecute answered: above 32 is success, anything else an error code.
+    unsafe fn shell_execute(verb: &str, file: &str, parameters: Option<&str>) -> isize {
+        let verb = wide(verb);
         let file = wide(file);
         let parameters = parameters.map(wide);
-        let result = ShellExecuteW(
+        ShellExecuteW(
             None,
             PCWSTR(verb.as_ptr()),
             PCWSTR(file.as_ptr()),
@@ -1219,11 +1224,45 @@ mod imp {
                 .map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
             PCWSTR::null(),
             SW_SHOWNORMAL,
-        );
-        if result.0 as isize <= 32 {
+        )
+        .0 as isize
+    }
+
+    unsafe fn shell_open(file: &str, parameters: Option<&str>) -> Result<(), String> {
+        if shell_execute("open", file, parameters) <= 32 {
             return Err("Windows could not open the download".to_string());
         }
         Ok(())
+    }
+
+    /// Whether a failed "open" can be answered with Windows' "Open with" dialog. Windows reports a missing or
+    /// broken program association in several ways (no association 31, incomplete 27, access denied 5 for a
+    /// handler that is gone, ...), so everything except "the file itself is gone" (2, 3) qualifies.
+    fn needs_open_with(code: isize) -> bool {
+        code <= 32 && !matches!(code, 2 | 3)
+    }
+
+    /// Opens a finished download with its program; when Windows cannot, with Windows' own "Open with" dialog
+    /// (which lists the recommended programs); and only when even that cannot be shown, in its folder.
+    unsafe fn open_download_file(path: &str) -> Result<(), String> {
+        let code = shell_execute("open", path, None);
+        if code > 32 {
+            return Ok(());
+        }
+        if needs_open_with(code) {
+            if shell_execute("openas", path, None) > 32 {
+                return Ok(());
+            }
+            let parameters = format!("shell32.dll,OpenAs_RunDLL {path}");
+            if shell_execute("open", "rundll32.exe", Some(&parameters)) > 32 {
+                return Ok(());
+            }
+        }
+        let parameters = format!("/select,\"{path}\"");
+        if shell_execute("open", "explorer.exe", Some(&parameters)) > 32 {
+            return Ok(());
+        }
+        Err("Windows could not open the download".to_string())
     }
 
     fn finished_download_path(id: &str) -> Option<String> {
@@ -1529,7 +1568,7 @@ mod imp {
                         }
                         unsafe {
                             if action == "open" {
-                                shell_open(&path, None)?;
+                                open_download_file(&path)?;
                             } else {
                                 let parameters = format!("/select,\"{path}\"");
                                 shell_open("explorer.exe", Some(&parameters))?;
@@ -1558,6 +1597,20 @@ mod imp {
         };
 
         #[test]
+        fn a_file_with_no_program_is_offered_the_open_with_dialog() {
+            use super::needs_open_with;
+            // ShellExecute's "no association" (31), "association incomplete" (27), access denied (5) and the
+            // DDE errors all leave the file intact and only need a program chosen.
+            for code in [0, 5, 27, 28, 29, 30, 31] {
+                assert!(needs_open_with(code), "{code}");
+            }
+            // A file that is gone (2, 3) and success (33 and above) are not that.
+            for code in [2, 3, 33, 42] {
+                assert!(!needs_open_with(code), "{code}");
+            }
+        }
+
+        #[test]
         fn download_open_requires_completed_signature_review_and_confirmation() {
             let id = "test-unconfirmed-download";
             let mut payload = DownloadPayload {
@@ -1576,6 +1629,7 @@ mod imp {
                 danger_reason: None,
                 requires_confirmation: false,
                 started_at_ms: 0,
+                tab_shown_page: true,
             };
 
             SIGNATURE_CHECKS.lock().unwrap().insert(id.to_string());
