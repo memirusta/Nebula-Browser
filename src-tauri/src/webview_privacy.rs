@@ -327,6 +327,7 @@ mod imp {
       else if (original !== null) element.setAttribute('style', original);
       element.removeAttribute('data-nebula-cookie-hidden');
       element.removeAttribute('data-nebula-cookie-style');
+      element.removeAttribute('data-nebula-cookie-reason');
     });
   };
 
@@ -406,8 +407,38 @@ mod imp {
     'preferences', 'settings'
   ]);
 
-  const consentWords =
-    /(çerez|cerez|cookie|consent|gizlilik|kişisel veri|kisisel veri|privacy|tracking|izleme)/i;
+  // Whole words only: "izleme" inside another word, or a side called "Cookie" in a menu, say nothing.
+  const consentWordSource =
+    '(?:^|[^a-zçğıöşü0-9])(?:çerez[a-zçğıöşü]*|cerez[a-zçğıöşü]*|cookies?|consent|kvkk|gizlilik|' +
+    'kişisel veri[a-zçğıöşü]*|kisisel veri[a-zçğıöşü]*|privacy|tracking|izleme)(?![a-zçğıöşü0-9])';
+  const consentWords = new RegExp(consentWordSource);
+  const consentWordsEverywhere = new RegExp(consentWordSource, 'g');
+  const lowerTr = (value) => (value || '').toLocaleLowerCase('tr-TR');
+
+  // A surface is a consent notice when it says so about itself (its name or label), when the words are
+  // in its heading (its first two lines), or when it is hardly about anything else. A big dialog
+  // of the site with one such word somewhere inside (a product option, a footer link) is not.
+  const speaksOfConsent = (element, text) => {
+    const lower = lowerTr(text);
+    const found = lower.match(consentWordsEverywhere);
+    if (!found) return false;
+
+    const name = lowerTr([
+      element.id,
+      typeof element.className === 'string' ? element.className : '',
+      element.getAttribute('aria-label')
+    ].join(' '));
+    if (consentWords.test(name)) return true;
+    const heading = lower
+      .split(String.fromCharCode(10))
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(' ')
+      .slice(0, 240);
+    if (consentWords.test(heading)) return true;
+    return found.length >= 3;
+  };
 
   const normalize = (value) => (value || '')
     .normalize('NFKC')
@@ -438,9 +469,11 @@ mod imp {
     }
   };
 
-  const hideElement = (element) => {
+  // The reason is kept on the element (data-nebula-cookie-reason) so a wrongly hidden dialog can be traced.
+  const hideElement = (element, reason) => {
     if (!(element instanceof HTMLElement)) return false;
     if (element.hasAttribute('data-nebula-cookie-hidden')) return false;
+    element.setAttribute('data-nebula-cookie-reason', reason || 'unknown');
 
     element.setAttribute(
       'data-nebula-cookie-style',
@@ -466,8 +499,9 @@ mod imp {
 
     if (isKnownRoot(element)) return true;
 
-    const text = element.innerText || element.textContent || '';
-    if (!consentWords.test(text) || text.length > 5000) return false;
+    // What is seen, not what is in hidden options and templates.
+    const text = element.innerText || '';
+    if (text.length > 2500 || !speaksOfConsent(element, text)) return false;
 
     const style = getComputedStyle(element);
     return (
@@ -680,7 +714,7 @@ mod imp {
 
       window.setTimeout(() => {
         if (document.contains(root) || root.isConnected) {
-          hideElement(root);
+          hideElement(root, 'after-reject');
           unlockPage();
         }
       }, 350);
@@ -709,8 +743,8 @@ mod imp {
           break;
         }
 
-        const text = current.innerText || current.textContent || '';
-        if (!consentWords.test(text) || text.length > 2500) {
+        const text = current.innerText || '';
+        if (text.length > 2500 || !speaksOfConsent(current, text)) {
           current = parentAcrossShadow(current);
           continue;
         }
@@ -733,7 +767,7 @@ mod imp {
           continue;
         }
 
-        if (hideElement(current)) {
+        if (hideElement(current, 'compact-notice')) {
           unlockPage();
           return true;
         }
@@ -751,7 +785,7 @@ mod imp {
     for (const selector of knownRoots) {
       for (const element of queryAll(selector)) {
         if (looksLikeConsentRoot(element)) {
-          changed = hideElement(element) || changed;
+          changed = hideElement(element, 'known-root') || changed;
         }
       }
     }
@@ -771,7 +805,7 @@ mod imp {
 
     for (const element of generic) {
       if (looksLikeConsentRoot(element)) {
-        changed = hideElement(element) || changed;
+        changed = hideElement(element, 'generic-root') || changed;
       }
     }
 
