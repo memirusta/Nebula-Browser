@@ -1349,6 +1349,9 @@ export function BrowserShell() {
       preserveStateWhenDisabled:
         viewMode ===
         'overlay',
+      savingAllowed:
+        activeTab?.isPrivate !==
+        true,
       activeTabId,
       activeUrl,
       entries:

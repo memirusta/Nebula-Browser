@@ -5,7 +5,10 @@ import {
   matchPasswordsForUrl,
   normalizePasswordOrigins,
   passwordEntryMatchesUrl,
+  accountForPasswordChange,
+  passwordOriginFromUrl,
 } from '../core/passwordMatch'
+import { settleSaveDraft } from '../core/passwordSaveSettle'
 import { PasswordStepFlowTracker } from '../core/passwordStepFlow'
 import type { SavedPassword } from '../core/passwordVault'
 import { upsertPasswordEntry } from '../core/passwordVault'
@@ -22,6 +25,11 @@ const DISMISS_FILL_MS = 5 * 60_000
 const STARTUP_DELAY_MS = 800
 
 export type PasswordBridgeMode = 'fill' | 'save'
+
+/** A dismissed fill offer is remembered per tab and site, not per address, so a page that changes its URL does not ask again. */
+function dismissKey(tabId: string, pageUrl: string): string {
+  return `${tabId}\0${passwordOriginFromUrl(pageUrl) ?? pageUrl}`
+}
 
 export interface PasswordBridgeOffer {
   mode: PasswordBridgeMode
@@ -40,6 +48,8 @@ export interface PasswordBridgeOffer {
 interface UsePasswordBridgeOptions {
   enabled: boolean
   preserveStateWhenDisabled?: boolean
+  /** False in a private tab: nothing typed there is offered for saving. */
+  savingAllowed?: boolean
   activeTabId: string | null
   activeUrl: string | null
   entries: SavedPassword[]
@@ -54,6 +64,7 @@ function isHttpUrl(url: string | null): url is string {
 export function usePasswordBridge({
   enabled,
   preserveStateWhenDisabled = false,
+  savingAllowed = true,
   activeTabId,
   activeUrl,
   entries,
@@ -67,14 +78,23 @@ export function usePasswordBridge({
   const tickInFlightRef = useRef(false)
   const pollDelayRef = useRef(IDLE_POLL_MS)
   const saveDraftRef = useRef<{
+    shortcutId: string
     pageUrl: string
     vaultUrl: string
     username: string
     password: string
     usernameOrigins?: string[]
     passwordOrigins?: string[]
+    stagedAt: number
+    /** Polls in a row that found no sign-in form on the page. */
+    formGoneTicks: number
   } | null>(null)
+  const savingAllowedRef = useRef(savingAllowed)
+  // The page document a saved login was filled into, per tab: a reload is a new document and is offered again.
+  const filledDocRef = useRef<Map<string, string>>(new Map())
+  const docIdRef = useRef<string | null>(null)
   const filledUsernameRef = useRef<{
+    docId: string | null
     tabId: string
     entryId: string
     pageUrl: string
@@ -88,6 +108,17 @@ export function usePasswordBridge({
   useEffect(() => {
     offerRef.current = offer
   }, [offer])
+
+  useEffect(() => {
+    savingAllowedRef.current = savingAllowed
+    if (!savingAllowed) {
+      saveDraftRef.current = null
+      if (offerRef.current?.mode === 'save') {
+        offerRef.current = null
+        setOffer(null)
+      }
+    }
+  }, [savingAllowed])
 
   useEffect(() => {
     entriesRef.current = entries
@@ -167,6 +198,7 @@ export function usePasswordBridge({
       passwordOrigins?: string[]
     },
   ): boolean => {
+    if (!savingAllowedRef.current) return false
     const normalizedUser = username.trim().toLowerCase()
     const usernameOrigins = normalizePasswordOrigins(observed?.usernameOrigins)
     const passwordOrigins = normalizePasswordOrigins(observed?.passwordOrigins)
@@ -223,26 +255,17 @@ export function usePasswordBridge({
     }
 
     saveDraftRef.current = {
-      pageUrl,
-      vaultUrl,
-      username,
-      password,
-      usernameOrigins: mergedUsernameOrigins,
-      passwordOrigins: mergedPasswordOrigins,
-    }
-    const saveOffer: PasswordBridgeOffer = {
-      mode: 'save',
       shortcutId,
       pageUrl,
       vaultUrl,
       username,
       password,
-      label: existing?.label || labelFromUrl(pageUrl),
       usernameOrigins: mergedUsernameOrigins,
       passwordOrigins: mergedPasswordOrigins,
+      stagedAt: Date.now(),
+      formGoneTicks: 0,
     }
-    offerRef.current = saveOffer
-    setOffer(saveOffer)
+    // The offer itself waits for the next poll: it is shown once the sign-in form is gone.
     return true
   }, [onVaultChange])
 
@@ -255,7 +278,7 @@ export function usePasswordBridge({
   const dismissOffer = useCallback(() => {
     const current = offerRef.current
     if (current?.mode === 'fill' && current.pageUrl) {
-      dismissedFillRef.current.set(current.pageUrl, Date.now())
+      dismissedFillRef.current.set(dismissKey(current.shortcutId, current.pageUrl), Date.now())
     }
     clearOffer(current?.shortcutId)
   }, [clearOffer])
@@ -281,6 +304,7 @@ export function usePasswordBridge({
       // Keep that exact choice for the next password step even if the provider
       // has a decoy/hidden password input and the fill script reports "both".
       filledUsernameRef.current = {
+        docId: docIdRef.current,
         tabId: shortcutId,
         entryId: entry.id,
         pageUrl,
@@ -292,6 +316,7 @@ export function usePasswordBridge({
       // providers keep the same URL when they swap the username step for the
       // password step. Suppress only the repeated username-stage offer.
       filledUsernameRef.current = {
+        docId: docIdRef.current,
         tabId: shortcutId,
         entryId: entry.id,
         pageUrl,
@@ -299,8 +324,11 @@ export function usePasswordBridge({
         at: Date.now(),
       }
     } else {
+      // Filled: not offered again on this document, but a reload brings the offer back. Only dismissing the
+      // offer silences it for a while.
       filledUsernameRef.current = null
-      dismissedFillRef.current.set(pageUrl, Date.now())
+      if (docIdRef.current) filledDocRef.current.set(shortcutId, docIdRef.current)
+      else dismissedFillRef.current.set(dismissKey(shortcutId, pageUrl), Date.now())
     }
     clearOffer(shortcutId)
     return true
@@ -332,7 +360,6 @@ export function usePasswordBridge({
   )
 
   useEffect(() => {
-    dismissedFillRef.current.clear()
     handledPendingRef.current.clear()
     saveDraftRef.current = null
     filledUsernameRef.current = null
@@ -342,7 +369,6 @@ export function usePasswordBridge({
   }, [activeTabId])
 
   useEffect(() => {
-    dismissedFillRef.current.clear()
     handledPendingRef.current.clear()
     pollDelayRef.current = IDLE_POLL_MS
 
@@ -386,41 +412,31 @@ export function usePasswordBridge({
 
         let nextOffer = offerRef.current
 
-        if (!nextOffer && saveDraftRef.current) {
-          const draft = saveDraftRef.current
-          nextOffer = {
-            mode: 'save',
-            shortcutId: tabId,
-            pageUrl: draft.pageUrl,
-            vaultUrl: draft.vaultUrl,
-            username: draft.username,
-            password: draft.password,
-            label: labelFromUrl(draft.pageUrl),
-            usernameOrigins: draft.usernameOrigins,
-            passwordOrigins: draft.passwordOrigins,
-          }
-        }
-
         const poll = await tickPasswordBridge(tabId)
         if (cancelled || !poll) {
           pollDelayRef.current = IDLE_POLL_MS
           return
         }
-        pollDelayRef.current = poll.hasPasswordField || poll.hasUsernameField || poll.hasForm || nextOffer || poll.pending
+        pollDelayRef.current = poll.hasPasswordField || poll.hasUsernameField || poll.hasForm || nextOffer || poll.pending || saveDraftRef.current
           ? ACTIVE_POLL_MS
           : IDLE_POLL_MS
 
         const pageUrl = poll.href && isHttpUrl(poll.href) ? poll.href : tabUrl
+        docIdRef.current = poll.docId ?? null
 
-        if (poll.pending?.username && poll.pending.password) {
-          const pendingKey = `${pageUrl}\0${poll.pending.username}\0${poll.pending.t}`
+        // A password change has no account field: it belongs to the site's one saved account.
+        const pendingUsername = poll.pending?.password
+          ? poll.pending.username || accountForPasswordChange(entriesRef.current, poll.pending.url || pageUrl)
+          : null
+        if (poll.pending && pendingUsername) {
+          const pendingKey = `${pageUrl}\0${pendingUsername}\0${poll.pending.t}`
           if (!handledPendingRef.current.has(pendingKey)) {
             handledPendingRef.current.add(pendingKey)
             if (
               stageSaveCandidate(
                 tabId,
                 pageUrl,
-                poll.pending.username,
+                pendingUsername,
                 poll.pending.password,
                 {
                   usernameOrigins: [pageUrl],
@@ -433,12 +449,43 @@ export function usePasswordBridge({
           }
         }
 
+        // A submitted login becomes a save offer once the sign-in form has stayed away (the site accepted the
+        // login). A form that is still there after the settle time means the login failed: nothing is offered.
+        const draft = saveDraftRef.current
+        if (draft && !offerRef.current) {
+          const settled = settleSaveDraft(
+            draft,
+            poll.hasAnyPasswordField ?? poll.hasPasswordField ?? false,
+            Date.now(),
+          )
+          draft.formGoneTicks = settled.formGoneTicks
+          if (settled.action === 'drop') saveDraftRef.current = null
+          if (settled.action !== 'show') return
+          const saveOffer: PasswordBridgeOffer = {
+            mode: 'save',
+            shortcutId: draft.shortcutId,
+            pageUrl: draft.pageUrl,
+            vaultUrl: draft.vaultUrl,
+            username: draft.username,
+            password: draft.password,
+            label: labelFromUrl(draft.pageUrl),
+            usernameOrigins: draft.usernameOrigins,
+            passwordOrigins: draft.passwordOrigins,
+          }
+          offerRef.current = saveOffer
+          setOffer(saveOffer)
+          return
+        }
+
+        const dismissKeyForPage = dismissKey(tabId, pageUrl)
         if (!poll.hasPasswordField && !poll.hasUsernameField) {
           if (nextOffer?.mode === 'fill') clearOffer(tabId)
           return
         }
 
-        const dismissedAt = dismissedFillRef.current.get(pageUrl)
+        if (poll.docId && filledDocRef.current.get(tabId) === poll.docId) return
+
+        const dismissedAt = dismissedFillRef.current.get(dismissKeyForPage)
         if (dismissedAt && Date.now() - dismissedAt < DISMISS_FILL_MS) return
 
         const recentUsernameFill = filledUsernameRef.current
@@ -447,6 +494,7 @@ export function usePasswordBridge({
           !poll.hasPasswordField &&
           recentUsernameFill?.tabId === tabId &&
           recentUsernameFill.pageUrl === pageUrl &&
+          recentUsernameFill.docId === (poll.docId ?? null) &&
           Date.now() - recentUsernameFill.at < DISMISS_FILL_MS
         ) {
           return

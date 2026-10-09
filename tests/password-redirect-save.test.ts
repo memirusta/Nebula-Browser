@@ -103,7 +103,10 @@ test('split login username step can surface and fill a saved account before the 
   )
 
   assert.match(bridgeScript, /hasUsernameField/)
-  assert.match(bridgeScript, /loginfmt/)
+  assert.match(
+    readFileSync(new URL('../src/core/passwordFieldDetection.ts', import.meta.url), 'utf8'),
+    /loginfmt/,
+  )
   assert.match(bridgeScript, /hasCredentialAction/)
   assert.match(bridgeScript, /return 'username'/)
   assert.match(bridge, /poll\.hasPasswordField && !poll\.hasUsernameField/)

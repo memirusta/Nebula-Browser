@@ -1,6 +1,8 @@
 /** Injected into site tab webviews for credential field detection and filling. */
 
-export const PASSWORD_HOOK_VERSION = 8
+import { PASSWORD_FIELD_DETECTION_SOURCE } from './passwordFieldDetection.ts'
+
+export const PASSWORD_HOOK_VERSION = 10
 export const PASSWORD_BRIDGE_NEEDS_BOOTSTRAP = '__nebula_password_bridge_needs_bootstrap__'
 
 export type PasswordFillTarget = 'username' | 'password' | 'both'
@@ -15,7 +17,11 @@ export interface PasswordBridgePollResult {
   } | null
   hasForm?: boolean
   hasPasswordField?: boolean
+  /** Any visible password field, including new-password ones (a sign-up or password-change form). */
+  hasAnyPasswordField?: boolean
   hasUsernameField?: boolean
+  /** Changes with every page load: a reload of the same address is a new document. */
+  docId?: string
   href?: string
   error?: string
 }
@@ -25,69 +31,9 @@ export function buildPasswordBridgeTickScript(): string {
 (function() {
   var HOOK_V = ${PASSWORD_HOOK_VERSION};
   var pendingCreds = null;
+  var DOC_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-  function isVisible(el) {
-    try {
-      if (!el || !el.isConnected || el.disabled || el.readOnly) return false;
-      if ((el.type || '').toLowerCase() === 'hidden') return false;
-      var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-      if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse')) return false;
-      var rect = el.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function isPasswordInput(el) {
-    if (!el || el.tagName !== 'INPUT') return false;
-    var type = (el.type || '').toLowerCase();
-    if (type === 'password') return true;
-    var ac = (el.getAttribute('autocomplete') || '').toLowerCase();
-    return ac === 'current-password' || ac === 'new-password';
-  }
-
-  function usernameScore(el) {
-    if (!el || el.tagName !== 'INPUT' || !isVisible(el) || isPasswordInput(el)) return -1;
-    var type = (el.type || '').toLowerCase();
-    if (type === 'hidden' || type === 'checkbox' || type === 'radio' || type === 'submit' || type === 'button') return -1;
-    var ac = (el.getAttribute('autocomplete') || '').toLowerCase();
-    var name = (el.getAttribute('name') || '').toLowerCase();
-    var id = (el.getAttribute('id') || '').toLowerCase();
-    var aria = (el.getAttribute('aria-label') || '').toLowerCase();
-    var haystack = name + ' ' + id + ' ' + aria;
-    if (ac === 'username') return 100;
-    if (ac === 'email') return 98;
-    if (type === 'email') return 95;
-    if (name === 'loginfmt' || id === 'loginfmt') return 94;
-    if (haystack.indexOf('email') >= 0) return 90;
-    if (haystack.indexOf('username') >= 0 || haystack.indexOf('user-name') >= 0) return 88;
-    if (haystack.indexOf('login') >= 0 || haystack.indexOf('signin') >= 0 || haystack.indexOf('sign-in') >= 0) return 84;
-    if (type === 'tel' && (haystack.indexOf('phone') >= 0 || haystack.indexOf('mobile') >= 0)) return 80;
-    return -1;
-  }
-
-  function findUsernameInput(scope) {
-    var inputs = scope || document.querySelectorAll('input');
-    var best = null;
-    var bestScore = -1;
-    for (var i = 0; i < inputs.length; i++) {
-      var score = usernameScore(inputs[i]);
-      if (score > bestScore) {
-        best = inputs[i];
-        bestScore = score;
-      }
-    }
-    return bestScore >= 80 ? best : null;
-  }
-
-  function findPasswordInput() {
-    var inputs = document.querySelectorAll('input');
-    for (var i = 0; i < inputs.length; i++) {
-      if (isPasswordInput(inputs[i]) && isVisible(inputs[i])) return inputs[i];
-    }
-    return null;
-  }
+${PASSWORD_FIELD_DETECTION_SOURCE}
 
   function hasCredentialAction() {
     var controls = document.querySelectorAll('button, input[type="submit"], [role="button"]');
@@ -111,39 +57,21 @@ export function buildPasswordBridgeTickScript(): string {
   function findLoginFields() {
     var password = findPasswordInput();
     if (!password) return null;
-
-    var form = password.closest && password.closest('form');
-    var scope = form ? form.querySelectorAll('input') : document.querySelectorAll('input');
-    var username = findUsernameInput(scope);
-
-    // Conservative fallback for old/basic forms with no useful autocomplete,
-    // name or id metadata: accept only one visible text-like field before the
-    // password, rather than grabbing an arbitrary text input.
-    if (!username && form) {
-      var candidates = [];
-      for (var i = 0; i < scope.length; i++) {
-        var input = scope[i];
-        if (!input || input === password || !isVisible(input) || isPasswordInput(input)) continue;
-        var type = (input.type || '').toLowerCase();
-        if (type !== 'text' && type !== 'email' && type !== 'tel') continue;
-        if (input.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING) {
-          candidates.push(input);
-        }
-      }
-      if (candidates.length === 1) username = candidates[0];
-    }
-
+    var username = findUsernameFor(password);
     if (!username) return null;
     return { username: username, password: password };
   }
 
   function capturePending(reason, event) {
     if (event && event.isTrusted === false) return;
-    var fields = findLoginFields();
-    if (!fields) return;
-    var user = String(fields.username.value || '').trim();
-    var pass = String(fields.password.value || '');
-    if (!user || !pass) return;
+    var password = findPasswordToSave();
+    if (!password) return;
+    var pass = String(password.value || '');
+    if (!pass) return;
+    var usernameField = findUsernameFor(password);
+    var user = usernameField ? String(usernameField.value || '').trim() : '';
+    // A password change has no account field of its own; the shell then uses the one saved account of the site.
+    if (!user && !isPasswordChangeForm()) return;
     pendingCreds = {
       type: reason,
       username: user,
@@ -176,7 +104,10 @@ export function buildPasswordBridgeTickScript(): string {
       var pending = pendingCreds;
       pendingCreds = null;
       var hasPasswordField = !!findPasswordInput();
-      var hasUsernameField = !!findUsernameInput() && (hasPasswordField || hasCredentialAction());
+      // A sign-up or password-change page (only new-password fields) is not a login: no saved account is offered.
+      var hasAnyPasswordField = visiblePasswordInputs().length > 0;
+      var onlyNewPasswords = hasAnyPasswordField && !hasPasswordField;
+      var hasUsernameField = !!findUsernameInput() && (hasPasswordField || (hasCredentialAction() && !onlyNewPasswords));
       var hasForm = !!findLoginFields();
       var href = location.href || '';
       if (href.indexOf('http') !== 0) {
@@ -192,7 +123,9 @@ export function buildPasswordBridgeTickScript(): string {
         pending: pending,
         hasForm: hasForm,
         hasPasswordField: hasPasswordField,
+        hasAnyPasswordField: hasAnyPasswordField,
         hasUsernameField: hasUsernameField,
+        docId: DOC_ID,
         href: href
       });
     } catch (error) {
@@ -273,67 +206,7 @@ export function buildPasswordFillScript(
     }
   }
 
-  function isVisible(el) {
-    try {
-      if (!el || !el.isConnected || el.disabled || el.readOnly) return false;
-      if ((el.type || '').toLowerCase() === 'hidden') return false;
-      var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-      if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse')) return false;
-      var rect = el.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function isPasswordInput(el) {
-    if (!el || el.tagName !== 'INPUT') return false;
-    var type = (el.type || '').toLowerCase();
-    var ac = (el.getAttribute('autocomplete') || '').toLowerCase();
-    return type === 'password' || ac === 'current-password' || ac === 'new-password';
-  }
-
-  function usernameScore(el) {
-    if (!el || el.tagName !== 'INPUT' || !isVisible(el) || isPasswordInput(el)) return -1;
-    var type = (el.type || '').toLowerCase();
-    if (type === 'hidden' || type === 'checkbox' || type === 'radio' || type === 'submit' || type === 'button') return -1;
-    var ac = (el.getAttribute('autocomplete') || '').toLowerCase();
-    var name = (el.getAttribute('name') || '').toLowerCase();
-    var id = (el.getAttribute('id') || '').toLowerCase();
-    var aria = (el.getAttribute('aria-label') || '').toLowerCase();
-    var haystack = name + ' ' + id + ' ' + aria;
-    if (ac === 'username') return 100;
-    if (ac === 'email') return 98;
-    if (type === 'email') return 95;
-    if (name === 'loginfmt' || id === 'loginfmt') return 94;
-    if (haystack.indexOf('email') >= 0) return 90;
-    if (haystack.indexOf('username') >= 0 || haystack.indexOf('user-name') >= 0) return 88;
-    if (haystack.indexOf('login') >= 0 || haystack.indexOf('signin') >= 0 || haystack.indexOf('sign-in') >= 0) return 84;
-    if (type === 'tel' && (haystack.indexOf('phone') >= 0 || haystack.indexOf('mobile') >= 0)) return 80;
-    return -1;
-  }
-
-  function findUsernameInput() {
-    var inputs = document.querySelectorAll('input');
-    var best = null;
-    var bestScore = -1;
-    for (var i = 0; i < inputs.length; i++) {
-      var score = usernameScore(inputs[i]);
-      if (score > bestScore) {
-        best = inputs[i];
-        bestScore = score;
-      }
-    }
-    return bestScore >= 80 ? best : null;
-  }
-
-  function findPasswordInput() {
-    var inputs = document.querySelectorAll('input');
-    for (var i = 0; i < inputs.length; i++) {
-      if (isPasswordInput(inputs[i]) && isVisible(inputs[i])) return inputs[i];
-    }
-    return null;
-  }
+${PASSWORD_FIELD_DETECTION_SOURCE}
 
   try {
     if (fillTarget === 'username') {
@@ -352,8 +225,10 @@ export function buildPasswordFillScript(
       return 'password';
     }
 
-    var usernameEl = findUsernameInput();
     var passwordEl = findPasswordInput();
+    // A sign-up or password-change page (only new-password fields) is not a login: nothing is filled.
+    if (!passwordEl && visiblePasswordInputs().length > 0) return false;
+    var usernameEl = passwordEl ? findUsernameFor(passwordEl) : findUsernameInput();
     if (!usernameEl && !passwordEl) return false;
 
     if (usernameEl) {

@@ -137,6 +137,20 @@ export function findExistingPassword(
   )
 }
 
+/**
+ * The account a password change belongs to when the page has no account field: the site's one saved account.
+ * With several saved accounts there is no way to tell which one changed, so nothing is offered.
+ */
+export function accountForPasswordChange(
+  entries: readonly PasswordMatchEntry[],
+  pageUrl: string,
+): string | null {
+  const usernames = new Set(
+    matchPasswordsForUrl(pageUrl, [...entries], 'password').map((entry) => entry.username),
+  )
+  return usernames.size === 1 ? [...usernames][0] : null
+}
+
 export function labelFromUrl(url: string): string {
   const hostname = hostnameFromUrl(url)
   if (hostname && MICROSOFT_LOGIN_HOSTS.has(hostname)) return 'Microsoft'
