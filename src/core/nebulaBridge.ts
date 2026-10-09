@@ -28,6 +28,7 @@ export type ChromeShellAction =
   | { type: 'toggle-notification-panel' }
   | { type: 'toggle-history-panel' }
   | { type: 'go-back' }
+  | { type: 'go-forward' }
   | { type: 'go-home' }
   | { type: 'toggle-download-panel' }
   | { type: 'close-download-panel' }
@@ -99,6 +100,7 @@ const VIEW_MODE_EVENT = 'nebula-view-mode'
 const DOWNLOAD_UI_STATE_EVENT = 'nebula-download-ui-state'
 const TOOLBAR_UI_STATE_EVENT = 'nebula-toolbar-ui-state'
 const ZOOM_INDICATOR_EVENT = 'nebula-zoom-indicator'
+const TAB_SPAWNED_EVENT = 'nebula-tab-spawned'
 const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
 const BROWSER_SHORTCUT_EVENT = 'nebula-browser-shortcut'
@@ -249,6 +251,24 @@ export function listenZoomIndicator(
 
   return listen<{ percent: number }>(scoped(ZOOM_INDICATOR_EVENT), (event) => {
     handler(event.payload.percent)
+  })
+}
+
+/** A page opened another tab (a link with a new target, window.open): the chrome shows where it went. */
+export async function emitTabSpawned(shortcutId: string): Promise<void> {
+  if (!isTauri) return
+  await emit(scoped(TAB_SPAWNED_EVENT), { shortcutId })
+}
+
+export function listenTabSpawned(
+  handler: (shortcutId: string) => void,
+): Promise<() => void> {
+  if (!isTauri) {
+    return Promise.resolve(() => {})
+  }
+
+  return listen<{ shortcutId: string }>(scoped(TAB_SPAWNED_EVENT), (event) => {
+    handler(event.payload.shortcutId)
   })
 }
 

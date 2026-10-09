@@ -10,12 +10,16 @@ export interface HostRect {
   width: number
   height: number
   visible: boolean
+  /** The scale the webview draws its page at (0 when it could not be read). */
+  rasterScale?: number
 }
 
 export interface LayoutAudit {
   clientWidth: number
   clientHeight: number
   minimized: boolean
+  /** The window's DPI as Windows has it, 96 = 100% (0 when it could not be read). */
+  windowDpi?: number
   hosts: HostRect[]
 }
 
@@ -37,9 +41,11 @@ export interface Rectangle {
 
 export interface LayoutFault {
   label: string
-  reason: 'missing' | 'hidden' | 'offset-or-size'
+  reason: 'missing' | 'hidden' | 'offset-or-size' | 'scale'
   expected: string
   actual: Rectangle | null
+  /** For a scale fault: the scale the webview has. */
+  seen?: number
   /** The rectangle that puts it right: the position and width it must have, the height it already has when that is valid. */
   fix: Rectangle
 }
@@ -103,6 +109,19 @@ export function findLayoutFaults(
     faults.push({ label: chrome.label, reason: 'offset-or-size', expected: `0,0 ${width}xN (N 1..${height})`, actual: rect(chrome), fix: overlayFix(chrome.height) })
   }
 
+  // A webview that draws at another scale than its window (a monitor switched off, a lid closed, the
+  // window moved to a monitor with another scale) keeps the right rectangle but shows the page at the
+  // wrong size, so only the scale tells. Hidden webviews are not judged: they get theirs when shown.
+  const dpi = audit.windowDpi ?? 0
+  if (dpi > 0) {
+    const scale = dpi / 96
+    for (const host of audit.hosts) {
+      const raster = host.rasterScale ?? 0
+      if (!host.visible || raster <= 0 || Math.abs(raster - scale) <= 0.01) continue
+      faults.push({ label: host.label, reason: 'scale', expected: `scale ${scale}`, actual: rect(host), fix: rect(host), seen: raster })
+    }
+  }
+
   const main = find(expectation.mainLabel)
   if (main && (
     !near(main.x, 0, tolerance) || !near(main.y, 0, tolerance) ||
@@ -128,7 +147,7 @@ export interface LayoutAuditorOptions {
 }
 
 const fingerprint = (faults: LayoutFault[]) =>
-  JSON.stringify(faults.map((fault) => [fault.label, fault.reason, fault.actual]))
+  JSON.stringify(faults.map((fault) => [fault.label, fault.reason, fault.actual, fault.seen ?? null]))
 
 /**
  * Looks every `intervalMs`. A difference counts when it is the SAME one `confirmations` audits in a

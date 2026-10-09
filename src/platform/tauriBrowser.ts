@@ -478,6 +478,8 @@ interface NativeTabSnapshotPayload {
   url: string
   title: string
   favicon?: string | null
+  canGoBack?: boolean
+  canGoForward?: boolean
 }
 
 export interface TabWebviewSnapshot {
@@ -485,6 +487,8 @@ export interface TabWebviewSnapshot {
   url: string
   title: string | null
   favicon: string | null
+  /** WebView2's own answer; absent from an older host. */
+  canGoForward?: boolean
 }
 
 interface NativeTabLoadingPayload {
@@ -559,6 +563,7 @@ export function listenTabWebviewSnapshots(
         url: payload.url,
         title: payload.title.trim() || null,
         favicon: normalizePageFavicon(payload.favicon),
+        canGoForward: payload.canGoForward,
       })
     },
   )
@@ -1606,11 +1611,15 @@ export function initWindowRestoreRepair(): (() => void) {
         faults,
       })
       requestBrowsingSurfaceRepair('layout-audit')
+      // A webview that draws at another scale than its window is not repaired by moving it.
+      if (faults.some((fault) => fault.reason === 'scale')) {
+        await invoke('webview_resync_scale', { windowLabel: currentBrowserWindowLabel() }).catch(() => undefined)
+      }
       // The overlay positions itself from its own cached bounds, which say "unchanged": put it where
       // Windows should have it, from the audit, not from that cache.
       const chromeLabel = currentChromeWebviewLabel()
       for (const fault of faults) {
-        if (fault.label !== chromeLabel || fault.reason === 'missing') continue
+        if (fault.label !== chromeLabel || fault.reason === 'missing' || fault.reason === 'scale') continue
         await invoke('webview_set_chrome_bounds', {
           windowLabel: currentBrowserWindowLabel(),
           x: fault.fix.x,

@@ -23,6 +23,7 @@ import {
   listenTabCatalog,
   listenTabSearchRequests,
   listenViewMode,
+  listenTabSpawned,
   listenZoomIndicator,
   listenSiteInfoState,
   type DownloadUiStatePayload,
@@ -43,6 +44,7 @@ import {
 } from './core/sensitiveFeatureUsage'
 import { computeAdaptiveLunarSize } from './core/lunarSizing'
 import { chromeOverlayMinimumHeight } from './core/chromeOverlayLayout'
+import { tabCanGoForward } from './core/tabNavigation'
 import { useBrowseSessions } from './hooks/useBrowseSessions'
 import { useBrowserShortcutBindings } from './hooks/useBrowserShortcutBindings'
 import { useNebulaSettings } from './hooks/useNebulaSettings'
@@ -50,9 +52,18 @@ import { useLocale } from './hooks/useLocale'
 import { usePinnedShortcuts } from './hooks/usePinnedShortcuts'
 import { useShortcutFolders } from './hooks/useShortcutFolders'
 import { useShortcutPreferences } from './hooks/useShortcutPreferences'
-import { setChromeOverlayMinimumLogicalHeight } from './platform/tauriChromeWebview'
+import { setChromeBubbleRects, setChromeOverlayMinimumLogicalHeight } from './platform/tauriChromeWebview'
 import { hostHasSiteException, siteCompatibilityTarget } from './core/siteCompatibility'
 import './styles/global.css'
+
+/** How long the camera/microphone bubble stays in full when something starts being used. */
+const USAGE_BUBBLE_FULL_MS = 4_500
+/** How long after the pointer leaves it shrinks again. */
+const USAGE_BUBBLE_HOVER_LEAVE_MS = 1_200
+/** The widest the bubble gets, as in its style sheet. */
+const USAGE_BUBBLE_MAX_WIDTH = 560
+/** Longer than its grow/shrink animation. */
+const USAGE_BUBBLE_SETTLE_MS = 480
 import styles from './ChromeApp.module.css'
 
 /**
@@ -132,6 +143,13 @@ export function ChromeApp() {
     () => new Map<string, SensitiveFeatureUsage>(),
   )
   const zoomIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The camera/microphone bubble shows in full when something starts being used, then shrinks to icons.
+  const [usageExpanded, setUsageExpanded] = useState(true)
+  const usageCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const usageBubbleRef = useRef<HTMLDivElement>(null)
+  // A tab a page opened: the menu opens for a moment and its icon is highlighted (the menu does it).
+  const [spawnedTab, setSpawnedTab] = useState<{ shortcutId: string; key: number } | null>(null)
+  const zoomBubbleRef = useRef<HTMLDivElement>(null)
 
   const showZoomIndicator = useCallback((percent: number) => {
     if (!Number.isFinite(percent)) return
@@ -181,6 +199,9 @@ export function ChromeApp() {
       () => listenToolbarUiState(setToolbarUi),
       () => listenGuidedTutorialState(setGuidedTutorial),
       () => listenZoomIndicator(showZoomIndicator),
+      () => listenTabSpawned((shortcutId) => {
+        setSpawnedTab((current) => ({ shortcutId, key: (current?.key ?? 0) + 1 }))
+      }),
       () => listenTabSearchRequests(() => { setExtensionsOpenFor(null); setPrivateInfoOpen(false); setTabSearchOpen(true) }),
       () => listenSiteInfoState(setSiteInfoState),
       () => listenSensitiveFeatureUsage((usage) => {
@@ -235,6 +256,12 @@ export function ChromeApp() {
     [catalog.tabs],
   )
 
+  // Forward is offered only while the active tab has a page ahead of the one it shows.
+  const canGoForward = useMemo(() => {
+    const active = catalog.tabs.find((tab) => tab.shortcutId === catalog.activeTabId)
+    return Boolean(active && tabCanGoForward(active))
+  }, [catalog.tabs, catalog.activeTabId])
+
   const tabById = useMemo(
     () => new Map(catalog.tabs.map((tab) => [tab.shortcutId, tab])),
     [catalog.tabs],
@@ -287,6 +314,59 @@ export function ChromeApp() {
     }
     return { camera, microphone, location, screen, host, siteCount: active.length }
   }, [sensitiveUsageByTab])
+
+  const usageSignature = sensitiveUsageSummary
+    ? [
+        sensitiveUsageSummary.camera,
+        sensitiveUsageSummary.microphone,
+        sensitiveUsageSummary.location,
+        sensitiveUsageSummary.screen,
+        sensitiveUsageSummary.host,
+        sensitiveUsageSummary.siteCount,
+      ].join('|')
+    : ''
+
+  const usageBubbleLabel = sensitiveUsageSummary
+    ? [
+        sensitiveUsageSummary.host || tf('privacySiteCount', { n: sensitiveUsageSummary.siteCount }),
+        sensitiveUsageSummary.camera ? t('privacyCameraInUse') : '',
+        sensitiveUsageSummary.microphone ? t('privacyMicrophoneInUse') : '',
+        sensitiveUsageSummary.location ? t('privacyLocationInUse') : '',
+        sensitiveUsageSummary.screen ? t('privacyScreenInUse') : '',
+      ].filter(Boolean).join(', ')
+    : undefined
+
+  const scheduleUsageCollapse = useCallback((delayMs: number) => {
+    if (usageCollapseTimerRef.current) clearTimeout(usageCollapseTimerRef.current)
+    usageCollapseTimerRef.current = setTimeout(() => {
+      usageCollapseTimerRef.current = null
+      setUsageExpanded(false)
+    }, delayMs)
+  }, [])
+
+  const holdUsageExpanded = useCallback(() => {
+    if (usageCollapseTimerRef.current) {
+      clearTimeout(usageCollapseTimerRef.current)
+      usageCollapseTimerRef.current = null
+    }
+    setUsageExpanded(true)
+  }, [])
+
+  // Whenever something new starts being used the bubble is shown in full, then it shrinks.
+  useEffect(() => {
+    if (!usageSignature) {
+      if (usageCollapseTimerRef.current) clearTimeout(usageCollapseTimerRef.current)
+      usageCollapseTimerRef.current = null
+      setUsageExpanded(true)
+      return
+    }
+    setUsageExpanded(true)
+    scheduleUsageCollapse(USAGE_BUBBLE_FULL_MS)
+    return () => {
+      if (usageCollapseTimerRef.current) clearTimeout(usageCollapseTimerRef.current)
+      usageCollapseTimerRef.current = null
+    }
+  }, [scheduleUsageCollapse, usageSignature])
 
   const activeSensitiveUsage = useMemo(() => {
     if (!siteInfoState.shortcutId || !siteInfoState.origin) {
@@ -367,6 +447,45 @@ export function ChromeApp() {
       }
     })
   }, [catalog.activeTabId, downloadUi.items.length, sensitiveUsageSummary, settings.home.showToolbar, siteInfoOpen, privateInfoOpen, extensionsOpen, tabSearchOpen, viewMode, zoomIndicatorPercent])
+
+  // The overlay is as wide as the window and a transparent webview takes every click, so only the
+  // bubbles themselves (and the strip and menu) may belong to it; the page below gets the rest.
+  const usageBubbleShown = viewMode === 'browsing' && sensitiveUsageSummary !== null
+  const zoomBubbleShown = viewMode === 'browsing' && zoomIndicatorPercent !== null
+  useEffect(() => {
+    if (!usageBubbleShown && !zoomBubbleShown) {
+      void setChromeBubbleRects([])
+      return
+    }
+    const measure = (changing: boolean) => {
+      const rects: Array<{ x: number; y: number; width: number; height: number }> = []
+      if (usageBubbleShown) {
+        const element = usageBubbleRef.current?.getBoundingClientRect()
+        // While it grows or shrinks the room it can take is reserved, so nothing is cut off.
+        if (changing || !element) {
+          rects.push({
+            x: Math.max(0, window.innerWidth - USAGE_BUBBLE_MAX_WIDTH - 18),
+            y: 0,
+            width: USAGE_BUBBLE_MAX_WIDTH + 18,
+            height: 78,
+          })
+        } else {
+          rects.push({ x: element.left, y: element.top, width: element.width, height: element.height })
+        }
+      }
+      const zoom = zoomBubbleRef.current?.getBoundingClientRect()
+      if (zoomBubbleShown && zoom) rects.push({ x: zoom.left, y: zoom.top, width: zoom.width, height: zoom.height })
+      void setChromeBubbleRects(rects)
+    }
+    measure(true)
+    const settled = setTimeout(() => measure(false), USAGE_BUBBLE_SETTLE_MS)
+    const onResize = () => measure(false)
+    window.addEventListener('resize', onResize)
+    return () => {
+      clearTimeout(settled)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [usageBubbleShown, zoomBubbleShown, usageExpanded, usageSignature])
 
   useEffect(() => {
     if (viewMode !== 'browsing' || !privateIndicatorVisible) setPrivateInfoOpen(false)
@@ -536,11 +655,21 @@ export function ChromeApp() {
 
       {viewMode === 'browsing' && sensitiveUsageSummary && (
         <div
-          className={styles.privacyIndicator}
+          ref={usageBubbleRef}
+          className={[
+            styles.privacyIndicator,
+            usageExpanded ? '' : styles.privacyIndicatorCompact,
+          ].filter(Boolean).join(' ')}
           role="status"
           aria-live="polite"
+          aria-label={usageBubbleLabel}
+          tabIndex={0}
+          onPointerEnter={holdUsageExpanded}
+          onPointerLeave={() => scheduleUsageCollapse(USAGE_BUBBLE_HOVER_LEAVE_MS)}
+          onFocus={holdUsageExpanded}
+          onBlur={() => scheduleUsageCollapse(USAGE_BUBBLE_HOVER_LEAVE_MS)}
         >
-          <span className={styles.privacyIndicatorPulse} aria-hidden="true" />
+          <span className={styles.privacyIndicatorBody} aria-hidden={!usageExpanded}>
           <span className={styles.privacyIndicatorSite}>
             {sensitiveUsageSummary.host ||
               tf('privacySiteCount', { n: sensitiveUsageSummary.siteCount })}
@@ -567,14 +696,40 @@ export function ChromeApp() {
               </span>
             )}
           </span>
+          </span>
+          <span className={styles.privacyIndicatorIcons} aria-hidden="true">
+            {sensitiveUsageSummary.camera && (
+              <span className={`${styles.privacyIcon} ${styles.privacyIconCamera}`} title={t('privacyCameraInUse')}>
+                <svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="m15 11 6-3.5v9L15 13" /></svg>
+              </span>
+            )}
+            {sensitiveUsageSummary.microphone && (
+              <span className={`${styles.privacyIcon} ${styles.privacyIconMicrophone}`} title={t('privacyMicrophoneInUse')}>
+                <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+              </span>
+            )}
+            {sensitiveUsageSummary.location && (
+              <span className={`${styles.privacyIcon} ${styles.privacyIconLocation}`} title={t('privacyLocationInUse')}>
+                <svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
+              </span>
+            )}
+            {sensitiveUsageSummary.screen && (
+              <span className={`${styles.privacyIcon} ${styles.privacyIconScreen}`} title={t('privacyScreenInUse')}>
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+              </span>
+            )}
+          </span>
         </div>
       )}
 
       {viewMode === 'browsing' && zoomIndicatorPercent !== null && (
         <div
+          ref={zoomBubbleRef}
           className={[
             styles.zoomIndicator,
-            sensitiveUsageSummary ? styles.indicatorBelow : '',
+            sensitiveUsageSummary
+              ? usageExpanded ? styles.indicatorBelow : styles.indicatorBelowCompact
+              : '',
           ].filter(Boolean).join(' ')}
           role="status"
           aria-live="polite"
@@ -716,6 +871,8 @@ export function ChromeApp() {
       rememberLayout={settings.browsing.restoreTabsOnStartup}
       mode={mode}
       shellViewMode={viewMode}
+      spawnedTabId={spawnedTab?.shortcutId ?? null}
+      spawnedTabKey={spawnedTab?.key ?? 0}
       onHomeClick={
         viewMode === 'home'
           ? undefined
@@ -729,6 +886,13 @@ export function ChromeApp() {
           : () => {
               void emitChromeAction({ type: 'go-back' })
             }
+      }
+      onForwardClick={
+        viewMode !== 'home' && canGoForward
+          ? () => {
+              void emitChromeAction({ type: 'go-forward' })
+            }
+          : undefined
       }
       onDownloadsClick={
         viewMode === 'browsing' ? toggleDownloads : undefined

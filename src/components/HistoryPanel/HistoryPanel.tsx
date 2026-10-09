@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
-import { siteIconSource } from '../../core/siteIcon'
+import { SiteLogo } from './SiteLogo'
 import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import {
   entryMatchesHistoryFilters,
@@ -197,7 +197,7 @@ export function HistoryPanel({
                   <div className={styles.closedList}>
                     {closedTabs.slice(0, 6).map((entry) => (
                       <button key={entry.id} type="button" className={styles.closedItem} onClick={() => onOpenClosedTab(entry)} title={entry.url}>
-                        {entry.favicon ? <img src={siteIconSource(entry.favicon, entry.url)} alt="" /> : <span className={styles.faviconFallback}>{hostLabel(entry.url).slice(0, 1).toUpperCase()}</span>}
+                        <SiteLogo url={entry.url} stored={entry.favicon} letter={hostLabel(entry.url).slice(0, 1).toUpperCase()} className={styles.closedLogo} fallbackClassName={styles.faviconFallback} />
                         <span><strong>{entry.title}</strong><small>{hostLabel(entry.url)} · {dateTimeFormatter.format(entry.closedAt)}</small></span>
                       </button>
                     ))}
@@ -223,6 +223,7 @@ export function HistoryPanel({
                       <article key={entry.id} className={styles.historyItem}>
                         <button type="button" className={styles.itemMain} onClick={() => onOpenUrl(entry.url, entry.title)} title={entry.url}>
                           <span className={styles.time}>{timeFormatter.format(entry.visitedAt)}</span>
+                          <SiteLogo url={entry.url} letter={entry.host.replace(/^www\./, '').slice(0, 1).toUpperCase()} className={styles.itemLogo} fallbackClassName={styles.itemLogoFallback} />
                           <span className={styles.itemBody}><strong>{entry.title}</strong><small>{entry.host}<span> · </span>{entry.url}</small></span>
                         </button>
                         <button type="button" className={styles.removeButton} onClick={() => onRemoveEntry(entry.id)} title={t('historyRemoveEntry')} aria-label={t('historyRemoveEntry')}>

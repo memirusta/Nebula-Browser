@@ -4,6 +4,8 @@ mod browser_passwords;
 mod browser_profile;
 mod browser_tab_transfers;
 mod browser_workspace;
+#[cfg(target_os = "windows")]
+mod chrome_clip;
 mod context_menu;
 mod default_browser;
 mod devtools_bridge;
@@ -28,7 +30,6 @@ mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
 mod http_response;
-#[cfg(target_os = "windows")]
 mod layout_audit;
 mod main_webview_layout;
 mod media_session;
@@ -2018,7 +2019,9 @@ pub fn run() {
             window_exit_site_fullscreen,
             window_toggle_browser_fullscreen,
             webview_restore_browsing_layout,
+            chrome_clip::webview_set_chrome_clip,
             layout_audit::webview_layout_audit,
+            layout_audit::webview_resync_scale,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,
             webview_setup_main_site_permissions,

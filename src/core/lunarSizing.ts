@@ -4,6 +4,20 @@ const ADAPTIVE_LUNAR_HEIGHT_PER_SHORTCUT = 6
 const ADAPTIVE_LUNAR_MAX_WIDTH = 1780
 const ADAPTIVE_LUNAR_MAX_HEIGHT = 720
 const MAX_VIEWPORT_LUNAR_HEIGHT_RATIO = 0.72
+/** A client area smaller than this is a window being minimized or restored, not one to size the dome for. */
+const MIN_USABLE_VIEWPORT_WIDTH = 256
+const MIN_USABLE_VIEWPORT_HEIGHT = 160
+
+/**
+ * Whether a client size can be used to fit the dome. A minimized window reports 0x0 and a window being
+ * restored passes through small sizes; fitting the dome to those leaves it tiny until another size arrives.
+ */
+export function isUsableLunarViewport(width: number, height: number): boolean {
+  return (
+    Number.isFinite(width) && Number.isFinite(height) &&
+    width >= MIN_USABLE_VIEWPORT_WIDTH && height >= MIN_USABLE_VIEWPORT_HEIGHT
+  )
+}
 
 /**
  * Fit the configured/adaptive Semi-Lunar into the current client area.

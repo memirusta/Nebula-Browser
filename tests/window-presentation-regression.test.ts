@@ -221,7 +221,9 @@ test('rapid Semi-Lunar edge flick cannot leave the browsing menu pinned open', (
   assert.match(shapeHitTest, /lunarWidthPx: Math\.max\(1, lunarWidthPx\)/)
   assert.doesNotMatch(shapeHitTest, /windowClientPhysicalSize\(\)|scaleFactor\(\)/)
   assert.match(menu, /computeViewportLunarSize\([\s\S]*lunarViewport\.width[\s\S]*lunarViewport\.height/)
-  assert.match(menu, /appWindow\.onResized\(\(\) => void syncTauriViewport\(\)\)/)
+  // A resize re-fits the dome (now through syncSoon, which also looks again once the resize settles).
+  assert.match(menu, /appWindow\.onResized\(syncSoon\)/)
+  assert.match(menu, /const syncSoon = \(\) => \{\s*void syncTauriViewport\(\)/)
   assert.match(chrome, /position: new PhysicalPosition\(0, 0\)[\s\S]{0,100}windowSize\.width/)
   assert.match(menuCss, /\.root\s*\{[\s\S]{0,120}left: 50%[\s\S]{0,120}translateX\(-50%\)/)
   assert.match(menuCss, /\.browsingRoot\s*\{[\s\S]{0,140}left: 50%[\s\S]{0,120}translateX\(-50%\)/)

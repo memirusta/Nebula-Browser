@@ -12,6 +12,11 @@ export function setOverlayModeActive(active: boolean): void {
   overlayModeActive = active
 }
 
+/** The overlay menu is up: Semi-Lunar's surface is hidden on purpose so it cannot cover the menu's controls. */
+export function isOverlayModeActive(): boolean {
+  return overlayModeActive
+}
+
 export function setBrowsingChromeExpected(expected: boolean): void {
   browsingChromeExpected = expected
 }

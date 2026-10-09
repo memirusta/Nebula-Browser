@@ -648,6 +648,47 @@
   overflow: visible;
 }
 
+/* The icon of a tab a page just opened: it pops in and glows twice while the menu is open for it. */
+.shortcutSpawned {
+  z-index: 2;
+  animation:
+    shortcutSpawnedPop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    shortcutSpawnedGlow 900ms ease-out 260ms 2;
+}
+
+@keyframes shortcutSpawnedPop {
+  from {
+    scale: 0.35;
+    opacity: 0;
+  }
+
+  to {
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+@keyframes shortcutSpawnedGlow {
+  0% {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.95),
+      0 0 0 0 rgba(120, 170, 255, 0.75);
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.95),
+      0 0 0 16px rgba(120, 170, 255, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shortcutSpawned {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 0 5px rgba(120, 170, 255, 0.55);
+  }
+}
+
 .shortcutDragging {
   cursor: grabbing;
   transition: none;

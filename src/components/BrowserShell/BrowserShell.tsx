@@ -36,6 +36,7 @@ import {
   emitGuidedTutorialState,
   emitTabCatalog,
   emitTabSearchRequest,
+  emitTabSpawned,
   emitSiteInfoState,
   emitViewMode,
   emitZoomIndicator,
@@ -202,7 +203,7 @@ import {
   sessionTabCount,
   type PersistedBrowserTab,
 } from '../../core/browserSessionSnapshot'
-import { tabHistoryTarget } from '../../core/tabNavigation'
+import { tabCanGoForward, tabHistoryTarget } from '../../core/tabNavigation'
 import {
   browserTabTransferIdsForTarget,
   browserWindowAtScreenPoint,
@@ -2264,6 +2265,16 @@ export function BrowserShell() {
           },
         )
 
+        if (
+          snapshot.canGoForward !== undefined &&
+          currentTab.canGoForward !== snapshot.canGoForward
+        ) {
+          updateTabMeta(
+            snapshot.shortcutId,
+            { canGoForward: snapshot.canGoForward },
+          )
+        }
+
         if (snapshot.favicon) {
           refreshPinnedFavicon(
             snapshot.shortcutId,
@@ -4012,11 +4023,18 @@ export function BrowserShell() {
       t,
     ])
 
+  // Tabs that were opened for an address (a link that opens in a new tab): when the address turns out to be a
+  // file, the tab never shows a page and has nothing left to show once the download has started.
+  const openedForAddressRef = useRef(new Set<string>())
+  const closedForDownloadRef = useRef(new Set<string>())
+
   const openUrlInNewTab =
     useCallback(
       (
         rawUrl: string,
         isPrivate?: boolean,
+        /** Opened by a page (a new target, window.open, a protocol handler), not by the user's own action. */
+        spawnedByPage = false,
       ) => {
         const url =
           rawUrl.trim() ||
@@ -4079,6 +4097,8 @@ export function BrowserShell() {
           },
         )
 
+        openedForAddressRef.current.add(id)
+
         pendingBrowseTargetRef.current =
           {
             tabId: id,
@@ -4102,6 +4122,8 @@ export function BrowserShell() {
         setViewMode(
           'browsing',
         )
+
+        if (spawnedByPage && isTauri) void emitTabSpawned(id)
       },
       [
         activeTabIdRef,
@@ -4314,6 +4336,7 @@ export function BrowserShell() {
                       openUrlInNewTab(
                         handlerUrl,
                         sourceIsPrivate,
+                        true,
                       )
                     })
                     return
@@ -4420,6 +4443,7 @@ export function BrowserShell() {
                   openUrlInNewTab(
                     payload.uri,
                     payload.privateMode,
+                    true,
                   )
                   return
                 }
@@ -4490,6 +4514,24 @@ export function BrowserShell() {
     t,
     tabsRef,
   ])
+
+  // A tab opened only to start a download is closed, as other browsers do; the download goes on (closing a
+  // tab with a download in progress waits for it) and the page the user came from is shown again.
+  useEffect(() => {
+    for (const item of downloads.items) {
+      if (item.tabShownPage !== false) continue
+      const shortcutId = shortcutIdForTabWebviewLabel(item.tabLabel)
+      if (
+        !shortcutId ||
+        !openedForAddressRef.current.has(shortcutId) ||
+        closedForDownloadRef.current.has(shortcutId)
+      ) {
+        continue
+      }
+      closedForDownloadRef.current.add(shortcutId)
+      void handleCloseTab(shortcutId)
+    }
+  }, [downloads.items, handleCloseTab])
 
   useEffect(() => {
     const open =
@@ -6152,6 +6194,10 @@ export function BrowserShell() {
             goBackInPage()
             break
 
+          case 'go-forward':
+            goForwardInPage()
+            break
+
           case 'go-home':
             goHome()
             break
@@ -6204,6 +6250,7 @@ export function BrowserShell() {
     updateTabMeta,
     openOverlay,
     goBackInPage,
+    goForwardInPage,
     goHome,
     tabsRef,
     toggleDownloadPanel,
@@ -6827,6 +6874,16 @@ export function BrowserShell() {
       isHome
         ? undefined
         : goBackInPage,
+
+    onForwardClick:
+      isHome ||
+      !tabs.some(
+        (tab) =>
+          tab.shortcutId === activeTabId &&
+          tabCanGoForward(tab),
+      )
+        ? undefined
+        : goForwardInPage,
 
     onDownloadsClick:
       isHome

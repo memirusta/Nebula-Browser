@@ -31,7 +31,6 @@ test('every place that shows a site icon goes through the selector and redraws w
   const { readFileSync } = await import('node:fs')
   const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
   const sites = [
-    'src/components/HistoryPanel/HistoryPanel.tsx',
     'src/components/HomeCenter/PinnedShortcutEditor.tsx',
     'src/components/HomeCenter/PinnedStrip.tsx',
     'src/components/SemiLunarMenu/FolderExpandPanel.tsx',
@@ -49,6 +48,11 @@ test('every place that shows a site icon goes through the selector and redraws w
     assert.doesNotMatch(source, /<img[^>]*src=\{(?:[A-Za-z.]+)\.favicon\}/, `${path} still shows a raw stored icon`)
     assert.doesNotMatch(source, /^\s*src=\{[A-Za-z.]+\.favicon\}/m, `${path} still shows a raw stored icon`)
   }
+  // The history shows its logos through SiteLogo (the kept icon, asked for once the row is on screen) and redraws too.
+  const history = read('src/components/HistoryPanel/HistoryPanel.tsx')
+  assert.match(history, /<SiteLogo /)
+  assert.match(history, /useFaviconRefresh()/)
+  assert.doesNotMatch(history, /<img[^>]*src={[A-Za-z.]+.favicon}/)
   // Tabs of a private window never ask for or use the kept icons.
   assert.match(read('src/components/SemiLunarMenu/SemiLunarMenu.tsx'), /siteIconSource\(tab\.favicon, tab\.url, \{ isPrivate: tab\.isPrivate \}\)/)
   assert.match(read('src/components/TabSearch/TabSearch.tsx'), /isPrivate: tab\.isPrivate/)

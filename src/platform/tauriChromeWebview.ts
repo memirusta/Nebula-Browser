@@ -3,6 +3,7 @@ import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { Webview, getCurrentWebview, type WebviewOptions } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from '../core/windowChrome'
+import { chromeClipRegion, type ChromeClipRect } from '../core/chromeOverlayLayout'
 import { hasUsableWindowClientSize } from '../core/mainWebviewRestore'
 import { debounce } from './debounce'
 import { waitForTauriCreated } from './tauriCreationWait'
@@ -14,7 +15,7 @@ import {
   currentChromeWebviewLabel,
 } from './browserWindowScope'
 import { isTauri } from './runtime'
-import { stackBrowsingChromeAboveBrowser } from './tauriWebviewStack'
+import { isOverlayModeActive, stackBrowsingChromeAboveBrowser } from './tauriWebviewStack'
 import { windowClientPhysicalSize } from './windowClientBounds'
 
 
@@ -50,6 +51,9 @@ let chromeVisibilityRequestSequence = 0
 let chromeBoundsSyncPromise: Promise<void> | null = null
 let chromeBoundsDirty = false
 let chromeAutoResizeDisabled = false
+// Floating bubbles (camera or microphone in use, zoom) in logical px, in overlay coordinates.
+let chromeBubbleRects: ChromeClipRect[] = []
+let lastChromeClipKey = ''
 
 // Keep a small tolerance around the centered dome for conservative native
 // rectangle checks. The actual WebView remains full-client width.
@@ -93,6 +97,40 @@ async function chromePhysicalBounds(): Promise<{
     size: new PhysicalSize(Math.max(1, windowSize.width), height),
     clientSize: windowSize,
   }
+}
+
+/** Apply (or lift) the overlay's clip from the current overlay state; unchanged clips are not sent again. */
+async function applyChromeClip(): Promise<void> {
+  if (!isTauri || !isChromeShell()) return
+  try {
+    const region = chromeClipRegion(
+      {
+        bubbles: chromeBubbleRects,
+        fullHeight: chromeOverlayFullHeight,
+        logicalHeight: chromeOverlayLogicalHeight,
+        minimumLogicalHeight: chromeOverlayMinimumLogicalHeight,
+        stripLogicalHeight: SEMI_LUNAR_HIT_ZONE_HEIGHT,
+      },
+      await getCurrentWindow().scaleFactor(),
+    )
+    const key = JSON.stringify(region)
+    if (key === lastChromeClipKey) return
+    await invoke<boolean>('webview_set_chrome_clip', {
+      windowLabel: getCurrentWindow().label,
+      rects: region,
+    })
+    lastChromeClipKey = key
+  } catch (error) {
+    // A clip that cannot be applied leaves the overlay whole: it blocks more, never less.
+    lastChromeClipKey = ''
+    if (import.meta.env.DEV) console.warn('[nebula] chrome clip failed', error)
+  }
+}
+
+/** The floating bubbles that need room below the strip, as the overlay shows them. */
+export async function setChromeBubbleRects(bubbles: ChromeClipRect[]): Promise<void> {
+  chromeBubbleRects = bubbles
+  await applyChromeClip()
 }
 
 /**
@@ -245,6 +283,8 @@ async function syncChromeBounds(webview: Webview): Promise<void> {
         }
         lastChromeBoundsKey = key
       }
+      // The menu opening or closing, a preview and a panel all change what the clip may be.
+      await applyChromeClip()
     })().finally(() => {
       chromeBoundsSyncPromise = null
       if (chromeBoundsDirty) void syncChromeBounds(webview)
@@ -540,6 +580,11 @@ export async function setChromeWebviewSuppressed(suppressed: boolean): Promise<v
     if (webview) await webview.hide()
     return
   }
+
+  // Lifting a panel's suppression must not bring Semi-Lunar back over the overlay menu: that menu
+  // hides it on purpose, and a surface that comes back with its old tall bounds covers the menu's
+  // buttons. Leaving the overlay shows it again through the normal mode change.
+  if (isOverlayModeActive()) return
 
   if (!webview) {
     await showChromeWebview(SEMI_LUNAR_HIT_ZONE_HEIGHT)

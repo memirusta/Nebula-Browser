@@ -26,6 +26,8 @@ export interface BrowserTab {
   isPrivate?: boolean
   isLoading?: boolean
   isMuted?: boolean
+  /** What WebView2 says about the page's session history (it also knows about back/forward made by the page or the mouse). */
+  canGoForward?: boolean
 }
 
 export function shortcutFromTab(tab: BrowserTab): Shortcut {

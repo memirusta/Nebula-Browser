@@ -19,8 +19,12 @@ import {
 import {
   buildOpenTabIdByDockId,
   buildBrowsingVisibleDockItemIds,
+  resolveBrowsingDockId,
 } from '../../core/browsingDock'
 import { hostKeyForShortcut } from '../../core/shortcutFromUrl'
+
+/** How long the menu stays open by itself to show a tab a page just opened. */
+const SPAWN_PEEK_MS = 2_400
 import type { BrowseSession } from '../../core/browseSession'
 import type { BrowserTab } from '../../core/browserTab'
 import type { RemoveMemberResult } from '../../hooks/useShortcutFolders'
@@ -29,7 +33,7 @@ import { siteIconSource } from '../../core/siteIcon'
 import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { faviconForUrl, shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
-import { computeViewportLunarSize } from '../../core/lunarSizing'
+import { computeViewportLunarSize, isUsableLunarViewport } from '../../core/lunarSizing'
 import { confirmCursorOutsideLunar } from '../../core/lunarDrop'
 import { isChromeShell } from '../../core/nebulaBridge'
 import type { ShellViewMode } from '../../core/nebulaBridge'
@@ -127,6 +131,12 @@ interface SemiLunarMenuProps {
   shellViewMode?: ShellViewMode
   onHomeClick?: () => void
   onBackClick?: () => void
+  /** Only given when there is a page to go forward to. */
+  onForwardClick?: () => void
+  /** A tab a page just opened: the menu opens for a moment and its icon is highlighted. */
+  spawnedTabId?: string | null
+  /** Changes with every such tab, so the same tab id can be announced again. */
+  spawnedTabKey?: number
   onDownloadsClick?: () => void
   downloadCount?: number
   activeDownloadCount?: number
@@ -186,6 +196,9 @@ export function SemiLunarMenu({
   shellViewMode = 'browsing',
   onHomeClick,
   onBackClick,
+  onForwardClick,
+  spawnedTabId = null,
+  spawnedTabKey = 0,
   onDownloadsClick,
   downloadCount = 0,
   activeDownloadCount = 0,
@@ -216,28 +229,43 @@ export function SemiLunarMenu({
     let disposed = false
     let unlistenResize: (() => void) | undefined
     let unlistenScale: (() => void) | undefined
+    let unlistenFocus: (() => void) | undefined
 
     const syncWebViewport = () => {
       if (disposed) return
       setLunarViewport({ width: window.innerWidth, height: window.innerHeight })
     }
+    let latestRequest = 0
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
     const syncTauriViewport = async () => {
+      // Answers can arrive out of order (a minimize and the restore after it): only the newest counts.
+      const request = ++latestRequest
       try {
         const appWindow = getCurrentWindow()
         const [size, scaleFactor] = await Promise.all([
           appWindow.innerSize(),
           appWindow.scaleFactor(),
         ])
-        if (!disposed) {
-          setLunarViewport({
-            width: size.width / scaleFactor,
-            height: size.height / scaleFactor,
-          })
-        }
+        if (disposed || request !== latestRequest) return
+        const width = size.width / scaleFactor
+        const height = size.height / scaleFactor
+        // A minimized or half-restored window has no size to fit the dome to: keep the last real one.
+        if (!isUsableLunarViewport(width, height)) return
+        setLunarViewport((current) =>
+          current.width === width && current.height === height ? current : { width, height },
+        )
       } catch {
         // The regular DOM viewport remains a safe fallback while a window is
-        // being created or destroyed.
-        syncWebViewport()
+        // being created or destroyed. The dedicated chrome surface is as tall as its strip, so
+        // its DOM height says nothing about the window: ask again instead.
+        if (usesDedicatedChromeSurface) {
+          if (!disposed && request === latestRequest) {
+            if (settleTimer !== undefined) clearTimeout(settleTimer)
+            settleTimer = setTimeout(() => void syncTauriViewport(), 350)
+          }
+        } else {
+          syncWebViewport()
+        }
       }
     }
 
@@ -249,12 +277,28 @@ export function SemiLunarMenu({
 
     void syncTauriViewport()
     const appWindow = getCurrentWindow()
-    void appWindow.onResized(() => void syncTauriViewport()).then((unlisten) => {
+    // The size at the end of a restore can be the one that never gets an event of its own, so look
+    // again once things have settled and whenever the window gets focus back.
+    const syncSoon = () => {
+      void syncTauriViewport()
+      if (settleTimer !== undefined) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => void syncTauriViewport(), 350)
+    }
+    void appWindow.onResized(syncSoon).then((unlisten) => {
       if (disposed) {
         unlisten()
         return
       }
       unlistenResize = unlisten
+    })
+    void appWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) syncSoon()
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten()
+        return
+      }
+      unlistenFocus = unlisten
     })
     void appWindow.onScaleChanged(() => void syncTauriViewport()).then((unlisten) => {
       if (disposed) {
@@ -268,6 +312,8 @@ export function SemiLunarMenu({
       disposed = true
       unlistenResize?.()
       unlistenScale?.()
+      unlistenFocus?.()
+      if (settleTimer !== undefined) clearTimeout(settleTimer)
     }
   }, [])
 
@@ -341,6 +387,9 @@ export function SemiLunarMenu({
   const folderPanelHoverRef = useRef(false)
   const folderOpenRef = useRef(false)
   const menuHoverRef = useRef(false)
+  // True while the menu is open by itself to show a tab a page just opened.
+  const peekActiveRef = useRef(false)
+  const [spawnHighlightTabId, setSpawnHighlightTabId] = useState<string | null>(null)
   const browsingHoverSurfaceRef = useRef<HTMLDivElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const shellLayoutResyncRef = useRef<() => void>(() => {})
@@ -362,6 +411,7 @@ export function SemiLunarMenu({
           ? 1 +
             Number(isBrowsing && activeTabPrivate) +
             Number(isBrowsing && Boolean(onBackClick)) +
+            Number(isBrowsing && Boolean(onForwardClick)) +
             Number(isBrowsing && downloadCount > 0 && Boolean(onDownloadsClick)) +
             Number(isBrowsing && Boolean(activeUrl) && Boolean(onSiteInfoClick)) +
             Number(isBrowsing && Boolean(onExtensionsClick))
@@ -377,6 +427,7 @@ export function SemiLunarMenu({
       downloadCount,
       isBrowsing,
       onBackClick,
+      onForwardClick,
       onDownloadsClick,
       onHomeClick,
       onExtensionsClick,
@@ -660,6 +711,8 @@ export function SemiLunarMenu({
   }, [])
 
   const shouldDeferClose = useCallback(() => {
+    // The menu opened by itself to show a new tab: the lost-hover checks must not close it.
+    if (peekActiveRef.current) return true
     if (isDraggingRef.current) return true
     if (contextMenuOpenRef.current || contextMenuHoverRef.current) return true
     if (folderOpenRef.current || folderPanelHoverRef.current) return true
@@ -890,6 +943,37 @@ export function SemiLunarMenu({
     menuHoverRef.current = false
     scheduleClose()
   }, [scheduleClose])
+
+  // A tab a page opened: the menu opens for a moment and the new tab's icon is highlighted, so it is
+  // clear where the page went. It closes by itself unless the pointer is in it by then.
+  useEffect(() => {
+    if (spawnedTabKey === 0 || !spawnedTabId) return
+    if (!isBrowsing || shellViewMode === 'overlay' || browserFullscreenActive) return
+    peekActiveRef.current = true
+    clearTimers()
+    setSpawnHighlightTabId(spawnedTabId)
+    setStage('expanded')
+    const timer = setTimeout(() => {
+      peekActiveRef.current = false
+      setSpawnHighlightTabId(null)
+      if (!menuHoverRef.current && !shouldDeferClose()) setStage('closed')
+    }, SPAWN_PEEK_MS)
+    return () => {
+      clearTimeout(timer)
+      peekActiveRef.current = false
+    }
+    // Only a new announcement (its key) starts a peek; the other values are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spawnedTabKey])
+
+  const spawnHighlightDockId = useMemo(() => {
+    if (!spawnHighlightTabId) return null
+    return (
+      visibleDockItemIds.find(
+        (id) => !isFolderDockId(id) && openTabIdByDockId.get(id) === spawnHighlightTabId,
+      ) ?? resolveBrowsingDockId(spawnHighlightTabId, visibleDockItemIds, shortcutMap)
+    )
+  }, [openTabIdByDockId, shortcutMap, spawnHighlightTabId, visibleDockItemIds])
 
   useEffect(() => {
     if (
@@ -1394,6 +1478,9 @@ const handleFolderMemberClose = useCallback(
     const previous = prevActiveTabIdRef.current
     prevActiveTabIdRef.current = activeTabId
     if (!isBrowsing || previous === activeTabId) return
+    // The tab a page opened becomes the active one right after it is announced; that must not end the
+    // peek that shows where it went.
+    if (peekActiveRef.current) return
     closeMenuImmediately()
   }, [activeTabId, closeMenuImmediately, isBrowsing])
 
@@ -1880,6 +1967,28 @@ const handleFolderMemberClose = useCallback(
                   </svg>
                 </button>
               )}
+              {isBrowsing && onBackClick && onForwardClick && (
+                <button
+                  type="button"
+                  className={styles.evBtn}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onForwardClick()
+                  }}
+                  title={t('goForward')}
+                  aria-label={t('goForwardAria')}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M9 18l6-6-6-6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              )}
               {isBrowsing && downloadCount > 0 && onDownloadsClick && (
                 <button
                   data-nebula-download-toggle="true"
@@ -2138,6 +2247,7 @@ const members = memberIds
                         : tf('removeShortcutAria', { label: item.label })
                     }
                     isTabActive={tabIsActive}
+                    isSpawned={spawnHighlightDockId === dockId}
                     isLoading={tabIsLoading}
                     displayFavicon={displayFavicon}
                     displayTitle={displayTitle}
@@ -2414,6 +2524,7 @@ function DraggableShortcut({
   onRemove,
   closeAriaLabel,
   isTabActive = false,
+  isSpawned = false,
   isLoading = false,
   displayFavicon,
   displayTitle,
@@ -2442,6 +2553,7 @@ function DraggableShortcut({
   onRemove?: () => void
   closeAriaLabel: string
   isTabActive?: boolean
+  isSpawned?: boolean
   isLoading?: boolean
   displayFavicon?: string
   displayTitle?: string
@@ -2798,6 +2910,7 @@ function DraggableShortcut({
           isDropTarget ? styles.shortcutDropTarget : '',
           showCloseBtn && !isDragging && onRemove ? styles.shortcutWithClose : '',
           isTabActive ? styles.shortcutTabActive : '',
+          isSpawned ? styles.shortcutSpawned : '',
         ]
           .filter(Boolean)
           .join(' ')}

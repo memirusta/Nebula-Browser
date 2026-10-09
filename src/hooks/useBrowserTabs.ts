@@ -53,7 +53,7 @@ export function useBrowserTabs() {
   }, [])
 
   const updateTabMeta = useCallback(
-    (shortcutId: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted'>>) => {
+    (shortcutId: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted' | 'canGoForward'>>) => {
       dispatch({ type: 'update-meta', shortcutId, patch })
     },
     [],

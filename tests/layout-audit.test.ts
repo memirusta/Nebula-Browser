@@ -188,6 +188,37 @@ test('a repair is requested at most once per cooldown, then again if the differe
   assert.equal(stuck.reported.length, before, 'stop() ends the looking')
 })
 
+test('a webview drawing at another scale than its window is a fault, even with the right rectangle', () => {
+  // The window is at 100% (96 dpi); the overlay still draws at the 150% of the screen it was on.
+  const stale = healthy({ windowDpi: 96 })
+  stale.hosts = stale.hosts.map((item) => ({ ...item, rasterScale: item.label === 'nebula-chrome' ? 1.5 : 1 }))
+  const faults = findLayoutFaults(stale, expectation)
+  assert.deepEqual(faults.map((fault) => [fault.label, fault.reason, fault.seen]), [['nebula-chrome', 'scale', 1.5]])
+
+  // Everything at the window's scale, a hidden webview, an unreadable scale (0) and an unknown DPI are not faults.
+  const same = healthy({ windowDpi: 144 })
+  same.hosts = same.hosts.map((item) => ({ ...item, rasterScale: 1.5 }))
+  assert.deepEqual(findLayoutFaults(same, expectation), [])
+  const hiddenStale = healthy({ windowDpi: 96 })
+  hiddenStale.hosts = hiddenStale.hosts.map((item) => ({ ...item, rasterScale: item.visible ? 1 : 2 }))
+  assert.deepEqual(findLayoutFaults(hiddenStale, expectation), [])
+  const unreadable = healthy({ windowDpi: 96 })
+  unreadable.hosts = unreadable.hosts.map((item) => ({ ...item, rasterScale: 0 }))
+  assert.deepEqual(findLayoutFaults(unreadable, expectation), [])
+  assert.deepEqual(findLayoutFaults(healthy({ windowDpi: 0 }), expectation), [])
+})
+
+test('the scale resync is registered, permitted, and asked for by the audit repair', () => {
+  const read = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').split(String.fromCharCode(13, 10)).join(String.fromCharCode(10))
+  assert.match(read('src-tauri/src/lib.rs'), /layout_audit::webview_resync_scale,/)
+  assert.ok(read('src-tauri/permissions/webview-commands.toml').includes('"webview_resync_scale"'))
+  const browser = read('src/platform/tauriBrowser.ts')
+  const scaleCheck = browser.indexOf("fault.reason === 'scale'")
+  assert.ok(scaleCheck > 0, 'the repair looks for a scale fault')
+  assert.ok(browser.slice(scaleCheck, scaleCheck + 300).includes("'webview_resync_scale'"))
+})
+
 test('the native audit is registered and the shell wires it into the restore repair', () => {
   const read = (path: string) =>
     readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').split(String.fromCharCode(13, 10)).join(String.fromCharCode(10))
