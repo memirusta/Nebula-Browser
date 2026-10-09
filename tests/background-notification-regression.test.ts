@@ -104,7 +104,7 @@ test('Instagram message nodes are not marked seen before their delayed text arri
   assert.match(siteUi, /hasQuotedPreview/)
   assert.match(
     siteUi,
-    /notificationData: details\.isReply && !details\.isReaction \? \{ replyText: text \} : null/,
+    /details\.isReply && !details\.isReaction \? \{ replyText: text \} : null/,
   )
   assert.match(report, /function queueCandidate[\s\S]*reportCandidate\(candidate\)/)
   assert.doesNotMatch(report, /reportIncoming\(candidate\)/)

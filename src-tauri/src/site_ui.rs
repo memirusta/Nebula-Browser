@@ -983,6 +983,61 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
     let observer = null;
     let lastMessageKey = '';
     let lastMessageAt = 0;
+    // The lowest message of others that has been seen, as a node and as a position in its scroller. A message
+    // is new only when it sits below that: Instagram draws the same messages again (a reaction, a read
+    // receipt), unloads old ones, loads older ones above, and a friend sends "." again and again, and none of
+    // that puts a message below the last one. Position, not text or count: the same text comes again and again
+    // and the number of elements in a long list does not change.
+    let lastTailNode = null;
+    let lastTailBottom = null;
+    const reportedDrops = new Map();
+
+    // Say why a message was not reported (a fixed reason, never the message), at most once in a while per reason.
+    function noteDrop(reason, detail) {
+      const now = Date.now();
+      if (now - (reportedDrops.get(reason) || 0) < 4000) return;
+      reportedDrops.set(reason, now);
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-site-notification-diagnostic',
+          origin: window.location.origin,
+          reason: reason,
+          detail: detail || ''
+        }));
+      } catch (_) {}
+    }
+
+    // The shape of an element, for the log: tag names, roles, sizes of pictures, the first segment of a link
+    // ("reel", "p"): never text, names or full addresses.
+    function describeNode(node) {
+      const parts = [];
+      function walk(element, depth) {
+        if (parts.length >= 28 || depth > 4 || !element || element.nodeType !== Node.ELEMENT_NODE) return;
+        let label = element.tagName.toLowerCase();
+        const role = element.getAttribute('role');
+        if (role && /^[a-z]{3,20}$/.test(role)) label += '[' + role + ']';
+        if (element.tagName === 'A') {
+          try {
+            const segment = new URL(element.getAttribute('href'), window.location.href).pathname.split('/')[1] || '';
+            if (/^[a-z]{1,12}$/.test(segment)) label += '{' + segment + '}';
+          } catch (_) {}
+        }
+        if (element.tagName === 'IMG' || element.tagName === 'VIDEO' || element.tagName === 'CANVAS') {
+          const rect = element.getBoundingClientRect();
+          label += '(' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ')';
+        } else if (element.hasAttribute('dir')) {
+          label += '<dir>';
+        }
+        if ((element.getAttribute('style') || '').indexOf('background-image') >= 0) label += '+bg';
+        parts.push(String(depth) + ':' + label);
+        const children = element.children;
+        for (let index = 0; index < children.length && index < 6; index += 1) walk(children[index], depth + 1);
+      }
+      walk(node, 0);
+      return parts.join(' ').slice(0, 240);
+    }
+    let armedPath = window.location.pathname;
+    let quietUntil = 0;
 
     function visibleComposer() {
       const candidates = document.querySelectorAll(
@@ -1000,6 +1055,433 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
         }
       }
       return null;
+    }
+
+    const ignoredThreadLine = /^(seen|new messages|just now|gesehen|neue nachrichten|gerade eben|vu|nouveaux messages|à l’instant|dilihat|pesan baru|baru saja|просмотрено|новые сообщения|только что|visualizzato|nuovi messaggi|proprio ora|既読|新着メッセージ|たった今|\d+[smhd])$/i;
+
+    function scrollerOf(node) {
+      for (let element = node.parentElement; element && element !== document.body; element = element.parentElement) {
+        let overflowY = '';
+        try { overflowY = window.getComputedStyle(element).overflowY; } catch (_) {}
+        if ((overflowY === 'auto' || overflowY === 'scroll') && element.scrollHeight > element.clientHeight + 1) {
+          return element;
+        }
+      }
+      return null;
+    }
+
+    // Where the bottom of a node is, counted from the top of what scrolls: it does not move when the list scrolls.
+    function contentBottom(node) {
+      const rect = node.getBoundingClientRect();
+      const scroller = scrollerOf(node);
+      if (!scroller) return rect.bottom + window.scrollY;
+      return rect.bottom - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    }
+
+    // The lowest message of others that was seen. The status line ("Seen just now") and the user's own
+    // messages are on the right and do not count.
+    function lowestOtherMessage(composerRect) {
+      const nodes = document.querySelectorAll('main [dir="auto"]');
+      let best = null;
+      let bestBottom = -Infinity;
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        if (!seen.has(node)) continue;
+        if (node.querySelector && node.querySelector('[dir="auto"]')) continue;
+        if (node.closest && node.closest('h1, h2, [role="heading"]')) continue;
+        const rect = node.getBoundingClientRect();
+        const text = String(node.textContent || '').trim();
+        if (
+          !text || text.length > 500 || rect.width <= 0 || rect.height <= 0 ||
+          rect.bottom >= composerRect.top ||
+          rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2 ||
+          ignoredThreadLine.test(text) || isGenericInstagramActivity(text)
+        ) continue;
+        const bottom = contentBottom(node);
+        if (bottom > bestBottom) {
+          best = node;
+          bestBottom = bottom;
+        }
+      }
+      return best ? { node: best, bottom: bestBottom } : null;
+    }
+
+    function rememberTail(found) {
+      lastTailNode = found ? found.node : null;
+      lastTailBottom = found ? found.bottom : null;
+    }
+
+    // Where this node is against the last message that was seen: below it (new), at the same place (the same
+    // message, drawn again) or above it (an older one). When it cannot be told (nothing known yet, or the page
+    // cannot be read this way) it is new: a missing notification is worse than a late one.
+    function tailRelation(node) {
+      if (!lastTailNode && lastTailBottom === null) return 'new';
+      let tail = lastTailBottom;
+      if (lastTailNode && lastTailNode.isConnected) tail = contentBottom(lastTailNode);
+      const bottom = contentBottom(node);
+      if (tail === null || !isFinite(tail) || !isFinite(bottom)) return 'new';
+      if (bottom > tail + 4) return 'new';
+      return bottom >= tail - 4 ? 'same' : 'older';
+    }
+
+    // Another conversation was opened: its messages appear in several steps, so for a moment nothing in
+    // it is news; what is there then is the baseline.
+    function threadSettling() {
+      const path = window.location.pathname;
+      const now = Date.now();
+      if (path !== armedPath) {
+        armedPath = path;
+        lastTailNode = null;
+        lastTailBottom = null;
+        reactedKeys.clear();
+        quietUntil = now + 1800;
+      }
+      return now < quietUntil;
+    }
+
+    // ---- What is said for a reaction or for something that is not text (a reel, a post, a photo...) ----
+    function instagramLanguage() {
+      return String(document.documentElement.lang || navigator.language || 'en').toLowerCase().slice(0, 2);
+    }
+
+    const sentPhrases = {
+      en: { reel: 'sent a reel', post: 'shared a post', story: 'shared a story', photo: 'sent a photo', video: 'sent a video', attachment: 'sent an attachment' },
+      tr: { reel: 'reel gönderdi', post: 'gönderi paylaştı', story: 'hikaye paylaştı', photo: 'fotoğraf gönderdi', video: 'video gönderdi', attachment: 'ek gönderdi' },
+      es: { reel: 'envió un reel', post: 'compartió una publicación', story: 'compartió una historia', photo: 'envió una foto', video: 'envió un video', attachment: 'envió un archivo adjunto' },
+      de: { reel: 'hat ein Reel gesendet', post: 'hat einen Beitrag geteilt', story: 'hat eine Story geteilt', photo: 'hat ein Foto gesendet', video: 'hat ein Video gesendet', attachment: 'hat einen Anhang gesendet' },
+      fr: { reel: 'a envoyé un reel', post: 'a partagé une publication', story: 'a partagé une story', photo: 'a envoyé une photo', video: 'a envoyé une vidéo', attachment: 'a envoyé une pièce jointe' },
+      id: { reel: 'mengirim reel', post: 'membagikan postingan', story: 'membagikan cerita', photo: 'mengirim foto', video: 'mengirim video', attachment: 'mengirim lampiran' },
+      ru: { reel: 'отправил(а) reel', post: 'поделился(ась) публикацией', story: 'поделился(ась) историей', photo: 'отправил(а) фото', video: 'отправил(а) видео', attachment: 'отправил(а) вложение' },
+      it: { reel: 'ha inviato un reel', post: 'ha condiviso un post', story: 'ha condiviso una storia', photo: 'ha inviato una foto', video: 'ha inviato un video', attachment: 'ha inviato un allegato' },
+      ja: { reel: 'リールを送信しました', post: '投稿を共有しました', story: 'ストーリーを共有しました', photo: '写真を送信しました', video: '動画を送信しました', attachment: '添付ファイルを送信しました' }
+    };
+
+    function sentPhrase(kind) {
+      const table = sentPhrases[instagramLanguage()] || sentPhrases.en;
+      return table[kind] || sentPhrases.en[kind];
+    }
+
+    const reactionPhrases = {
+      en: function (emoji, text) { return text ? 'reacted ' + emoji + ' to “' + text + '”' : 'reacted ' + emoji + ' to your message'; },
+      tr: function (emoji, text) { return text ? '“' + text + '” mesajına ' + emoji + ' ile tepki verdi' : 'mesajına ' + emoji + ' ile tepki verdi'; },
+      es: function (emoji, text) { return text ? 'reaccionó ' + emoji + ' a “' + text + '”' : 'reaccionó ' + emoji + ' a tu mensaje'; },
+      de: function (emoji, text) { return text ? 'hat mit ' + emoji + ' auf „' + text + '“ reagiert' : 'hat mit ' + emoji + ' auf deine Nachricht reagiert'; },
+      fr: function (emoji, text) { return text ? 'a réagi ' + emoji + ' à « ' + text + ' »' : 'a réagi ' + emoji + ' à votre message'; },
+      id: function (emoji, text) { return text ? 'bereaksi ' + emoji + ' terhadap “' + text + '”' : 'bereaksi ' + emoji + ' terhadap pesan Anda'; },
+      ru: function (emoji, text) { return text ? 'отреагировал(а) ' + emoji + ' на «' + text + '»' : 'отреагировал(а) ' + emoji + ' на ваше сообщение'; },
+      it: function (emoji, text) { return text ? 'ha reagito ' + emoji + ' a “' + text + '”' : 'ha reagito ' + emoji + ' al tuo messaggio'; },
+      ja: function (emoji, text) { return text ? '「' + text + '」に' + emoji + 'でリアクションしました' : 'メッセージに' + emoji + 'でリアクションしました'; }
+    };
+
+    function reactionPhrase(emoji, text) {
+      return (reactionPhrases[instagramLanguage()] || reactionPhrases.en)(emoji, text);
+    }
+
+    // Tells the shell about one event of the thread; the same words again within a moment are one event seen
+    // twice (a re-drawn thread is already told apart by tailRelation).
+    function announce(composerRect, body, eventKind, notificationData, dedupeText) {
+      const now = Date.now();
+      const title = conversationName(composerRect);
+      const key = title + '\u0000' + dedupeText;
+      if (key === lastMessageKey && now - lastMessageAt < 800) return;
+      lastMessageKey = key;
+      lastMessageAt = now;
+      const avatarHints = window.__nebulaInstagramAvatarHints;
+      const avatarKey = instagramAvatarKey(title);
+      const iconUrl = conversationAvatar(composerRect, title) ||
+        (avatarHints instanceof Map ? String(avatarHints.get(avatarKey) || '') : '');
+      if (iconUrl) {
+        if (avatarHints instanceof Map) avatarHints.set(avatarKey, iconUrl);
+        try {
+          bridge.postMessage(JSON.stringify({
+            type: 'nebula-site-avatar-hint',
+            origin: window.location.origin,
+            senderName: title,
+            iconUrl: iconUrl
+          }));
+        } catch (_) {}
+      }
+      try {
+        bridge.postMessage(JSON.stringify({
+          type: 'nebula-site-notification-content',
+          origin: window.location.origin,
+          title: title,
+          body: body,
+          iconUrl: iconUrl,
+          notificationType: eventKind,
+          notificationData: notificationData,
+          siteName: 'Instagram',
+          senderName: title,
+          eventKind: eventKind
+        }));
+      } catch (_) {}
+    }
+
+    // ---- A reaction: a small emoji under a message ----
+    const reactedKeys = new Map();
+    const mediaSeen = new WeakSet();
+    const emojiPattern = /\p{Extended_Pictographic}/u;
+    const wordPattern = /[\p{L}\p{N}]/u;
+
+    function rememberReaction(key) {
+      reactedKeys.set(key, true);
+      if (reactedKeys.size > 400) reactedKeys.delete(reactedKeys.keys().next().value);
+    }
+
+    function reactionBadgesIn(root) {
+      const nodes = [];
+      if (root.nodeType === Node.ELEMENT_NODE) nodes.push(root);
+      if (root.querySelectorAll) {
+        const descendants = root.querySelectorAll('span, div, button, img');
+        for (let index = 0; index < descendants.length && index < 400; index += 1) nodes.push(descendants[index]);
+      }
+      const badges = [];
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        if (node.children && node.children.length > 0 && node.tagName !== 'IMG') continue;
+        const text = String(node.tagName === 'IMG' ? node.getAttribute('alt') : node.textContent || '').trim();
+        if (!text || text.length > 12 || !emojiPattern.test(text) || wordPattern.test(text)) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || rect.width > 56 || rect.height > 40) continue;
+        badges.push({ node: node, text: text, rect: rect });
+      }
+      return badges;
+    }
+
+    // The message a badge sits under: the text just above it, overlapping it sideways.
+    function bubbleAbove(badgeRect, composerRect) {
+      const nodes = document.querySelectorAll('main [dir="auto"]');
+      let best = null;
+      let bestGap = Infinity;
+      const centre = badgeRect.left + badgeRect.width / 2;
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        if (node.querySelector && node.querySelector('[dir="auto"]')) continue;
+        const text = String(node.textContent || '').trim();
+        if (!text || text.length > 500 || (emojiPattern.test(text) && !wordPattern.test(text) && text.length <= 12)) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || rect.bottom >= composerRect.top) continue;
+        const gap = badgeRect.top - rect.bottom;
+        if (gap < -16 || gap > 20 || centre < rect.left - 18 || centre > rect.right + 18) continue;
+        if (Math.abs(gap) < bestGap) {
+          best = node;
+          bestGap = Math.abs(gap);
+        }
+      }
+      return best;
+    }
+
+    // Emoji badges in `root`: what others reacted to the user's messages is announced; what is already there
+    // (and the user's own reactions, which sit under the messages of others) is only remembered.
+    function scanReactions(root) {
+      if (!root || !window.location.pathname.startsWith('/direct/t/')) return;
+      const composer = visibleComposer();
+      if (!composer) return;
+      const composerRect = composer.getBoundingClientRect();
+      const quiet = threadSettling();
+      const centre = composerRect.left + composerRect.width / 2;
+      const badges = reactionBadgesIn(root);
+      for (let index = 0; index < badges.length; index += 1) {
+        const badge = badges[index];
+        if (badge.rect.bottom >= composerRect.top || badge.rect.bottom < 64) continue;
+        const bubble = bubbleAbove(badge.rect, composerRect);
+        let mine;
+        let snippet = '';
+        if (bubble) {
+          const bubbleRect = bubble.getBoundingClientRect();
+          mine = bubbleRect.left + bubbleRect.width / 2 >= centre;
+          snippet = String(bubble.textContent || '').replace(/\s+/g, ' ').trim();
+          if (snippet.length > 60) snippet = snippet.slice(0, 57) + '...';
+        } else {
+          mine = badge.rect.left + badge.rect.width / 2 >= centre;
+        }
+        const key = snippet + '\u0000' + badge.text;
+        if (reactedKeys.has(key)) continue;
+        rememberReaction(key);
+        if (quiet || !mine) continue;
+        announce(composerRect, reactionPhrase(badge.text, snippet), 'reaction', null, 'reaction\u0000' + key);
+      }
+    }
+
+    // ---- Something that is not text: a reel, a post, a story, a video, a photo ----
+
+    // The card a picture sits in: the biggest ancestor that is no wider than the picture and reaches only a
+    // little above it (the author) and below it (the caption). The avatar column of the message row is outside.
+    function pictureCard(node) {
+      const imageRect = node.getBoundingClientRect();
+      let best = node;
+      let bestRect = imageRect;
+      for (let element = node.parentElement, depth = 0; element && depth < 6 && element !== document.body; depth += 1, element = element.parentElement) {
+        const rect = element.getBoundingClientRect();
+        if (
+          rect.left < imageRect.left - 12 || rect.right > imageRect.right + 12 ||
+          rect.top < imageRect.top - 90 || rect.bottom > imageRect.bottom + 120
+        ) break;
+        best = element;
+        bestRect = rect;
+      }
+      return { node: best, rect: bestRect };
+    }
+
+    // A shared reel or post has the author on it or right above it (a small avatar or a name) and often a
+    // play icon on it; a photo someone sent has nothing of the kind. A tall poster (9:16) is a reel.
+    function pictureKind(node) {
+      const imageRect = node.getBoundingClientRect();
+      const card = pictureCard(node);
+      let shared = false;
+      const marks = card.node.querySelectorAll ? card.node.querySelectorAll('img, svg, [dir="auto"]') : [];
+      for (let index = 0; index < marks.length && index < 80 && !shared; index += 1) {
+        const mark = marks[index];
+        if (mark === node) continue;
+        const rect = mark.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        const isText = mark.getAttribute('dir') === 'auto';
+        if (!isText && (rect.width < 14 || rect.width > 56 || rect.height < 14 || rect.height > 56)) continue;
+        if (isText && !String(mark.textContent || '').trim()) continue;
+        const onIt =
+          rect.left >= imageRect.left - 2 && rect.right <= imageRect.right + 2 &&
+          rect.top >= imageRect.top - 2 && rect.bottom <= imageRect.bottom + 2;
+        const aboveIt =
+          rect.left >= imageRect.left - 4 && rect.right <= imageRect.right + 4 &&
+          rect.bottom <= imageRect.top + 6 && rect.top >= imageRect.top - 90;
+        if (onIt || aboveIt) shared = true;
+      }
+      if (!shared) return node.tagName === 'VIDEO' ? 'video' : 'photo';
+      return imageRect.height / Math.max(1, imageRect.width) >= 1.6 ? 'reel' : 'post';
+    }
+
+    function mediaIn(root) {
+      const found = [];
+      const claimed = [];
+      const links = [];
+      if (root.nodeType === Node.ELEMENT_NODE && root.matches && root.matches('a[href]')) links.push(root);
+      if (root.querySelectorAll) {
+        const descendants = root.querySelectorAll('a[href]');
+        for (let index = 0; index < descendants.length && index < 200; index += 1) links.push(descendants[index]);
+      }
+      for (let index = 0; index < links.length; index += 1) {
+        let path = '';
+        try { path = new URL(links[index].getAttribute('href'), window.location.href).pathname; } catch (_) { continue; }
+        let kind = '';
+        if (path.indexOf('/reel/') === 0 || path.indexOf('/reels/') === 0) kind = 'reel';
+        else if (path.indexOf('/p/') === 0 || path.indexOf('/tv/') === 0) kind = 'post';
+        else if (path.indexOf('/stories/') === 0) kind = 'story';
+        if (!kind) continue;
+        claimed.push(links[index]);
+        found.push({ node: links[index], kind: kind });
+      }
+      const pictures = [];
+      if (root.nodeType === Node.ELEMENT_NODE && root.matches && root.matches('video, img')) pictures.push(root);
+      if (root.querySelectorAll) {
+        const descendants = root.querySelectorAll('video, img');
+        for (let index = 0; index < descendants.length && index < 200; index += 1) pictures.push(descendants[index]);
+      }
+      for (let index = 0; index < pictures.length; index += 1) {
+        const node = pictures[index];
+        if (claimed.some(function (link) { return link.contains(node); })) continue;
+        if (node.closest && node.closest('a[href]')) continue;
+        const rect = node.getBoundingClientRect();
+        // An avatar or an emoji is small; a picture someone sent is not.
+        if (rect.width < 140 || rect.height < 140) continue;
+        const card = pictureCard(node);
+        found.push({ node: node, kind: pictureKind(node), cardRect: card.rect });
+      }
+      // What Instagram itself calls an attachment: a big picture drawn as a background, or a canvas.
+      const blocks = [];
+      if (root.nodeType === Node.ELEMENT_NODE) blocks.push(root);
+      if (root.querySelectorAll) {
+        const descendants = root.querySelectorAll('canvas, [style*="background-image"]');
+        for (let index = 0; index < descendants.length && index < 100; index += 1) blocks.push(descendants[index]);
+      }
+      for (let index = 0; index < blocks.length; index += 1) {
+        const node = blocks[index];
+        const styled = node.tagName === 'CANVAS' || (node.getAttribute && (node.getAttribute('style') || '').indexOf('background-image') >= 0);
+        if (!styled) continue;
+        if (claimed.some(function (link) { return link.contains(node); })) continue;
+        if (found.some(function (item) { return item.node === node || item.node.contains(node) || node.contains(item.node); })) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width < 140 || rect.height < 140) continue;
+        found.push({ node: node, kind: 'attachment' });
+      }
+      return found;
+    }
+
+    function rememberMedia(root) {
+      const items = mediaIn(root);
+      for (let index = 0; index < items.length; index += 1) mediaSeen.add(items[index].node);
+    }
+
+    // Text drawn on a reel, a post or a picture (the author, the caption) is part of that card, not a message.
+    function insideMediaCard(node) {
+      const nodeRect = node.getBoundingClientRect();
+      let element = node.parentElement;
+      for (let depth = 0; element && depth < 8 && element !== document.body; depth += 1, element = element.parentElement) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width < 140 || rect.height < 140) continue;
+        if (rect.width > 700) break;
+        const items = mediaIn(element);
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index];
+          if (item.node.contains(node)) return true;
+          const itemRect = item.cardRect || item.node.getBoundingClientRect();
+          if (
+            nodeRect.left >= itemRect.left - 2 && nodeRect.right <= itemRect.right + 2 &&
+            nodeRect.top >= itemRect.top - 2 && nodeRect.bottom <= itemRect.bottom + 2
+          ) return true;
+        }
+      }
+      return false;
+    }
+
+    function reportMedia(item) {
+      if (!item || !item.node || mediaSeen.has(item.node)) return;
+      const composer = visibleComposer();
+      if (!composer || !window.location.pathname.startsWith('/direct/t/')) return;
+      const composerRect = composer.getBoundingClientRect();
+      const rect = item.node.getBoundingClientRect();
+      // A card is filled in as it loads: not measurable yet, look again.
+      if (rect.width < 60 || rect.height < 60) return;
+      mediaSeen.add(item.node);
+      noteDrop('media-detected', item.kind + ' ' + describeNode(item.node));
+      if (rect.bottom >= composerRect.top || rect.bottom < 64) return;
+      if (rect.left < composerRect.left - 48) return;
+      if (rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2) return;
+      if (threadSettling()) {
+        rememberTail(lowestOtherMessage(composerRect));
+        noteDrop('thread-settling');
+        return;
+      }
+      const relation = tailRelation(item.node);
+      if (relation !== 'new') {
+        if (relation === 'same') {
+          lastTailNode = item.node;
+          lastTailBottom = contentBottom(item.node);
+        }
+        noteDrop('not-new');
+        return;
+      }
+      lastTailNode = item.node;
+      lastTailBottom = contentBottom(item.node);
+      announce(composerRect, sentPhrase(item.kind), 'message', null, 'media\u0000' + item.kind);
+    }
+
+    const mediaAttempts = new WeakMap();
+    const mediaQueued = new WeakSet();
+
+    function queueMedia(item) {
+      if (!item || !item.node || mediaSeen.has(item.node) || mediaQueued.has(item.node)) return;
+      mediaQueued.add(item.node);
+      window.setTimeout(function () {
+        mediaQueued.delete(item.node);
+        reportMedia(item);
+        if (!mediaSeen.has(item.node)) {
+          const attempt = mediaAttempts.get(item.node) || 0;
+          if (attempt < 4) {
+            mediaAttempts.set(item.node, attempt + 1);
+            queueMedia(item);
+          }
+        }
+      }, 300);
     }
 
     function conversationName(composerRect) {
@@ -1074,6 +1556,71 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
       const value = String(text || '').replace(/\s+/g, ' ').trim();
       if (!value || value.length > 180) return false;
       return /^(?:(?:.{1,80}?)\s+)?(?:liked (?:a|your) message|reacted(?:\s+.{1,16})?\s+to (?:a|your) message|(?:bir )?mesaj[ıi](?:n[ıi])? beğendi|mesaj[ıi]na (?:tepki verdi|ifade bıraktı)|le gustó un mensaje|reaccion(?:ó|o)(?:\s+.{1,16})?\s+a (?:un|tu) mensaje|gefällt eine nachricht|hat auf (?:eine|deine) nachricht reagiert|a aimé un message|a r[ée]agi(?:\s+.{1,16})?\s+à (?:un|votre) message|menyukai pesan|bereaksi(?:\s+.{1,16})?\s+terhadap pesan(?: anda)?|понравилось сообщение|отреагировал(?:а)?(?:\s+.{1,16})?\s+на (?:ваше )?сообщение|ha messo mi piace a un messaggio|ha reagito(?:\s+.{1,16})?\s+al tuo messaggio|メッセージに(?:「いいね」|リアクション)しました|メッセージに反応しました)(?:\s*[.!。])?(?:\s*(?:[·•]\s*)?(?:\d+\s*[smhdw]|just now))?$/iu.test(value);
+    }
+
+    // The small line Instagram puts above a quoted message ("<name> replied to you", "Replied to you", ...):
+    // a short line that says so with a whole word. A message that merely contains such a word, or a hidden
+    // "Reply" action label, is not one.
+    function isReplyLabelText(text) {
+      const value = String(text || '').replace(/\s+/g, ' ').trim();
+      if (!value || value.length > 90) return false;
+      return /(?:^|[^\p{L}])(?:replied|yan[ıi]tlad[ıi]|yan[ıi]t verdi|geantwortet|r[ée]pondu|membalas|ответил(?:а)?|risposto|respondi[óo]|返信しました)(?![\p{L}])/iu.test(value);
+    }
+
+    // A line that is exactly Instagram's label of a reply ("<name> replied to you"): it ends in that wording
+    // and says nothing else, so it is a label whatever size it is set at. (A message that only contains the
+    // word "replied" is not.)
+    function isStrictReplyLabelText(text) {
+      const value = String(text || '').replace(/\s+/g, ' ').trim();
+      if (!value || value.length > 90) return false;
+      const lower = value.toLocaleLowerCase();
+      const endings = [
+        'replied to you', 'replied to your message', 'replied to your story', 'replied to your note',
+        'sana yanıt verdi', 'seni yanıtladı', 'hat dir geantwortet', 'te respondió', 'te respondio',
+        'vous a répondu', 'vous a repondu', 'membalas anda', 'ответил вам', 'ответила вам',
+        'ti ha risposto', 'あなたに返信しました'
+      ];
+      return endings.some(function (ending) {
+        return lower === ending || lower.endsWith(' ' + ending);
+      });
+    }
+
+    // The label of a reply is a small line ("<icon> replied to you") that is often not one of the message
+    // nodes. Look for it among the visible text of the message's container: a line that says "replied",
+    // sits right above the message, and is set smaller than the message. A message that says "replied" in
+    // its own words (the size of the message) and text that is hidden off-screen do not count.
+    function replyLabelAbove(container, actual) {
+      if (!container || !document.createTreeWalker) return false;
+      let walker;
+      try {
+        walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      } catch (_) {
+        return false;
+      }
+      let node;
+      let visited = 0;
+      while ((node = walker.nextNode()) && visited < 300) {
+        visited += 1;
+        const element = node.parentElement;
+        if (!element || actual.node.contains(element)) continue;
+        if (!isReplyLabelText(element.textContent)) continue;
+        let rect;
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          rect = range.getBoundingClientRect();
+        } catch (_) {
+          continue;
+        }
+        const gap = actual.rect.top - rect.bottom;
+        if (rect.width <= 0 || rect.height <= 0 || gap < -4 || gap > 72) continue;
+        if (rect.right <= 0 || rect.left >= window.innerWidth) continue;
+        if (isStrictReplyLabelText(element.textContent)) return true;
+        let size = 0;
+        try { size = parseFloat(window.getComputedStyle(element).fontSize) || 0; } catch (_) {}
+        if (size > 0 && actual.fontSize > 0 && size < actual.fontSize - 0.5) return true;
+      }
+      return false;
     }
 
     function isGenericInstagramActivity(text) {
@@ -1156,7 +1703,9 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
           isGenericInstagramActivity(text)
         ) continue;
         if (entries.length === 0 || entries[entries.length - 1].text !== text) {
-          entries.push({ node: node, rect: rect, text: text });
+          let fontSize = 0;
+          try { fontSize = parseFloat(window.getComputedStyle(node).fontSize) || 0; } catch (_) {}
+          entries.push({ node: node, rect: rect, text: text, fontSize: fontSize });
         }
       }
       const fallbackText = instagramActivityText(candidate);
@@ -1164,21 +1713,31 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
         return {
           text: fallbackText,
           isReply: false,
-          isReaction: isInstagramReactionActivity(fallbackText)
+          isReaction: isInstagramReactionActivity(fallbackText),
+          node: candidate
         };
       }
       const actual = entries[entries.length - 1];
-      const hasReplyLabel = /repl(?:y|ied)|yan[ıi]t|cevap|antwort|geantwortet|r[ée]pond|r[ée]ponse|membalas|balasan|ответ(?:ил|ила)?|rispost|ha risposto|返信|返事/i.test(
-        String(container.textContent || '')
-      );
-      const hasQuotedPreview = entries.slice(0, -1).some(function (entry) {
+      // Only what sits right above the message counts (a reply's label and quoted text), and only in a way
+      // that tells it from the message before it: the label says "replied", or the quoted text is set
+      // smaller than the message. Two messages in a row look alike and are not a reply.
+      const above = entries.slice(0, -1).filter(function (entry) {
         const verticalGap = actual.rect.top - entry.rect.bottom;
         return entry.text !== actual.text &&
           entry.node.parentElement !== actual.node.parentElement &&
           verticalGap >= -4 && verticalGap <= 72;
       });
+      const smallerThanMessage = function (entry) {
+        return entry.fontSize > 0 && actual.fontSize > 0 && entry.fontSize < actual.fontSize - 0.5;
+      };
+      const hasReplyLabel = above.some(function (entry) {
+        return isStrictReplyLabelText(entry.text) ||
+          (smallerThanMessage(entry) && isReplyLabelText(entry.text));
+      }) || replyLabelAbove(container, actual);
+      const hasQuotedPreview = above.some(smallerThanMessage);
       return {
         text: actual.text,
+        node: actual.node,
         isReply: hasReplyLabel || hasQuotedPreview,
         isReaction: isInstagramReactionActivity(actual.text) ||
           isInstagramReactionActivity(String(container.textContent || ''))
@@ -1208,43 +1767,44 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
       if (rect.left < composerRect.left - 48) return;
       if (rect.left + rect.width / 2 >= composerRect.left + composerRect.width / 2) return;
 
-      const now = Date.now();
-      const title = conversationName(composerRect);
-      const key = title + '\u0000' + text;
-      if (key === lastMessageKey && now - lastMessageAt < 5000) return;
-      lastMessageKey = key;
-      lastMessageAt = now;
-      const avatarHints = window.__nebulaInstagramAvatarHints;
-      const avatarKey = instagramAvatarKey(title);
-      const iconUrl = conversationAvatar(composerRect, title) ||
-        (avatarHints instanceof Map ? String(avatarHints.get(avatarKey) || '') : '');
-      if (iconUrl) {
-        if (avatarHints instanceof Map) avatarHints.set(avatarKey, iconUrl);
-        try {
-          bridge.postMessage(JSON.stringify({
-            type: 'nebula-site-avatar-hint',
-            origin: window.location.origin,
-            senderName: title,
-            iconUrl: iconUrl
-          }));
-        } catch (_) {}
+      if (!details.isReaction && insideMediaCard(candidate)) {
+        noteDrop('media-text');
+        return;
       }
-      try {
-        const eventKind = details.isReaction ? 'reaction' : details.isReply ? 'reply' : 'message';
-        const visibleBody = details.isReply && !details.isReaction ? title + ' replied to you' : text;
-        bridge.postMessage(JSON.stringify({
-          type: 'nebula-site-notification-content',
-          origin: window.location.origin,
-          title: title,
-          body: visibleBody,
-          iconUrl: iconUrl,
-          notificationType: eventKind,
-          notificationData: details.isReply && !details.isReaction ? { replyText: text } : null,
-          siteName: 'Instagram',
-          senderName: title,
-          eventKind: eventKind
-        }));
-      } catch (_) {}
+      if (threadSettling()) {
+        rememberTail(lowestOtherMessage(composerRect));
+        noteDrop('thread-settling');
+        return;
+      }
+      if (!details.isReaction) {
+        // The message itself (the last of its group), not the label or the quoted text drawn above it.
+        const newest = details.node || candidate;
+        const relation = tailRelation(newest);
+        if (relation !== 'new') {
+          // The same message drawn again: keep following the node that is on the page now, so that the
+          // position stays right when older messages are loaded above it.
+          if (relation === 'same') {
+            lastTailNode = newest;
+            lastTailBottom = contentBottom(newest);
+          }
+          noteDrop('not-new');
+          return;
+        }
+        lastTailNode = newest;
+        lastTailBottom = contentBottom(newest);
+      }
+
+      const eventKind = details.isReaction ? 'reaction' : details.isReply ? 'reply' : 'message';
+      const visibleBody = details.isReply && !details.isReaction
+        ? conversationName(composerRect) + ' replied to you'
+        : text;
+      announce(
+        composerRect,
+        visibleBody,
+        eventKind,
+        details.isReply && !details.isReaction ? { replyText: text } : null,
+        text
+      );
     }
 
     function queueCandidate(candidate) {
@@ -1298,6 +1858,23 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
           }
         }
       }
+      // A reaction badge under a message, and cards or pictures that are not text.
+      if (window.location.pathname.startsWith('/direct/t/')) {
+        scanReactions(element);
+        const media = mediaIn(element);
+        for (let index = 0; index < media.length; index += 1) queueMedia(media[index]);
+        if (media.length === 0 && element.getBoundingClientRect) {
+          const rect = element.getBoundingClientRect();
+          const composer = visibleComposer();
+          if (
+            composer && rect.width >= 140 && rect.height >= 140 && rect.width < 700 &&
+            rect.left + rect.width / 2 < composer.getBoundingClientRect().left + composer.getBoundingClientRect().width / 2 &&
+            rect.bottom < composer.getBoundingClientRect().top
+          ) {
+            noteDrop('media-unrecognized', describeNode(element));
+          }
+        }
+      }
     }
 
     function arm() {
@@ -1313,6 +1890,22 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
       }
       const existing = document.querySelectorAll('[dir="auto"]');
       for (let index = 0; index < existing.length; index += 1) seen.add(existing[index]);
+      armedPath = window.location.pathname;
+      rememberTail(lowestOtherMessage(composer.getBoundingClientRect()));
+      quietUntil = Date.now() + 1500;
+      rememberMedia(document.body);
+      scanReactions(document.body);
+      window.setInterval(function () {
+        if (threadSettling()) {
+          // A conversation is opening: what appears now is what was already there.
+          rememberMedia(document.body);
+          scanReactions(document.body);
+        } else if (!lastTailNode && lastTailBottom === null) {
+          // Once it has settled, what is in it is the baseline.
+          const open = visibleComposer();
+          if (open) rememberTail(lowestOtherMessage(open.getBoundingClientRect()));
+        }
+      }, 400);
       observer = new MutationObserver(function (mutations) {
         for (let index = 0; index < mutations.length; index += 1) {
           const mutation = mutations[index];
@@ -1534,7 +2127,10 @@ var DOTTED_I = new RegExp(String.fromCharCode(775), 'g');
     function eventKind(notificationType, body) {
       const type = String(notificationType || '').toLowerCase();
       const text = String(body || '').toLowerCase();
-      if (/repl(?:y|ied)|yan[ıi]t|cevap|respond(?:ió|io)|respuesta|antwort|geantwortet|r[ée]pond|r[ée]ponse|membalas|balasan|ответ(?:ил|ила)?|rispost|ha risposto|返信|返事/.test(text)) return 'reply';
+      // Only the part before the first colon is Instagram's own wording ("<name> replied to you: ..."); what
+      // follows is the message, which may contain any word.
+      const template = text.indexOf(':') > 0 ? text.slice(0, text.indexOf(':')) : text;
+      if (/(?:^|[^\p{L}])(?:replied|yan[ıi]t verdi|yan[ıi]tlad[ıi]|respondi[óo]|geantwortet|r[ée]pondu|membalas|ответил(?:а)?|risposto|返信しました)(?![\p{L}])/u.test(template)) return 'reply';
       if (type.indexOf('reaction') >= 0 || type.endsWith('_like') || /reacted|liked|beğendi|tepki|ifade bıraktı|reaccion(?:ó|o)|le gustó|reagiert|gefällt|r[ée]agi|r[ée]action|a aimé|bereaksi|reaksi|menyukai|отреагировал|реакци|понравилось|ha reagito|reazione|piace|リアクション|反応|いいね/.test(text)) return 'reaction';
       if (type.indexOf('mention') >= 0) return 'mention';
       if (type.startsWith('direct_v2')) return 'message';
@@ -2787,6 +3383,39 @@ if (container) queueCandidate(container);
 }
 
                             if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-site-notification-diagnostic")
+                            {
+                                let host = source_url.host_str().unwrap_or_default();
+                                let instagram_source = source_url.scheme() == "https"
+                                    && (host.eq_ignore_ascii_case("instagram.com")
+                                        || host
+                                            .to_ascii_lowercase()
+                                            .ends_with(".instagram.com"));
+                                let claimed_origin = value
+                                    .get("origin")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let reason = value
+                                    .get("reason")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                let detail = value
+                                    .get("detail")
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default();
+                                if instagram_source && source_origin == claimed_origin {
+                                    crate::notification_broker::record_adapter_diagnostic(
+                                        "dropped",
+                                        reason,
+                                        detail,
+                                        &protocol_label,
+                                        &source_origin,
+                                    );
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
                                 == Some("nebula-site-notification-content")
                             {
                                 let host = source_url.host_str().unwrap_or_default();
@@ -2889,7 +3518,7 @@ if (container) queueCandidate(container);
                                     .get("timestampMs")
                                     .and_then(serde_json::Value::as_u64);
 
-                                if source_has_content_adapter
+                                let content_is_valid = source_has_content_adapter
                                     && source_origin == claimed_origin
                                     && adapter_is_valid
                                     && icon_is_valid
@@ -2897,12 +3526,24 @@ if (container) queueCandidate(container);
                                     && title.chars().count() <= 80
                                     && !body.is_empty()
                                     && body.chars().count() <= 500
-                                    && sender_name_hint.chars().count() <= 120
+                                    && sender_name_hint.chars().count() <= 120;
+                                let tab_surfaces = content_is_valid
                                     && crate::tab_metadata::notification_should_surface(
                                         &protocol_app,
                                         &protocol_label,
-                                    )
-                                {
+                                    );
+                                if content_is_valid && !tab_surfaces {
+                                    // Nebula is in front and this tab is the one being looked at: by design
+                                    // there is no notification. Said in the log so it is not mistaken for a loss.
+                                    crate::notification_broker::record_adapter_diagnostic(
+                                        "suppressed",
+                                        "tab-visible",
+                                        "",
+                                        &protocol_label,
+                                        &source_origin,
+                                    );
+                                }
+                                if tab_surfaces {
                                     let instagram_dom_message = !is_service_worker_snapshot
                                         && (host.eq_ignore_ascii_case("instagram.com")
                                             || host
