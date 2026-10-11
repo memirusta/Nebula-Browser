@@ -91,7 +91,7 @@ fn verify_existing_directory(target: &Path, entries: &ArchiveEntries) -> Result<
         for item in std::fs::read_dir(&directory).map_err(|e| e.to_string())? {
             let item = item.map_err(|e| e.to_string())?;
             let file_type = item.file_type().map_err(|e| e.to_string())?;
-            if item.path().strip_prefix(target).is_ok_and(&reserved) {
+            if item.path().strip_prefix(target).is_ok_and(reserved) {
                 continue;
             }
             if file_type.is_symlink() {
