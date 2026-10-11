@@ -86,7 +86,7 @@ async fn download_package(id: &str, directory: &Path) -> Result<ExtensionDownloa
 
 pub(crate) async fn fetch_package(package: &'static ExtensionPackage) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
-        .user_agent("Nebula/1.8.5")
+        .user_agent("Nebula/2.0.0")
         .connect_timeout(Duration::from_secs(15))
         // A big package on a slow line takes minutes. Give up when data stops
         // arriving, not when a fixed total runs out.
@@ -228,7 +228,7 @@ pub(crate) async fn fetch_discovery_package(id: &str) -> Result<Vec<u8>, String>
     let store_id = &entry.store_id;
     let url = format!("https://clients2.google.com/service/update2/crx?response=redirect&prodversion=152.0.4191.66&acceptformat=crx3&x=id%3D{store_id}%26uc");
     let client = reqwest::Client::builder()
-        .user_agent("Nebula/1.8.5")
+        .user_agent("Nebula/2.0.0")
         .connect_timeout(Duration::from_secs(15))
         // See fetch_package: stop when data stops arriving, not after a fixed total.
         .read_timeout(Duration::from_secs(30))
