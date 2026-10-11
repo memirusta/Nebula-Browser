@@ -3,15 +3,19 @@ import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { cursorPosition, getAllWindows } from '@tauri-apps/api/window'
 import type { BrowserTab } from '../core/browserTab.ts'
 import {
-  browserTransferStorageKey,
+  transferredBrowserTabFromBrowserTab,
   browserWindowLabel,
   type BrowserTabTransfer,
 } from '../core/browserWorkspace.ts'
-import { persistedBrowserTabFromBrowserTab } from '../core/browserSessionSnapshot.ts'
 import { tabWebviewLabel } from '../core/browserTab.ts'
+import {
+  parseBrowserWindowDropTarget,
+  type BrowserWindowDropTarget,
+} from '../core/browserDropTarget.ts'
 import { isTauri } from './runtime.ts'
 
 const BROWSER_TAB_TRANSFER_READY_EVENT = 'nebula-browser-tab-transfer-ready'
+const TRANSFER_FALLBACK_POLL_MS = 120
 const ACTIVE_TRANSFER_MAX_AGE_MS = 2 * 60_000
 const FINISHED_TRANSFER_MAX_AGE_MS = 30_000
 
@@ -40,7 +44,7 @@ export function createBrowserTabTransfer(
   targetWindowId: string,
   tab: BrowserTab,
 ): BrowserTabTransfer {
-  const persisted = persistedBrowserTabFromBrowserTab(tab)
+  const persisted = transferredBrowserTabFromBrowserTab(tab)
   if (!persisted) throw new Error('Only HTTP(S) tabs can move between Nebula windows.')
   return {
     id: crypto.randomUUID(),
@@ -53,94 +57,89 @@ export function createBrowserTabTransfer(
   }
 }
 
-export function saveBrowserTabTransfer(transfer: BrowserTabTransfer): void {
-  localStorage.setItem(
-    browserTransferStorageKey(transfer.id),
-    JSON.stringify(transfer),
-  )
+const volatileTransfers = new Map<string, BrowserTabTransfer>()
+
+async function listBrowserTabTransfers(): Promise<BrowserTabTransfer[]> {
+  if (isTauri) return invoke<BrowserTabTransfer[]>('browser_tab_transfer_store', { action: 'list' })
+  return [...volatileTransfers.values()]
 }
 
-export function loadBrowserTabTransfer(transferId: string): BrowserTabTransfer | null {
-  try {
-    const raw = localStorage.getItem(browserTransferStorageKey(transferId))
-    if (!raw) return null
-    const transfer = JSON.parse(raw) as Partial<BrowserTabTransfer>
-    if (
-      transfer.id !== transferId ||
-      typeof transfer.sourceWindowId !== 'string' ||
-      typeof transfer.targetWindowId !== 'string' ||
-      typeof transfer.webviewLabel !== 'string' ||
-      !transfer.tab ||
-      typeof transfer.tab !== 'object'
-    ) return null
-    return transfer as BrowserTabTransfer
-  } catch {
-    return null
+export async function saveBrowserTabTransfer(transfer: BrowserTabTransfer): Promise<void> {
+  if (isTauri) {
+    await invoke('browser_tab_transfer_store', { action: 'set', transfer })
+  } else if (!volatileTransfers.has(transfer.id)) {
+    volatileTransfers.set(transfer.id, structuredClone(transfer))
   }
 }
 
-export function updateBrowserTabTransfer(
+export async function loadBrowserTabTransfer(transferId: string): Promise<BrowserTabTransfer | null> {
+  if (isTauri) return invoke<BrowserTabTransfer | null>('browser_tab_transfer_store', { action: 'get', id: transferId })
+  const transfer = volatileTransfers.get(transferId)
+  return transfer ? structuredClone(transfer) : null
+}
+
+export async function updateBrowserTabTransfer(
   transfer: BrowserTabTransfer,
   state: BrowserTabTransfer['state'],
-): BrowserTabTransfer {
-  const next = { ...transfer, state }
-  saveBrowserTabTransfer(next)
+): Promise<BrowserTabTransfer> {
+  const next = await advanceBrowserTabTransfer(transfer.id, state, transfer.targetWindowId)
+  if (!next) throw new Error(`Browser tab transfer '${transfer.id}' is no longer available for this target.`)
+  const alreadyFurther =
+    (state === 'target-ready' && (next.state === 'ready' || next.state === 'claimed')) ||
+    (state === 'ready' && next.state === 'claimed')
+  if (next.state !== state && !alreadyFurther) {
+    throw new Error(`Browser tab transfer '${transfer.id}' cannot move from '${next.state}' to '${state}'.`)
+  }
   return next
 }
 
-export function clearBrowserTabTransfer(transferId: string): void {
-  localStorage.removeItem(browserTransferStorageKey(transferId))
+async function advanceBrowserTabTransfer(
+  transferId: string,
+  state: BrowserTabTransfer['state'],
+  targetWindowId: string,
+): Promise<BrowserTabTransfer | null> {
+  if (isTauri) {
+    return invoke<BrowserTabTransfer | null>('browser_tab_transfer_store', {
+      action: 'advance', id: transferId, state, targetWindowId,
+    })
+  }
+  // This synchronous read/change is the web equivalent of the native mutex.
+  const current = volatileTransfers.get(transferId)
+  if (!current || current.targetWindowId !== targetWindowId) return null
+  const allowed =
+    (current.state === 'pending' && ['target-ready', 'ready', 'cancelled'].includes(state)) ||
+    (current.state === 'target-ready' && ['ready', 'cancelled'].includes(state)) ||
+    (current.state === 'ready' && ['claimed', 'cancelled'].includes(state))
+  const next = allowed ? { ...current, state } : current
+  if (allowed) volatileTransfers.set(transferId, next)
+  return structuredClone(next)
 }
 
-export function pruneBrowserTabTransfers(now = Date.now()): number {
-  const prefix = browserTransferStorageKey('')
-  const keys: string[] = []
-  for (let index = 0; index < localStorage.length; index += 1) {
-    const key = localStorage.key(index)
-    if (key?.startsWith(prefix)) keys.push(key)
-  }
+export async function clearBrowserTabTransfer(transferId: string): Promise<void> {
+  if (isTauri) await invoke('browser_tab_transfer_store', { action: 'remove', id: transferId })
+  else volatileTransfers.delete(transferId)
+}
 
+export async function pruneBrowserTabTransfers(now = Date.now()): Promise<number> {
   let removed = 0
-  for (const key of keys) {
-    const transferId = key.slice(prefix.length)
-    const transfer = transferId ? loadBrowserTabTransfer(transferId) : null
-    const createdAt = transfer?.createdAt
-    const age = typeof createdAt === 'number' ? now - createdAt : Number.POSITIVE_INFINITY
-    const invalidTimestamp = !Number.isFinite(age) || age < -60_000
-    const finished = transfer?.state === 'claimed' || transfer?.state === 'cancelled'
-    if (
-      !transfer ||
-      invalidTimestamp ||
-      age > ACTIVE_TRANSFER_MAX_AGE_MS ||
-      (finished && age > FINISHED_TRANSFER_MAX_AGE_MS)
-    ) {
-      localStorage.removeItem(key)
+  for (const transfer of await listBrowserTabTransfers()) {
+    const age = now - transfer.createdAt
+    const finished = transfer.state === 'claimed' || transfer.state === 'cancelled'
+    if (!Number.isFinite(age) || age < -60_000 || age > ACTIVE_TRANSFER_MAX_AGE_MS ||
+        (finished && age > FINISHED_TRANSFER_MAX_AGE_MS)) {
+      await clearBrowserTabTransfer(transfer.id)
       removed += 1
     }
   }
   return removed
 }
 
-export function markBrowserTabTransferTargetReady(
+export async function markBrowserTabTransferTargetReady(
   transferId: string,
   targetWindowId: string,
-): BrowserTabTransfer | null {
-  const transfer = loadBrowserTabTransfer(transferId)
-  if (!transfer || transfer.targetWindowId !== targetWindowId) return null
-
-  if (transfer.state === 'pending') {
-    return updateBrowserTabTransfer(transfer, 'target-ready')
-  }
-
-  if (
-    transfer.state === 'target-ready' ||
-    transfer.state === 'ready' ||
-    transfer.state === 'claimed'
-  ) {
-    return transfer
-  }
-
-  return null
+): Promise<BrowserTabTransfer | null> {
+  const transfer = await advanceBrowserTabTransfer(transferId, 'target-ready', targetWindowId)
+  return transfer?.state === 'cancelled' ? null : transfer
 }
 
 export async function waitForBrowserTabTransferTargetReady(
@@ -150,7 +149,7 @@ export async function waitForBrowserTabTransferTargetReady(
 ): Promise<BrowserTabTransfer> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const transfer = loadBrowserTabTransfer(transferId)
+    const transfer = await loadBrowserTabTransfer(transferId)
     if (transfer && transfer.targetWindowId !== targetWindowId) {
       throw new Error(
         `Browser tab transfer '${transferId}' targets '${transfer.targetWindowId}', not '${targetWindowId}'.`,
@@ -166,48 +165,25 @@ export async function waitForBrowserTabTransferTargetReady(
     if (transfer?.state === 'cancelled') {
       throw new Error(`Browser tab transfer '${transferId}' was cancelled before the target became ready.`)
     }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 40))
+    await new Promise((resolve) => globalThis.setTimeout(resolve, TRANSFER_FALLBACK_POLL_MS))
   }
   throw new Error(`Browser tab transfer '${transferId}' target window did not become ready in time.`)
 }
 
-export function browserTabTransferIdsForTarget(
+export async function browserTabTransferIdsForTarget(
   targetWindowId: string,
-): string[] {
-  const prefix = browserTransferStorageKey('')
-  const transferIds: string[] = []
-
-  for (let index = 0; index < localStorage.length; index += 1) {
-    const key = localStorage.key(index)
-    if (!key?.startsWith(prefix)) continue
-
-    const transferId = key.slice(prefix.length)
-    if (!transferId) continue
-
-    const transfer = loadBrowserTabTransfer(transferId)
-    if (
-      !transfer ||
-      transfer.targetWindowId !== targetWindowId ||
-      (
-        transfer.state !== 'pending' &&
-        transfer.state !== 'target-ready' &&
-        transfer.state !== 'ready'
-      )
-    ) {
-      continue
-    }
-
-    transferIds.push(transferId)
-  }
-
-  return transferIds
+): Promise<string[]> {
+  return (await listBrowserTabTransfers())
+    .filter((transfer) => transfer.targetWindowId === targetWindowId &&
+      ['pending', 'target-ready', 'ready'].includes(transfer.state))
+    .map((transfer) => transfer.id)
 }
 
 export async function reparentBrowserTab(
   transfer: BrowserTabTransfer,
 ): Promise<BrowserTabTransfer> {
   await reparentBrowserTabToWindow(transfer, transfer.targetWindowId)
-  const ready = updateBrowserTabTransfer(transfer, 'ready')
+  const ready = await updateBrowserTabTransfer(transfer, 'ready')
   if (isTauri) {
     await emitTo(
       browserWindowLabel(transfer.targetWindowId),
@@ -260,7 +236,7 @@ export async function waitForBrowserTabTransferReady(
       throw new Error(`Browser tab transfer '${transferId}' ready wait was cancelled.`)
     }
 
-    const transfer = loadBrowserTabTransfer(transferId)
+    const transfer = await loadBrowserTabTransfer(transferId)
     if (transfer && transfer.targetWindowId !== targetWindowId) {
       throw new Error(
         `Browser tab transfer '${transferId}' targets '${transfer.targetWindowId}', not '${targetWindowId}'.`,
@@ -270,7 +246,7 @@ export async function waitForBrowserTabTransferReady(
     if (transfer?.state === 'cancelled') {
       throw new Error(`Browser tab transfer '${transferId}' was cancelled by the source window.`)
     }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 40))
+    await new Promise((resolve) => globalThis.setTimeout(resolve, TRANSFER_FALLBACK_POLL_MS))
   }
   throw new Error(`Browser tab transfer '${transferId}' did not become ready in time.`)
 }
@@ -284,7 +260,7 @@ export async function waitForBrowserTabTransferClaim(
   let nextReadySignalAt = 0
 
   while (Date.now() < deadline) {
-    const transfer = loadBrowserTabTransfer(transferId)
+    const transfer = await loadBrowserTabTransfer(transferId)
     if (transfer?.state === 'claimed') return transfer
     if (transfer?.state === 'cancelled') {
       throw new Error(`Browser tab transfer '${transferId}' was cancelled by the target window.`)
@@ -311,37 +287,93 @@ export async function waitForBrowserTabTransferClaim(
       })
     }
 
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 40))
+    await new Promise((resolve) => globalThis.setTimeout(resolve, TRANSFER_FALLBACK_POLL_MS))
   }
   throw new Error(`Browser tab transfer '${transferId}' was not claimed in time.`)
+}
+
+export interface BrowserDropDiagnostics {
+  cursor: { x: number; y: number } | null
+  windows: Array<{
+    label: string
+    x: number
+    y: number
+    width: number
+    height: number
+    cursorInside: boolean
+  }>
+}
+
+/**
+ * Diagnostic-only: physical OS cursor against every Nebula window rectangle.
+ * It separates "the cursor really left Nebula" from "the native hit-test
+ * returned no window while the cursor was inside one".
+ */
+export async function describeBrowserDropDiagnostics(): Promise<BrowserDropDiagnostics> {
+  if (!isTauri) return { cursor: null, windows: [] }
+  const cursor = await cursorPosition()
+    .then((point) => ({ x: point.x, y: point.y }))
+    .catch(() => null)
+  const windows = await getAllWindows().catch(() => [])
+  const entries = await Promise.all(windows.map(async (window) => {
+    if (window.label !== 'main' && !window.label.startsWith('nebula-window-')) {
+      return null
+    }
+    try {
+      const [position, size] = await Promise.all([
+        window.outerPosition(),
+        window.outerSize(),
+      ])
+      return {
+        label: window.label,
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+        cursorInside:
+          cursor !== null &&
+          cursor.x >= position.x && cursor.y >= position.y &&
+          cursor.x < position.x + size.width && cursor.y < position.y + size.height,
+      }
+    } catch {
+      return null
+    }
+  }))
+  return {
+    cursor,
+    windows: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+  }
 }
 
 export async function browserWindowAtScreenPoint(
   screenX: number,
   screenY: number,
-): Promise<string | null> {
-  if (!isTauri) return null
-  const pointer = await cursorPosition().catch(() => ({
-    x: screenX,
-    y: screenY,
-  }))
-  const windows = await getAllWindows()
-  for (const window of windows) {
+): Promise<BrowserWindowDropTarget> {
+  if (!isTauri) return { kind: 'unknown' }
+  try {
+    // Windows resolves the physical OS cursor and topmost root HWND together.
+    // DOM screenX/Y are logical pixels and are only used by the fallback below.
+    return parseBrowserWindowDropTarget(await invoke<unknown>('browser_window_at_cursor'))
+  } catch {
+    // Compatibility with an older native binary during frontend hot reload.
+  }
+  // Geometry alone can find a window but can never prove the cursor is outside
+  // Nebula, so a miss here stays `unknown` instead of creating a window.
+  const pointer = await cursorPosition().catch(() => ({ x: screenX, y: screenY }))
+  const windows = await getAllWindows().catch(() => [])
+  const candidates = await Promise.all(windows.map(async (window) => {
     if (window.label !== 'main' && !window.label.startsWith('nebula-window-')) {
-      continue
+      return null
     }
     const [position, size] = await Promise.all([
       window.outerPosition(),
       window.outerSize(),
     ])
-    if (
-      pointer.x >= position.x &&
-      pointer.y >= position.y &&
-      pointer.x < position.x + size.width &&
-      pointer.y < position.y + size.height
-    ) {
-      return window.label
-    }
-  }
-  return null
+    return pointer.x >= position.x && pointer.y >= position.y &&
+      pointer.x < position.x + size.width && pointer.y < position.y + size.height
+      ? window.label
+      : null
+  }))
+  const label = candidates.find((candidate): candidate is string => candidate !== null)
+  return label ? { kind: 'window', label } : { kind: 'unknown' }
 }

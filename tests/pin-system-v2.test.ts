@@ -4,6 +4,7 @@ import test from 'node:test'
 
 import {
   addPinnedShortcut,
+  editPinnedShortcut,
   loadPinnedShortcuts,
   PINNED_SHORTCUTS_KEY,
   PINNED_SHORTCUTS_SCHEMA_VERSION,
@@ -142,6 +143,91 @@ test('explicit unpin removes the owned pin record', () => {
 
   assert.deepEqual(removePinnedShortcut(pins, first.id).map((pin) => pin.id), [second.id])
   assert.equal(removePinnedShortcut(pins, 'unrelated'), pins)
+})
+
+test('editing a pin keeps its position and refreshes favicon when the site changes', () => {
+  const first = shortcut('first', 'https://first.example/deep/path', 'First title')
+  const second = shortcut('second', 'https://second.example/', 'Second title')
+  const pins = snapshotWith(first, second).pins
+
+  const result = editPinnedShortcut(pins, first.id, {
+    title: 'Edited title',
+    url: 'wikipedia.org/wiki/Nebula',
+  })
+
+  assert.equal(result.accepted, true)
+  assert.deepEqual(result.pins.map((pin) => pin.id), [first.id, second.id])
+  assert.equal(result.pins[0]?.title, 'Edited title')
+  assert.equal(result.pins[0]?.url, 'https://wikipedia.org/wiki/Nebula')
+  assert.equal(
+    result.pins[0]?.favicon,
+    'https://www.google.com/s2/favicons?domain_url=https%3A%2F%2Fwikipedia.org%2F&sz=128',
+  )
+
+  const storage = new MemoryStorage()
+  storage.setItem(PINNED_SHORTCUTS_KEY, serializePinnedShortcuts({
+    schemaVersion: PINNED_SHORTCUTS_SCHEMA_VERSION,
+    pins: result.pins,
+    unresolvedLegacyIds: [],
+  }))
+  assert.deepEqual(loadPinnedShortcuts([], storage).pins, result.pins)
+})
+
+test('editing a pin preserves a live favicon on the same site and rejects invalid duplicates', () => {
+  const first = shortcut('first', 'https://first.example/old', 'First title')
+  const second = shortcut('second', 'https://second.example/', 'Second title')
+  const pins = snapshotWith(first, second).pins
+
+  const sameSite = editPinnedShortcut(pins, first.id, {
+    title: '',
+    url: 'https://first.example/new',
+  })
+  assert.equal(sameSite.accepted, true)
+  assert.equal(sameSite.pins[0]?.title, 'first.example')
+  assert.equal(sameSite.pins[0]?.favicon, first.favicon)
+
+  assert.deepEqual(
+    editPinnedShortcut(pins, first.id, {
+      title: 'Duplicate',
+      url: second.url,
+    }),
+    { pins, accepted: false, reason: 'duplicate-url' },
+  )
+  assert.deepEqual(
+    editPinnedShortcut(pins, first.id, {
+      title: 'Invalid',
+      url: 'file:///C:/secret.txt',
+    }),
+    { pins, accepted: false, reason: 'invalid-url' },
+  )
+
+  const local = editPinnedShortcut(pins, first.id, {
+    title: 'Local app',
+    url: 'localhost:5173/dashboard',
+  })
+  assert.equal(local.accepted, true)
+  assert.equal(local.pins[0]?.url, 'http://localhost:5173/dashboard')
+  assert.equal(local.pins[0]?.favicon, '/nebula-app-logo.png')
+})
+
+test('home pin context menu wires the editor through BrowserShell persistence', () => {
+  const menu = readFileSync(
+    new URL('../src/components/SemiLunarMenu/ShortcutContextMenu.tsx', import.meta.url),
+    'utf8',
+  )
+  const strip = readFileSync(
+    new URL('../src/components/HomeCenter/PinnedStrip.tsx', import.meta.url),
+    'utf8',
+  )
+  const shell = readFileSync(
+    new URL('../src/components/BrowserShell/BrowserShell.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(menu, /onEdit\?: \(\) => void/)
+  assert.match(menu, /onEdit\(\)[\s\S]*?onClose\(\)/)
+  assert.match(strip, /<PinnedShortcutEditor[\s\S]*?onSave=\{onEdit\}/)
+  assert.match(shell, /editPinnedShortcut[\s\S]*?onEditPinnedShortcut=\{[\s\S]*?editPinnedShortcut/)
 })
 
 test('live favicon refresh preserves pin identity, path, title, and ordering', () => {

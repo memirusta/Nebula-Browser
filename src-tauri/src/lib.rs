@@ -1,35 +1,74 @@
+mod app_lifecycle;
 mod browser_bookmarks;
 mod browser_passwords;
+mod browser_profile;
+mod browser_tab_transfers;
 mod browser_workspace;
+#[cfg(target_os = "windows")]
+mod chrome_clip;
 mod context_menu;
 mod default_browser;
 mod devtools_bridge;
 mod download_manager;
+mod extension_activation;
+mod extension_compat;
+mod extension_compatibility;
+mod extension_discovery;
+mod extension_download;
+mod extension_host;
+mod extension_install;
+mod extension_popup_size;
+mod extension_registry;
+mod extension_runtime;
+mod extension_trace;
+mod extension_window_policy;
+mod extension_window_profile;
+mod extension_worker;
 mod external_open;
+mod favicon_fetch;
 mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
+mod http_response;
+mod layout_audit;
+mod main_webview_layout;
 mod media_session;
 #[cfg(target_os = "windows")]
 mod media_session_bindings;
 mod native_notification;
 mod network_address;
 mod notification_broker;
+mod notification_history;
+mod password_reveal;
 mod password_webview;
+mod proxy_error_hint;
+#[cfg(target_os = "windows")]
+mod restore_diagnostics;
+#[cfg(target_os = "windows")]
+mod restore_visibility;
+#[cfg(target_os = "windows")]
+mod restore_visibility_state;
 mod secure_password_vault;
+mod shell_isolation;
+mod shell_split;
+mod shell_state_store;
 mod site_fullscreen_window;
 mod site_ui;
+#[cfg(all(target_os = "windows", feature = "split-driver"))]
+mod spike_driver;
 mod system_stats;
 mod tab_error_page;
 mod tab_fullscreen;
 mod tab_metadata;
 mod tab_shortcuts;
 mod ublock_extension;
+mod ui_watchdog;
 mod wallpaper_media;
 mod weather_location;
 mod webview_branding;
 mod webview_controls;
 mod webview_privacy;
+mod youtube_player_recovery;
 
 static TRANSITION_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -207,6 +246,18 @@ fn notification_broker_diagnostics(
     limit: Option<usize>,
 ) -> Vec<notification_broker::NotificationDiagnostic> {
     notification_broker::diagnostics(limit)
+}
+
+#[tauri::command]
+fn notification_history_allowed_ids(
+    items: Vec<notification_history::HistoryIdentity>,
+) -> Result<Vec<String>, String> {
+    notification_history::allowed_ids(items)
+}
+
+#[tauri::command]
+fn notification_history_forget(ids: Vec<String>, all: bool) -> Result<(), String> {
+    notification_broker::forget(&ids, all)
 }
 
 #[tauri::command]
@@ -506,6 +557,13 @@ fn browser_mark_window_active(window_label: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn browser_window_at_cursor(
+    app: tauri::AppHandle,
+) -> Result<browser_workspace::WindowAtCursor, String> {
+    browser_workspace::window_at_cursor(&app)
+}
+
+#[tauri::command]
 fn webview_setup_main_site_permissions(app: tauri::AppHandle, label: String) -> Result<(), String> {
     site_ui::setup_main_permission_ui(&app, &label)
 }
@@ -546,6 +604,7 @@ fn teardown_tab_webview_integrations(app: &tauri::AppHandle, label: &str) {
     site_ui::teardown(app, label);
     media_session::teardown(app, label);
     force_dark_pages::teardown(app, label);
+    youtube_player_recovery::teardown(label);
     download_manager::teardown_tab_downloads(app, label);
     webview_privacy::teardown(app, label);
     tab_error_page::teardown_tab_error_page(app, label);
@@ -566,6 +625,11 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
         site_ui::setup(&app, &label)?;
         media_session::setup(&app, &label)?;
         force_dark_pages::setup(&app, &label)?;
+        // A convenience for one site: a failure here must never keep a tab from opening.
+        if let Err(_error) = youtube_player_recovery::setup(&app, &label) {
+            #[cfg(debug_assertions)]
+            eprintln!("[nebula youtube recovery] {label}: {_error}");
+        }
         // Context-menu interception requires a newer WebView2 interface. Keep tab
         // creation resilient on an unexpectedly old runtime; in that case the
         // branding layer still leaves the native Edge menu disabled.
@@ -724,27 +788,42 @@ fn webview_apply_force_dark_pages(
     force_dark_pages::apply(&app, &label, options)
 }
 
+/// `label` is only kept so callers need no change: clearing data always acts on the
+/// browser profile (through its owner), never on the webview the label names.
 #[tauri::command]
 async fn webview_clear_browsing_data(
     app: tauri::AppHandle,
-    label: String,
+    _label: String,
     kind: String,
 ) -> Result<(), String> {
-    webview_privacy::clear_browsing_data(&app, &label, &kind).await
+    webview_privacy::clear_browsing_data(&app, &kind).await
 }
 
 #[tauri::command]
+async fn webview_profile_storage_usage(
+    app: tauri::AppHandle,
+) -> Result<webview_privacy::ProfileStorageUsage, String> {
+    tauri::async_runtime::spawn_blocking(move || webview_privacy::profile_storage_usage(&app))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// `label` is only kept so callers need no change: site permissions are always the
+/// browser profile's (through its owner), never those of the webview the label names.
+#[tauri::command]
 async fn webview_clear_site_permissions(
     app: tauri::AppHandle,
-    label: String,
+    _label: String,
     origin: String,
 ) -> Result<(), String> {
-    webview_privacy::clear_site_permissions(&app, &label, &origin).await
+    webview_privacy::clear_site_permissions(&app, &origin).await
 }
 
 #[tauri::command]
 async fn webview_factory_reset_profiles(app: tauri::AppHandle) -> Result<(), String> {
-    webview_privacy::factory_reset_profiles(&app).await
+    extension_host::unregister_all(&app).await?;
+    webview_privacy::factory_reset_profiles(&app).await?;
+    extension_host::finish_factory_reset(&app).await
 }
 
 #[tauri::command]
@@ -845,6 +924,20 @@ fn download_control(app: tauri::AppHandle, id: String, action: String) -> Result
 #[tauri::command]
 fn download_start_drag(app: tauri::AppHandle, id: String) -> Result<(), String> {
     download_manager::start_download_drag(app, id)
+}
+
+#[tauri::command]
+fn webview_has_active_download(label: String) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        download_manager::has_recent_or_active_download_for_label(&label)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = label;
+        false
+    }
 }
 
 #[tauri::command]
@@ -966,6 +1059,7 @@ fn resolve_webview_hwnd(
         })
         .map_err(|error| error.to_string())?;
 
+    let _crumb = ui_watchdog::enter("resolve_webview_hwnd.wait");
     let hwnd_value = rx
         .recv_timeout(std::time::Duration::from_secs(2))
         .map_err(|_| format!("timed out resolving '{label}' hwnd"))?;
@@ -995,6 +1089,9 @@ fn force_redraw(app: &tauri::AppHandle, window_label: &str) {
     // Home, browser tabs, and dedicated chrome are sibling child HWNDs.
     // Repaint the top-level window and all children immediately so composition
     // catches up with native z-order changes in the same transition.
+    // WebView2's content windows belong to another process, so this synchronous
+    // paint can wait on it; the breadcrumb names it if the UI thread stalls here.
+    let _crumb = ui_watchdog::enter("force_redraw.RedrawWindow");
     if let Some(window) = app.get_window(window_label) {
         if let Ok(hwnd) = window.hwnd() {
             unsafe {
@@ -1016,6 +1113,7 @@ fn stack_chrome_above_browser(
     app: &tauri::AppHandle,
     window_label: &str,
     active_tab_label: Option<&str>,
+    full_repair: bool,
 ) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -1048,38 +1146,43 @@ fn stack_chrome_above_browser(
         }
     }
 
-    // Non-active browser WebViews are hidden by the JS tab manager. Keep their
-    // native containers low as an additional guard, then raise only the active tab.
-    for (label, _) in app.webviews() {
-        if label.starts_with("nebula-tab-") {
-            let belongs_to_window = app
-                .get_webview(&label)
-                .map(|webview| webview.window().label() == window_label)
-                .unwrap_or(false);
-            if !belongs_to_window {
-                continue;
-            }
-            if active_tab_label == Some(label.as_str()) {
-                continue;
-            }
-            if let Ok(browser_hwnd) = resolve_webview_hwnd(app, &label) {
-                unsafe {
-                    SetWindowPos(
-                        browser_hwnd,
-                        Some(HWND_BOTTOM),
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                    )
-                    .map_err(|error| error.to_string())?;
+    // Ordinary tab switches hide the outgoing tab in JS. A full sweep is only
+    // needed after restore/reparent when native visibility may be out of sync.
+    if full_repair {
+        for (label, _) in app.webviews() {
+            if label.starts_with("nebula-tab-") {
+                let belongs_to_window = app
+                    .get_webview(&label)
+                    .map(|webview| webview.window().label() == window_label)
+                    .unwrap_or(false);
+                if !belongs_to_window || active_tab_label == Some(label.as_str()) {
+                    continue;
+                }
+                if let Ok(browser_hwnd) = resolve_webview_hwnd(app, &label) {
+                    unsafe {
+                        SetWindowPos(
+                            browser_hwnd,
+                            Some(HWND_BOTTOM),
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                        )
+                        .map_err(|error| error.to_string())?;
+                    }
                 }
             }
         }
     }
 
     if let Some(label) = active_tab_label {
+        // A minimize/restore can leave the active child HWND hidden even after
+        // its geometry and z-order have been restored. Reassert visibility
+        // before raising it above the Home surface.
+        if let Some(browser) = app.get_webview(label) {
+            let _ = browser.show();
+        }
         if let Ok(browser_hwnd) = resolve_webview_hwnd(app, label) {
             unsafe {
                 SetWindowPos(
@@ -1217,6 +1320,54 @@ fn window_client_physical_rect(
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowClientPhysicalBounds {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+/// Authoritative native client area for browser WebView layout.
+///
+/// WebView2's frontend `innerSize()` can briefly report its own bootstrap
+/// surface during a Windows minimize/restore transition. Querying the parent
+/// HWND directly keeps all browser-child layout reads in the same coordinate
+/// space as the native layout commands.
+#[tauri::command]
+fn window_client_physical_bounds(
+    app: tauri::AppHandle,
+    window_label: String,
+) -> Result<WindowClientPhysicalBounds, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let (x, y, width, height) = window_client_physical_rect(&app, &window_label)?;
+        Ok(WindowClientPhysicalBounds {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri::Manager;
+
+        let window = app
+            .get_window(&window_label)
+            .ok_or_else(|| format!("window '{window_label}' not found ({})", debug_labels(&app)))?;
+        let size = window.inner_size().map_err(|error| error.to_string())?;
+        Ok(WindowClientPhysicalBounds {
+            x: 0,
+            y: 0,
+            width: i32::try_from(size.width).map_err(|error| error.to_string())?,
+            height: i32::try_from(size.height).map_err(|error| error.to_string())?,
+        })
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn layout_webview_hwnd(
     hwnd: windows::Win32::Foundation::HWND,
@@ -1235,6 +1386,34 @@ fn layout_webview_hwnd(
     Ok(())
 }
 
+/// Apply geometry without touching the WebView's z-order. `SetWindowPos` with a
+/// null insert-after would mean `HWND_TOP`, so the order must be kept with
+/// `SWP_NOZORDER` instead.
+#[cfg(target_os = "windows")]
+fn layout_webview_hwnd_in_place(
+    hwnd: windows::Win32::Foundation::HWND,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 /// Apply chrome overlay geometry in one native operation.
 ///
 /// The JavaScript Webview API exposes position and size as separate async
@@ -1245,35 +1424,38 @@ fn layout_webview_hwnd(
 #[tauri::command]
 fn webview_set_chrome_bounds(
     app: tauri::AppHandle,
+    window_label: String,
     x: i32,
     y: i32,
     width: i32,
     height: i32,
 ) -> Result<bool, String> {
+    use tauri::Manager;
+
+    let _crumb = ui_watchdog::enter("cmd.webview_set_chrome_bounds");
     if width < 1 || height < 1 {
         return Err("chrome bounds must be positive".to_string());
     }
-
-    #[cfg(target_os = "windows")]
-    {
-        // Do not resize the HWND returned by ICoreWebView2Controller::ParentWindow here.
-        // That HWND is the controller's parent/host, not the WebView2 Bounds itself. This
-        // command used to be blocked by ACL so the JS Webview.setPosition/setSize fallback
-        // always ran; once the ACL was fixed, returning true here skipped that known-good
-        // path and could leave the dedicated Semi-Lunar surface at its tiny bootstrap size.
-        //
-        // Keep the command callable (ACL parity is still correct) but explicitly request the
-        // Tauri Webview fallback until this optimization is implemented with WebView2
-        // controller Bounds/put_Bounds rather than ParentWindow + SetWindowPos.
-        let _ = (&app, x, y, width, height);
-        Ok(false)
+    let chrome_label = if window_label == "main" {
+        "nebula-chrome".to_string()
+    } else {
+        format!("nebula-chrome-{window_label}")
+    };
+    let webview = app
+        .get_webview(&chrome_label)
+        .ok_or_else(|| format!("chrome webview '{chrome_label}' not found"))?;
+    if webview.window().label() != window_label {
+        return Err("chrome webview belongs to another window".to_string());
     }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, x, y, width, height);
-        Ok(false)
-    }
+    // Tauri's set_bounds updates the WebView2 controller Bounds and host HWND
+    // in one runtime operation. Moving ParentWindow alone leaves content stale.
+    webview
+        .set_bounds(tauri::Rect {
+            position: tauri::PhysicalPosition::new(x, y).into(),
+            size: tauri::PhysicalSize::new(width as u32, height as u32).into(),
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(true)
 }
 
 /// Return whether the OS cursor is inside a physical rectangle in the parent
@@ -1431,6 +1613,7 @@ fn webview_set_browser_bounds(
 ) -> Result<(), String> {
     use tauri::Manager;
 
+    let _crumb = ui_watchdog::enter("cmd.webview_set_browser_bounds");
     if !label.starts_with("nebula-tab-") || label.len() > 240 {
         return Err("invalid Nebula tab label".to_string());
     }
@@ -1495,11 +1678,18 @@ fn stack_tab_fullscreen(app: &tauri::AppHandle, tab_label: &str) -> Result<(), S
 fn restore_browsing_webview_layout(
     app: &tauri::AppHandle,
     window_label: &str,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    active_tab_label: Option<&str>,
 ) -> Result<(), String> {
     use tauri::Manager;
     use windows::Win32::UI::WindowsAndMessaging::HWND_BOTTOM;
 
-    let (x, y, width, height) = window_client_physical_rect(app, window_label)?;
+    if width < 1 || height < 1 {
+        return Err("restore bounds must be positive".to_string());
+    }
 
     for (label, _) in app.webviews() {
         if label.starts_with("nebula-tab-") {
@@ -1510,18 +1700,35 @@ fn restore_browsing_webview_layout(
             if !belongs_to_window {
                 continue;
             }
+            // `ICoreWebView2Controller::ParentWindow` is the controller host,
+            // not the WebView2 content Bounds. After minimize/restore the host
+            // can be full-client while the controller itself remains at its
+            // tiny bootstrap rectangle. Restore the actual child bounds before
+            // the host HWND is restacked below the shell.
+            if let Some(tab) = app.get_webview(&label) {
+                tab.set_bounds(tauri::Rect {
+                    position: tauri::PhysicalPosition::new(x, y).into(),
+                    size: tauri::PhysicalSize::new(width as u32, height as u32).into(),
+                })
+                .map_err(|error| error.to_string())?;
+            }
             if let Ok(tab_hwnd) = resolve_webview_hwnd(app, &label) {
-                layout_webview_hwnd(tab_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
+                if active_tab_label == Some(label.as_str()) {
+                    // The visible site keeps its place above Home. Sending it to
+                    // the bottom here exposes Home until the JS repair raises it
+                    // again, which flashed on every focus return.
+                    layout_webview_hwnd_in_place(tab_hwnd, x, y, width, height)?;
+                } else {
+                    layout_webview_hwnd(tab_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
+                }
             }
         }
     }
 
-    if let Ok(main_hwnd) = resolve_webview_hwnd(app, window_label) {
-        layout_webview_hwnd(main_hwnd, x, y, width, height, Some(HWND_BOTTOM))?;
-    }
-
-    if let Some(main) = app.get_webview(window_label) {
-        let _ = main.show();
+    // Home keeps Tauri's original 1:1 auto-resize metadata. Never feed cached
+    // site dimensions into its proportional set_bounds while minimized.
+    if let Some(window) = app.get_window(window_label) {
+        main_webview_layout::repair(&window)?;
     }
 
     force_redraw(app, window_label);
@@ -1567,14 +1774,28 @@ fn window_toggle_browser_fullscreen(
 fn webview_restore_browsing_layout(
     app: tauri::AppHandle,
     window_label: String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    active_tab_label: Option<String>,
 ) -> Result<(), String> {
+    let _crumb = ui_watchdog::enter("cmd.webview_restore_browsing_layout");
     #[cfg(target_os = "windows")]
     {
-        restore_browsing_webview_layout(&app, &window_label)
+        restore_browsing_webview_layout(
+            &app,
+            &window_label,
+            x,
+            y,
+            width,
+            height,
+            active_tab_label.as_deref(),
+        )
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, window_label);
+        let _ = (app, window_label, x, y, width, height, active_tab_label);
         Ok(())
     }
 }
@@ -1586,6 +1807,10 @@ fn webview_raise_tab_fullscreen(app: tauri::AppHandle, label: String) -> Result<
     }
     #[cfg(target_os = "windows")]
     {
+        use tauri::Manager;
+        if let Some(webview) = app.get_webview(&label) {
+            restore_visibility::set_target(&app, webview.window().label(), None);
+        }
         stack_tab_fullscreen(&app, &label)
     }
     #[cfg(not(target_os = "windows"))]
@@ -1599,6 +1824,7 @@ fn webview_raise_tab_fullscreen(app: tauri::AppHandle, label: String) -> Result<
 fn webview_raise_overlay(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        restore_visibility::set_target(&app, &window_label, None);
         stack_overlay_mode(&app, &window_label)
     }
     #[cfg(not(target_os = "windows"))]
@@ -1613,15 +1839,37 @@ fn webview_raise_chrome(
     app: tauri::AppHandle,
     window_label: String,
     active_tab_label: Option<String>,
+    full_repair: Option<bool>,
 ) -> Result<(), String> {
+    use tauri::Manager;
+
+    let _crumb = ui_watchdog::enter("cmd.webview_raise_chrome");
+    if let Some(label) = active_tab_label.as_deref() {
+        let owned = app
+            .get_webview(label)
+            .map(|webview| webview.window().label() == window_label)
+            .unwrap_or(false);
+        if !owned {
+            return Err(format!(
+                "active tab '{label}' does not belong to '{window_label}'"
+            ));
+        }
+    }
     tab_metadata::set_active_tab_for_window(&window_label, active_tab_label.as_deref());
     #[cfg(target_os = "windows")]
     {
-        stack_chrome_above_browser(&app, &window_label, active_tab_label.as_deref())
+        stack_chrome_above_browser(
+            &app,
+            &window_label,
+            active_tab_label.as_deref(),
+            full_repair.unwrap_or(false),
+        )?;
+        restore_visibility::set_target(&app, &window_label, active_tab_label.as_deref());
+        Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, window_label, active_tab_label);
+        let _ = (app, window_label, active_tab_label, full_repair);
         Ok(())
     }
 }
@@ -1647,10 +1895,30 @@ pub fn run() {
         eprintln!("media.session identity-error: {error}");
     }
 
+    let mut context = tauri::generate_context!();
+    shell_isolation::initialize(&context.config().identifier);
+    // When the shell is not where the config puts it (split) or has to be seeded
+    // (hydration), the config windows are created in `setup`. Otherwise they stay
+    // exactly as configured.
+    let shell_windows = if shell_split::takes_over_config_windows() {
+        std::mem::take(&mut context.config_mut().app.windows)
+    } else {
+        Vec::new()
+    };
+
     let builder = tauri::Builder::default();
+
+    #[cfg(target_os = "windows")]
+    let builder = builder.on_window_event(|window, event| {
+        main_webview_layout::on_window_event(window, event);
+        restore_visibility::on_window_event(window, event);
+        restore_diagnostics::on_window_event(window, event);
+        app_lifecycle::on_window_event(window, event);
+    });
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        app_lifecycle::on_second_instance(app);
         external_open::handle_second_instance(app, &args);
     }));
 
@@ -1658,8 +1926,16 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
+        .setup(move |app| {
             load_runtime_env();
+            ui_watchdog::start(app.handle().clone());
+            shell_split::create_config_windows(app, &shell_windows)?;
+            shell_isolation::start_hydration_watchdog(app.handle());
+            // A committed split retries what could not finish last time (a pending
+            // activation, a trial-profile install that was waiting).
+            shell_isolation::run_after_commit(app.handle());
+            #[cfg(all(target_os = "windows", feature = "split-driver"))]
+            extension_activation::fixture_legacy_installs_from_env(app.handle());
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             external_open::capture_startup_args();
@@ -1683,19 +1959,34 @@ pub fn run() {
                 )?;
             }
 
+            #[cfg(all(target_os = "windows", feature = "split-driver"))]
+            spike_driver::start(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             default_browser::open_default_browser_settings,
             browser_create_window,
+            shell_isolation::shell_split_enabled,
+            shell_isolation::shell_isolation_status,
+            shell_isolation::shell_isolation_ack_notice,
+            shell_isolation::shell_isolation_hydrated,
+            shell_isolation::shell_isolation_barrier_ack,
+            shell_isolation::shell_isolation_switch,
+            shell_split::shell_chrome_webview_create,
+            browser_window_at_cursor,
+            browser_tab_transfers::browser_tab_transfer_store,
             browser_mark_window_active,
             browser_reparent_tab,
             external_open::take_pending_open_urls,
             show_native_notification,
             notification_broker_replay,
+            notification_history_allowed_ids,
+            notification_history_forget,
             notification_broker_diagnostics,
             write_transition_log,
             search_suggestions,
+            favicon_fetch::favicon_fetch,
             webview_set_shortcut_bindings,
             webview_navigate,
             webview_close_tab,
@@ -1703,14 +1994,15 @@ pub fn run() {
             webview_go_back,
             webview_controls::webview_go_forward,
             webview_controls::webview_reload,
+            webview_controls::webview_process_snapshot,
             webview_controls::webview_zoom,
             webview_controls::webview_set_zoom,
             webview_controls::webview_list_printers,
             webview_controls::webview_print,
             webview_controls::webview_print_preview,
             webview_controls::webview_open_devtools,
-            webview_controls::webview_set_memory_usage,
             webview_controls::webview_is_playing_audio,
+            webview_has_active_download,
             webview_controls::webview_set_muted,
             webview_controls::webview_set_suspended,
             webview_raise_overlay,
@@ -1718,6 +2010,7 @@ pub fn run() {
             webview_set_chrome_bounds,
             window_cursor_in_client_rect,
             window_cursor_in_client_lunar_shape,
+            window_client_physical_bounds,
             webview_set_browser_bounds,
             webview_raise_tab_fullscreen,
             window_presentation_state,
@@ -1726,6 +2019,9 @@ pub fn run() {
             window_exit_site_fullscreen,
             window_toggle_browser_fullscreen,
             webview_restore_browsing_layout,
+            chrome_clip::webview_set_chrome_clip,
+            layout_audit::webview_layout_audit,
+            layout_audit::webview_resync_scale,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,
             webview_setup_main_site_permissions,
@@ -1743,19 +2039,34 @@ pub fn run() {
             webview_apply_privacy,
             webview_apply_force_dark_pages,
             webview_clear_browsing_data,
+            webview_profile_storage_usage,
             webview_clear_site_permissions,
             webview_factory_reset_profiles,
             ublock_extension::ublock_extension_info,
+            extension_download::extension_download_checked,
+            extension_install::extension_package_manage,
+            extension_host::extension_host_list,
+            extension_activation::extension_pending_activations,
+            extension_activation::extension_legacy_installs,
+            extension_host::extension_host_open,
+            extension_host::extension_host_click,
+            extension_host::extension_host_browse,
+            extension_runtime::extension_runtime_version,
             ublock_extension::ublock_extension_install,
             ublock_extension::ublock_extension_status,
+            ublock_extension::ublock_extension_ready,
             webview_setup_branding,
             webview_apply_browser_identity,
             webview_execute_script,
             download_control,
             download_start_drag,
             secure_password_vault::password_vault_load,
+            shell_state_store::shell_store_apply,
+            shell_state_store::shell_store_status,
+            shell_state_store::shell_store_wipe,
             secure_password_vault::password_vault_save,
             secure_password_vault::password_vault_clear,
+            password_reveal::password_verify_reveal,
             system_stats::get_system_stats,
             wallpaper_media::wallpaper_import_video,
             wallpaper_media::wallpaper_clear_videos,
@@ -1774,6 +2085,6 @@ pub fn run() {
             google_sync::google_sync_push,
             google_sync::google_sync_forget,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

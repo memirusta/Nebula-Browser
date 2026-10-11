@@ -1,3 +1,5 @@
+// First on purpose: mirrors localStorage writes, so it must hook before anything writes.
+import './platform/shellStateMirror'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { isChromeShell } from './core/nebulaBridge'
@@ -12,8 +14,10 @@ import { syncTauriViewMode } from './platform/tauriBrowsingMode'
 import {
   prewarmUblockProfile,
   scheduleInitialBrowseWebviewPrewarm,
+  initWindowRestoreRepair,
 } from './platform/tauriBrowser'
 import { writeTransitionLog } from './platform/tauriTransitionLog'
+import { announceShellIsolationNotice } from './platform/shellIsolation'
 
 const chromeShell = isChromeShell()
 
@@ -32,6 +36,16 @@ if (chromeShell) {
 }
 if (isTauri && !chromeShell) {
   syncTauriViewMode('home', null)
+  // Window restore must be observed even when profile prewarm or WebView
+  // creation stalls. Neither operation is a prerequisite for this listener.
+  try {
+    initWindowRestoreRepair()
+  } catch (error) {
+    void writeTransitionLog('browser.restore-listener.init', 'error', {
+      errorName: error instanceof Error ? error.name : 'Unknown',
+    })
+  }
+  void announceShellIsolationNotice().catch(() => undefined)
   void prewarmUblockProfile()
     .then(() => scheduleInitialBrowseWebviewPrewarm())
     .catch(() => undefined)

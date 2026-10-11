@@ -1,7 +1,7 @@
 {
   "name": "nebula",
   "private": true,
-  "version": "1.8.5",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,8 @@
     "perf:stress": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/perf-stress.ps1",
     "perf:summary": "node scripts/perf-log-summary.mjs",
     "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "test:ui-panels": "node scripts/ui-panel-smoke.mjs",
+    "test:ui-tutorial": "node scripts/ui-panel-smoke.mjs --tutorial",
     "test:regression": "node --test --experimental-strip-types tests/*.test.ts",
     "test:native-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native-smoke.ps1",
     "test:release-smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-smoke.ps1",
@@ -24,7 +26,9 @@
     "test:upgrade-install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/upgrade-install-smoke.ps1",
     "test:clean-sandbox": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-sandbox-smoke.ps1",
     "test:updater-remote": "node scripts/updater-remote-smoke.mjs",
-    "audit:store-updater-free": "node scripts/store-updater-audit.mjs ../nebula-store"
+    "audit:store-updater-free": "node scripts/store-updater-audit.mjs ../nebula-store",
+    "extensions:sync-catalog": "node scripts/sync-extension-catalog.mjs",
+    "extensions:check": "node --experimental-strip-types scripts/check-extension-compatibility.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

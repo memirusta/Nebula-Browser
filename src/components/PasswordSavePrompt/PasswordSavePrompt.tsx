@@ -52,10 +52,6 @@ export function PasswordSavePrompt({
             event.preventDefault()
             onDismiss()
           }
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            onSave()
-          }
         }}
       >
         <div className={styles.headerRow}>

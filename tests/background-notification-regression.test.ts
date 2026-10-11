@@ -6,7 +6,7 @@ function read(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 }
 
-test('minimizing Nebula hides the active WebView without putting it to sleep', () => {
+test('native minimize/restore owns visibility without putting the active WebView to sleep', () => {
   const browser = read('src/platform/tauriBrowser.ts')
   const start = browser.indexOf('async function syncWebviewWindowVisibilityAfterResize')
   const end = browser.indexOf('async function bindBrowserResize', start)
@@ -16,9 +16,15 @@ test('minimizing Nebula hides the active WebView without putting it to sleep', (
 
   const visibilityBridge = browser.slice(start, end)
   assert.match(visibilityBridge, /currentWindowIsMinimized\(\)/)
-  assert.match(visibilityBridge, /webview\.hide\(\)/)
+  assert.doesNotMatch(visibilityBridge, /webview\.hide\(\)/)
   assert.match(visibilityBridge, /webview\.show\(\)/)
   assert.doesNotMatch(visibilityBridge, /scheduleTabSleep|webview_set_suspended/)
+  const native = read('src-tauri/src/restore_visibility.rs')
+  assert.match(native, /WindowEvent::Resized/)
+  assert.match(native, /IsIconic\(hwnd\)/)
+  assert.match(native, /webview\.show\(\)/)
+  assert.match(native, /webview\.hide\(\)/)
+  assert.doesNotMatch(native, /TrySuspend|set_suspended/)
   assert.match(browser, /appWindow\.onResized\([\s\S]*?onLayoutChange/)
 })
 
@@ -98,7 +104,7 @@ test('Instagram message nodes are not marked seen before their delayed text arri
   assert.match(siteUi, /hasQuotedPreview/)
   assert.match(
     siteUi,
-    /notificationData: details\.isReply && !details\.isReaction \? \{ replyText: text \} : null/,
+    /details\.isReply && !details\.isReaction \? \{ replyText: text \} : null/,
   )
   assert.match(report, /function queueCandidate[\s\S]*reportCandidate\(candidate\)/)
   assert.doesNotMatch(report, /reportIncoming\(candidate\)/)
@@ -174,7 +180,7 @@ test('native site toasts use a cached site favicon with a safe Nebula fallback',
   assert.match(broker, /native_notification::show\([\s\S]*?favicon_url\(&event\.origin\)/)
   assert.match(lib, /show_native_notification\([\s\S]*?icon_url: Option<String>[\s\S]*?native_notification::show[\s\S]*?\.await/)
   assert.match(native, /validated_site_icon_url[\s\S]*?www\.google\.com[\s\S]*?\/s2\/favicons/)
-  assert.match(native, /MAX_SITE_ICON_BYTES[\s\S]*?content_length\(\)[\s\S]*?response\.bytes\(\)/)
+  assert.match(native, /read_bounded_response\(\s*response,\s*MAX_SITE_ICON_BYTES as usize/)
   assert.match(native, /cached_site_icon_uri[\s\S]*?fallback_notification_icon_uri/)
   assert.match(native, /placement=\\"appLogoOverride\\"[\s\S]*?hint-crop=\\"circle\\"/)
 })

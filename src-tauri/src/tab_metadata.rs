@@ -34,10 +34,23 @@ mod imp {
         Option<ICoreWebView2FaviconChangedEventHandler>,
     );
 
-    type TabSnapshotState = (String, String, Option<String>);
+    /// URL, title, favicon, can go back, can go forward.
+    type TabSnapshotState = (String, String, Option<String>, bool, bool);
 
     static CONFIGURED_LABELS: LazyLock<Mutex<HashSet<String>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
+
+    /// Tabs that have finished loading a page at least once. A tab that was opened for a download never does:
+    /// its only navigation turned into a file.
+    static PAGE_SHOWN: LazyLock<Mutex<HashSet<String>>> =
+        LazyLock::new(|| Mutex::new(HashSet::new()));
+
+    pub fn tab_has_shown_page(label: &str) -> bool {
+        PAGE_SHOWN
+            .lock()
+            .map(|shown| shown.contains(label))
+            .unwrap_or(true)
+    }
 
     static HANDLER_TOKENS: LazyLock<Mutex<HashMap<String, HandlerTokens>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -62,11 +75,15 @@ mod imp {
     static ACTIVE_TAB_LABELS: LazyLock<Mutex<HashMap<String, Option<String>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct TabSnapshotPayload {
         label: String,
         url: String,
         title: String,
         favicon: Option<String>,
+        /// What WebView2 itself says about the page's session history.
+        can_go_back: bool,
+        can_go_forward: bool,
     }
 
     #[derive(Clone, Serialize)]
@@ -335,8 +352,21 @@ mod imp {
                 .filter(|(favicon_url, _)| favicon_url == &url)
                 .map(|(_, favicon)| favicon.clone())
         });
+        let (can_go_back, can_go_forward) = unsafe {
+            let mut back = BOOL::default();
+            let mut forward = BOOL::default();
+            let _ = webview.CanGoBack(&mut back);
+            let _ = webview.CanGoForward(&mut forward);
+            (back.as_bool(), forward.as_bool())
+        };
         if let Ok(mut snapshots) = LAST_SNAPSHOTS.lock() {
-            let next = (url.clone(), title.clone(), favicon.clone());
+            let next = (
+                url.clone(),
+                title.clone(),
+                favicon.clone(),
+                can_go_back,
+                can_go_forward,
+            );
             if snapshots.get(label) == Some(&next) {
                 return;
             }
@@ -350,6 +380,8 @@ mod imp {
                 url,
                 title,
                 favicon,
+                can_go_back,
+                can_go_forward,
             },
         );
     }
@@ -533,6 +565,11 @@ mod imp {
                                 args.IsSuccess(&mut success).ok().map(|_| success.as_bool())
                             })
                             .unwrap_or(false);
+                        if success {
+                            if let Ok(mut shown) = PAGE_SHOWN.lock() {
+                                shown.insert(navigation_complete_label.clone());
+                            }
+                        }
                         let _ = navigation_complete_app.emit(
                             "nebula-tab-loading-state",
                             TabLoadingPayload {
@@ -545,6 +582,13 @@ mod imp {
                             &navigation_complete_label,
                             &webview,
                             success,
+                        );
+                        // The session history has settled by now: whether Back and Forward exist is
+                        // known (it is not yet when the source first changes).
+                        emit_snapshot(
+                            &navigation_complete_app,
+                            &navigation_complete_label,
+                            &webview,
                         );
                         request_favicon(
                             &navigation_complete_app,
@@ -696,6 +740,9 @@ mod imp {
         if let Ok(mut configured) = CONFIGURED_LABELS.lock() {
             configured.remove(label);
         }
+        if let Ok(mut shown) = PAGE_SHOWN.lock() {
+            shown.remove(label);
+        }
         if let Ok(mut snapshots) = LAST_SNAPSHOTS.lock() {
             snapshots.remove(label);
         }
@@ -754,9 +801,14 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::{
-    notification_should_surface, set_active_tab_for_window, setup_tab_metadata,
+    notification_should_surface, set_active_tab_for_window, setup_tab_metadata, tab_has_shown_page,
     teardown_tab_metadata,
 };
+
+#[cfg(not(target_os = "windows"))]
+pub fn tab_has_shown_page(_label: &str) -> bool {
+    true
+}
 
 #[cfg(not(target_os = "windows"))]
 pub fn setup_tab_metadata(_app: &tauri::AppHandle, _label: &str) -> Result<(), String> {

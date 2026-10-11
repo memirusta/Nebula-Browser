@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { createPortal } from 'react-dom'
 import { fitContextMenuPosition } from '../../core/contextMenuPosition'
 import type { Shortcut } from '../../core/types'
@@ -19,6 +21,7 @@ interface ShortcutContextMenuProps {
   onToggleMute: () => void
   onOpenNewTab: () => void
   onTogglePin?: () => void
+  onEdit?: () => void
   onMouseEnter?: () => void
   onMouseLeave?: () => void
   onLayout?: (rect: DOMRect) => void
@@ -38,12 +41,14 @@ export function ShortcutContextMenu({
   onToggleMute,
   onOpenNewTab,
   onTogglePin,
+  onEdit,
   onMouseEnter,
   onMouseLeave,
   onLayout,
 }: ShortcutContextMenuProps) {
   const { t, tf } = useLocale()
   const menuRef = useRef<HTMLDivElement>(null)
+  useFaviconRefresh()
   const [position, setPosition] = useState({ left: x, top: y })
   const [positioned, setPositioned] = useState(false)
   let host = ''
@@ -169,7 +174,7 @@ export function ShortcutContextMenu({
       <div className={styles.header}>
         <span className={styles.favicon} aria-hidden="true">
           {shortcut.favicon ? (
-            <img src={shortcut.favicon} alt="" draggable={false} />
+            <img src={siteIconSource(shortcut.favicon, shortcut.url)} alt="" draggable={false} />
           ) : (
             shortcut.label.charAt(0).toUpperCase()
           )}
@@ -187,6 +192,22 @@ export function ShortcutContextMenu({
         )}
       </div>
       <div className={styles.separator} role="separator" />
+      {onEdit && (
+        <button
+          type="button"
+          className={styles.item}
+          role="menuitem"
+          onClick={() => {
+            onEdit()
+            onClose()
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m4 20 4.2-1 10.5-10.5-3.2-3.2L5 15.8 4 20ZM13.8 7l3.2 3.2" />
+          </svg>
+          <span>{t('editBtn')}</span>
+        </button>
+      )}
       <button
         type="button"
         className={styles.item}

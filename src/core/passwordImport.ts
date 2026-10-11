@@ -26,7 +26,7 @@ export async function mergeImportedPasswords(
         url: draft.url,
         username: draft.username,
         password: draft.password,
-        updatedAt: now,
+        updatedAt: Math.max(now, (existing?.updatedAt ?? 0) + 1),
       })
     }
 

@@ -4,7 +4,8 @@
   display: flex;
   flex-direction: column;
   width: min(420px, calc(100vw - 32px));
-  max-height: min(390px, calc(100vh - 120px));
+  --panel-height: 390px;
+  --panel-preferred-top: var(--panel-anchor-top, calc(26px + var(--title-bar-height, 0px)));
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 22px;
@@ -20,18 +21,18 @@
 }
 
 .panelHome {
-  top: calc(26px + var(--title-bar-height, 0px));
   right: 82px;
 }
 
 .panelBrowsing {
   left: 50%;
-  max-height: min(270px, calc(100vh - 120px));
+  --panel-height: 270px;
   transform: translateX(-50%);
   transform-origin: top center;
 }
 
 .header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -137,6 +138,16 @@
   background: rgba(255, 255, 255, 0.055);
 }
 
+.itemReview {
+  margin: 2px 0 8px;
+  border: 1px solid rgba(255, 180, 105, 0.22);
+  background: linear-gradient(110deg, rgba(151, 89, 32, 0.16), rgba(255, 255, 255, 0.025));
+}
+
+.itemReview:hover {
+  background: linear-gradient(110deg, rgba(151, 89, 32, 0.23), rgba(255, 255, 255, 0.055));
+}
+
 .fileGlyph {
   display: grid;
   width: 38px;
@@ -165,6 +176,53 @@
   margin: 5px 0 0;
   color: #ffc48a;
   font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.reviewHeader {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+  overflow: hidden;
+  color: rgba(255, 218, 171, 0.73);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.reviewHeader > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reviewBadge,
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.reviewBadge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 183, 100, 0.32);
+  color: #ffd29c;
+  background: rgba(168, 99, 35, 0.24);
+}
+
+.statusChip {
+  color: rgba(255, 255, 255, 0.67);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.reviewHint {
+  margin: 3px 0 0;
+  color: rgba(255, 230, 194, 0.66);
+  font-size: 10px;
   line-height: 1.35;
 }
 
@@ -297,6 +355,16 @@
   color: #ffaaaa;
 }
 
+.itemActions .actionKeep {
+  border-color: rgba(204, 169, 255, 0.46);
+  color: #f0e6ff;
+  background: rgba(126, 76, 202, 0.28);
+}
+
+.itemActions .actionKeep:hover {
+  background: rgba(144, 93, 221, 0.45);
+}
+
 .empty {
   display: flex;
   min-height: 185px;
@@ -355,7 +423,7 @@
 
 @media (max-width: 640px) {
   .panelHome {
-    top: 78px;
+    --panel-preferred-top: 78px;
     right: 16px;
   }
 }

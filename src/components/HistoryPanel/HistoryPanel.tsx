@@ -1,4 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { SiteLogo } from './SiteLogo'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import {
   entryMatchesHistoryFilters,
   type BrowserSessionSnapshot,
@@ -11,6 +13,7 @@ import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './HistoryPanel.module.css'
+import floatingPanel from '../../styles/floatingPanel.module.css'
 
 interface HistoryPanelProps {
   entries: HistoryEntry[]
@@ -68,6 +71,7 @@ export function HistoryPanel({
   onClose,
 }: HistoryPanelProps) {
   const { t, locale } = useLocale()
+  useFaviconRefresh()
   const [query, setQuery] = useState('')
   const [host, setHost] = useState('all')
   const [time, setTime] = useState<HistoryTimeFilter>('all')
@@ -114,10 +118,10 @@ export function HistoryPanel({
       <div className={styles.backdrop} style={{ zIndex: 10100 }} onClick={onClose} aria-hidden="true" />
       <section
         ref={panelRef}
-        className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
+        className={[styles.panel, floatingPanel.viewportBound, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
         style={
           variant === 'browsing'
-            ? { top: browsingTop + 16, zIndex: 10101 }
+            ? { '--panel-anchor-top': `${browsingTop + 16}px`, zIndex: 10101 } as CSSProperties
             : { zIndex: 10101 }
         }
         role="dialog"
@@ -193,7 +197,7 @@ export function HistoryPanel({
                   <div className={styles.closedList}>
                     {closedTabs.slice(0, 6).map((entry) => (
                       <button key={entry.id} type="button" className={styles.closedItem} onClick={() => onOpenClosedTab(entry)} title={entry.url}>
-                        {entry.favicon ? <img src={entry.favicon} alt="" /> : <span className={styles.faviconFallback}>{hostLabel(entry.url).slice(0, 1).toUpperCase()}</span>}
+                        <SiteLogo url={entry.url} stored={entry.favicon} letter={hostLabel(entry.url).slice(0, 1).toUpperCase()} className={styles.closedLogo} fallbackClassName={styles.faviconFallback} />
                         <span><strong>{entry.title}</strong><small>{hostLabel(entry.url)} · {dateTimeFormatter.format(entry.closedAt)}</small></span>
                       </button>
                     ))}
@@ -219,6 +223,7 @@ export function HistoryPanel({
                       <article key={entry.id} className={styles.historyItem}>
                         <button type="button" className={styles.itemMain} onClick={() => onOpenUrl(entry.url, entry.title)} title={entry.url}>
                           <span className={styles.time}>{timeFormatter.format(entry.visitedAt)}</span>
+                          <SiteLogo url={entry.url} letter={entry.host.replace(/^www\./, '').slice(0, 1).toUpperCase()} className={styles.itemLogo} fallbackClassName={styles.itemLogoFallback} />
                           <span className={styles.itemBody}><strong>{entry.title}</strong><small>{entry.host}<span> · </span>{entry.url}</small></span>
                         </button>
                         <button type="button" className={styles.removeButton} onClick={() => onRemoveEntry(entry.id)} title={t('historyRemoveEntry')} aria-label={t('historyRemoveEntry')}>

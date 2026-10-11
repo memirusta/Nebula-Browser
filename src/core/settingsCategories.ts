@@ -1,10 +1,12 @@
 import { t, type NebulaLocale } from './locale'
+import { EXTENSION_COPY } from './extensionCatalog'
 
 export type SettingsCategoryId =
   | 'appearance'
   | 'home'
   | 'semi-lunar'
   | 'account'
+  | 'extensions'
   | 'privacy'
   | 'notifications'
   | 'about'
@@ -54,6 +56,12 @@ export function getSettingsCategories(locale: NebulaLocale): SettingsCategory[] 
       label: t(locale, 'catPrivacy'),
       icon: '⛨',
       description: t(locale, 'catPrivacyDesc'),
+    },
+    {
+      id: 'extensions',
+      label: EXTENSION_COPY[locale].title,
+      icon: '⊞',
+      description: EXTENSION_COPY[locale].subtitle,
     },
     {
       id: 'notifications',

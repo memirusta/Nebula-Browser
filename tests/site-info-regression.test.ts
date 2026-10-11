@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { chromeOverlayMinimumHeight } from '../src/core/chromeOverlayLayout.ts'
 import {
   addSiteException,
   removeSiteException,
@@ -57,8 +58,22 @@ test('site panel exposes real controls and destructive clearing is two-step', ()
     /type: 'raise-chrome-overlay'/,
   )
   assert.match(chrome, /setChromeOverlayMinimumLogicalHeight[\s\S]*?raise-chrome-overlay/)
-  assert.match(chrome, /siteInfoOpen\s*\?\s*650/)
-  assert.doesNotMatch(chrome, /siteInfoOpen\s*\?\s*Math\.min\(window\.innerHeight/)
+  assert.match(chrome, /chromeOverlayMinimumHeight\(\{/)
+})
+
+test('native chrome reserves room for each panel and releases it after closing', () => {
+  const closed = {
+    siteInfoOpen: false, privateInfoOpen: false, tabSearchOpen: false,
+    isBrowsing: true, hasZoom: false, hasSensitiveUsage: false,
+  }
+  for (const panel of ['siteInfoOpen', 'privateInfoOpen', 'extensionsOpen', 'tabSearchOpen'] as const) {
+    assert.equal(chromeOverlayMinimumHeight({ ...closed, [panel]: true }), 650)
+  }
+  assert.equal(chromeOverlayMinimumHeight(closed), 0)
+  assert.equal(chromeOverlayMinimumHeight({ ...closed, hasZoom: true }), 78)
+  assert.equal(chromeOverlayMinimumHeight({ ...closed, hasSensitiveUsage: true }), 78)
+  assert.equal(chromeOverlayMinimumHeight({ ...closed, hasZoom: true, hasSensitiveUsage: true }), 138)
+  assert.equal(chromeOverlayMinimumHeight({ ...closed, isBrowsing: false, hasZoom: true }), 0)
 })
 
 test('Semi-Lunar context menu identifies its tab and supports keyboard navigation', () => {

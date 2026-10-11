@@ -49,7 +49,10 @@ function tryPersist(dataUrl: string): boolean {
   }
 }
 
-export async function fileToStorableWallpaper(file: File): Promise<string | null> {
+export async function fileToStorableWallpaper(
+  file: File,
+  isCurrent: () => boolean = () => true,
+): Promise<string | null> {
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
@@ -59,6 +62,7 @@ export async function fileToStorableWallpaper(file: File): Promise<string | null
 
   try {
     for (const { maxDim, quality } of ENCODE_ATTEMPTS) {
+      if (!isCurrent()) return null
       const dataUrl = encodeBitmap(bitmap, maxDim, quality)
       if (tryPersist(dataUrl)) return dataUrl
     }

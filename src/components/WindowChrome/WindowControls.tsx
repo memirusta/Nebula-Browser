@@ -1,6 +1,7 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isTauri } from '../../platform/runtime'
+import { debounce } from '../../platform/debounce'
 import { useLocale } from '../../hooks/useLocale'
 import {
   getWindowPresentationState,
@@ -31,16 +32,25 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
     let disposed = false
     let unlistenResize: (() => void) | undefined
     let unlistenFocus: (() => void) | undefined
+    let requestId = 0
 
     const syncPresentation = async () => {
+      const currentRequestId = ++requestId
       const next = await getWindowPresentationState()
-      if (!disposed) setPresentation(next)
+      if (disposed || currentRequestId !== requestId) return
+      setPresentation((current) =>
+        current.browserFullscreen === next.browserFullscreen &&
+        current.siteFullscreen === next.siteFullscreen &&
+        current.maximized === next.maximized &&
+        current.focused === next.focused
+          ? current
+          : next,
+      )
     }
+    const syncAfterResize = debounce(() => { void syncPresentation() }, 120)
 
     void syncPresentation()
-    void appWindow.onResized(() => {
-      void syncPresentation()
-    }).then((unlisten) => {
+    void appWindow.onResized(syncAfterResize).then((unlisten) => {
       if (disposed) {
         unlisten()
         return
@@ -59,6 +69,7 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
 
     return () => {
       disposed = true
+      syncAfterResize.cancel()
       unlistenResize?.()
       unlistenFocus?.()
     }
@@ -103,9 +114,7 @@ export function WindowControls({ buttonClassName }: WindowControlsProps) {
         aria-disabled={maximizeLocked}
         onClick={(event) => {
           stop(event)
-          void toggleWindowMaximize().then(() =>
-            getWindowPresentationState().then(setPresentation),
-          )
+          void toggleWindowMaximize().then(() => getWindowPresentationState().then(setPresentation))
         }}
         aria-label={presentation.maximized ? t('titleRestore') : t('titleMaximize')}
         title={presentation.maximized ? t('titleRestore') : t('titleMaximize')}

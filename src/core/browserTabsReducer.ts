@@ -25,12 +25,13 @@ export type BrowserTabsAction =
       activate: boolean
       tabId?: string
       navigation?: TabNavigationState
+      isPrivate?: boolean
     }
   | { type: 'close'; shortcutId: string }
   | {
       type: 'update-meta'
       shortcutId: string
-      patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted'>>
+      patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted' | 'canGoForward'>>
     }
   | {
       type: 'apply-snapshot'
@@ -85,6 +86,7 @@ export function browserTabsReducer(
           createBrowserTab(action.shortcut, {
             tabId: action.tabId,
             navigation: action.navigation,
+            isPrivate: action.isPrivate,
           }),
         ]
       }

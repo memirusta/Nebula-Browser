@@ -1,0 +1,26 @@
+[
+  {
+    "id": "sponsorblock",
+    "display": { "name": "SponsorBlock", "category": "media", "website": "https://sponsor.ajay.app/", "monogram": "▶", "color": "#79d7a2", "description": "Skip sponsored segments in YouTube videos." },
+    "version": "6.1.7",
+    "downloadName": "SponsorBlock",
+    "url": "https://github.com/ajayyy/SponsorBlock/releases/download/6.1.7/ChromeExtension.zip",
+    "sha256": "7c8e3dc8b5e560b480ae8efdf28f4f1101fce0cc32434562a336a89e4962eda3",
+    "manifestNameField": "short_name",
+    "manifestName": "SponsorBlock",
+    "access": ["https://*.youtube.com/*", "https://sponsor.ajay.app/*"],
+    "redirectHosts": ["github.com", "release-assets.githubusercontent.com"]
+  },
+  {
+    "id": "dark-reader",
+    "display": { "name": "Dark Reader", "category": "appearance", "website": "https://darkreader.org/", "monogram": "◐", "color": "#e5b36b", "description": "Give websites a dark appearance." },
+    "version": "4.9.130",
+    "downloadName": "Dark-Reader",
+    "url": "https://github.com/darkreader/darkreader/releases/download/v4.9.130/darkreader-chrome-mv3.zip",
+    "sha256": "99297badcf98e82d41209d69f3723ff4830daea49c372cd5af476a4cad1eef8f",
+    "manifestNameField": "name",
+    "manifestName": "Dark Reader",
+    "access": ["*://*/*"],
+    "redirectHosts": ["github.com", "release-assets.githubusercontent.com"]
+  }
+]

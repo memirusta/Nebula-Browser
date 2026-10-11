@@ -231,7 +231,9 @@ export function addHistoryEntry(
   entries: HistoryEntry[],
   urlInput: string,
   title?: string | null,
+  isPrivate = false,
 ): HistoryEntry[] {
+  if (isPrivate) return entries
   const url = normalizeHttpUrl(urlInput)
   if (!url) return entries
   const now = Date.now()
@@ -274,6 +276,7 @@ export function persistClosedTabs(entries: ClosedTabEntry[]): void {
 }
 
 export function closedTabFromBrowserTab(tab: BrowserTab): ClosedTabEntry | null {
+  if (tab.isPrivate) return null
   const url = normalizeHttpUrl(tab.url)
   if (!url) return null
   return {

@@ -4,9 +4,11 @@ import { isChromeShell } from './nebulaBridge'
 import { isTauri } from '../platform/runtime'
 
 export const STORAGE_SYNC_EVENT = 'nebula-storage-sync'
+let sourceId: string | undefined
 
 export function storageSyncSource(): string {
-  return isChromeShell() ? 'chrome' : 'shell'
+  sourceId ??= `${isChromeShell() ? 'chrome' : 'shell'}:${crypto.randomUUID()}`
+  return sourceId
 }
 
 /** Persist to localStorage and notify other Nebula webviews. */

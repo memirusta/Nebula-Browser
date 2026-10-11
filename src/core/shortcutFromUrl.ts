@@ -1,5 +1,6 @@
 import type { Shortcut } from './types'
 import { searchShortcutIdentity } from './searchShortcutIdentity.ts'
+import { faviconForUrl } from './browserTab.ts'
 
 export const MAX_CUSTOM_SHORTCUTS = 32
 
@@ -49,12 +50,13 @@ function shortcutFromSearchUrl(url: URL): Shortcut | null {
 
   const id = searchShortcutIdentity(engine, query)
   const label = query.length > 36 ? `${query.slice(0, 36)}…` : query
+  const favicon = faviconForUrl(url.href)
 
   return {
     id,
     label,
     url: url.href,
-    favicon: `https://www.google.com/s2/favicons?domain=${faviconDomain}&sz=64`,
+    favicon: favicon.startsWith('/') ? favicon : faviconForUrl(`https://${faviconDomain}/`),
   }
 }
 
@@ -104,12 +106,13 @@ export function shortcutFromUrl(rawUrl: string): Shortcut | null {
 
   const normalizedUrl = `${parsed.protocol}//${parsed.host}/`
   const id = visitShortcutIdFromUrl(parsed.href)
+  const favicon = faviconForUrl(parsed.href)
 
   return {
     id,
     label: labelFromHost(host),
     url: normalizedUrl,
-    favicon: `https://www.google.com/s2/favicons?domain=${host}&sz=64`,
+    favicon: favicon.startsWith('/') ? favicon : faviconForUrl(`https://${host}/`),
   }
 }
 

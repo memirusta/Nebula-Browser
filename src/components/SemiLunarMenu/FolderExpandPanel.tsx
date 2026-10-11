@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { createPortal } from 'react-dom'
 import type { Shortcut } from '../../core/types'
 import { DRAG_THRESHOLD } from '../../core/shortcutLayout'
@@ -69,6 +71,7 @@ function FolderPanelItem({
   onPreviewShow?: (shortcut: Shortcut) => void
   onPreviewHide?: () => void
 }) {
+  useFaviconRefresh()
   const [isDragging, setIsDragging] = useState(false)
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 })
   const [showCloseBtn, setShowCloseBtn] = useState(false)
@@ -318,7 +321,7 @@ return (
       >
         {shortcut.favicon ? (
           <img
-            src={shortcut.favicon}
+            src={siteIconSource(shortcut.favicon, shortcut.url)}
             alt=""
             draggable={false}
           />
@@ -356,7 +359,7 @@ return (
         >
           {shortcut.favicon ? (
             <img
-              src={shortcut.favicon}
+              src={siteIconSource(shortcut.favicon, shortcut.url)}
               alt=""
               draggable={false}
             />

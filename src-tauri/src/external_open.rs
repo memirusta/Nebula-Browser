@@ -47,6 +47,15 @@ fn queue_external_urls(urls: Vec<String>) -> bool {
     true
 }
 
+/// SPIKE: what a second launch with links does, from inside the process.
+#[cfg(feature = "split-driver")]
+pub(crate) fn spike_open_urls(app: &tauri::AppHandle, urls: Vec<String>) {
+    if queue_external_urls(urls) {
+        let target = crate::browser_workspace::most_recent_window_label(app);
+        let _ = app.emit_to(target, EXTERNAL_URL_PENDING_EVENT, ());
+    }
+}
+
 /// Capture HTTP/HTTPS arguments from the first process.
 ///
 /// The frontend is not ready yet at this point, so the URLs remain queued until
@@ -92,7 +101,7 @@ pub fn handle_second_instance<R: tauri::Runtime>(app: &tauri::AppHandle<R>, args
 
     let queued = queue_external_urls(urls);
 
-    let target_label = crate::browser_workspace::most_recent_window_label();
+    let target_label = crate::browser_workspace::most_recent_window_label(app);
     if let Some(window) = app.get_window(&target_label) {
         activate_main_window(&window);
     }
@@ -103,8 +112,11 @@ pub fn handle_second_instance<R: tauri::Runtime>(app: &tauri::AppHandle<R>, args
 }
 
 #[tauri::command]
-pub fn take_pending_open_urls(window_label: String) -> Result<Vec<String>, String> {
-    if window_label != crate::browser_workspace::most_recent_window_label() {
+pub fn take_pending_open_urls(
+    app: tauri::AppHandle,
+    window_label: String,
+) -> Result<Vec<String>, String> {
+    if window_label != crate::browser_workspace::most_recent_window_label(&app) {
         return Ok(Vec::new());
     }
     let mut pending = PENDING_EXTERNAL_URLS

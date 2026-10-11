@@ -14,6 +14,8 @@ const MAX_RECENT_MARKERS: usize = 512;
 const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 const RECENT_EVENT_WINDOW_MS: u64 = 2_500;
 const RECENT_EVENT_RETENTION_MS: u64 = 10_000;
+/// How long the same words from the page's own reader count as one message (see `dedupe_reason`).
+const SAME_DOM_MESSAGE_WINDOW_MS: u64 = 800;
 const CONTENT_ADAPTER_DELAY_MS: u64 = 300;
 const WEBVIEW2_ENRICHMENT_DELAY_MS: u64 = 500;
 const INSTAGRAM_DOM_FALLBACK_DELAY_MS: u64 = 700;
@@ -593,7 +595,7 @@ fn persist_diagnostic(app: &AppHandle, diagnostic: &NotificationDiagnostic) -> R
 }
 
 fn notification_fingerprint(title: &str, body: &str) -> String {
-    [title, body]
+    let normalized = [title, body]
         .into_iter()
         .map(|value| {
             value
@@ -603,7 +605,65 @@ fn notification_fingerprint(title: &str, body: &str) -> String {
                 .to_ascii_lowercase()
         })
         .collect::<Vec<_>>()
-        .join("\0")
+        .join("\0");
+    // Deduplication needs identity, not a second copy of the message body.
+    let mut hasher = DefaultHasher::new();
+    normalized.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+/// The reasons the page adapter may give for not reporting a message: nothing else is written to the log,
+/// and never a message or a name.
+const ADAPTER_DROP_REASONS: &[&str] = &[
+    "thread-settling",
+    "not-new",
+    "no-composer",
+    "geometry",
+    "reported",
+    "media-detected",
+    "media-unrecognized",
+    "media-text",
+];
+
+/// A structural note from the page adapter (tag names, roles, sizes, the first segment of an address): never a
+/// message, a name or a full address. Anything outside a small alphabet is dropped.
+fn adapter_detail(detail: &str) -> String {
+    detail
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || " _.(){}[]<>+:x-".contains(*character)
+        })
+        .take(240)
+        .collect()
+}
+
+/// Why the page adapter or the shell did not surface a message, for the notification log.
+pub fn record_adapter_diagnostic(
+    decision: &str,
+    reason: &str,
+    detail: &str,
+    tab_label: &str,
+    origin: &str,
+) {
+    let reason = if reason == "tab-visible" || ADAPTER_DROP_REASONS.contains(&reason) {
+        reason
+    } else {
+        "other"
+    };
+    record_diagnostic(
+        Some(NotificationSource::ContentAdapter),
+        "dom-adapter",
+        if decision == "suppressed" {
+            "suppressed"
+        } else {
+            "dropped"
+        },
+        reason,
+        tab_label,
+        origin,
+        None,
+        &adapter_detail(detail),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -617,6 +677,9 @@ fn record_diagnostic(
     sequence: Option<u64>,
     error: &str,
 ) {
+    if crate::notification_history::is_private_tab(tab_label) {
+        return;
+    }
     let diagnostic = NotificationDiagnostic {
         timestamp_ms: timestamp_ms(),
         sequence,
@@ -721,6 +784,12 @@ fn dedupe_reason(
             } else if matching.iter().any(|marker| {
                 marker.source == NotificationSource::ContentAdapter
                     && marker.fingerprint == fingerprint
+                    // The same words from the page's own reader within a moment are one message seen
+                    // twice. A sender who writes "." again and again writes many messages: the page
+                    // already tells a message that is new from one that is only drawn again.
+                    && (adapter_kind != Some(ContentAdapterKind::Dom)
+                        || marker.adapter_kind != Some(ContentAdapterKind::Dom)
+                        || now_ms.saturating_sub(marker.timestamp_ms) <= SAME_DOM_MESSAGE_WINDOW_MS)
             }) {
                 Some("recent-content-adapter-duplicate")
             } else {
@@ -1357,7 +1426,9 @@ fn process_candidate(
             while broker.recent.len() > MAX_RECENT_MARKERS {
                 broker.recent.pop_front();
             }
-            push_replay(&mut broker, event.clone());
+            if !crate::notification_history::is_private_tab(&event.tab_label) {
+                push_replay(&mut broker, event.clone());
+            }
             event
         }
         Err(error) => {
@@ -1366,7 +1437,11 @@ fn process_candidate(
         }
     };
 
-    let center_result = app.emit(NOTIFICATION_EVENT, event.clone());
+    let center_result = if crate::notification_history::is_private_tab(&event.tab_label) {
+        Ok(())
+    } else {
+        app.emit(NOTIFICATION_EVENT, event.clone())
+    };
     record_diagnostic(
         Some(source),
         "notification-center",
@@ -1516,6 +1591,28 @@ pub fn submit(app: &AppHandle, source: NotificationSource, candidate: Notificati
     }
 }
 
+pub fn forget(ids: &[String], all: bool) -> Result<(), String> {
+    let mut broker = BROKER.lock().map_err(|error| error.to_string())?;
+    let mut ids: std::collections::HashSet<String> = ids.iter().cloned().collect();
+    if all {
+        ids.extend(broker.replay.iter().map(|event| event.id.clone()));
+    }
+    crate::notification_history::forget(&ids.iter().cloned().collect::<Vec<_>>())?;
+    let sequences: std::collections::HashSet<u64> = broker
+        .replay
+        .iter()
+        .filter(|event| ids.contains(event.id.as_str()))
+        .map(|event| event.sequence)
+        .collect();
+    broker
+        .replay
+        .retain(|event| !ids.contains(event.id.as_str()));
+    broker
+        .diagnostics
+        .retain(|entry| !entry.sequence.is_some_and(|seq| sequences.contains(&seq)));
+    Ok(())
+}
+
 pub fn replay(app: &AppHandle, after_sequence: Option<u64>) -> Vec<BrokerNotification> {
     let _ = DIAGNOSTIC_APP.set(app.clone());
     let events: Vec<BrokerNotification> = BROKER
@@ -1631,6 +1728,48 @@ mod tests {
                 1_000,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn a_sender_who_repeats_the_same_words_is_not_collapsed_but_one_message_seen_twice_is() {
+        let mut state = BrokerState::default();
+        let mut earlier = marker(NotificationSource::ContentAdapter, 1_000);
+        earlier.adapter_kind = Some(ContentAdapterKind::Dom);
+        state.recent.push_back(earlier);
+        let at = |now_ms: u64| {
+            dedupe_reason(
+                &state,
+                NotificationSource::ContentAdapter,
+                Some(ContentAdapterKind::Dom),
+                "nebula-tab-main-chat",
+                "https://chat.example",
+                &notification_fingerprint("Chat", "Message"),
+                now_ms,
+            )
+        };
+        // Seen twice within a moment: one message.
+        assert_eq!(at(1_400), Some("recent-content-adapter-duplicate"));
+        // The same words 1.5 s later: another message ("." again and again).
+        assert_eq!(at(2_500), None);
+
+        // The page's own reader and a service worker snapshot of the same words stay one message for the
+        // whole recent window.
+        let mut state = BrokerState::default();
+        let mut snapshot = marker(NotificationSource::ContentAdapter, 1_000);
+        snapshot.adapter_kind = Some(ContentAdapterKind::ServiceWorkerSnapshot);
+        state.recent.push_back(snapshot);
+        assert_eq!(
+            dedupe_reason(
+                &state,
+                NotificationSource::ContentAdapter,
+                Some(ContentAdapterKind::Dom),
+                "nebula-tab-main-chat",
+                "https://chat.example",
+                &notification_fingerprint("Chat", "Message"),
+                2_400,
+            ),
+            Some("recent-service-worker-snapshot-authority")
         );
     }
 

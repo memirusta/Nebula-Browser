@@ -39,6 +39,8 @@ mod imp {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct PrivacyOptions {
+        #[serde(default)]
+        pub private_mode: bool,
         pub block_trackers: bool,
         pub strict_cookies: bool,
         pub https_only: bool,
@@ -325,6 +327,7 @@ mod imp {
       else if (original !== null) element.setAttribute('style', original);
       element.removeAttribute('data-nebula-cookie-hidden');
       element.removeAttribute('data-nebula-cookie-style');
+      element.removeAttribute('data-nebula-cookie-reason');
     });
   };
 
@@ -404,8 +407,38 @@ mod imp {
     'preferences', 'settings'
   ]);
 
-  const consentWords =
-    /(çerez|cerez|cookie|consent|gizlilik|kişisel veri|kisisel veri|privacy|tracking|izleme)/i;
+  // Whole words only: "izleme" inside another word, or a side called "Cookie" in a menu, say nothing.
+  const consentWordSource =
+    '(?:^|[^a-zçğıöşü0-9])(?:çerez[a-zçğıöşü]*|cerez[a-zçğıöşü]*|cookies?|consent|kvkk|gizlilik|' +
+    'kişisel veri[a-zçğıöşü]*|kisisel veri[a-zçğıöşü]*|privacy|tracking|izleme)(?![a-zçğıöşü0-9])';
+  const consentWords = new RegExp(consentWordSource);
+  const consentWordsEverywhere = new RegExp(consentWordSource, 'g');
+  const lowerTr = (value) => (value || '').toLocaleLowerCase('tr-TR');
+
+  // A surface is a consent notice when it says so about itself (its name or label), when the words are
+  // in its heading (its first two lines), or when it is hardly about anything else. A big dialog
+  // of the site with one such word somewhere inside (a product option, a footer link) is not.
+  const speaksOfConsent = (element, text) => {
+    const lower = lowerTr(text);
+    const found = lower.match(consentWordsEverywhere);
+    if (!found) return false;
+
+    const name = lowerTr([
+      element.id,
+      typeof element.className === 'string' ? element.className : '',
+      element.getAttribute('aria-label')
+    ].join(' '));
+    if (consentWords.test(name)) return true;
+    const heading = lower
+      .split(String.fromCharCode(10))
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(' ')
+      .slice(0, 240);
+    if (consentWords.test(heading)) return true;
+    return found.length >= 3;
+  };
 
   const normalize = (value) => (value || '')
     .normalize('NFKC')
@@ -436,9 +469,11 @@ mod imp {
     }
   };
 
-  const hideElement = (element) => {
+  // The reason is kept on the element (data-nebula-cookie-reason) so a wrongly hidden dialog can be traced.
+  const hideElement = (element, reason) => {
     if (!(element instanceof HTMLElement)) return false;
     if (element.hasAttribute('data-nebula-cookie-hidden')) return false;
+    element.setAttribute('data-nebula-cookie-reason', reason || 'unknown');
 
     element.setAttribute(
       'data-nebula-cookie-style',
@@ -464,8 +499,9 @@ mod imp {
 
     if (isKnownRoot(element)) return true;
 
-    const text = element.innerText || element.textContent || '';
-    if (!consentWords.test(text) || text.length > 5000) return false;
+    // What is seen, not what is in hidden options and templates.
+    const text = element.innerText || '';
+    if (text.length > 2500 || !speaksOfConsent(element, text)) return false;
 
     const style = getComputedStyle(element);
     return (
@@ -678,7 +714,7 @@ mod imp {
 
       window.setTimeout(() => {
         if (document.contains(root) || root.isConnected) {
-          hideElement(root);
+          hideElement(root, 'after-reject');
           unlockPage();
         }
       }, 350);
@@ -707,8 +743,8 @@ mod imp {
           break;
         }
 
-        const text = current.innerText || current.textContent || '';
-        if (!consentWords.test(text) || text.length > 2500) {
+        const text = current.innerText || '';
+        if (text.length > 2500 || !speaksOfConsent(current, text)) {
           current = parentAcrossShadow(current);
           continue;
         }
@@ -731,7 +767,7 @@ mod imp {
           continue;
         }
 
-        if (hideElement(current)) {
+        if (hideElement(current, 'compact-notice')) {
           unlockPage();
           return true;
         }
@@ -749,7 +785,7 @@ mod imp {
     for (const selector of knownRoots) {
       for (const element of queryAll(selector)) {
         if (looksLikeConsentRoot(element)) {
-          changed = hideElement(element) || changed;
+          changed = hideElement(element, 'known-root') || changed;
         }
       }
     }
@@ -769,7 +805,7 @@ mod imp {
 
     for (const element of generic) {
       if (looksLikeConsentRoot(element)) {
-        changed = hideElement(element) || changed;
+        changed = hideElement(element, 'generic-root') || changed;
       }
     }
 
@@ -860,6 +896,9 @@ mod imp {
             return Err(
                 "privacy settings are limited to browser tabs and popup content".to_string(),
             );
+        }
+        if next.private_mode {
+            crate::notification_history::remember_private_tab(label)?;
         }
         let previous = OPTIONS
             .lock()
@@ -1480,12 +1519,84 @@ impl TryFrom<&str> for BrowsingDataKind {
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileStorageUsage {
+    pub total_bytes: u64,
+    pub cache_bytes: u64,
+}
+
+fn directory_size(path: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+
+    entries
+        .flatten()
+        .map(|entry| {
+            let Ok(file_type) = entry.file_type() else {
+                return 0;
+            };
+            if file_type.is_file() {
+                return entry.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+            }
+            if file_type.is_dir() {
+                return directory_size(&entry.path());
+            }
+            0
+        })
+        .sum()
+}
+
+pub fn profile_storage_usage(app: &tauri::AppHandle) -> Result<ProfileStorageUsage, String> {
+    #[cfg(not(target_os = "windows"))]
+    use tauri::Manager;
+
+    // The browsing profile's own folder (it used to be looked for under Roaming, where
+    // WebView2 keeps nothing).
+    #[cfg(target_os = "windows")]
+    let profile_root = crate::browser_profile::user_data_folder(app)?.join("EBWebView");
+    #[cfg(not(target_os = "windows"))]
+    let profile_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("EBWebView");
+
+    let mut cache_bytes = ["ShaderCache", "GrShaderCache", "GPUPersistentCache"]
+        .into_iter()
+        .map(|name| directory_size(&profile_root.join(name)))
+        .sum();
+
+    let profile_cache_directories = [
+        "Cache",
+        "Code Cache",
+        "GPUCache",
+        "DawnWebGPUCache",
+        "DawnGraphiteCache",
+    ];
+    if let Ok(entries) = std::fs::read_dir(&profile_root) {
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            for cache_directory in profile_cache_directories {
+                cache_bytes += directory_size(&entry.path().join(cache_directory));
+            }
+        }
+    }
+
+    Ok(ProfileStorageUsage {
+        total_bytes: directory_size(&profile_root),
+        cache_bytes,
+    })
+}
+
 #[cfg(target_os = "windows")]
-pub async fn clear_browsing_data(
-    app: &tauri::AppHandle,
-    label: &str,
-    kind: &str,
-) -> Result<(), String> {
+pub async fn clear_browsing_data(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
         COREWEBVIEW2_BROWSING_DATA_KINDS_BROWSING_HISTORY,
@@ -1501,10 +1612,10 @@ pub async fn clear_browsing_data(
         BrowsingDataKind::All => COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
     };
 
-    clear_profile_data_and_wait(app, label, data_kind).await?;
+    clear_profile_data_and_wait(app, data_kind).await?;
 
     if matches!(kind, BrowsingDataKind::Permissions | BrowsingDataKind::All) {
-        clear_non_default_permissions_and_wait(app, label).await?;
+        clear_non_default_permissions_and_wait(app).await?;
     }
 
     Ok(())
@@ -1513,7 +1624,6 @@ pub async fn clear_browsing_data(
 #[cfg(target_os = "windows")]
 async fn non_default_permission_settings(
     app: &tauri::AppHandle,
-    label: &str,
 ) -> Result<
     Vec<(
         webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
@@ -1524,7 +1634,6 @@ async fn non_default_permission_settings(
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::GetNonDefaultPermissionSettingsCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Profile4, ICoreWebView2_13, COREWEBVIEW2_PERMISSION_KIND,
@@ -1532,9 +1641,7 @@ async fn non_default_permission_settings(
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows_core::{Interface, PWSTR};
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(app)?;
     let (sender, receiver) = tokio::sync::oneshot::channel::<
         Result<Vec<(COREWEBVIEW2_PERMISSION_KIND, String)>, String>,
     >();
@@ -1616,30 +1723,26 @@ async fn non_default_permission_settings(
 
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
-        .map_err(|_| format!("timed out reading WebView permissions for '{label}'"))?
-        .map_err(|_| format!("permission settings callback was dropped for '{label}'"))?
+        .map_err(|_| "timed out reading the browser profile's permissions".to_string())?
+        .map_err(|_| "permission settings callback was dropped".to_string())?
 }
 
 #[cfg(target_os = "windows")]
 async fn set_permission_default_and_wait(
     app: &tauri::AppHandle,
-    label: &str,
     permission_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PERMISSION_KIND,
     origin: String,
 ) -> Result<(), String> {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Profile4, ICoreWebView2_13, COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
     };
     use webview2_com::SetPermissionStateCompletedHandler;
     use windows_core::{Interface, HSTRING, PCWSTR};
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
+    let webview = crate::browser_profile::owner(app)?;
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let callback_sender = Arc::clone(&sender);
@@ -1680,38 +1783,31 @@ async fn set_permission_default_and_wait(
 
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
-        .map_err(|_| format!("timed out resetting WebView permission for '{label}'"))?
-        .map_err(|_| format!("permission reset callback was dropped for '{label}'"))?
+        .map_err(|_| "timed out resetting a WebView permission".to_string())?
+        .map_err(|_| "permission reset callback was dropped".to_string())?
 }
 
 #[cfg(target_os = "windows")]
-async fn clear_non_default_permissions_and_wait(
-    app: &tauri::AppHandle,
-    label: &str,
-) -> Result<(), String> {
-    for (permission_kind, origin) in non_default_permission_settings(app, label).await? {
-        set_permission_default_and_wait(app, label, permission_kind, origin).await?;
+async fn clear_non_default_permissions_and_wait(app: &tauri::AppHandle) -> Result<(), String> {
+    for (permission_kind, origin) in non_default_permission_settings(app).await? {
+        set_permission_default_and_wait(app, permission_kind, origin).await?;
     }
     Ok(())
 }
 
-pub async fn clear_site_permissions(
-    app: &tauri::AppHandle,
-    label: &str,
-    origin: &str,
-) -> Result<(), String> {
+pub async fn clear_site_permissions(app: &tauri::AppHandle, origin: &str) -> Result<(), String> {
     let parsed = url::Url::parse(origin).map_err(|error| error.to_string())?;
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
         return Err("site permission origin must be HTTP or HTTPS".to_string());
     }
     let target_origin = parsed.origin().ascii_serialization();
 
-    for (permission_kind, permission_origin) in non_default_permission_settings(app, label).await? {
+    for (permission_kind, permission_origin) in non_default_permission_settings(app).await? {
         let matches_target = url::Url::parse(&permission_origin)
             .map(|value| value.origin().ascii_serialization() == target_origin)
             .unwrap_or(false);
         if matches_target {
-            set_permission_default_and_wait(app, label, permission_kind, permission_origin).await?;
+            set_permission_default_and_wait(app, permission_kind, permission_origin).await?;
         }
     }
     Ok(())
@@ -1720,20 +1816,25 @@ pub async fn clear_site_permissions(
 #[cfg(target_os = "windows")]
 async fn clear_profile_data_and_wait(
     app: &tauri::AppHandle,
-    label: &str,
     data_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS,
+) -> Result<(), String> {
+    let owner = crate::browser_profile::owner(app)?;
+    clear_profile_data_through(owner.webview().clone(), data_kind, "the browser profile").await
+}
+
+#[cfg(target_os = "windows")]
+async fn clear_profile_data_through(
+    webview: tauri::Webview,
+    data_kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS,
+    what: &str,
 ) -> Result<(), String> {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use tauri::Manager;
     use webview2_com::ClearBrowsingDataCompletedHandler;
     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13};
     use windows_core::Interface;
 
-    let webview = app
-        .get_webview(label)
-        .ok_or_else(|| format!("webview '{label}' not found"))?;
     let (sender, receiver) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let callback_sender = Arc::clone(&sender);
@@ -1768,8 +1869,8 @@ async fn clear_profile_data_and_wait(
 
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
-        .map_err(|_| format!("timed out clearing WebView profile for '{label}'"))?
-        .map_err(|_| format!("profile clear callback was dropped for '{label}'"))?
+        .map_err(|_| format!("timed out clearing {what}"))?
+        .map_err(|_| format!("clearing {what} was dropped before it finished"))?
 }
 
 #[cfg(target_os = "windows")]
@@ -1779,6 +1880,8 @@ pub async fn factory_reset_profiles(app: &tauri::AppHandle) -> Result<(), String
     use tauri::Manager;
     use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE;
 
+    // The browsing profile always has a webview to clear through.
+    crate::browser_profile::owner(app)?;
     let mut labels = app
         .webviews()
         .into_keys()
@@ -1790,9 +1893,17 @@ pub async fn factory_reset_profiles(app: &tauri::AppHandle) -> Result<(), String
         return Err("no WebView profiles are available to clear".to_string());
     }
 
+    // Factory reset wipes every environment: each webview's own profile.
     for label in labels {
-        clear_profile_data_and_wait(app, &label, COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE)
-            .await?;
+        let webview = app
+            .get_webview(&label)
+            .ok_or_else(|| format!("webview '{label}' not found"))?;
+        clear_profile_data_through(
+            webview,
+            COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_PROFILE,
+            &label,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1840,11 +1951,7 @@ pub fn notification_delivery_policy(_label: &str, _origin: &str) -> Notification
 }
 
 #[cfg(not(target_os = "windows"))]
-pub async fn clear_browsing_data(
-    _app: &tauri::AppHandle,
-    _label: &str,
-    kind: &str,
-) -> Result<(), String> {
+pub async fn clear_browsing_data(_app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     BrowsingDataKind::try_from(kind)?;
     Ok(())
 }

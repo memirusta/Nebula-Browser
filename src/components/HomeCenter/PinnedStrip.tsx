@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import { createPortal } from 'react-dom'
 import type { ModuleSize } from '../../core/homeLayout'
 import type { BrowseSession } from '../../core/browseSession'
 import { MODULE_SIZE_SCALE } from '../../core/homeLayout'
 import type { Shortcut } from '../../core/types'
+import type { EditPinnedShortcutResult } from '../../core/pinnedShortcuts'
 import { ShortcutContextMenu } from '../SemiLunarMenu/ShortcutContextMenu'
 import { ShortcutPreviewOverlay } from '../SemiLunarMenu/ShortcutPreviewOverlay'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
 import { useLocale } from '../../hooks/useLocale'
+import { PinnedShortcutEditor } from './PinnedShortcutEditor'
 import styles from './PinnedStrip.module.css'
 
 const HOLD_MS = 1000
@@ -18,6 +22,7 @@ interface PinnedStripProps {
   shortcuts: Shortcut[]
   onNavigate: (url: string) => void
   onUnpin: (id: string) => void
+  onEdit: (id: string, title: string, url: string) => EditPinnedShortcutResult
   onReorder: (fromIndex: number, toIndex: number) => void
   isMuted?: (id: string) => boolean
   onToggleMute?: (id: string) => void
@@ -73,6 +78,7 @@ export function PinnedStrip({
   shortcuts,
   onNavigate,
   onUnpin,
+  onEdit,
   onReorder,
   isMuted = () => false,
   onToggleMute,
@@ -87,7 +93,9 @@ export function PinnedStrip({
 }: PinnedStripProps) {
   const { t, tf } = useLocale()
   const listRef = useRef<HTMLUListElement>(null)
+  useFaviconRefresh()
   const [previewShortcut, setPreviewShortcut] = useState<Shortcut | null>(null)
+  const [editingShortcut, setEditingShortcut] = useState<Shortcut | null>(null)
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     requestId: number
@@ -286,10 +294,12 @@ export function PinnedStrip({
   useEffect(() => () => clearPreviewTimer(), [clearPreviewTimer])
 
   const previewActive = previewShortcut !== null
+  const shortcutInteractionActive =
+    previewActive || editingShortcut !== null
 
   useEffect(() => {
-    onShortcutInteractionChange?.(previewActive)
-  }, [previewActive, onShortcutInteractionChange])
+    onShortcutInteractionChange?.(shortcutInteractionActive)
+  }, [shortcutInteractionActive, onShortcutInteractionChange])
 
   useEffect(() => {
     return () => onShortcutInteractionChange?.(false)
@@ -387,7 +397,7 @@ export function PinnedStrip({
             aria-hidden="true"
           >
             {draggedShortcut.favicon ? (
-              <img src={draggedShortcut.favicon} alt="" draggable={false} />
+              <img src={siteIconSource(draggedShortcut.favicon, draggedShortcut.url)} alt="" draggable={false} />
             ) : (
               <span>{draggedShortcut.label.charAt(0)}</span>
             )}
@@ -475,7 +485,7 @@ export function PinnedStrip({
                     <span className={styles.iconWrap}>
                       {shortcut.favicon ? (
                         <img
-                          src={shortcut.favicon}
+                          src={siteIconSource(shortcut.favicon, shortcut.url)}
                           alt=""
                           className={styles.favicon}
                           draggable={false}
@@ -514,6 +524,16 @@ export function PinnedStrip({
           onToggleMute={() => onToggleMute?.(contextMenu.shortcut.id)}
           onOpenNewTab={() => onNavigate(contextMenu.shortcut.url)}
           onTogglePin={() => onUnpin(contextMenu.shortcut.id)}
+          onEdit={() => setEditingShortcut(contextMenu.shortcut)}
+        />
+      )}
+
+      {editingShortcut && (
+        <PinnedShortcutEditor
+          key={editingShortcut.id}
+          shortcut={editingShortcut}
+          onClose={() => setEditingShortcut(null)}
+          onSave={onEdit}
         />
       )}
     </>

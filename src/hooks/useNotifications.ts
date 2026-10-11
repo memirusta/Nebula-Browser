@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
+import { isTauri } from '../platform/runtime'
 import type { DownloadItem } from '../core/download'
 import {
   loadNotifications,
   loadSiteNotificationPermissions,
-  MAX_STORED_NOTIFICATIONS,
   NOTIFICATION_PERMISSIONS_KEY,
   NOTIFICATION_STORE_KEY,
   normalizeNotificationOrigin,
@@ -19,6 +20,7 @@ import {
 } from '../core/notification'
 import { persistLocalStorage, useStorageSync } from '../core/storageSync'
 import { useLocale } from './useLocale'
+import { changeNotificationHistory, NOTIFICATION_HISTORY_CHANGED, type NotificationHistoryChange } from '../core/notificationHistory'
 
 export function useNotifications(
   downloads: DownloadItem[],
@@ -32,6 +34,8 @@ export function useNotifications(
   const translateRef = useRef(t)
   const latestBrokerSequenceRef = useRef(0)
   const nativeDownloadToastIdsRef = useRef(new Set<string>())
+  const recordedDownloadIdsRef = useRef(new Set<string>())
+  const [historyError, setHistoryError] = useState(false)
 
   useEffect(() => {
     siteNotificationsEnabledRef.current = siteNotificationsEnabled
@@ -49,24 +53,48 @@ export function useNotifications(
   useStorageSync(NOTIFICATION_STORE_KEY, reloadItems)
   useStorageSync(NOTIFICATION_PERMISSIONS_KEY, reloadPermissions)
 
+  const updateHistory = useCallback(async (change: NotificationHistoryChange) => {
+    try {
+      await changeNotificationHistory(change)
+      setHistoryError(false)
+      reloadItems()
+      return true
+    } catch {
+      setHistoryError(true)
+      return false
+    }
+  }, [reloadItems])
+
   useEffect(() => {
-    persistLocalStorage(NOTIFICATION_STORE_KEY, JSON.stringify(items))
-  }, [items])
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    window.addEventListener(NOTIFICATION_HISTORY_CHANGED, reloadItems)
+    if (isTauri) {
+      void listen(NOTIFICATION_HISTORY_CHANGED, reloadItems).then((stop) => {
+        if (disposed) stop()
+        else unlisten = stop
+      }).catch(() => setHistoryError(true))
+    }
+    void updateHistory({ type: 'reload' })
+    return () => {
+      disposed = true
+      unlisten?.()
+      window.removeEventListener(NOTIFICATION_HISTORY_CHANGED, reloadItems)
+    }
+  }, [reloadItems, updateHistory])
 
   useEffect(() => {
     persistLocalStorage(NOTIFICATION_PERMISSIONS_KEY, JSON.stringify(sitePermissions))
   }, [sitePermissions])
 
   const add = useCallback((notification: NebulaNotification) => {
-    setItems((current) => {
-      if (current.some((item) => item.id === notification.id)) return current
-      return [notification, ...current].slice(0, MAX_STORED_NOTIFICATIONS)
-    })
-  }, [])
+    void updateHistory({ type: 'add', items: [notification] })
+  }, [updateHistory])
 
   useEffect(() => {
     let disposed = false
     let unlisten: (() => void) | undefined
+    const replayAfter = latestBrokerSequenceRef.current || null
     const receive = (payload: NativeSiteNotification) => {
       if (disposed || !siteNotificationsEnabledRef.current) return
       const origin = normalizeNotificationOrigin(payload.origin)
@@ -108,11 +136,11 @@ export function useNotifications(
       }
       unlisten = dispose
       const replay = await replaySiteNotifications(
-        latestBrokerSequenceRef.current || null,
+        replayAfter,
       )
       if (disposed) return
       replay.forEach(receive)
-    })()
+    })().catch(() => { if (!disposed) setHistoryError(true) })
     return () => {
       disposed = true
       unlisten?.()
@@ -123,25 +151,30 @@ export function useNotifications(
     for (const download of downloads) {
       if (download.state !== 'completed' || download.requiresConfirmation) continue
       const notificationId = `download-${download.id}`
-      add({
-        id: notificationId,
-        kind: 'download',
-        title: download.fileName,
-        body: t('notificationDownloadCompleteBody'),
-        origin: null,
-        siteName: 'Nebula',
-        senderName: null,
-        eventKind: 'download',
-        iconUrl: null,
-        notificationTag: null,
-        notificationType: null,
-        targetUrl: null,
-        notificationData: null,
-        tabLabel: download.tabLabel,
-        downloadId: download.id,
-        createdAtMs: Date.now(),
-        read: false,
-      })
+      if (!recordedDownloadIdsRef.current.has(download.id)) {
+        recordedDownloadIdsRef.current.add(download.id)
+        void updateHistory({ type: 'add', items: [{
+          id: notificationId,
+          kind: 'download',
+          title: download.fileName,
+          body: t('notificationDownloadCompleteBody'),
+          origin: null,
+          siteName: 'Nebula',
+          senderName: null,
+          eventKind: 'download',
+          iconUrl: null,
+          notificationTag: null,
+          notificationType: null,
+          targetUrl: null,
+          notificationData: null,
+          tabLabel: download.tabLabel,
+          downloadId: download.id,
+          createdAtMs: Date.now(),
+          read: false,
+        }] }).then((updated) => {
+          if (!updated) recordedDownloadIdsRef.current.delete(download.id)
+        })
+      }
       if (
         downloadNotificationsEnabled &&
         !nativeDownloadToastIdsRef.current.has(download.id)
@@ -160,25 +193,23 @@ export function useNotifications(
         ).catch(() => undefined)
       }
     }
-  }, [add, downloadNotificationsEnabled, downloads, t])
+  }, [downloadNotificationsEnabled, downloads, t, updateHistory])
 
   const unreadCount = useMemo(() => items.filter((item) => !item.read).length, [items])
 
   const markRead = useCallback((id: string, read = true) => {
-    setItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, read } : item)),
-    )
-  }, [])
+    void updateHistory({ type: 'read', id, read })
+  }, [updateHistory])
 
   const markAllRead = useCallback(() => {
-    setItems((current) => current.map((item) => (item.read ? item : { ...item, read: true })))
-  }, [])
+    void updateHistory({ type: 'read', read: true })
+  }, [updateHistory])
 
   const remove = useCallback((id: string) => {
-    setItems((current) => current.filter((item) => item.id !== id))
-  }, [])
+    void updateHistory({ type: 'remove', id })
+  }, [updateHistory])
 
-  const clear = useCallback(() => setItems([]), [])
+  const clear = useCallback(() => { void updateHistory({ type: 'remove' }) }, [updateHistory])
 
   const setSitePermission = useCallback(
     (originValue: string, permission: SiteNotificationPermission | null) => {
@@ -223,6 +254,7 @@ export function useNotifications(
 
   return {
     items,
+    historyError,
     unreadCount,
     sitePermissions,
     sites,

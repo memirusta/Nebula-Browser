@@ -56,10 +56,6 @@ export function AppDialogHost() {
             event.preventDefault()
             resolveAppDialog(request.id, false)
           }
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            resolveAppDialog(request.id, true)
-          }
         }}
       >
         <div className={styles.headerRow}>

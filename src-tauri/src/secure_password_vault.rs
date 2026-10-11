@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const VAULT_FILE_NAME: &str = "password-vault.dpapi";
 const MAX_VAULT_JSON_BYTES: usize = 10 * 1024 * 1024;
@@ -109,7 +109,7 @@ fn replace_synced(path: &Path, temp_path: &Path, backup: Option<&Path>) -> Resul
     std::fs::rename(temp_path, path).map_err(|error| error.to_string())
 }
 
-fn durable_replace(path: &Path, data: &[u8], keep_backup: bool) -> Result<(), String> {
+pub(crate) fn durable_replace(path: &Path, data: &[u8], keep_backup: bool) -> Result<(), String> {
     let temp_path = write_synced_temp(path, data)?;
     let backup = backup_path(path);
     let result = (|| {
@@ -128,7 +128,7 @@ fn durable_replace(path: &Path, data: &[u8], keep_backup: bool) -> Result<(), St
     result
 }
 
-fn read_with_backup_recovery<T>(
+pub(crate) fn read_with_backup_recovery<T>(
     path: &Path,
     decode: impl Fn(&[u8]) -> Result<T, String>,
 ) -> Result<Option<T>, String> {
@@ -158,7 +158,7 @@ fn read_with_backup_recovery<T>(
 }
 
 #[cfg(target_os = "windows")]
-fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
     use windows::Win32::Security::Cryptography::{
         CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
@@ -189,7 +189,7 @@ fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
     use windows::Win32::Security::Cryptography::{
         CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
@@ -220,12 +220,12 @@ fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn protect(_data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn protect(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure password storage is currently supported on Windows only.".to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
-fn unprotect(_data: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn unprotect(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure password storage is currently supported on Windows only.".to_string())
 }
 
@@ -244,15 +244,31 @@ pub fn password_vault_load(app: tauri::AppHandle) -> Result<Option<String>, Stri
 }
 
 #[tauri::command]
-pub fn password_vault_save(app: tauri::AppHandle, json: String) -> Result<(), String> {
+pub fn password_vault_save(
+    app: tauri::AppHandle,
+    json: String,
+    expected_json: Option<String>,
+) -> Result<bool, String> {
     validate_vault_json(&json)?;
 
     let _guard = VAULT_IO_LOCK
         .lock()
         .map_err(|_| "Password vault I/O lock was poisoned.".to_string())?;
     let path = vault_path(&app)?;
+    // Compare and replace under one lock, including writes from other windows.
+    let current = read_with_backup_recovery(&path, |encrypted| {
+        let decrypted = unprotect(encrypted)?;
+        let json = String::from_utf8(decrypted).map_err(|error| error.to_string())?;
+        validate_vault_json(&json)?;
+        Ok(json)
+    })?;
+    if current != expected_json {
+        return Ok(false);
+    }
     let encrypted = protect(json.as_bytes())?;
-    durable_replace(&path, &encrypted, true)
+    durable_replace(&path, &encrypted, true)?;
+    let _ = app.emit("nebula-password-vault-changed", ());
+    Ok(true)
 }
 
 #[tauri::command]
@@ -268,6 +284,7 @@ pub fn password_vault_clear(app: tauri::AppHandle) -> Result<(), String> {
     if backup.is_file() {
         std::fs::remove_file(backup).map_err(|error| error.to_string())?;
     }
+    let _ = app.emit("nebula-password-vault-changed", ());
     Ok(())
 }
 

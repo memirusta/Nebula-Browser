@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nebula",
-  "version": "1.8.5",
+  "version": "2.0.0",
   "identifier": "com.nebula.browser",
   "build": {
     "frontendDist": "../dist",
@@ -17,6 +17,7 @@
         "width": 1280,
         "height": 800,
         "resizable": true,
+        "maximized": true,
         "fullscreen": false,
         "decorations": false,
         "transparent": true,

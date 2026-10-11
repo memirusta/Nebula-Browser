@@ -1,4 +1,5 @@
 import type { Shortcut } from './types'
+import { resolveNavigationInput } from './addressNavigation.ts'
 import { faviconForUrl } from './browserTab.ts'
 import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
 
@@ -19,6 +20,14 @@ export interface PinnedShortcut {
   title: string
   favicon?: string
 }
+
+export type EditPinnedShortcutResult =
+  | { pins: PinnedShortcut[]; accepted: true }
+  | {
+      pins: PinnedShortcut[]
+      accepted: false
+      reason: 'not-found' | 'invalid-url' | 'duplicate-url'
+    }
 
 export interface PinnedShortcutsSnapshot {
   schemaVersion: typeof PINNED_SHORTCUTS_SCHEMA_VERSION
@@ -48,6 +57,11 @@ function normalizedHttpUrl(rawUrl: string): string | null {
   } catch {
     return null
   }
+}
+
+function normalizedEditedHttpUrl(rawUrl: string): string | null {
+  const resolved = resolveNavigationInput(rawUrl, '')
+  return resolved ? normalizedHttpUrl(resolved) : null
 }
 
 function fallbackTitle(url: string): string {
@@ -159,6 +173,41 @@ export function removePinnedShortcut(
 ): PinnedShortcut[] {
   const next = pins.filter((pin) => pin.id !== id)
   return next.length === pins.length ? pins : next
+}
+
+export function editPinnedShortcut(
+  pins: PinnedShortcut[],
+  id: string,
+  changes: { title: string; url: string },
+): EditPinnedShortcutResult {
+  const index = pins.findIndex((pin) => pin.id === id)
+  const current = pins[index]
+  if (!current) return { pins, accepted: false, reason: 'not-found' }
+
+  const url = normalizedEditedHttpUrl(changes.url)
+  if (!url) return { pins, accepted: false, reason: 'invalid-url' }
+  if (pins.some((pin, pinIndex) => pinIndex !== index && pin.url === url)) {
+    return { pins, accepted: false, reason: 'duplicate-url' }
+  }
+
+  const title = changes.title.trim() || fallbackTitle(url)
+  const currentOrigin = new URL(current.url).origin
+  const nextOrigin = new URL(url).origin
+  const favicon = currentOrigin === nextOrigin
+    ? current.favicon
+    : faviconForUrl(url)
+  const edited: PinnedShortcut = {
+    ...current,
+    url,
+    title,
+    ...(favicon ? { favicon } : {}),
+  }
+
+  if (samePin(current, edited)) return { pins, accepted: true }
+
+  const next = [...pins]
+  next[index] = edited
+  return { pins: next, accepted: true }
 }
 
 export function updatePinnedShortcutFavicon(

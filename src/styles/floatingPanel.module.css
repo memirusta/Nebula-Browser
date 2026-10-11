@@ -1,0 +1,7 @@
+/* Keep the anchor when space allows; move up as a short window runs out of room. */
+.viewportBound {
+  --panel-top: clamp(16px, var(--panel-preferred-top, 16px), calc(100dvh - min(var(--panel-height, 720px), 420px) - 16px));
+  top: var(--panel-top);
+  max-height: min(var(--panel-height, 720px), calc(100dvh - var(--panel-top) - 16px));
+  box-sizing: border-box;
+}

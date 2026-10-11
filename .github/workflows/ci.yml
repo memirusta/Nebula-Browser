@@ -51,4 +51,4 @@ jobs:
 
       - name: Rust tests
         working-directory: src-tauri
-        run: cargo test --all-targets
+        run: cargo test --all-targets --features extension-native-smoke

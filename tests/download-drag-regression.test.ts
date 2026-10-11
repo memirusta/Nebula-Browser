@@ -15,7 +15,7 @@ test('completed downloads expose native drag-out through an id-only command', ()
   assert.match(coreSource, /invoke\('download_start_drag', \{ id \}\)/)
   assert.doesNotMatch(coreSource, /download_start_drag[^\n]*filePath/)
 
-  assert.match(managerSource, /draggable=\{completed\}/)
+  assert.match(managerSource, /draggable=\{canOpen\}/)
   assert.match(managerSource, /startDownloadDrag\(item\.id\)/)
   assert.match(managerSource, /event\.preventDefault\(\)/)
 

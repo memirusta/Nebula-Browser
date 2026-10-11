@@ -177,6 +177,17 @@ interface PerformanceSummary {
   resourceCount: number
   transferBytes: number
   decodedBodyBytes: number
+  runtime: {
+    hardwareConcurrency: number | null
+    deviceMemoryGiB: number | null
+    crossOriginIsolated: boolean
+    webAssemblyAvailable: boolean
+    webglRenderer: string | null
+    webglVendor: string | null
+    webgl2Available: boolean
+    longTaskCount: number | null
+    longTaskTotalMs: number | null
+  }
   navigation: Record<string, number>
   paints: Array<{ name: string; startTime: number }>
 }
@@ -1685,11 +1696,34 @@ export function DeveloperTools({
           expression: `(() => {
             const resources = performance.getEntriesByType('resource');
             const navigation = performance.getEntriesByType('navigation')[0];
+            const canvas = document.createElement('canvas');
+            const webgl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            const debugInfo = webgl && webgl.getExtension('WEBGL_debug_renderer_info');
+            const longTasks = performance.getEntriesByType('longtask');
             return JSON.stringify({
               domNodes: document.getElementsByTagName('*').length,
               resourceCount: resources.length,
               transferBytes: resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
               decodedBodyBytes: resources.reduce((sum, entry) => sum + (entry.decodedBodySize || 0), 0),
+              runtime: {
+                hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency)
+                  ? navigator.hardwareConcurrency
+                  : null,
+                deviceMemoryGiB: Number.isFinite(navigator.deviceMemory)
+                  ? navigator.deviceMemory
+                  : null,
+                crossOriginIsolated: window.crossOriginIsolated === true,
+                webAssemblyAvailable: typeof WebAssembly === 'object',
+                webglRenderer: webgl && debugInfo
+                  ? webgl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+                  : null,
+                webglVendor: webgl && debugInfo
+                  ? webgl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)
+                  : null,
+                webgl2Available: canvas.getContext('webgl2') !== null,
+                longTaskCount: longTasks.length,
+                longTaskTotalMs: Math.round(longTasks.reduce((sum, entry) => sum + entry.duration, 0))
+              },
               navigation: navigation ? {
                 domInteractive: navigation.domInteractive,
                 domContentLoaded: navigation.domContentLoadedEventEnd,
@@ -2965,6 +2999,7 @@ export function DeveloperTools({
                   <>
                     <h3 className={styles.subheading}>{copy.pageSummary}</h3>
                     <div className={styles.metricList}>
+                      {Object.entries(performanceSummary.runtime).map(([name, value]) => <div key={name} className={styles.metricRow}><span>{name}</span><code>{String(value)}</code></div>)}
                       {Object.entries(performanceSummary.navigation).map(([name, value]) => <div key={name} className={styles.metricRow}><span>{name}</span><code>{Number(value).toFixed(1)} ms</code></div>)}
                       {performanceSummary.paints.map((paint) => <div key={paint.name} className={styles.metricRow}><span>{paint.name}</span><code>{paint.startTime.toFixed(1)} ms</code></div>)}
                     </div>

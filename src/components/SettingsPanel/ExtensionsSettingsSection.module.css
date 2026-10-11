@@ -1,0 +1,60 @@
+.explorer { --ext-text: var(--text-primary, #f3f0fa); color: var(--ext-text); padding-bottom: 12px; }
+.hero { position: relative; overflow: hidden; padding: 20px; border-radius: 16px; border: 1px solid rgba(172, 141, 241, .2); background: radial-gradient(ellipse at 95% 0%, rgba(158, 107, 237, .24), transparent 65%), linear-gradient(125deg, rgba(255, 255, 255, .035), rgba(126, 94, 190, .07)); }
+.hero h2 { position: relative; max-width: 85%; font-size: clamp(19px, 2.5vw, 27px); line-height: 1.25; font-weight: 600; letter-spacing: -.025em; margin: 10px 0 16px; }
+.orbit { position: absolute; right: 22px; top: -24px; font-size: 150px; line-height: 1.4; color: rgba(174, 132, 243, .1); transform: rotate(15deg); pointer-events: none; }
+.search { position: relative; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 11px; padding: 0 13px; background: rgba(10, 11, 17, .32); }
+.search:focus-within { border-color: #b092e4; box-shadow: 0 0 0 3px rgba(167, 120, 237, .1); }
+.search svg { width: 17px; flex: 0 0 17px; stroke: currentColor; stroke-width: 1.6; opacity: .55; }
+.search input { min-width: 0; width: 100%; height: 44px; border: 0; outline: none; color: inherit; background: transparent; font: inherit; font-size: 12px; }
+.search input::placeholder { color: inherit; opacity: .5; }
+.search input::-webkit-search-cancel-button { display: none; }
+.search button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 20px; padding: 4px; }
+.filters { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0 12px; }
+.filters button { padding: 7px 12px; border: 1px solid transparent; border-radius: 9px; background: rgba(255, 255, 255, .035); color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+.filters button[aria-pressed='true'] { background: rgba(164, 119, 227, .15); border-color: rgba(185, 145, 240, .28); color: #d9c1ff; }
+.filters button:hover { background: rgba(170, 135, 225, .13); }
+.resultCount { font-size: 10px; opacity: .5; margin: 0 0 10px; }
+.statusError { color: #ffa5b5; font-size: 11px; margin: 0 0 10px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.card { display: flex; flex-direction: column; min-width: 0; border: 1px solid rgba(255, 255, 255, .085); border-radius: 13px; padding: 16px; background: rgba(255, 255, 255, .025); transition: border-color 140ms, background 140ms; }
+.card:hover { border-color: color-mix(in srgb, var(--extension-color) 40%, transparent); background: rgba(255, 255, 255, .045); }
+.cardHeader { display: flex; align-items: center; gap: 12px; }
+.icon { display: grid; place-items: center; flex: 0 0 42px; height: 42px; font-size: 20px; font-weight: 650; border-radius: 12px; color: var(--extension-color); background: color-mix(in srgb, var(--extension-color) 12%, transparent); border: 1px solid color-mix(in srgb, var(--extension-color) 20%, transparent); }
+.card h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.category { font-size: 10px; opacity: .5; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; margin-top: 10px; font-size: 10px; opacity: .58; }
+.meta span:first-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card p { font-size: 12px; line-height: 1.65; opacity: .65; margin: 10px 0 12px; flex: 1; }
+.compatibilityReport { font-size: 10px; line-height: 1.55; margin-bottom: 12px; overflow-wrap: anywhere; }
+.compatibilityReport summary { cursor: pointer; border-radius: 5px; }
+.compatibilityReport summary span:first-child { color: #e5c787; }
+.compatibilityReport summary span[data-state='blocked'] { color: #ffa3a3; }
+.compatibilityReport summary span[data-state='tested'] { color: #79d7a2; }
+.compatibilityReport summary span:last-child { display: block; opacity: .65; }
+.compatibilityReport summary:focus-visible { outline: 2px solid #b092e4; outline-offset: 3px; }
+.compatibilityReport p { font-size: 10px; margin: 8px 0; }
+.compatibilityReport ul { padding-left: 16px; margin: 8px 0 0; }
+.compatibilityReport li { margin-bottom: 7px; }
+.compatibilityReport small { display: block; opacity: .6; }
+.compatibilityReport li[data-severity='blocked'] { color: #ffa3a3; }
+.card a { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: inherit; text-decoration: none; font-size: 11px; font-weight: 500; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .06); }
+.card a:hover { color: var(--extension-color); }
+.download { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.download button { color: #d9c1ff; border: 1px solid rgba(185, 145, 240, .28); background: rgba(164, 119, 227, .15); padding: 8px 14px; border-radius: 8px; font: inherit; font-size: 11px; cursor: pointer; }
+.download button:disabled { opacity: .5; cursor: default; }
+.package { font-size: 10px; opacity: .5; }
+.downloadStatus { width: 100%; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.downloadStatus:empty { display: none; }
+.downloadStatus span { display: block; opacity: .6; font-size: 10px; }
+.install { margin-top: 12px; }
+.installActions { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.installActions button { color: #d9c1ff; border: 1px solid rgba(185, 145, 240, .28); background: rgba(164, 119, 227, .15); padding: 8px 14px; border-radius: 8px; font: inherit; font-size: 11px; cursor: pointer; }
+.installActions button:disabled { opacity: .5; cursor: default; }
+.installed { color: #79d7a2; font-size: 11px; }
+.empty { text-align: center; padding: 36px 12px; border: 1px dashed rgba(255, 255, 255, .12); border-radius: 13px; }
+.empty > span { font-size: 32px; opacity: .4; }
+.empty p { font-size: 12px; opacity: .65; }
+.empty button { color: #d9c1ff; border: 0; background: rgba(164, 119, 227, .13); padding: 9px 13px; border-radius: 8px; cursor: pointer; }
+.explorer button:focus-visible, .card a:focus-visible { outline: 2px solid #b092e4; outline-offset: 3px; }
+@media (max-width: 650px) { .grid { grid-template-columns: 1fr; } .hero { padding: 18px; } }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }

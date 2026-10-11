@@ -3,6 +3,7 @@ import {
   controlDownload,
   downloadProgress,
   isDownloadActive,
+  canRemoveDownloadFromList,
   listenDownloads,
   type DownloadAction,
   type DownloadItem,
@@ -57,11 +58,11 @@ export function useDownloads() {
   }, [])
 
   const remove = useCallback((id: string) => {
-    setItems((current) => current.filter((item) => item.id !== id))
+    setItems((current) => current.filter((item) => item.id !== id || !canRemoveDownloadFromList(item)))
   }, [])
 
   const clearFinished = useCallback(() => {
-    setItems((current) => current.filter(isDownloadActive))
+    setItems((current) => current.filter((item) => !canRemoveDownloadFromList(item)))
   }, [])
 
   return {

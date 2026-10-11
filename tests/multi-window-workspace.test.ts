@@ -212,6 +212,7 @@ test('native transfer uses Tauri reparent and drag cancellation has no teardown 
   assert.match(native, /parent_window_label = tab\.window\(\)\.label\(\)/)
   assert.match(workspace, /confirmedParentLabel !== targetWindowLabel/)
   assert.doesNotMatch(browser, /Transferred webview.*webview\.window\.label/)
-  assert.match(shell, /windowAtPoint === currentBrowserWindowLabel\(\)/)
+  assert.match(shell, /resolveBrowserDropAction\(\s*dropTarget,\s*currentBrowserWindowLabel\(\),?\s*\)/)
+  assert.match(shell, /dropAction\.kind === 'unresolved'/)
   assert.match(shell, /relinquishBrowseTabOwnership\(shortcutId\)/)
 })

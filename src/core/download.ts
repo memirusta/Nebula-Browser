@@ -25,6 +25,8 @@ export interface DownloadItem {
   dangerReason: 'dangerous_file_type' | null
   requiresConfirmation: boolean
   startedAtMs: number
+  /** False for a tab that never showed a page: it was opened for the download and only that. */
+  tabShownPage?: boolean
 }
 
 export type DownloadAction =
@@ -56,6 +58,10 @@ export async function startDownloadDrag(id: string): Promise<void> {
 
 export function isDownloadActive(download: DownloadItem): boolean {
   return download.state === 'in_progress' || download.state === 'paused'
+}
+
+export function canRemoveDownloadFromList(download: DownloadItem): boolean {
+  return !isDownloadActive(download) && !download.requiresConfirmation
 }
 
 export function downloadProgress(download: DownloadItem): number | null {

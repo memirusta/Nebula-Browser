@@ -33,9 +33,14 @@ import {
 } from './SettingControls'
 import { AboutUpdateSection } from './AboutUpdateSection'
 import { AccountSettingsSection } from './AccountSettingsSection'
+import { ExtensionsSettingsSection } from './ExtensionsSettingsSection'
+import { EXTENSION_COPY } from '../../core/extensionCatalog'
 import styles from './SettingsPanel.module.css'
 import type { NebulaAccount } from '../../core/nebulaAccount'
-import type { BrowsingDataKind } from '../../platform/tauriBrowser'
+import type {
+  BrowsingDataKind,
+  BrowserProfileStorageUsage,
+} from '../../platform/tauriBrowser'
 import {
   notificationHost,
   type SiteNotificationPermission,
@@ -179,6 +184,7 @@ interface SettingsSearchEntry {
 }
 
 const SETTINGS_SEARCH_KEYS: Record<SettingsCategoryId, readonly LocaleMessageKey[]> = {
+  extensions: [],
   appearance: [
     'settingsLanguage',
     'theme',
@@ -258,6 +264,7 @@ const SETTINGS_SEARCH_KEYS: Record<SettingsCategoryId, readonly LocaleMessageKey
     'privacyExceptions',
     'siteShield',
     'customBlockList',
+    'nebulaStorage',
     'clearBrowsingData',
     'privacyReset',
   ],
@@ -298,6 +305,19 @@ function localizedSettingsSearchEntry(
 }
 
 const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
+  {
+    categoryId: 'extensions',
+    tr: EXTENSION_COPY.tr.title,
+    en: EXTENSION_COPY.en.title,
+    es: EXTENSION_COPY.es.title,
+    de: EXTENSION_COPY.de.title,
+    fr: EXTENSION_COPY.fr.title,
+    id: EXTENSION_COPY.id.title,
+    ru: EXTENSION_COPY.ru.title,
+    it: EXTENSION_COPY.it.title,
+    ja: EXTENSION_COPY.ja.title,
+    keywords: 'extensions addons eklenti Bitwarden Dark Reader SponsorBlock LanguageTool',
+  },
   ...Object.entries(SETTINGS_SEARCH_KEYS).flatMap(([categoryId, keys]) =>
     keys.map((key) => localizedSettingsSearchEntry(categoryId as SettingsCategoryId, key)),
   ),
@@ -777,6 +797,8 @@ function ShortcutReference({
 }
 
 interface SettingsPanelProps {
+  passwordSettingsRequest?: number
+  extensionsSettingsRequest?: number
   open: boolean
   anchor: SettingsAnchor | null
   onClose: () => void
@@ -804,6 +826,7 @@ interface SettingsPanelProps {
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
+  onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
   ublockVersion?: string | null
   ublockEnabled?: boolean
@@ -811,7 +834,7 @@ interface SettingsPanelProps {
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
   onReopenOnboarding: () => void
-  onOpenBrowseUrl?: (url: string) => void
+  onOpenBrowseUrl?: (url: string, options?: { activate?: boolean }) => void
   notificationSites: string[]
   notificationSitePermissions: SiteNotificationPermissions
   onSetNotificationSitePermission: (
@@ -842,6 +865,7 @@ function CategoryContent({
   onEnterHomeEdit,
   onFactoryReset,
   onClearBrowsingData,
+  onGetProfileStorageUsage,
   activeUrl,
   ublockVersion,
   ublockEnabled,
@@ -875,6 +899,7 @@ function CategoryContent({
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
+  onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
   ublockVersion?: string | null
   ublockEnabled?: boolean
@@ -882,7 +907,7 @@ function CategoryContent({
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
   onReopenOnboarding: () => void
-  onOpenBrowseUrl?: (url: string) => void
+  onOpenBrowseUrl?: (url: string, options?: { activate?: boolean }) => void
   notificationSites: string[]
   notificationSitePermissions: SiteNotificationPermissions
   onSetNotificationSitePermission: SettingsPanelProps['onSetNotificationSitePermission']
@@ -893,6 +918,19 @@ function CategoryContent({
     useState<BrowsingDataKind | null>(null)
   const [clearBrowsingDataStatus, setClearBrowsingDataStatus] =
     useState<'idle' | 'cleared' | 'failed'>('idle')
+  const [profileStorageUsage, setProfileStorageUsage] =
+    useState<BrowserProfileStorageUsage | null | undefined>(undefined)
+  const [lunarWidthMaxPx, setLunarWidthMaxPx] = useState(() =>
+    Math.max(600, Math.floor(window.innerWidth)),
+  )
+  useEffect(() => {
+    const syncLunarWidthMax = () => {
+      setLunarWidthMaxPx(Math.max(600, Math.floor(window.innerWidth)))
+    }
+    syncLunarWidthMax()
+    window.addEventListener('resize', syncLunarWidthMax)
+    return () => window.removeEventListener('resize', syncLunarWidthMax)
+  }, [])
   const { appearance, home, semiLunar, browsing, privacy, notifications } = settings
   let activeHost = ''
   try {
@@ -922,6 +960,14 @@ function CategoryContent({
       : [...permissionHosts, activeHost]
     onUpdate('privacy', 'permissionExceptions', next.join(', '))
   }
+  const refreshProfileStorageUsage = useCallback(async () => {
+    try {
+      setProfileStorageUsage(await onGetProfileStorageUsage())
+    } catch (error) {
+      console.error('[nebula privacy] Failed to read profile storage usage.', error)
+      setProfileStorageUsage(null)
+    }
+  }, [onGetProfileStorageUsage])
   const requestClearBrowsingData = async (kind: BrowsingDataKind) => {
     if (clearingBrowsingDataRef.current) return
     const accepted = await showAppConfirmation(
@@ -936,6 +982,9 @@ function CategoryContent({
     try {
       await onClearBrowsingData(kind)
       setClearBrowsingDataStatus('cleared')
+      if (kind === 'cache') {
+        void refreshProfileStorageUsage()
+      }
     } catch (error) {
       console.error('[nebula privacy] Failed to clear browsing data.', error)
       setClearBrowsingDataStatus('failed')
@@ -943,6 +992,16 @@ function CategoryContent({
       clearingBrowsingDataRef.current = false
       setClearingBrowsingDataKind(null)
     }
+  }
+  useEffect(() => {
+    if (categoryId !== 'privacy') return
+    void refreshProfileStorageUsage()
+  }, [categoryId, refreshProfileStorageUsage])
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    const units = ['KB', 'MB', 'GB', 'TB']
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length)
+    return `${(bytes / 1024 ** exponent).toLocaleString(locale, { maximumFractionDigits: 1 })} ${units[exponent - 1]}`
   }
 
   switch (categoryId) {
@@ -1387,7 +1446,7 @@ function CategoryContent({
             hint={t('slLunarWidthHint')}
             value={semiLunar.lunarWidthPx}
             min={600}
-            max={1400}
+            max={lunarWidthMaxPx}
             step={20}
             unit=" px"
             onChange={(v) => onUpdate('semiLunar', 'lunarWidthPx', v)}
@@ -1461,6 +1520,8 @@ function CategoryContent({
           onResetAll={onResetAllShortcutBindings}
         />
       )
+    case 'extensions':
+      return <ExtensionsSettingsSection onOpenBrowseUrl={onOpenBrowseUrl} />
     case 'account':
       return (
         <AccountSettingsSection
@@ -1579,9 +1640,27 @@ function CategoryContent({
             onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
           />
           <div className={styles.row}>
+            <div className={styles.rowText}>
+              <div className={styles.rowLabel}>{t('nebulaStorage')}</div>
+              <div className={styles.rowHint}>
+                {profileStorageUsage
+                  ? t('nebulaStorageUsage')
+                    .replace('{total}', formatBytes(profileStorageUsage.totalBytes))
+                    .replace('{cache}', formatBytes(profileStorageUsage.cacheBytes))
+                  : profileStorageUsage === undefined
+                    ? t('nebulaStorageLoading')
+                    : t('nebulaStorageUnavailable')}
+              </div>
+              <div className={styles.rowHint}>{t('nebulaStorageHint')}</div>
+            </div>
+            <button type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('cache')}>
+              {clearingBrowsingDataKind === 'cache' ? t('clearBrowsingDataWorking') : t('clear_cache')}
+            </button>
+          </div>
+          <div className={styles.row}>
             <div className={styles.rowText}><div className={styles.rowLabel}>{t('clearBrowsingData')}</div><div className={styles.rowHint}>{t('clearBrowsingDataHint')}</div></div>
             <div className={styles.privacyActionGrid}>
-              {(['cookies', 'cache', 'history', 'permissions'] as const).map((kind) => (
+              {(['cookies', 'history', 'permissions'] as const).map((kind) => (
                 <button key={kind} type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData(kind)}>{clearingBrowsingDataKind === kind ? t('clearBrowsingDataWorking') : t(`clear_${kind}`)}</button>
               ))}
               <button type="button" className={styles.dangerBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('all')}>{clearingBrowsingDataKind === 'all' ? t('clearBrowsingDataWorking') : t('clearAll')}</button>
@@ -1718,6 +1797,8 @@ function CategoryContent({
 }
 
 export function SettingsPanel({
+  passwordSettingsRequest = 0,
+  extensionsSettingsRequest = 0,
   open,
   anchor: _anchor,
   onClose,
@@ -1741,6 +1822,7 @@ export function SettingsPanel({
   onEnterHomeEdit,
   onFactoryReset,
   onClearBrowsingData,
+  onGetProfileStorageUsage,
   activeUrl,
   ublockVersion,
   ublockEnabled,
@@ -1763,6 +1845,26 @@ export function SettingsPanel({
   const wasOpenRef = useRef(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const activeNavRef = useRef<HTMLButtonElement>(null)
+  const appliedPasswordRequest = useRef(0)
+  const appliedExtensionsRequest = useRef(0)
+  useEffect(() => {
+    if (!open || !extensionsSettingsRequest || appliedExtensionsRequest.current === extensionsSettingsRequest) return
+    setActiveId('extensions')
+    setSearchQuery('')
+    appliedExtensionsRequest.current = extensionsSettingsRequest
+  }, [open, extensionsSettingsRequest])
+
+  useEffect(() => {
+    if (!open || !passwordSettingsRequest || appliedPasswordRequest.current === passwordSettingsRequest) return
+    setActiveId('account')
+    setSearchQuery('')
+    if (!visible || activeId !== 'account' || entering) return
+    const target = panelRef.current?.querySelector<HTMLElement>('[data-password-settings]')
+    if (!target) return
+    target.scrollIntoView({ block: 'start' })
+    target.focus({ preventScroll: true })
+    appliedPasswordRequest.current = passwordSettingsRequest
+  }, [open, visible, entering, activeId, passwordSettingsRequest])
 
   const settingsCategories = getSettingsCategories(locale)
   const activeCategory = settingsCategories.find((c) => c.id === activeId)!
@@ -1974,6 +2076,7 @@ export function SettingsPanel({
               onEnterHomeEdit={onEnterHomeEdit}
               onFactoryReset={onFactoryReset}
               onClearBrowsingData={onClearBrowsingData}
+              onGetProfileStorageUsage={onGetProfileStorageUsage}
               activeUrl={activeUrl}
               ublockVersion={ublockVersion}
               ublockEnabled={ublockEnabled}

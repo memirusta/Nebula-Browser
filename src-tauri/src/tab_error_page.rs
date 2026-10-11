@@ -315,6 +315,27 @@ mod imp {
         }
     }
 
+    /// Failures a proxy that cannot be reached can look like: worth saying that an extension is
+    /// routing the connection.
+    fn may_come_from_a_proxy(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
+        matches!(
+            error_kind(status),
+            ErrorKind::TimedOut | ErrorKind::Network | ErrorKind::NameNotResolved
+        )
+    }
+
+    /// After a network-type error page was shown: name an extension that controls the proxy, if any.
+    fn offer_proxy_hint(
+        app: &AppHandle,
+        label: &str,
+        status: COREWEBVIEW2_WEB_ERROR_STATUS,
+        locale: &str,
+    ) {
+        if may_come_from_a_proxy(status) {
+            crate::proxy_error_hint::offer(app, label, locale);
+        }
+    }
+
     fn should_offer_compatibility_retry(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
         matches!(
             status,
@@ -327,13 +348,52 @@ mod imp {
         )
     }
 
+    /// Whether Windows says that no network offers internet access (cable out, Wi-Fi off, flight mode). A
+    /// site that cannot be reached then says nothing about the site or Nebula's protections. Any doubt counts as
+    /// online, so the compatibility offer is only held back when the machine is known to be offline.
+    fn internet_unavailable() -> bool {
+        use windows::Win32::Networking::NetworkListManager::{
+            INetworkListManager, NetworkListManager, NLM_CONNECTIVITY_IPV4_INTERNET,
+            NLM_CONNECTIVITY_IPV6_INTERNET,
+        };
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+        };
+
+        unsafe {
+            // The thread is normally a UI thread with COM already set up; a different mode is not an error here.
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let Ok(manager) =
+                CoCreateInstance::<_, INetworkListManager>(&NetworkListManager, None, CLSCTX_ALL)
+            else {
+                return false;
+            };
+            let Ok(connectivity) = manager.GetConnectivity() else {
+                return false;
+            };
+            connectivity.0 & (NLM_CONNECTIVITY_IPV4_INTERNET.0 | NLM_CONNECTIVITY_IPV6_INTERNET.0)
+                == 0
+        }
+    }
+
+    /// The compatibility offer ("turn the protections off for this site") only makes sense when the machine is
+    /// online and the connection was cut: offline, every site fails the same way.
+    fn compatibility_retry_applies(
+        status: COREWEBVIEW2_WEB_ERROR_STATUS,
+        internet_unavailable: bool,
+    ) -> bool {
+        should_offer_compatibility_retry(status) && !internet_unavailable
+    }
+
     fn emit_compatibility_request(
         app: &AppHandle,
         label: &str,
         failed_url: &str,
         error_status: COREWEBVIEW2_WEB_ERROR_STATUS,
     ) {
-        if !should_offer_compatibility_retry(error_status) {
+        if !should_offer_compatibility_retry(error_status)
+            || !compatibility_retry_applies(error_status, internet_unavailable())
+        {
             return;
         }
         let Some(url) = compatibility_request_url(failed_url) else {
@@ -713,6 +773,7 @@ mod imp {
                     let locale = current_ui_locale();
                     let error_url = build_error_page_url(&failed_url, error_status, &locale);
                     navigate_webview(&core, &error_url);
+                    offer_proxy_hint(&app_for_main, &label, error_status, &locale);
                     emit_compatibility_request(&app_for_main, &label, &failed_url, error_status);
                 });
             });
@@ -834,6 +895,12 @@ mod imp {
                         let locale = current_ui_locale();
                         let error_url = build_error_page_url(&failed_url, error_status, &locale);
                         navigate_webview(&webview, &error_url);
+                        offer_proxy_hint(
+                            &app_for_handler,
+                            &label_for_handler,
+                            error_status,
+                            &locale,
+                        );
                         emit_compatibility_request(
                             &app_for_handler,
                             &label_for_handler,
@@ -895,9 +962,9 @@ mod imp {
     mod tests {
         use super::{
             build_error_page_url, claim_external_uri_navigation, compatibility_request_url,
-            js_string_literal, local_http_fallback_url, note_external_uri_navigation,
-            retry_target_is_current, should_offer_compatibility_retry, suppress_error_page,
-            web_error_status_name,
+            compatibility_retry_applies, js_string_literal, local_http_fallback_url,
+            note_external_uri_navigation, retry_target_is_current,
+            should_offer_compatibility_retry, suppress_error_page, web_error_status_name,
         };
 
         #[test]
@@ -917,8 +984,10 @@ mod imp {
             COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
             COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
             COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+            COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED,
             COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
             COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED,
+            COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE,
             COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN,
         };
 
@@ -1127,6 +1196,30 @@ mod imp {
             ));
             assert!(should_offer_compatibility_retry(
                 COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
+            ));
+        }
+
+        #[test]
+        fn the_windows_connectivity_check_answers_without_failing() {
+            // The answer depends on the machine, so nothing is asserted: this only makes sure the Windows call
+            // runs. A failed lookup counts as online.
+            println!("internet_unavailable = {}", super::internet_unavailable());
+        }
+
+        #[test]
+        fn no_internet_never_blames_the_site_or_the_protections() {
+            for status in [
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED,
+                COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE,
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+            ] {
+                assert!(compatibility_retry_applies(status, false));
+                assert!(!compatibility_retry_applies(status, true));
+            }
+            assert!(!compatibility_retry_applies(
+                COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+                false
             ));
         }
 

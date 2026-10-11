@@ -1,5 +1,7 @@
 import {
+  Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +13,7 @@ import {
   type SearchEngine,
 } from '../../core/nebulaSettings'
 import { resolveNavigationInput } from '../../core/addressNavigation'
+import { cachedFaviconForUrl, ensureFavicon } from '../../core/faviconCache'
 import { DEFAULT_USER_DISPLAY_NAME } from '../../core/userProfile'
 import { useLocale } from '../../hooks/useLocale'
 import type {
@@ -21,6 +24,7 @@ import type {
 import type { BrowseSession } from '../../core/browseSession'
 import { SEARCH_SIZE_WIDTH } from '../../core/homeLayout'
 import type { Shortcut } from '../../core/types'
+import type { EditPinnedShortcutResult } from '../../core/pinnedShortcuts'
 import { EditModuleChrome } from '../HomeEdit/EditModuleChrome'
 import { ModuleOffsetWrap } from './ModuleOffsetWrap'
 import { PinnedStrip } from './PinnedStrip'
@@ -29,6 +33,10 @@ import { fetchSearchSuggestions } from '../../platform/searchSuggestions'
 import {
   buildHomeHistorySuggestions,
   filterHomeWebSuggestions,
+  highlightSegments,
+  inlineCompletion,
+  queryTerms,
+  suggestionInitial,
 } from '../../core/homeSearchSuggestions'
 
 interface HomeCenterProps {
@@ -48,6 +56,11 @@ interface HomeCenterProps {
   profileOffset?: ModuleOffset
   pinnedShortcuts?: Shortcut[]
   onUnpinShortcut?: (id: string) => void
+  onEditPinnedShortcut?: (
+    id: string,
+    title: string,
+    url: string,
+  ) => EditPinnedShortcutResult
   onReorderPins?: (
     fromIndex: number,
     toIndex: number,
@@ -74,6 +87,71 @@ interface HomeCenterProps {
   focusSearchRequest?: number
 }
 
+/** The icon of a suggestion: the one the site gave when it was visited, kept on this machine; a letter if none. */
+function SuggestionIcon({
+  kind,
+  url,
+  title,
+  host,
+}: {
+  kind: 'site' | 'history' | 'query'
+  url: string
+  title: string
+  host: string
+}) {
+  const [failed, setFailed] = useState(false)
+  const [fetched, setFetched] = useState<string | null>(null)
+  const known = kind === 'query' ? null : cachedFaviconForUrl(url)
+  // A site that has no icon kept yet is asked for once; the icon appears when it arrives and is kept.
+  useEffect(() => {
+    if (kind === 'query' || known) return
+    let live = true
+    void ensureFavicon(url).then((found) => {
+      if (live && found) setFetched(found)
+    })
+    return () => {
+      live = false
+    }
+  }, [kind, known, url])
+  const source = known ?? fetched
+  const usable = source !== null && !failed
+  return (
+    <span className={styles.suggestionSiteIcon} aria-hidden="true">
+      {usable ? (
+        <img
+          src={source}
+          alt=""
+          draggable={false}
+          referrerPolicy="no-referrer"
+          className={styles.suggestionFavicon}
+          onError={() => setFailed(true)}
+        />
+      ) : kind === 'query' ? (
+        '↻'
+      ) : (
+        suggestionInitial(kind === 'site' ? title : host, host, title)
+      )}
+    </span>
+  )
+}
+
+/** Text with the parts that match what was typed in bold. */
+function Highlighted({ text, terms }: { text: string; terms: string[] }) {
+  return (
+    <>
+      {highlightSegments(text, terms).map((segment, index) =>
+        segment.match ? (
+          <b key={index} className={styles.suggestionMatch}>
+            {segment.text}
+          </b>
+        ) : (
+          <Fragment key={index}>{segment.text}</Fragment>
+        ),
+      )}
+    </>
+  )
+}
+
 export function HomeCenter({
   onNavigate,
   onSearchNavigate,
@@ -91,6 +169,7 @@ export function HomeCenter({
   profileOffset = { x: 0, y: 0 },
   pinnedShortcuts = [],
   onUnpinShortcut,
+  onEditPinnedShortcut,
   onReorderPins,
   isShortcutMuted,
   onToggleShortcutMute,
@@ -110,6 +189,16 @@ export function HomeCenter({
   const { t, tf } = useLocale()
 
   const [query, setQuery] = useState('')
+  // The rest of an address the field completes after the typed text. It only counts while the
+  // typed text is still exactly what it was computed for.
+  const [completion, setCompletion] = useState<{
+    typed: string
+    rest: string
+    url: string
+  } | null>(null)
+  const activeCompletion =
+    completion && completion.typed === query ? completion : null
+  const typedTerms = useMemo(() => queryTerms(query), [query])
   const [isEditing, setIsEditing] =
     useState(false)
 
@@ -123,6 +212,10 @@ export function HomeCenter({
     useRef<HTMLInputElement>(null)
   const selectAllOnNextClickRef =
     useRef(true)
+  // The window lost focus while the field was being edited (Alt+Tab, another app). Nothing was
+  // decided about the text: it stays, and it is not selected when the window comes back.
+  const windowLostFocusWhileEditingRef =
+    useRef(false)
 
   /*
    * ---------------------------------------------------------
@@ -143,6 +236,17 @@ export function HomeCenter({
       query,
     ],
   )
+  // The completion is shown after the typed text, selected: the next key replaces it, Backspace
+  // removes it, Enter takes it.
+  useLayoutEffect(() => {
+    const input = searchInputRef.current
+    if (!activeCompletion || !input || document.activeElement !== input) return
+    input.setSelectionRange(
+      query.length,
+      query.length + activeCompletion.rest.length,
+    )
+  }, [activeCompletion, query])
+
   /*
    * ---------------------------------------------------------
    * WEB SEARCH SUGGESTIONS
@@ -199,6 +303,9 @@ useEffect(() => {
         webSuggestions,
         historySuggestions,
         query,
+        // The whole list stays at about eight rows, as in Chrome and Brave: what the user has
+        // visited first, the engine's suggestions fill the rest.
+        Math.max(2, 8 - historySuggestions.length),
       ),
     [
       historySuggestions,
@@ -367,6 +474,15 @@ useEffect(() => {
       return
     }
 
+    if (activeCompletion) {
+      ;(onSearchNavigate ?? onNavigate)(activeCompletion.url)
+      setIsEditing(false)
+      setActiveSuggestion(-1)
+      setWebSuggestions([])
+      setCompletion(null)
+      return
+    }
+
     navigateQuery(query)
   }
 
@@ -422,6 +538,7 @@ useEffect(() => {
       setIsEditing(false)
       setActiveSuggestion(-1)
       setWebSuggestions([])
+      setCompletion(null)
 
       searchInputRef.current?.blur()
 
@@ -478,6 +595,13 @@ useEffect(() => {
         }
         onUnpin={(id) =>
           onUnpinShortcut?.(id)
+        }
+        onEdit={(id, title, url) =>
+          onEditPinnedShortcut?.(id, title, url) ?? {
+            pins: [],
+            accepted: false,
+            reason: 'not-found',
+          }
         }
         onReorder={(
           from,
@@ -620,14 +744,46 @@ useEffect(() => {
           placeholder={t(
             'searchPlaceholder',
           )}
-          value={query}
+          value={
+            activeCompletion
+              ? query + activeCompletion.rest
+              : query
+          }
           onChange={(event) => {
-            setQuery(
-              event.target.value,
-            )
+            const input = event.target
+            const typed = input.value
+            const native = event.nativeEvent as InputEvent
+
+            setQuery(typed)
 
             setActiveSuggestion(
               -1,
+            )
+
+            // Only when characters are being added at the end (not on delete, paste in the
+            // middle, or while an input method is composing) the address is completed.
+            const adding =
+              typeof native.inputType === 'string' &&
+              native.inputType.startsWith('insert') &&
+              !native.isComposing &&
+              input.selectionStart === typed.length &&
+              input.selectionEnd === typed.length
+            const found =
+              adding && typed.trim()
+                ? inlineCompletion(
+                    historyEntries,
+                    pinnedShortcuts,
+                    typed,
+                  )
+                : null
+            setCompletion(
+              found
+                ? {
+                    typed,
+                    rest: found.completion,
+                    url: found.url,
+                  }
+                : null,
             )
           }}
 onMouseDown={(event) => {
@@ -651,14 +807,30 @@ onFocus={(event) => {
   setIsEditing(true)
   setActiveSuggestion(-1)
 
+  if (windowLostFocusWhileEditingRef.current) {
+    windowLostFocusWhileEditingRef.current = false
+    return
+  }
+
   event.currentTarget.select()
 }}
 
-onBlur={() => {
-  selectAllOnNextClickRef.current = true
+onBlur={(event) => {
+  const input = event.currentTarget
 
-  setIsEditing(false)
-  setActiveSuggestion(-1)
+  // When only the window loses focus the field stays the document's active element; when focus
+  // moves inside the page it does not. Decide after the event, once the active element is known.
+  window.setTimeout(() => {
+    if (document.activeElement === input) {
+      windowLostFocusWhileEditingRef.current = true
+      return
+    }
+
+    selectAllOnNextClickRef.current = true
+
+    setIsEditing(false)
+    setActiveSuggestion(-1)
+  }, 0)
 }}
           onKeyDown={
             handleSearchKeyDown
@@ -729,19 +901,12 @@ onBlur={() => {
                   )
                 }}
               >
-                <span
-                  className={
-                    styles.suggestionSiteIcon
-                  }
-                  aria-hidden="true"
-                >
-                  {suggestion.kind ===
-                  'site'
-                    ? suggestion.title
-                        .charAt(0)
-                        .toUpperCase()
-                    : '\u21BB'}
-                </span>
+                <SuggestionIcon
+                  kind={suggestion.kind}
+                  url={suggestion.url}
+                  title={suggestion.title}
+                  host={suggestion.host}
+                />
 
                 <span
                   className={
@@ -749,11 +914,17 @@ onBlur={() => {
                   }
                 >
                   <strong>
-                    {suggestion.title}
+                    <Highlighted
+                      text={suggestion.title}
+                      terms={typedTerms}
+                    />
                   </strong>
 
                   <span>
-                    {suggestion.subtitle}
+                    <Highlighted
+                      text={suggestion.subtitle}
+                      terms={typedTerms}
+                    />
                   </span>
                 </span>
               </button>
@@ -812,7 +983,32 @@ onBlur={() => {
                     }
                   >
                     <strong>
-                      {suggestion}
+                      {suggestion
+                        .toLocaleLowerCase()
+                        .startsWith(
+                          query
+                            .trim()
+                            .toLocaleLowerCase(),
+                        ) &&
+                      query.trim().length > 0 ? (
+                        <>
+                          {suggestion.slice(
+                            0,
+                            query.trim().length,
+                          )}
+                          <b
+                            className={
+                              styles.suggestionMatch
+                            }
+                          >
+                            {suggestion.slice(
+                              query.trim().length,
+                            )}
+                          </b>
+                        </>
+                      ) : (
+                        suggestion
+                      )}
                     </strong>
 
                     <span>{tf('searchSuggestionSource', { engine: searchEngineLabel })}</span>

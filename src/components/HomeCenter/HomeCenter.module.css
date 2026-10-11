@@ -238,6 +238,15 @@
   font-weight: 650;
 }
 
+.suggestionFavicon {
+  width: 18px;
+  height: 18px;
+
+  border-radius: 4px;
+
+  object-fit: contain;
+}
+
 .suggestionSearchIcon {
   color: var(--nebula-text-muted);
   background: transparent;
@@ -264,7 +273,7 @@
   color: var(--nebula-text);
 
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 450;
 
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -279,4 +288,11 @@
 
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The part of a suggestion that matches what was typed (or, for a search, what the engine adds). */
+.suggestionMatch {
+  color: var(--nebula-text);
+
+  font-weight: 700;
 }

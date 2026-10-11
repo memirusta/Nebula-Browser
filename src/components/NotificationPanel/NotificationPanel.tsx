@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, type CSSProperties } from 'react'
 import {
   notificationHost,
   notificationSiteName,
@@ -8,9 +8,11 @@ import { getLocaleCopy, type NebulaLocale } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import styles from './NotificationPanel.module.css'
+import floatingPanel from '../../styles/floatingPanel.module.css'
 
 interface NotificationPanelProps {
   items: NebulaNotification[]
+  historyError?: boolean
   variant: 'home' | 'browsing'
   browsingTop?: number
   onMarkRead: (id: string, read?: boolean) => void
@@ -165,6 +167,7 @@ function siteGlyphClass(origin: string | null): string {
 
 export function NotificationPanel({
   items,
+  historyError = false,
   variant,
   browsingTop = 220,
   onMarkRead,
@@ -212,8 +215,8 @@ export function NotificationPanel({
       <div className={styles.backdrop} onClick={onClose} aria-hidden="true" />
       <section
         ref={panelRef}
-        className={[styles.panel, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
-        style={variant === 'browsing' ? { top: browsingTop } : undefined}
+        className={[styles.panel, floatingPanel.viewportBound, variant === 'browsing' ? styles.panelBrowsing : styles.panelHome].join(' ')}
+        style={variant === 'browsing' ? { '--panel-anchor-top': `${browsingTop}px` } as CSSProperties : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={t('notificationCenter')}
@@ -242,6 +245,22 @@ export function NotificationPanel({
           </button>
         </div>
       </header>
+
+      {historyError && (
+        <p role="alert" style={{ margin: '10px 18px', color: '#ffb0b0', fontSize: 12 }}>
+          {getLocaleCopy({
+            en: { text: 'Notification history could not be updated. Please try again.' },
+            tr: { text: 'Bildirim geçmişi güncellenemedi. Lütfen tekrar dene.' },
+            es: { text: 'No se pudo actualizar el historial de notificaciones. Inténtalo de nuevo.' },
+            de: { text: 'Der Benachrichtigungsverlauf konnte nicht aktualisiert werden. Bitte erneut versuchen.' },
+            fr: { text: 'Impossible de mettre à jour l’historique des notifications. Veuillez réessayer.' },
+            id: { text: 'Riwayat notifikasi tidak dapat diperbarui. Silakan coba lagi.' },
+            ru: { text: 'Не удалось обновить историю уведомлений. Повторите попытку.' },
+            it: { text: 'Impossibile aggiornare la cronologia delle notifiche. Riprova.' },
+            ja: { text: '通知履歴を更新できませんでした。もう一度お試しください。' },
+          }, locale).text}
+        </p>
+      )}
 
       <div className={styles.content}>
         <div className={styles.list}>

@@ -1,4 +1,6 @@
 import { createPortal } from 'react-dom'
+import { siteIconSource } from '../../core/siteIcon'
+import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
 import {
   formatRelativeVisitTime,
   formatSessionPath,
@@ -25,6 +27,7 @@ export function ShortcutPreviewOverlay({
   liveOverride,
 }: ShortcutPreviewOverlayProps) {
   const { t, locale } = useLocale()
+  useFaviconRefresh()
 
   if (!visible || !shortcut) return null
 
@@ -53,7 +56,7 @@ export function ShortcutPreviewOverlay({
           <div className={styles.cardHeader}>
             <div className={styles.iconWrap}>
               {shortcut.favicon ? (
-                <img src={shortcut.favicon} alt="" className={styles.icon} draggable={false} />
+                <img src={siteIconSource(shortcut.favicon, shortcut.url)} alt="" className={styles.icon} draggable={false} />
               ) : (
                 <span className={styles.iconFallback}>{shortcut.label[0]}</span>
               )}

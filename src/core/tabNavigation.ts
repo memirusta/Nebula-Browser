@@ -154,6 +154,18 @@ export function applyTabHistoryTarget(
   return { entries, index: targetIndex }
 }
 
+/**
+ * Whether Forward does something for a tab: WebView2 has a page ahead (also after Back made by the page or
+ * the mouse, which the tab's own list does not see), or the tab's list has one (it survives a restart,
+ * where the new page has no session history; Forward then opens that address).
+ */
+export function tabCanGoForward(tab: {
+  navigation: TabNavigationState
+  canGoForward?: boolean
+}): boolean {
+  return tab.canGoForward === true || tabHistoryTarget(tab.navigation, 1) !== null
+}
+
 export function tabHistoryTarget(
   state: TabNavigationState,
   direction: -1 | 1,

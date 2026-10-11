@@ -1,16 +1,10 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { NebulaLocale } from '../../core/locale'
+import { computeViewportLunarSize } from '../../core/lunarSizing'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
-import {
-  getTutorialCopy,
-  type TutorialTargetId,
-} from '../../core/tutorial'
+import { getTutorialCopy, type TutorialTargetId } from '../../core/tutorial'
+import { clipTutorialTarget, tutorialCardPosition, tutorialStepIndex, type TutorialRect } from '../../core/tutorialLayout'
 import styles from './GuidedTutorial.module.css'
 
 interface GuidedTutorialProps {
@@ -24,339 +18,138 @@ interface GuidedTutorialProps {
   onComplete: () => void
 }
 
-interface SpotlightRect {
-  left: number
-  top: number
-  width: number
-  height: number
-  radius: number
+function StepIcon({ target }: { target: TutorialTargetId }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {target === 'top-edge' && <><path d="M3 5h18M12 20V10m-4 4 4-4 4 4" /><path d="M6 5a6 6 0 0 0 12 0" opacity=".45" /></>}
+    {target === 'semi-lunar' && <><path d="M2 5c0 9 20 9 20 0H2Z" /><rect x="5" y="15" width="5" height="5" rx="1.5" /><rect x="14" y="15" width="5" height="5" rx="1.5" /></>}
+    {target === 'home-search' && <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></>}
+    {target === 'home-toolbar' && <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="9" cy="6" r="2" /><circle cx="16" cy="12" r="2" /><circle cx="9" cy="18" r="2" /></>}
+  </svg>
 }
 
-type CardPlacement = 'above' | 'below' | 'left'
-
-const VIEWPORT_MARGIN = 18
-const TARGET_PADDING = 9
-const CARD_GAP = 22
-const CARD_HEIGHT_ESTIMATE = 286
-const CARD_MAX_WIDTH = 390
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(value, minimum), Math.max(minimum, maximum))
-}
-
-function fallbackTargetRect(target: TutorialTargetId): SpotlightRect {
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-
-  if (target === 'home-toolbar') {
-    return {
-      left: Math.max(VIEWPORT_MARGIN, viewportWidth - 78),
-      top: 20,
-      width: 60,
-      height: Math.min(224, viewportHeight - 40),
-      radius: 30,
-    }
+function targetRect(target: TutorialTargetId, lunarWidth: number, lunarHeight: number): TutorialRect | null {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  if (target === 'top-edge' || target === 'semi-lunar') {
+    const targetWidth = Math.min(width, lunarWidth)
+    return clipTutorialTarget({
+      left: (width - targetWidth) / 2, top: 0, width: targetWidth,
+      height: target === 'top-edge' ? 28 : lunarHeight, radius: target === 'top-edge' ? 12 : 60,
+    }, width, height)
   }
-
-  return {
-    left: Math.max(VIEWPORT_MARGIN, (viewportWidth - Math.min(540, viewportWidth - 36)) / 2),
-    top: Math.max(80, viewportHeight / 2 - 42),
-    width: Math.min(540, viewportWidth - 36),
-    height: 84,
-    radius: 42,
-  }
-}
-
-function elementTargetRect(target: TutorialTargetId): SpotlightRect | null {
-  const element = document.querySelector<HTMLElement>(
-    `[data-nebula-tutorial="${target}"]`,
-  )
-  if (!element) return null
-
+  const element = document.querySelector<HTMLElement>('[data-nebula-tutorial="' + target + '"]')
+  if (!element || element.getClientRects().length === 0 || getComputedStyle(element).visibility === 'hidden') return null
   const rect = element.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) return null
-
-  return {
-    left: Math.max(0, rect.left - TARGET_PADDING),
-    top: Math.max(0, rect.top - TARGET_PADDING),
-    width: Math.min(window.innerWidth, rect.width + TARGET_PADDING * 2),
-    height: Math.min(window.innerHeight, rect.height + TARGET_PADDING * 2),
-    radius: Math.min(34, rect.height / 2 + TARGET_PADDING),
-  }
+  if (!rect.width || !rect.height) return null
+  return clipTutorialTarget({
+    left: rect.left - 8, top: rect.top - 8, width: rect.width + 16, height: rect.height + 16,
+    radius: Math.min(26, rect.height / 2 + 8),
+  }, width, height)
 }
 
-function resolveTargetRect(
-  target: TutorialTargetId,
-  lunarWidthPx: number,
-  lunarHeightPx: number,
-): SpotlightRect {
-  const viewportWidth = window.innerWidth
-
-  if (target === 'top-edge') {
-    const width = Math.min(viewportWidth - 24, lunarWidthPx + 32)
-    return {
-      left: (viewportWidth - width) / 2,
-      top: 0,
-      width,
-      height: 28,
-      radius: 18,
-    }
-  }
-
-  if (target === 'semi-lunar') {
-    const width = Math.min(viewportWidth - 24, lunarWidthPx + 32)
-    return {
-      left: (viewportWidth - width) / 2,
-      top: 0,
-      width,
-      height: Math.min(window.innerHeight * 0.42, lunarHeightPx + 18),
-      radius: Math.min(96, lunarHeightPx * 0.62),
-    }
-  }
-
-  return elementTargetRect(target) ?? fallbackTargetRect(target)
-}
-
-function cardPosition(
-  rect: SpotlightRect,
-  target: TutorialTargetId,
-  lunarHeightPx: number,
-): {
-  left: number
-  top: number
-  width: number
-  placement: CardPlacement
-} {
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const width = Math.min(CARD_MAX_WIDTH, viewportWidth - VIEWPORT_MARGIN * 2)
-
-  if (target === 'home-toolbar' && rect.left > width + CARD_GAP + VIEWPORT_MARGIN) {
-    return {
-      left: rect.left - width - CARD_GAP,
-      top: clamp(
-        rect.top + rect.height / 2 - CARD_HEIGHT_ESTIMATE / 2,
-        VIEWPORT_MARGIN,
-        viewportHeight - CARD_HEIGHT_ESTIMATE - VIEWPORT_MARGIN,
-      ),
-      width,
-      placement: 'left',
-    }
-  }
-
-  const placementRect = target === 'top-edge'
-    ? {
-        ...rect,
-        height: Math.max(
-          rect.height,
-          Math.min(viewportHeight * 0.42, lunarHeightPx + 18),
-        ),
-      }
-    : rect
-
-  const centeredLeft = clamp(
-    placementRect.left + placementRect.width / 2 - width / 2,
-    VIEWPORT_MARGIN,
-    viewportWidth - width - VIEWPORT_MARGIN,
-  )
-  const roomBelow = viewportHeight - placementRect.top - placementRect.height
-
-  if (roomBelow >= CARD_HEIGHT_ESTIMATE + CARD_GAP) {
-    return {
-      left: centeredLeft,
-      top: placementRect.top + placementRect.height + CARD_GAP,
-      width,
-      placement: 'below',
-    }
-  }
-
-  return {
-    left: centeredLeft,
-    top: Math.max(
-      VIEWPORT_MARGIN,
-      placementRect.top - CARD_HEIGHT_ESTIMATE - CARD_GAP,
-    ),
-    width,
-    placement: 'above',
-  }
-}
-
-export function GuidedTutorial({
-  open,
-  locale,
-  step,
-  lunarWidthPx,
-  lunarHeightPx,
-  onStepChange,
-  onSkip,
-  onComplete,
-}: GuidedTutorialProps) {
+export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx, onStepChange, onSkip, onComplete }: GuidedTutorialProps) {
   const copy = getTutorialCopy(locale)
-  const safeStep = clamp(step, 0, copy.steps.length - 1)
+  const safeStep = tutorialStepIndex(step, copy.steps.length)
   const current = copy.steps[safeStep]
+  const finish = safeStep === copy.steps.length - 1
   const cardRef = useRef<HTMLElement>(null)
-  const nextButtonRef = useRef<HTMLButtonElement>(null)
-  const [spotlight, setSpotlight] = useState<SpotlightRect>(() =>
-    resolveTargetRect(current.target, lunarWidthPx, lunarHeightPx),
-  )
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const nextRef = useRef<HTMLButtonElement>(null)
+  const [layout, setLayout] = useState(() => ({
+    spotlight: null as TutorialRect | null,
+    card: tutorialCardPosition(null, { width: window.innerWidth, height: window.innerHeight }, 350),
+  }))
 
-  useDialogFocusTrap({
-    active: open,
-    containerRef: cardRef,
-    initialFocusRef: nextButtonRef,
-    onEscape: onSkip,
-  })
+  useDialogFocusTrap({ active: open, containerRef: cardRef, initialFocusRef: nextRef, onEscape: onSkip })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return
-
     const update = () => {
-      setSpotlight(resolveTargetRect(current.target, lunarWidthPx, lunarHeightPx))
+      const lunar = computeViewportLunarSize(window.innerWidth, window.innerHeight, lunarWidthPx, lunarHeightPx)
+      const spotlight = targetRect(current.target, lunar.width, lunar.height)
+      const card = tutorialCardPosition(spotlight, { width: window.innerWidth, height: window.innerHeight },
+        cardRef.current?.offsetHeight ?? 350,
+        current.target === 'top-edge' || current.target === 'semi-lunar' ? lunar.height : 0)
+      setLayout((previous) => JSON.stringify(previous) === JSON.stringify({ spotlight, card }) ? previous : { spotlight, card })
     }
-    const frame = window.requestAnimationFrame(update)
+    update()
+    const observer = new ResizeObserver(update)
+    if (cardRef.current) observer.observe(cardRef.current)
+    const target = document.querySelector('[data-nebula-tutorial="' + current.target + '"]')
+    if (target) observer.observe(target)
     window.addEventListener('resize', update)
-
-    const observed = document.querySelector<HTMLElement>(
-      `[data-nebula-tutorial="${current.target}"]`,
-    )
-    const observer = typeof ResizeObserver === 'undefined'
-      ? null
-      : new ResizeObserver(update)
-    if (observed) observer?.observe(observed)
-
+    window.addEventListener('scroll', update, true)
     return () => {
-      window.cancelAnimationFrame(frame)
+      observer.disconnect()
       window.removeEventListener('resize', update)
-      observer?.disconnect()
+      window.removeEventListener('scroll', update, true)
     }
-  }, [current.target, lunarHeightPx, lunarWidthPx, open])
+  }, [open, current.target, locale, lunarHeightPx, lunarWidthPx])
 
   useEffect(() => {
-    if (!open) return
-    nextButtonRef.current?.focus()
+    if (open && bodyRef.current) bodyRef.current.scrollTop = 0
+    if (open && cardRef.current) cardRef.current.scrollTop = 0
   }, [open, safeStep])
 
-  useEffect(() => {
-    if (!open) return
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft' && safeStep > 0) {
-        event.preventDefault()
-        onStepChange(safeStep - 1)
-        return
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault()
-        if (safeStep === copy.steps.length - 1) onComplete()
-        else onStepChange(safeStep + 1)
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [copy.steps.length, onComplete, onStepChange, open, safeStep])
-
-  const card = cardPosition(spotlight, current.target, lunarHeightPx)
-
   if (!open) return null
-
-  const spotlightStyle = {
-    '--tutorial-target-left': `${spotlight.left}px`,
-    '--tutorial-target-top': `${spotlight.top}px`,
-    '--tutorial-target-width': `${spotlight.width}px`,
-    '--tutorial-target-height': `${spotlight.height}px`,
-    '--tutorial-target-radius': `${spotlight.radius}px`,
-  } as CSSProperties
-
-  const cardStyle = {
-    left: `${card.left}px`,
-    top: `${card.top}px`,
-    width: `${card.width}px`,
-  } as CSSProperties
-
-  const finish = safeStep === copy.steps.length - 1
+  const { spotlight, card } = layout
+  const practice = current.target === 'top-edge' || current.target === 'semi-lunar'
+  const advance = () => finish ? onComplete() : onStepChange(safeStep + 1)
+  const spotlightStyle = spotlight ? {
+    left: spotlight.left, top: spotlight.top, width: spotlight.width, height: spotlight.height,
+    borderRadius: spotlight.radius,
+  } : undefined
 
   return createPortal(
-    <div
-      className={[
-        styles.overlay,
-        current.target === 'top-edge' ? styles.hoverPracticeOverlay : '',
-      ].filter(Boolean).join(' ')}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="nebula-guided-tutorial-title"
-    >
-      <div
-        className={styles.spotlight}
-        data-target={current.target}
-        style={spotlightStyle}
-        aria-hidden="true"
-      />
-
-      <section
-        ref={cardRef}
-        key={current.target}
-        className={styles.card}
-        style={cardStyle}
-        data-placement={card.placement}
-      >
-        <div className={styles.cardGlow} aria-hidden="true" />
+    <div className={[styles.overlay, practice ? styles.practiceOverlay : ''].join(' ')}>
+      {spotlight
+        ? <div className={styles.spotlight} data-target={current.target} style={spotlightStyle} aria-hidden="true" />
+        : <div className={styles.scrim} aria-hidden="true" />}
+      <section ref={cardRef} className={styles.card} style={card} data-compact={card.maxHeight < 300 || undefined}
+        role="dialog" aria-modal="true" aria-labelledby="nebula-guided-tutorial-title"
+        aria-describedby="nebula-guided-tutorial-body" tabIndex={-1} data-tutorial-step={safeStep}
+        onKeyDown={(event) => {
+          if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return
+          if (event.key === 'ArrowLeft' && safeStep > 0) { event.preventDefault(); onStepChange(safeStep - 1) }
+          if (event.key === 'ArrowRight' && !event.repeat) { event.preventDefault(); advance() }
+        }}>
         <header className={styles.header}>
-          <div className={styles.orbitMark} aria-hidden="true">
-            <span />
-          </div>
-          <div>
-            <span className={styles.eyebrow}>{current.eyebrow}</span>
-            <span className={styles.progress}>
-              {copy.progress} {safeStep + 1} / {copy.steps.length}
-            </span>
-          </div>
+          <span className={styles.brand}>{copy.categoryLabel}</span>
+          <button type="button" className={styles.skipButton} onClick={onSkip}>{copy.skipAll}<span aria-hidden="true">×</span></button>
         </header>
-
-        <h2 id="nebula-guided-tutorial-title">{current.title}</h2>
-        <p>{current.body}</p>
-        <div className={styles.actionHint}>{current.action}</div>
-
+        <nav className={styles.steps} aria-label={copy.progress}>
+          {copy.steps.map((item, index) => <button key={item.target} type="button"
+            aria-label={copy.progress + ' ' + (index + 1) + ': ' + item.eyebrow}
+            aria-current={index === safeStep ? 'step' : undefined} onClick={() => onStepChange(index)}>
+            <span className={styles.stepNumber}>{String(index + 1).padStart(2, '0')}</span>
+            <span>{item.eyebrow}</span>
+          </button>)}
+        </nav>
+        <div ref={bodyRef} className={styles.body}>
+          <div className={styles.stepHeading}>
+            <span className={styles.progress}>{copy.progress} {safeStep + 1} / {copy.steps.length}</span>
+          </div>
+          <div aria-live="polite" aria-atomic="true">
+            <h2 id="nebula-guided-tutorial-title">{current.title}</h2>
+            <p id="nebula-guided-tutorial-body">{current.body}</p>
+          </div>
+          <div className={styles.actionHint}>
+            {current.target === 'home-search'
+              ? <StepIcon target="semi-lunar" />
+              : <StepIcon target={current.target} />}
+            <span>{current.action}</span>
+            {current.target === 'home-search' && <kbd>Ctrl + L</kbd>}
+          </div>
+        </div>
         <footer className={styles.footer}>
-          <button type="button" className={styles.skipButton} onClick={onSkip}>
-            {copy.skipAll}
+          <button type="button" className={styles.backButton} disabled={safeStep === 0} onClick={() => onStepChange(safeStep - 1)}>
+            <span aria-hidden="true">←</span>{copy.previous}
           </button>
-
-          <div className={styles.dots} aria-hidden="true">
-            {copy.steps.map((item, index) => (
-              <span
-                key={item.target}
-                className={index === safeStep ? styles.dotActive : ''}
-              />
-            ))}
-          </div>
-
-          <div className={styles.navigation}>
-            {safeStep > 0 && (
-              <button
-                type="button"
-                className={styles.backButton}
-                onClick={() => onStepChange(safeStep - 1)}
-              >
-                {copy.previous}
-              </button>
-            )}
-            <button
-              ref={nextButtonRef}
-              type="button"
-              className={styles.nextButton}
-              onClick={() => {
-                if (finish) onComplete()
-                else onStepChange(safeStep + 1)
-              }}
-            >
-              {finish ? copy.finish : copy.next}
-              <span aria-hidden="true">{finish ? '✓' : '→'}</span>
-            </button>
-          </div>
+          <button ref={nextRef} type="button" className={styles.nextButton} onClick={advance}>
+            {finish ? copy.finish : copy.next}<span aria-hidden="true">{finish ? '✓' : '→'}</span>
+          </button>
         </footer>
       </section>
-    </div>,
-    document.body,
+    </div>, document.body,
   )
 }

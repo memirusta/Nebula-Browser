@@ -1,0 +1,28 @@
+.panel {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 12000;
+  display: flex; flex-direction: column; width: min(380px, calc(100vw - 24px));
+  box-sizing: border-box; overflow: hidden; padding: 16px;
+  border: 1px solid rgba(192, 154, 245, .3); border-radius: 18px;
+  background: rgba(23, 19, 32, .98); color: #f2edf9;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .45); font-size: 12px; line-height: 1.55;
+}
+.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; }
+.header h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.close { border: 0; border-radius: 8px; background: transparent; color: inherit; width: 30px; height: 30px; font-size: 22px; cursor: pointer; }
+.close:hover { background: rgba(255, 255, 255, .08); }
+.content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.content p, .footer p { color: #bdb3cb; margin: 10px 0; }
+.tabsTitle { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; font-size: 12px; }
+.tabsTitle span { border-radius: 20px; padding: 1px 8px; background: rgba(170, 115, 240, .2); color: #ddc2ff; }
+.tabs { list-style: none; max-height: 110px; overflow-y: auto; margin: 0; padding: 8px; border-radius: 10px; background: rgba(170, 115, 240, .08); }
+.tabs li { display: flex; align-items: center; gap: 8px; padding: 4px; min-width: 0; }
+.tabs li > span:first-child { color: #c598fc; }
+.tabs li > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.protections { margin: 14px 0; padding-left: 18px; }
+.protections li { margin: 7px 0; }
+.protections li::marker { color: #be94f3; }
+.footer { flex: 0 0 auto; border-top: 1px solid rgba(255, 255, 255, .08); margin-top: 8px; }
+.footer p { font-size: 11px; }
+.end { width: 100%; min-height: 36px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(190, 148, 243, .4); background: rgba(149, 94, 219, .24); color: #f2e8ff; font: inherit; font-weight: 600; cursor: pointer; }
+.end:hover { background: rgba(149, 94, 219, .38); }
+.panel button:focus-visible { outline: 2px solid #c598fc; outline-offset: 2px; }

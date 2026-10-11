@@ -23,8 +23,13 @@
   animation: zoomIndicatorIn 150ms ease-out;
 }
 
-.zoomIndicatorShifted {
+.indicatorBelow {
   top: 78px;
+}
+
+/* Under the small form of the camera/microphone bubble. */
+.indicatorBelowCompact {
+  top: 60px;
 }
 
 .privacyIndicator {
@@ -35,7 +40,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 50px;
+  height: 50px;
   max-width: min(560px, calc(100vw - 36px));
   padding: 0 14px;
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -48,15 +53,103 @@
   pointer-events: auto;
   font-size: 13px;
   animation: zoomIndicatorIn 150ms ease-out;
+  transition:
+    height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 340ms ease;
 }
 
-.privacyIndicatorPulse {
-  width: 9px;
-  height: 9px;
+/* The small form: just the icons of what is in use, at the same corner. */
+.privacyIndicatorCompact {
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 17px;
+  background: rgba(18, 23, 32, 0.82);
+}
+
+/* Site name and what is used; it slides away to the right when the bubble shrinks. */
+.privacyIndicatorBody {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 520px;
+  margin-right: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transition:
+    max-width 380ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin 380ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease;
+}
+
+.privacyIndicatorCompact .privacyIndicatorBody {
+  max-width: 0;
+  margin-right: 0;
+  opacity: 0;
+}
+
+.privacyIndicator:focus-visible {
+  outline: 2px solid rgba(119, 139, 255, 0.9);
+  outline-offset: 2px;
+}
+
+.privacyIndicatorIcons {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+/* One icon per thing in use: camera red, microphone green, location blue, screen amber. */
+.privacyIcon {
+  --privacy-color: #67e8a5;
+  position: relative;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
   border-radius: 50%;
-  background: #67e8a5;
-  box-shadow: 0 0 0 5px rgba(103, 232, 165, 0.14);
+  color: var(--privacy-color);
+}
+
+.privacyIcon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.privacyIcon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 var(--privacy-color);
+  opacity: 0.5;
+  animation: privacyIconPulse 2400ms ease-out infinite;
+  pointer-events: none;
+}
+
+.privacyIconCamera {
+  --privacy-color: #ff6b6b;
+}
+
+.privacyIconMicrophone {
+  --privacy-color: #67e8a5;
+}
+
+.privacyIconLocation {
+  --privacy-color: #7db4ff;
+}
+
+.privacyIconScreen {
+  --privacy-color: #ffc857;
 }
 
 .privacyIndicatorSite {
@@ -138,9 +231,32 @@
   }
 }
 
+@keyframes privacyIconPulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--privacy-color);
+    opacity: 0.5;
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px var(--privacy-color);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .zoomIndicator,
   .privacyIndicator {
     animation: none;
+    transition: none;
+  }
+
+  .privacyIndicatorBody {
+    transition: none;
+  }
+
+  .privacyIcon::after {
+    animation: none;
+    opacity: 0;
   }
 }

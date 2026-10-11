@@ -4,6 +4,7 @@ import type { Shortcut } from '../core/types'
 import { persistLocalStorage, useStorageSync } from '../core/storageSync'
 import {
   addPinnedShortcut,
+  editPinnedShortcut,
   LEGACY_PINNED_SHORTCUT_KEYS,
   loadPinnedShortcutIds,
   loadPinnedShortcuts,
@@ -16,6 +17,7 @@ import {
   shortcutFromPinnedShortcut,
   updatePinnedShortcutFavicon,
   type PinnedShortcutsSnapshot,
+  type EditPinnedShortcutResult,
 } from '../core/pinnedShortcuts'
 
 export {
@@ -85,6 +87,22 @@ export function usePinnedShortcuts(allShortcuts: Shortcut[]) {
       unresolvedLegacyIds: prev.unresolvedLegacyIds.filter((legacyId) => legacyId !== id),
     }))
   }, [])
+
+  const updatePinnedShortcut = useCallback(
+    (id: string, title: string, url: string): EditPinnedShortcutResult => {
+      const result = editPinnedShortcut(snapshot.pins, id, { title, url })
+      if (!result.accepted) return result
+
+      setSnapshot((prev) => {
+        const latest = editPinnedShortcut(prev.pins, id, { title, url })
+        return latest.accepted && latest.pins !== prev.pins
+          ? { ...prev, pins: latest.pins }
+          : prev
+      })
+      return result
+    },
+    [snapshot.pins],
+  )
 
   const togglePin = useCallback(
     (shortcut: Shortcut) => {
@@ -156,6 +174,7 @@ export function usePinnedShortcuts(allShortcuts: Shortcut[]) {
     isPinned,
     canPinMore,
     pinShortcut,
+    editPinnedShortcut: updatePinnedShortcut,
     unpinShortcut,
     togglePin,
     refreshPinnedFavicon,

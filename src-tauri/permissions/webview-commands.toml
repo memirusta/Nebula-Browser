@@ -3,11 +3,17 @@ identifier = "allow-nebula-webview-commands"
 description = "Allow Nebula custom webview commands"
 commands.allow = [
   "browser_create_window",
+  "shell_split_enabled",
+  "shell_chrome_webview_create",
+  "browser_window_at_cursor",
+  "browser_tab_transfer_store",
   "browser_mark_window_active",
   "browser_reparent_tab",
   "write_transition_log",
   "show_native_notification",
   "notification_broker_replay",
+  "notification_history_allowed_ids",
+  "notification_history_forget",
   "notification_broker_diagnostics",
   "webview_set_shortcut_bindings",
   "webview_navigate",
@@ -16,14 +22,18 @@ commands.allow = [
   "webview_go_back",
   "webview_go_forward",
   "webview_reload",
+  "webview_process_snapshot",
+  "webview_layout_audit",
+  "webview_set_chrome_clip",
+  "webview_resync_scale",
   "webview_zoom",
   "webview_set_zoom",
   "webview_list_printers",
   "webview_print",
   "webview_print_preview",
   "webview_open_devtools",
-  "webview_set_memory_usage",
   "webview_is_playing_audio",
+  "webview_has_active_download",
   "webview_set_muted",
   "webview_set_suspended",
   "webview_raise_overlay",
@@ -31,6 +41,7 @@ commands.allow = [
   "webview_set_chrome_bounds",
   "window_cursor_in_client_rect",
   "window_cursor_in_client_lunar_shape",
+  "window_client_physical_bounds",
   "webview_set_browser_bounds",
   "webview_raise_tab_fullscreen",
   "window_presentation_state",
@@ -56,11 +67,22 @@ commands.allow = [
   "webview_apply_privacy",
   "webview_apply_force_dark_pages",
   "webview_clear_browsing_data",
+  "webview_profile_storage_usage",
   "webview_clear_site_permissions",
   "webview_factory_reset_profiles",
   "ublock_extension_info",
+  "extension_download_checked",
+  "extension_package_manage",
+  "extension_host_list",
+  "extension_pending_activations",
+  "extension_legacy_installs",
+  "extension_host_open",
+  "extension_host_click",
+  "extension_host_browse",
+  "extension_runtime_version",
   "ublock_extension_install",
   "ublock_extension_status",
+  "ublock_extension_ready",
   "webview_setup_branding",
   "webview_apply_browser_identity",
   "webview_execute_script",
@@ -93,5 +115,27 @@ description = "Allow the trusted main shell to access the encrypted password vau
 commands.allow = [
   "password_vault_load",
   "password_vault_save",
+  "password_verify_reveal",
   "password_vault_clear"
+]
+
+[[permission]]
+identifier = "allow-shell-state-store-commands"
+description = "Allow the trusted shell to mirror its localStorage into the Rust-owned state store"
+commands.allow = [
+  "shell_store_apply",
+  "shell_store_status",
+  "shell_store_wipe",
+  "shell_isolation_status",
+  "shell_isolation_ack_notice",
+  "shell_isolation_hydrated",
+  "shell_isolation_barrier_ack",
+  "shell_isolation_switch"
+]
+
+[[permission]]
+identifier = "allow-favicon-fetch"
+description = "Allow the trusted shell to fetch the icon of a site the user visited, for the address field suggestions"
+commands.allow = [
+  "favicon_fetch"
 ]

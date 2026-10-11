@@ -122,12 +122,114 @@ mod imp {
         {
             return None;
         }
-        let bytes = response.bytes().await.ok()?;
-        if bytes.is_empty() || bytes.len() as u64 > MAX_SITE_ICON_BYTES {
+        let bytes = crate::http_response::read_bounded_response(
+            response,
+            MAX_SITE_ICON_BYTES as usize,
+            "Notification icon exceeds Nebula's supported size.",
+        )
+        .await
+        .ok()?;
+        if bytes.is_empty() {
             return None;
         }
         std::fs::write(&icon_path, &bytes).ok()?;
         file_uri(icon_path)
+    }
+
+    /// The kind of file a site logo is kept as, when a toast can show it (a WebP or anything else is not).
+    fn logo_extension(bytes: &[u8]) -> Option<&'static str> {
+        match crate::favicon_fetch::image_mime(bytes)? {
+            "image/png" => Some("png"),
+            "image/jpeg" => Some("jpg"),
+            "image/gif" => Some("gif"),
+            "image/x-icon" => Some("ico"),
+            _ => None,
+        }
+    }
+
+    /// Where a site's logo is looked for: its own icon file first, then the favicon service (which answers
+    /// 404 when it has no icon either, so a default globe is never taken for the site's logo).
+    fn logo_sources(host: &str) -> Vec<String> {
+        vec![
+            format!("https://{host}/favicon.ico"),
+            format!(
+                "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://{host}&size=64"
+            ),
+        ]
+    }
+
+    /// The first usable image among `sources`: a picture format first (a site's own icon file is often an
+    /// .ico, which a toast may not draw), an .ico only when nothing else answered.
+    async fn first_logo(
+        client: &reqwest::Client,
+        sources: &[String],
+    ) -> Option<(Vec<u8>, &'static str)> {
+        let mut icon_only = None;
+        for source in sources {
+            let Some(bytes) = crate::favicon_fetch::fetch_image(client, source).await else {
+                continue;
+            };
+            match logo_extension(&bytes) {
+                Some("ico") => {
+                    icon_only.get_or_insert((bytes, "ico"));
+                }
+                Some(extension) => return Some((bytes, extension)),
+                None => {}
+            }
+        }
+        icon_only
+    }
+
+    /// How long a site that has no logo anywhere is not asked again.
+    const NO_LOGO_RETRY: Duration = Duration::from_secs(3 * 24 * 60 * 60);
+
+    /// The logo of the site a notification comes from, kept on this machine: used when the icon the site
+    /// gave is not one that may be loaded (an image host of its own, an address that is not trusted). It is
+    /// asked for once per site; only public sites are asked.
+    async fn site_logo_uri(app: &AppHandle, origin: &str) -> Option<String> {
+        let host = url::Url::parse(origin)
+            .ok()?
+            .host_str()
+            .and_then(crate::favicon_fetch::public_host)?;
+        let icon_dir = app.path().app_cache_dir().ok()?.join("notifications");
+        std::fs::create_dir_all(&icon_dir).ok()?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        host.hash(&mut hasher);
+        let stem = format!("logo-{:016x}", hasher.finish());
+        for extension in ["png", "jpg", "gif", "ico"] {
+            let path = icon_dir.join(format!("{stem}.{extension}"));
+            if std::fs::metadata(&path)
+                .is_ok_and(|metadata| metadata.len() > 0 && metadata.len() <= MAX_SITE_ICON_BYTES)
+            {
+                return file_uri(path);
+            }
+        }
+        let missing = icon_dir.join(format!("{stem}.none"));
+        if std::fs::metadata(&missing)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age < NO_LOGO_RETRY)
+        {
+            return None;
+        }
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 NebulaBrowser/1.8")
+            .timeout(Duration::from_secs(2))
+            .redirect(reqwest::redirect::Policy::limited(3))
+            .build()
+            .ok()?;
+        match first_logo(&client, &logo_sources(&host)).await {
+            Some((bytes, extension)) => {
+                let path = icon_dir.join(format!("{stem}.{extension}"));
+                std::fs::write(&path, &bytes).ok()?;
+                file_uri(path)
+            }
+            None => {
+                let _ = std::fs::write(&missing, b"");
+                None
+            }
+        }
     }
 
     async fn notification_icon_uri(
@@ -137,6 +239,13 @@ mod imp {
     ) -> Option<String> {
         if let Some(icon_url) = icon_url {
             if let Some(uri) = cached_site_icon_uri(app, icon_url, origin).await {
+                return Some(uri);
+            }
+        }
+        // The icon the site gave is missing or not one that may be loaded: the site's own logo, and only
+        // then Nebula's. (A private tab passes no origin, so it never asks for one.)
+        if let Some(origin) = origin {
+            if let Some(uri) = site_logo_uri(app, origin).await {
                 return Some(uri);
             }
         }
@@ -409,15 +518,27 @@ mod imp {
         }
 
         let document = XmlDocument::new().map_err(|error| error.to_string())?;
-        let image = notification_icon_uri(app, icon_url.as_deref(), origin.as_deref())
-            .await
-            .map(|uri| {
-                format!(
-                    "<image placement=\"appLogoOverride\" hint-crop=\"circle\" src=\"{}\"/>",
-                    xml_escape(&uri)
-                )
-            })
-            .unwrap_or_default();
+        // Private notifications must not leave site/avatar images in the disk cache.
+        let private_tab = tab_label
+            .as_deref()
+            .is_some_and(crate::notification_history::is_private_tab);
+        let image = notification_icon_uri(
+            app,
+            if private_tab {
+                None
+            } else {
+                icon_url.as_deref()
+            },
+            if private_tab { None } else { origin.as_deref() },
+        )
+        .await
+        .map(|uri| {
+            format!(
+                "<image placement=\"appLogoOverride\" hint-crop=\"circle\" src=\"{}\"/>",
+                xml_escape(&uri)
+            )
+        })
+        .unwrap_or_default();
         if let (Some(tag), Some(generation)) = (toast_tag.as_deref(), toast_generation) {
             if !crate::notification_broker::toast_generation_is_current(tag, generation) {
                 return Ok(());
@@ -462,7 +583,9 @@ mod imp {
                 .as_deref()
                 .and_then(|label| activation_app.get_webview(label))
                 .map(|webview| webview.window().label().to_string())
-                .unwrap_or_else(crate::browser_workspace::most_recent_window_label);
+                .unwrap_or_else(|| {
+                    crate::browser_workspace::most_recent_window_label(&activation_app)
+                });
             if let Some(window) = activation_app.get_window(&target_label) {
                 crate::external_open::activate_main_window(&window);
             }
@@ -521,7 +644,96 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::validated_site_icon_url;
+        use super::{first_logo, logo_extension, logo_sources, validated_site_icon_url};
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::Duration;
+
+        const PNG: &[u8] = &[
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, b'I', b'H', b'D', b'R',
+        ];
+        const ICO: &[u8] = &[0, 0, 1, 0, 1, 0, 16, 16];
+
+        /// A server that answers every request with `body` (status 200) or a 404, until the test ends.
+        fn serve(body: Option<&[u8]>) -> String {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let response = match body {
+                Some(body) => {
+                    let mut out = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .into_bytes();
+                    out.extend_from_slice(body);
+                    out
+                }
+                None => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    .to_vec(),
+            };
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { return };
+                    let mut buffer = [0u8; 1024];
+                    let _ = stream.read(&mut buffer);
+                    let _ = stream.write_all(&response);
+                }
+            });
+            format!("http://{address}/")
+        }
+
+        #[test]
+        fn a_site_logo_is_kept_only_in_a_format_a_toast_can_draw() {
+            assert_eq!(logo_extension(PNG), Some("png"));
+            assert_eq!(logo_extension(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+            assert_eq!(logo_extension(b"GIF89a...."), Some("gif"));
+            assert_eq!(logo_extension(ICO), Some("ico"));
+            assert_eq!(logo_extension(b"RIFF\0\0\0\0WEBPVP8 "), None);
+            assert_eq!(logo_extension(b"<svg onload=alert(1)>"), None);
+        }
+
+        #[test]
+        fn a_sites_logo_is_looked_for_at_its_own_icon_file_first() {
+            let sources = logo_sources("www.chess.com");
+            assert_eq!(sources[0], "https://www.chess.com/favicon.ico");
+            assert!(sources[1].contains("gstatic.com/faviconV2"));
+            assert!(sources[1].contains("url=https://www.chess.com&"));
+        }
+
+        #[test]
+        fn a_picture_is_preferred_to_an_ico_and_an_ico_is_better_than_nothing() {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(5))
+                    .build()
+                    .unwrap();
+                // The site's own file is an .ico, the service has a PNG: the PNG.
+                let sources = vec![serve(Some(ICO)), serve(Some(PNG))];
+                assert_eq!(
+                    first_logo(&client, &sources).await.map(|(_, kind)| kind),
+                    Some("png")
+                );
+                // Only the .ico answers: it is used.
+                let sources = vec![serve(Some(ICO)), serve(None)];
+                assert_eq!(
+                    first_logo(&client, &sources).await.map(|(_, kind)| kind),
+                    Some("ico")
+                );
+                // The site's own PNG is taken at once.
+                let sources = vec![serve(Some(PNG)), serve(Some(ICO))];
+                assert_eq!(
+                    first_logo(&client, &sources).await.map(|(_, kind)| kind),
+                    Some("png")
+                );
+                // Nothing answers (or only something that is not an image).
+                let sources = vec![serve(None), serve(Some(b"<html>no</html>"))];
+                assert!(first_logo(&client, &sources).await.is_none());
+            });
+        }
 
         #[test]
         fn instagram_profile_images_are_limited_to_the_trusted_cdn_family() {

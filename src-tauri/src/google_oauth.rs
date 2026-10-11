@@ -268,7 +268,7 @@ fn parse_query_params(query: &str) -> HashMap<String, String> {
     params
 }
 
-fn open_google_oauth_popup(
+pub(crate) fn open_google_oauth_popup(
     app: &tauri::AppHandle,
     auth_url: &str,
 ) -> Result<tauri::WebviewWindow, String> {
@@ -300,8 +300,16 @@ fn open_google_oauth_popup(
             .incognito(false)
             .browser_extensions_enabled(true);
 
+    // SPIKE: sign-in runs in the trusted environment: persistent, extensions off, and
+    // no capability matches its label, so no IPC.
+    if crate::shell_isolation::split_active() {
+        builder = builder
+            .data_directory(crate::shell_isolation::trusted_dir(app)?)
+            .browser_extensions_enabled(false);
+    }
+
     if let Some(main) =
-        app.get_webview_window(&crate::browser_workspace::most_recent_window_label())
+        app.get_webview_window(&crate::browser_workspace::most_recent_window_label(app))
     {
         builder = builder.parent(&main).map_err(|error| error.to_string())?;
     }

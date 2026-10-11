@@ -99,6 +99,12 @@ mod imp {
     }
 
     impl DownloadLifecycle {
+        fn has_active(&self, label: &str) -> bool {
+            self.active_by_label
+                .get(label)
+                .is_some_and(|downloads| !downloads.is_empty())
+        }
+
         fn register(&mut self, label: &str, id: &str) {
             self.active_by_label
                 .entry(label.to_string())
@@ -165,6 +171,9 @@ mod imp {
         danger_reason: Option<String>,
         requires_confirmation: bool,
         started_at_ms: u64,
+        /// Whether the tab the download came from has ever shown a page. A tab that only existed to start the
+        /// download (a link that opens in a new tab and answers with a file) never has.
+        tab_shown_page: bool,
     }
 
     struct DownloadControlDiagnostic {
@@ -329,6 +338,7 @@ mod imp {
                 requires_confirmation: danger_reason.is_some(),
                 danger_reason,
                 started_at_ms,
+                tab_shown_page: crate::tab_metadata::tab_has_shown_page(label),
             }
         }
     }
@@ -470,14 +480,30 @@ mod imp {
         payload
     }
 
+    fn download_review_complete(id: &str, payload: &DownloadPayload) -> bool {
+        !payload.requires_confirmation
+            && SIGNATURE_CHECKS
+                .lock()
+                .map(|checks| !checks.contains(id))
+                .unwrap_or(false)
+            && DOWNLOAD_WARNINGS
+                .lock()
+                .map(|warnings| !warnings.contains_key(id))
+                .unwrap_or(false)
+    }
+
     fn is_terminal(payload: &DownloadPayload) -> bool {
         !payload.requires_confirmation
-            && (matches!(payload.state.as_str(), "completed" | "cancelled")
+            && ((payload.state == "completed" && download_review_complete(&payload.id, payload))
+                || payload.state == "cancelled"
                 || (payload.state == "interrupted" && !payload.can_resume))
     }
 
     fn remember_finished_download(id: &str, payload: &DownloadPayload) {
-        if payload.state != "completed" || payload.file_path.is_empty() {
+        if payload.state != "completed"
+            || payload.file_path.is_empty()
+            || !download_review_complete(id, payload)
+        {
             return;
         }
 
@@ -730,12 +756,10 @@ mod imp {
             return true;
         }
 
-        DOWNLOADS.with(|downloads| {
-            downloads
-                .borrow()
-                .values()
-                .any(|registration| registration.label == label)
-        })
+        DOWNLOAD_LIFECYCLE
+            .lock()
+            .map(|lifecycle| lifecycle.has_active(label))
+            .unwrap_or(true)
     }
 
     pub(crate) fn defer_tab_close_if_active(label: &str) -> bool {
@@ -1186,11 +1210,12 @@ mod imp {
         OsStr::new(value).encode_wide().chain(Some(0)).collect()
     }
 
-    unsafe fn shell_open(file: &str, parameters: Option<&str>) -> Result<(), String> {
-        let verb = wide("open");
+    /// What ShellExecute answered: above 32 is success, anything else an error code.
+    unsafe fn shell_execute(verb: &str, file: &str, parameters: Option<&str>) -> isize {
+        let verb = wide(verb);
         let file = wide(file);
         let parameters = parameters.map(wide);
-        let result = ShellExecuteW(
+        ShellExecuteW(
             None,
             PCWSTR(verb.as_ptr()),
             PCWSTR(file.as_ptr()),
@@ -1199,16 +1224,57 @@ mod imp {
                 .map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
             PCWSTR::null(),
             SW_SHOWNORMAL,
-        );
-        if result.0 as isize <= 32 {
+        )
+        .0 as isize
+    }
+
+    unsafe fn shell_open(file: &str, parameters: Option<&str>) -> Result<(), String> {
+        if shell_execute("open", file, parameters) <= 32 {
             return Err("Windows could not open the download".to_string());
         }
         Ok(())
     }
 
+    /// Whether a failed "open" can be answered with Windows' "Open with" dialog. Windows reports a missing or
+    /// broken program association in several ways (no association 31, incomplete 27, access denied 5 for a
+    /// handler that is gone, ...), so everything except "the file itself is gone" (2, 3) qualifies.
+    fn needs_open_with(code: isize) -> bool {
+        code <= 32 && !matches!(code, 2 | 3)
+    }
+
+    /// Opens a finished download with its program; when Windows cannot, with Windows' own "Open with" dialog
+    /// (which lists the recommended programs); and only when even that cannot be shown, in its folder.
+    unsafe fn open_download_file(path: &str) -> Result<(), String> {
+        let code = shell_execute("open", path, None);
+        if code > 32 {
+            return Ok(());
+        }
+        if needs_open_with(code) {
+            if shell_execute("openas", path, None) > 32 {
+                return Ok(());
+            }
+            let parameters = format!("shell32.dll,OpenAs_RunDLL {path}");
+            if shell_execute("open", "rundll32.exe", Some(&parameters)) > 32 {
+                return Ok(());
+            }
+        }
+        let parameters = format!("/select,\"{path}\"");
+        if shell_execute("open", "explorer.exe", Some(&parameters)) > 32 {
+            return Ok(());
+        }
+        Err("Windows could not open the download".to_string())
+    }
+
     fn finished_download_path(id: &str) -> Option<String> {
         FINISHED_DOWNLOADS
             .with(|finished| finished.borrow().get(id).map(|item| item.file_path.clone()))
+    }
+
+    fn openable_download_path(id: &str) -> Result<String, String> {
+        // Only finalization publishes paths here, after signature review or Keep.
+        // An active operation may already have a file while approval is pending.
+        finished_download_path(id)
+            .ok_or_else(|| "download is not complete or is still awaiting confirmation".to_string())
     }
 
     unsafe fn start_shell_file_drag(
@@ -1250,7 +1316,9 @@ mod imp {
                 }
 
                 let window = app_for_main
-                    .get_window(&crate::browser_workspace::most_recent_window_label())
+                    .get_window(&crate::browser_workspace::most_recent_window_label(
+                        &app_for_main,
+                    ))
                     .ok_or_else(|| "active Nebula window not found".to_string())?;
                 let hwnd = window.hwnd().map_err(|error| error.to_string())?;
 
@@ -1487,7 +1555,9 @@ mod imp {
                         });
                     }
                     "open" | "reveal" => {
-                        let path = if let Some((operation, _, _)) = active {
+                        let path = if action == "open" {
+                            openable_download_path(&id)?
+                        } else if let Some((operation, _, _)) = active {
                             unsafe { take_webview_string(|value| operation.ResultFilePath(value)) }
                         } else {
                             finished_download_path(&id).unwrap_or_default()
@@ -1498,7 +1568,7 @@ mod imp {
                         }
                         unsafe {
                             if action == "open" {
-                                shell_open(&path, None)?;
+                                open_download_file(&path)?;
                             } else {
                                 let parameters = format!("/select,\"{path}\"");
                                 shell_open("explorer.exe", Some(&parameters))?;
@@ -1520,7 +1590,84 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::{dangerous_file_reason, has_trusted_authenticode_signature, DownloadLifecycle};
+        use super::{
+            dangerous_file_reason, has_trusted_authenticode_signature, is_terminal,
+            openable_download_path, remember_finished_download, DownloadLifecycle, DownloadPayload,
+            DOWNLOAD_WARNINGS, FINISHED_DOWNLOADS, SIGNATURE_CHECKS,
+        };
+
+        #[test]
+        fn a_file_with_no_program_is_offered_the_open_with_dialog() {
+            use super::needs_open_with;
+            // ShellExecute's "no association" (31), "association incomplete" (27), access denied (5) and the
+            // DDE errors all leave the file intact and only need a program chosen.
+            for code in [0, 5, 27, 28, 29, 30, 31] {
+                assert!(needs_open_with(code), "{code}");
+            }
+            // A file that is gone (2, 3) and success (33 and above) are not that.
+            for code in [2, 3, 33, 42] {
+                assert!(!needs_open_with(code), "{code}");
+            }
+        }
+
+        #[test]
+        fn download_open_requires_completed_signature_review_and_confirmation() {
+            let id = "test-unconfirmed-download";
+            let mut payload = DownloadPayload {
+                id: id.to_string(),
+                tab_label: "nebula-tab-test".to_string(),
+                source_url: "https://example.com/setup.exe".to_string(),
+                file_name: "setup.exe".to_string(),
+                file_path: "C:\\Downloads\\setup.exe".to_string(),
+                mime_type: "application/octet-stream".to_string(),
+                total_bytes: 16,
+                received_bytes: 16,
+                state: "completed".to_string(),
+                interrupt_reason: 0,
+                can_resume: false,
+                paused: false,
+                danger_reason: None,
+                requires_confirmation: false,
+                started_at_ms: 0,
+                tab_shown_page: true,
+            };
+
+            SIGNATURE_CHECKS.lock().unwrap().insert(id.to_string());
+            assert!(!is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            SIGNATURE_CHECKS.lock().unwrap().remove(id);
+            DOWNLOAD_WARNINGS
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), "dangerous_file_type".to_string());
+            // Even a payload captured before the warning appeared is rejected.
+            assert!(!is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            payload.requires_confirmation = true;
+            payload.danger_reason = Some("dangerous_file_type".to_string());
+            assert!(!is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            // The Keep action clears the warning, allowing normal finalization.
+            DOWNLOAD_WARNINGS.lock().unwrap().remove(id);
+            payload.requires_confirmation = false;
+            payload.danger_reason = None;
+
+            payload.state = "in_progress".to_string();
+            remember_finished_download(id, &payload);
+            assert!(openable_download_path(id).is_err());
+
+            payload.state = "completed".to_string();
+            assert!(is_terminal(&payload));
+            remember_finished_download(id, &payload);
+            assert_eq!(openable_download_path(id).unwrap(), payload.file_path);
+            FINISHED_DOWNLOADS.with(|finished| finished.borrow_mut().remove(id));
+        }
 
         #[test]
         fn active_download_defers_tab_close_until_the_last_operation_finishes() {
@@ -1528,9 +1675,12 @@ mod imp {
             lifecycle.register("nebula-tab-a", "download-1");
             lifecycle.register("nebula-tab-a", "download-2");
 
+            assert!(lifecycle.has_active("nebula-tab-a"));
             assert!(lifecycle.defer_tab_close("nebula-tab-a"));
             assert!(!lifecycle.finish("nebula-tab-a", "download-1"));
+            assert!(lifecycle.has_active("nebula-tab-a"));
             assert!(lifecycle.finish("nebula-tab-a", "download-2"));
+            assert!(!lifecycle.has_active("nebula-tab-a"));
             assert!(!lifecycle.finish("nebula-tab-a", "download-2"));
         }
 

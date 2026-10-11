@@ -63,7 +63,8 @@ function sanitizeTitle(value: unknown, url: string): string {
 
 function sanitizePersistedTab(value: unknown): PersistedBrowserTab | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const candidate = value as Partial<PersistedBrowserTab> & { id?: unknown }
+  const candidate = value as Partial<PersistedBrowserTab> & { id?: unknown; isPrivate?: unknown }
+  if (candidate.isPrivate === true) return null
   if (typeof candidate.url !== 'string') return null
   const url = normalizeHttpUrl(candidate.url)
   if (!url) return null
@@ -181,7 +182,22 @@ function parseLegacyV1(raw: string): BrowserSessionSnapshot | null {
 }
 
 export function serializeBrowserSessionSnapshot(snapshot: BrowserSessionSnapshot): string {
-  return JSON.stringify(snapshot)
+  return JSON.stringify({
+    ...snapshot,
+    windows: snapshot.windows.flatMap((window) => {
+      const tabs = window.tabs.filter(
+        (tab) => (tab as PersistedBrowserTab & { isPrivate?: boolean }).isPrivate !== true,
+      )
+      if (tabs.length === 0) return []
+      return [{
+        ...window,
+        tabs,
+        activeTabId: tabs.some((tab) => tab.tabId === window.activeTabId)
+          ? window.activeTabId
+          : tabs[0]?.tabId ?? null,
+      }]
+    }),
+  })
 }
 
 export function loadBrowserSessionSnapshot(
@@ -228,6 +244,7 @@ export function createBrowserWindowSessionSnapshot(
   activeShortcutId: string | null,
 ): BrowserWindowSessionSnapshot {
   const persistedTabs = tabs.flatMap((tab) => {
+    if (tab.isPrivate) return []
     const persisted = sanitizePersistedTab({
       tabId: tab.id,
       shortcutId: tab.shortcutId,
@@ -255,6 +272,7 @@ export function createBrowserWindowSessionSnapshot(
 export function persistedBrowserTabFromBrowserTab(
   tab: BrowserTab,
 ): PersistedBrowserTab | null {
+  if (tab.isPrivate) return null
   return sanitizePersistedTab({
     tabId: tab.id,
     shortcutId: tab.shortcutId,

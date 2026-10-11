@@ -12,7 +12,20 @@ const VIDEO_EXTENSIONS = [
   'mov',
 ]
 
-export async function pickAndImportVideoWallpaper():
+export const WALLPAPER_SELECTION_KEY = 'nebula-wallpaper-selection-v1'
+let fallbackMutation: Promise<unknown> = Promise.resolve()
+
+/** One origin-wide queue coordinates wallpaper mutations in every shell window. */
+export function withWallpaperMutation<T>(operation: () => T | Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('nebula-wallpaper-mutation', operation)
+  }
+  const pending = fallbackMutation.catch(() => undefined).then(operation)
+  fallbackMutation = pending
+  return pending
+}
+
+export async function pickAndImportVideoWallpaper(isCurrent: () => boolean = () => true):
   Promise<string | null> {
   if (!isTauri) {
     return null
@@ -35,6 +48,7 @@ export async function pickAndImportVideoWallpaper():
     })
 
   if (
+    !isCurrent() ||
     !selected ||
     Array.isArray(
       selected,
@@ -52,14 +66,15 @@ export async function pickAndImportVideoWallpaper():
   )
 }
 
-export async function clearImportedVideoWallpapers():
+export async function clearImportedVideoWallpapers(paths: string[]):
   Promise<void> {
-  if (!isTauri) {
+  if (!isTauri || paths.length === 0) {
     return
   }
 
   await invoke<void>(
     'wallpaper_clear_videos',
+    { paths },
   )
 }
 

@@ -28,6 +28,7 @@ export function useBrowserTabs() {
         activate?: boolean
         tabId?: string
         navigation?: TabNavigationState
+        isPrivate?: boolean
       },
     ) => {
       dispatch({
@@ -37,6 +38,7 @@ export function useBrowserTabs() {
         activate: options?.activate !== false,
         tabId: options?.tabId,
         navigation: options?.navigation,
+        isPrivate: options?.isPrivate,
       })
     },
     [],
@@ -51,7 +53,7 @@ export function useBrowserTabs() {
   }, [])
 
   const updateTabMeta = useCallback(
-    (shortcutId: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted'>>) => {
+    (shortcutId: string, patch: Partial<Pick<BrowserTab, 'url' | 'title' | 'favicon' | 'isLoading' | 'isMuted' | 'canGoForward'>>) => {
       dispatch({ type: 'update-meta', shortcutId, patch })
     },
     [],

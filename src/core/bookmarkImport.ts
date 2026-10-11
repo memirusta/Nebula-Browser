@@ -1,4 +1,5 @@
-import { visitShortcutIdFromUrl } from './shortcutFromUrl'
+import { visitShortcutIdFromUrl } from './shortcutFromUrl.ts'
+import { faviconForUrl } from './browserTab.ts'
 import type { Shortcut } from './types'
 
 export interface ImportedBookmark {
@@ -20,11 +21,12 @@ export function shortcutsFromImportedBookmarks(bookmarks: ImportedBookmark[]): S
       if (!host || seenHosts.has(hostKey)) continue
 
       seenHosts.add(hostKey)
+      const favicon = faviconForUrl(parsed.href)
       shortcuts.push({
         id: visitShortcutIdFromUrl(parsed.href),
         label: bookmark.title.trim() || host,
         url: parsed.href,
-        favicon: `https://www.google.com/s2/favicons?domain=${host}&sz=64`,
+        favicon: favicon.startsWith('/') ? favicon : faviconForUrl(`https://${host}/`),
       })
     } catch {
       /* skip invalid bookmark */
