@@ -439,13 +439,13 @@ That experiment has grown into a browser you can actually use.
 
 ---
 
-## Code signing policy
+## Code signing
 
-Free code signing provided by [SignPath.io](https://signpath.io/),
-certificate by [SignPath Foundation](https://signpath.org/).
+Nebula's Windows installers on GitHub Releases are currently not code-signed.
+Windows SmartScreen may warn the first time you run the installer; choose
+**More info → Run anyway** to continue.
 
-See [CODE_SIGNING.md](CODE_SIGNING.md) for Nebula's code signing policy
-and [PRIVACY.md](PRIVACY.md) for its privacy policy.
+See [PRIVACY.md](PRIVACY.md) for Nebula's privacy policy.
 
 ---
 

@@ -78,11 +78,7 @@ Third-party software licensing information is available in:
 
 ## Code signing
 
-Official Windows builds may use code signing provided by SignPath.io with a certificate provided by SignPath Foundation.
-
-Code signing verifies the origin and integrity of release binaries and is not used by Nebula to collect user browsing data.
-
-See [CODE_SIGNING.md](CODE_SIGNING.md).
+Nebula's Windows release binaries on GitHub are currently not code-signed.
 
 ## Changes to this policy
 
