@@ -74,20 +74,6 @@ The same Semi-Lunar interface is shared across Home, Browsing, and Overlay modes
 
 ---
 
-### 🔎 Smart Search
-
-Nebula combines local browsing history with live search suggestions.
-
-Supported search engines:
-
-- Google
-- DuckDuckGo
-- Bing
-
-Visited sites can appear alongside live autocomplete suggestions, giving the search bar both browser-history awareness and real-time search assistance.
-
----
-
 ### 🏠 A Home Screen That Is Actually Yours
 
 Nebula's home screen is a workspace rather than a static new-tab page.
@@ -113,8 +99,6 @@ Home modules can be repositioned without changing the browsing experience.
 
 Hover over supported shortcuts and tabs to preview their current browsing session before switching.
 
-It is especially useful when multiple pages are open but you do not want a permanent tab strip occupying screen space.
-
 ---
 
 ### 🗂 Folders
@@ -128,39 +112,6 @@ Folders support:
 - drag interactions
 - individual item removal
 - automatic cleanup when members are removed
-
----
-
-### 📥 Downloads
-
-Nebula includes an integrated download manager with:
-
-- active download progress
-- completed downloads
-- browser notifications
-- quick access from the toolbar
-
----
-
-### 📜 History & Session Recovery
-
-Browsing history is stored locally and integrated directly into Nebula.
-
-Features include:
-
-- recent browsing history
-- recently closed tabs
-- reopening closed tabs
-- previous-session restoration
-- crash recovery
-
----
-
-### 🔐 Password Vault
-
-Nebula includes a local password vault and a browser-side autofill bridge.
-
-Saved credentials can be managed from Settings and used inside supported browsing sessions.
 
 ---
 
@@ -180,55 +131,6 @@ Nebula includes configurable privacy options for:
 - cookie-banner blocking
 
 Nebula also integrates **uBlock Origin** into its desktop browsing environment.
-
----
-
-### 🔔 Notifications
-
-Nebula has its own notification center for browser events such as downloads and supported site notifications.
-
----
-
-### ⌨️ Keyboard Navigation
-
-Common browser workflows are available from the keyboard, including:
-
-- new, close, and reopen tab
-- next / previous tab
-- direct tab switching
-- back / forward
-- reload
-- focus search
-- zoom controls
-- Home
-- F12 — Nebula Inspector
-
-Shortcut mappings can be viewed and configured from Settings.
-
----
-
-### 🧩 Native Site UI
-
-Nebula replaces many default WebView2 browser surfaces with its own interface.
-
-This includes:
-
-- JavaScript alerts, confirms, and prompts
-- site permission requests
-- HTTP authentication prompts
-- context menus
-- new-window handling
-- integrated site notifications
-
-WebView2 remains the rendering engine while Nebula owns the visible browser experience.
-
----
-
-## 🎬 Demo
-
-Watch the full Nebula Browser showcase:
-
-**[▶ Open the demo video](https://drive.google.com/file/d/1D6d9yt8AardaDiC7bjiCk4MJkrXR0XYz/view?usp=sharing)**
 
 ---
 
