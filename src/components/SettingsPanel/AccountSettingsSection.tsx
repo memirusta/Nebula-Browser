@@ -143,8 +143,9 @@ export function AccountSettingsSection({
     setGoogleStarting(true)
     setGoogleError(null)
     const wasGoogle = account?.provider === 'google'
-    void signInWithGoogleProfile().then(({ claims, error }) => {
+    void signInWithGoogleProfile().then(({ claims, error, cancelled }) => {
       setGoogleStarting(false)
+      if (cancelled) return
       if (!claims) {
         if (import.meta.env.DEV && error) console.warn('[nebula] Google sign-in failed', error)
         setGoogleError(error || t('accountGoogleFailed'))

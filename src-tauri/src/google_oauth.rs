@@ -467,6 +467,39 @@ pub async fn google_oauth_sign_in_loopback(
     exchange_code_for_claims(&client_id, &code, &code_verifier, &redirect_uri).await
 }
 
+/// What the native side answers when the person closes the sign-in window. `src/core/googleSignIn.ts` has the same
+/// text (a test keeps them equal) and treats it as "cancelled", not as a failure.
+pub(crate) const SIGN_IN_CANCELLED: &str = "Google sign-in was cancelled.";
+
+/// Waits for the redirect that carries the sign-in code, but stops as soon as the person closes the sign-in
+/// window: nothing would ever arrive, and the sign-in button would stay busy until the long timeout ran out.
+async fn wait_for_code_or_window_close(
+    listener: TcpListener,
+    state: &str,
+    popup: &tauri::WebviewWindow,
+) -> Result<String, String> {
+    let closed = std::sync::Arc::new(tokio::sync::Notify::new());
+    let signal = closed.clone();
+    popup.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            signal.notify_one();
+        }
+    });
+    let wait = wait_for_loopback_code(listener, state);
+    tokio::pin!(wait);
+    tokio::select! {
+        result = timeout(Duration::from_secs(180), &mut wait) => {
+            result.map_err(|_| "Google sync authorization timed out. Try again.".to_string())?
+        }
+        _ = closed.notified() => {
+            // A finished sign-in also closes the window, right after the redirect: the code gets a moment to arrive.
+            timeout(Duration::from_secs(2), &mut wait)
+                .await
+                .map_err(|_| SIGN_IN_CANCELLED.to_string())?
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn google_sync_enable_loopback(
     app: tauri::AppHandle,
@@ -500,15 +533,10 @@ pub async fn google_sync_enable_loopback(
     );
 
     let popup = open_google_oauth_popup(&app, &auth_url)?;
-    let code_result = timeout(
-        Duration::from_secs(180),
-        wait_for_loopback_code(listener, &state),
-    )
-    .await
-    .map_err(|_| "Google sync authorization timed out. Try again.".to_string());
+    let code_result = wait_for_code_or_window_close(listener, &state, &popup).await;
 
     let _ = popup.close();
-    let code = code_result??;
+    let code = code_result?;
 
     let exchange = exchange_code(&client_id, &code, &code_verifier, &redirect_uri).await?;
     let email = exchange

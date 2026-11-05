@@ -297,10 +297,18 @@ export function OnboardingWizard({
             ({
               claims,
               error,
+              cancelled,
             }) => {
               setGoogleStarting(
                 false,
               )
+
+              // The sign-in window was closed: nothing failed, so the button just goes back.
+              if (
+                cancelled
+              ) {
+                return
+              }
 
               if (
                 claims
