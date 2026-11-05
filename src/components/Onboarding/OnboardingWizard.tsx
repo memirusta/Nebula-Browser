@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   googleRedirectUri,
@@ -7,10 +7,15 @@ import {
   takePendingGoogleClaims,
 } from '../../core/googleSignIn'
 import {
+  probeGoogleSyncRestore,
+} from '../../core/googleSyncRestore'
+import type { NebulaSyncBundleV1 } from '../../core/googleSync'
+import {
   loadNebulaAccount,
   type NebulaAccount,
 } from '../../core/nebulaAccount'
-import { tf } from '../../core/locale'
+import { getLocaleCopy, tf } from '../../core/locale'
+import { loadRegionalPreferences } from '../../core/regionalPreferences'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import {
@@ -19,13 +24,19 @@ import {
   peekOnboardingImportedShortcuts,
   saveOnboardingImportedShortcuts,
   saveOnboardingResumeStep,
+  wasOnboardingRestored,
   type OnboardingStep,
 } from '../../core/onboarding'
 import type { Shortcut } from '../../core/types'
+import nebulaArt from '../../assets/onboarding/crab-nebula.jpg'
 import { OnboardingImportStep } from './OnboardingImportStep'
 import { OnboardingSyncRestoreStep } from './OnboardingSyncRestoreStep'
 import { OnboardingDefaultBrowserStep } from './OnboardingDefaultBrowserStep'
+import { OnboardingDoneStep } from './OnboardingDoneStep'
+import { OnboardingHomeStep } from './OnboardingHomeStep'
+import { OnboardingProfileStep } from './OnboardingProfileStep'
 import { OnboardingWelcomeStep } from './OnboardingWelcomeStep'
+import { ONBOARDING_COPY } from './onboardingCopy'
 import { getGoogleOAuthStatus } from '../../platform/googleOAuth'
 import { isTauri } from '../../platform/runtime'
 import styles from './OnboardingWizard.module.css'
@@ -48,8 +59,33 @@ interface OnboardingWizardProps {
 
 type Step = OnboardingStep
 
-const STEPS: readonly Step[] =
-  ONBOARDING_STEPS
+/** What is known about a Nebula Sync backup for the Google account that signed in. */
+type BackupState =
+  | { phase: 'idle' | 'checking' | 'none' }
+  | {
+      phase: 'ready'
+      bundle: NebulaSyncBundleV1
+      needsPassword: boolean
+    }
+
+const STEP_LABEL: Record<
+  Step,
+  | 'stepWelcome'
+  | 'stepProfile'
+  | 'stepBackup'
+  | 'stepImport'
+  | 'stepHome'
+  | 'stepDefault'
+  | 'stepDone'
+> = {
+  welcome: 'stepWelcome',
+  profile: 'stepProfile',
+  restore: 'stepBackup',
+  bookmarks: 'stepImport',
+  home: 'stepHome',
+  defaultBrowser: 'stepDefault',
+  done: 'stepDone',
+}
 
 export function OnboardingWizard({
   open,
@@ -62,6 +98,11 @@ export function OnboardingWizard({
     setLocale,
     t,
   } = useLocale()
+
+  const copy = getLocaleCopy(
+    ONBOARDING_COPY,
+    locale,
+  )
 
   const [
     step,
@@ -110,11 +151,31 @@ export function OnboardingWizard({
     null,
   )
 
+  const [
+    backup,
+    setBackup,
+  ] = useState<BackupState>({
+    phase: 'idle',
+  })
+
+  // The footer is drawn by the wizard, the buttons in it by the screens.
+  const [
+    footer,
+    setFooter,
+  ] = useState<HTMLElement | null>(
+    null,
+  )
+
   const importedShortcutsRef =
     useRef<Shortcut[]>([])
 
   const accountRef =
     useRef<NebulaAccount | null>(
+      null,
+    )
+
+  const backupCheckedEmailRef =
+    useRef<string | null>(
       null,
     )
 
@@ -266,6 +327,14 @@ export function OnboardingWizard({
       null,
     )
 
+    setBackup({
+      phase:
+        'idle',
+    })
+
+    backupCheckedEmailRef.current =
+      null
+
     importedShortcutsRef.current =
       []
 
@@ -396,6 +465,102 @@ export function OnboardingWizard({
     locale,
   ])
 
+  const googleEmail =
+    accountRef.current
+      ?.provider ===
+      'google'
+      ? accountRef.current
+          .email
+      : undefined
+
+  /*
+   * As soon as a Google account is linked on the profile screen, look for a Nebula Sync backup in the
+   * background. The backup screen is only part of the flow when one exists. A failed look is the same as no
+   * backup here; restoring can still be done later from the account settings.
+   */
+  useEffect(() => {
+    if (
+      !open ||
+      step !==
+        'profile' ||
+      !isTauri ||
+      !googleEmail ||
+      wasOnboardingRestored() ||
+      backupCheckedEmailRef.current ===
+        googleEmail
+    ) {
+      return
+    }
+
+    backupCheckedEmailRef.current =
+      googleEmail
+
+    setBackup({
+      phase:
+        'checking',
+    })
+
+    void probeGoogleSyncRestore(
+      googleEmail,
+    )
+      .then(
+        (
+          probe,
+        ) => {
+          if (
+            backupCheckedEmailRef.current !==
+            googleEmail
+          ) {
+            return
+          }
+
+          setBackup(
+            probe.status ===
+              'ready'
+              ? {
+                  phase:
+                    'ready',
+                  bundle:
+                    probe.bundle,
+                  needsPassword:
+                    probe.needsPassword,
+                }
+              : {
+                  phase:
+                    'none',
+                },
+          )
+        },
+        (
+          reason,
+        ) => {
+          if (
+            import.meta.env
+              .DEV
+          ) {
+            console.warn(
+              '[nebula] onboarding backup check failed',
+              reason,
+            )
+          }
+
+          if (
+            backupCheckedEmailRef.current ===
+            googleEmail
+          ) {
+            setBackup({
+              phase:
+                'none',
+            })
+          }
+        },
+      )
+  }, [
+    open,
+    step,
+    googleEmail,
+  ])
+
   const handleImportedShortcuts =
     useCallback(
       (
@@ -466,13 +631,42 @@ export function OnboardingWizard({
       onComplete,
     ])
 
-  const googleEmail =
-    accountRef.current
-      ?.provider ===
-      'google'
-      ? accountRef.current
-          .email
-      : undefined
+  // The screens in order. The backup screen only exists when there is a backup to restore.
+  const steps =
+    useMemo<readonly Step[]>(
+      () =>
+        ONBOARDING_STEPS.filter(
+          (
+            item,
+          ) =>
+            item !==
+              'restore' ||
+            backup.phase ===
+              'ready',
+        ),
+      [
+        backup.phase,
+      ],
+    )
+
+  // The backup screen has nothing to show without a backup (for instance after a reload): move on to the import.
+  useEffect(() => {
+    if (
+      open &&
+      step ===
+        'restore' &&
+      backup.phase !==
+        'ready'
+    ) {
+      setStep(
+        'bookmarks',
+      )
+    }
+  }, [
+    open,
+    step,
+    backup.phase,
+  ])
 
   const goNext =
     useCallback(() => {
@@ -489,29 +683,19 @@ export function OnboardingWizard({
         )
       }
 
-      if (
-        step ===
-        'profile'
-      ) {
-        setStep(
-          'defaultBrowser',
-        )
-
-        return
-      }
-
       const index =
-        STEPS.indexOf(
+        steps.indexOf(
           step,
         )
 
       if (
+        index >= 0 &&
         index <
-        STEPS.length -
-          1
+          steps.length -
+            1
       ) {
         setStep(
-          STEPS[
+          steps[
             index +
               1
           ],
@@ -520,46 +704,90 @@ export function OnboardingWizard({
         return
       }
 
+      if (
+        index < 0
+      ) {
+        // A step that is not part of this flow (a backup screen without a backup): carry on after it.
+        const after =
+          ONBOARDING_STEPS.slice(
+            ONBOARDING_STEPS.indexOf(
+              step,
+            ) + 1,
+          ).find(
+            (
+              item,
+            ) =>
+              steps.includes(
+                item,
+              ),
+          )
+
+        if (
+          after
+        ) {
+          setStep(
+            after,
+          )
+
+          return
+        }
+      }
+
       finish()
     }, [
       step,
+      steps,
       finish,
       onApplyImportedShortcuts,
     ])
 
   const goBack =
     useCallback(() => {
-      switch (step) {
-        case 'bookmarks':
-          setStep('welcome')
-          return
+      const index =
+        steps.indexOf(
+          step,
+        )
 
-        case 'profile':
-          setStep('bookmarks')
-          return
-
-        case 'defaultBrowser':
-          setStep('profile')
-          return
-
-        case 'done':
-          setStep('defaultBrowser')
-          return
-
-        default:
-          return
+      if (
+        index > 0
+      ) {
+        setStep(
+          steps[
+            index -
+              1
+          ],
+        )
       }
     }, [
       step,
+      steps,
     ])
+
+  const weatherLabel =
+    useMemo(
+      () =>
+        step ===
+        'done'
+          ? loadRegionalPreferences()
+              .weatherLocation
+              ?.label ??
+            null
+          : null,
+      [
+        step,
+      ],
+    )
 
   if (!open) {
     return null
   }
 
   const stepIndex =
-    STEPS.indexOf(
-      step,
+    Math.max(
+      0,
+      steps.indexOf(
+        step,
+      ),
     )
 
   const hasGoogleClient =
@@ -570,72 +798,172 @@ export function OnboardingWizard({
 
   return createPortal(
     <div
+      ref={panelRef}
       className={
-        styles.backdrop
+        styles.root
       }
-      role="presentation"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-title"
+      tabIndex={-1}
     >
       <div
-        ref={panelRef}
         className={
-          styles.panel
+          styles.art
         }
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="onboarding-title"
-        tabIndex={-1}
+        aria-hidden="true"
       >
-        <header
+        <img
+          src={
+            nebulaArt
+          }
+          alt=""
+          draggable={
+            false
+          }
+        />
+      </div>
+
+      <aside
+        className={
+          styles.side
+        }
+      >
+        <div
           className={
-            styles.header
+            styles.brand
           }
         >
-          <p
+          <img
             className={
-              styles.kicker
+              styles.brandLogo
             }
-          >
-            {t(
-              'onboardingKicker',
-            )}
-          </p>
-
-          <div
-            className={
-              styles.progress
-            }
+            src="/nebula-app-logo.png"
+            alt=""
             aria-hidden="true"
-          >
-            {STEPS.map(
-              (
-                item,
-                index,
-              ) => (
-                <span
-                  key={
-                    item
-                  }
-                  className={[
-                    styles.progressDot,
+            draggable={
+              false
+            }
+          />
 
-                    index <=
-                    stepIndex
-                      ? styles.progressDotActive
-                      : '',
+          <strong>
+            Nebula
+          </strong>
+        </div>
+
+        <p
+          className={
+            styles.tagline
+          }
+        >
+          {
+            copy.tagline
+          }
+        </p>
+
+        <ol
+          className={
+            styles.steps
+          }
+          aria-label={
+            copy.stepsLabel
+          }
+        >
+          {steps.map(
+            (
+              item,
+              index,
+            ) => (
+              <li
+                key={
+                  item
+                }
+                className={[
+                  styles.stepItem,
+
+                  index <
+                  stepIndex
+                    ? styles.stepDone
+                    : '',
+
+                  index ===
+                  stepIndex
+                    ? styles.stepNow
+                    : '',
+                ]
+                  .filter(
+                    Boolean,
+                  )
+                  .join(
+                    ' ',
+                  )}
+                aria-current={
+                  index ===
+                  stepIndex
+                    ? 'step'
+                    : undefined
+                }
+              >
+                <i>
+                  {index <
+                  stepIndex
+                    ? '✓'
+                    : index +
+                      1}
+                </i>
+
+                {
+                  copy[
+                    STEP_LABEL[
+                      item
+                    ]
                   ]
-                    .filter(
-                      Boolean,
-                    )
-                    .join(
-                      ' ',
-                    )}
-                />
-              ),
-            )}
-          </div>
-        </header>
+                }
+              </li>
+            ),
+          )}
+        </ol>
 
         <div
+          className={
+            styles.progress
+          }
+          role="progressbar"
+          aria-label={
+            copy.stepsLabel
+          }
+          aria-valuemin={
+            1
+          }
+          aria-valuemax={
+            steps.length
+          }
+          aria-valuenow={
+            stepIndex +
+            1
+          }
+        >
+          <i
+            style={{
+              width: `${
+                ((stepIndex + 1) /
+                  steps.length) *
+                100
+              }%`,
+            }}
+          />
+        </div>
+      </aside>
+
+      <main
+        className={
+          styles.main
+        }
+      >
+        <div
+          key={
+            step
+          }
           className={
             styles.body
           }
@@ -649,17 +977,109 @@ export function OnboardingWizard({
               onLocaleChange={
                 setLocale
               }
-              onContinue={() =>
-                setStep(
-                  'bookmarks',
-                )
+              footer={
+                footer
+              }
+              onContinue={
+                goNext
               }
             />
           )}
 
           {step ===
+            'profile' && (
+            <OnboardingProfileStep
+              footer={
+                footer
+              }
+              account={
+                accountRef.current
+              }
+              displayName={
+                displayName
+              }
+              onDisplayNameChange={
+                setDisplayName
+              }
+              hasGoogleClient={
+                hasGoogleClient
+              }
+              redirectUri={
+                redirectUri
+              }
+              googleStarting={
+                googleStarting
+              }
+              googleError={
+                googleError
+              }
+              googleConfigHint={
+                googleConfigHint
+              }
+              googleAvatarRetry={
+                googleAvatarRetry
+              }
+              onAvatarRetry={
+                setGoogleAvatarRetry
+              }
+              onGoogleSignIn={
+                handleGoogleSignIn
+              }
+              checkingBackup={
+                backup.phase ===
+                'checking'
+              }
+              onBack={
+                goBack
+              }
+              onContinue={
+                goNext
+              }
+            />
+          )}
+
+          {step ===
+            'restore' &&
+            googleEmail &&
+            backup.phase ===
+              'ready' && (
+              <OnboardingSyncRestoreStep
+                footer={
+                  footer
+                }
+                email={
+                  googleEmail
+                }
+                account={
+                  accountRef.current
+                }
+                bundle={
+                  backup.bundle
+                }
+                needsPassword={
+                  backup.needsPassword
+                }
+                onBack={
+                  goBack
+                }
+                onContinue={
+                  goNext
+                }
+              />
+            )}
+
+          {step ===
             'bookmarks' && (
             <OnboardingImportStep
+              footer={
+                footer
+              }
+              onBack={
+                goBack
+              }
+              onContinue={
+                goNext
+              }
               onShortcuts={
                 handleImportedShortcuts
               }
@@ -670,429 +1090,75 @@ export function OnboardingWizard({
           )}
 
           {step ===
-            'profile' && (
-            <>
-              <h2
-                className={
-                  styles.title
-                }
-              >
-                {t(
-                  'profileTitle',
-                )}
-              </h2>
-
-              {!googleEmail && (
-                <p
-                  className={
-                    styles.lead
-                  }
-                >
-                  {t(
-                    'profileLead',
-                  )}
-                </p>
-              )}
-
-              {googleEmail &&
-              accountRef.current?.provider ===
-                'google' ? (
-                <>
-                  <p
-                    className={
-                      styles.success
-                    }
-                  >
-                    {t(
-                      'googleLinked',
-                    )}
-                  </p>
-
-                  <div
-                    className={
-                      styles.googleAccountCard
-                    }
-                  >
-                    <div
-                      className={
-                        styles.googleAccountAvatarFrame
-                      }
-                      aria-hidden="true"
-                    >
-                      <div
-                        className={
-                          styles.googleAccountAvatarPlaceholder
-                        }
-                      >
-                        {accountRef.current
-                          .displayName
-                          .charAt(0)
-                          .toUpperCase()}
-                      </div>
-
-                      {accountRef.current
-                        .avatarUrl &&
-                        googleAvatarRetry < 3 && (
-                          <img
-                            key={
-                              googleAvatarRetry
-                            }
-                            className={
-                              styles.googleAccountAvatar
-                            }
-                            src={
-                              googleAvatarRetry === 0
-                                ? accountRef.current
-                                    .avatarUrl
-                                : `${accountRef.current.avatarUrl}${
-                                    accountRef.current.avatarUrl.includes('?')
-                                      ? '&'
-                                      : '?'
-                                  }nebula_retry=${googleAvatarRetry}`
-                            }
-                            alt=""
-                            referrerPolicy="no-referrer"
-                            onError={() => {
-                              const nextRetry =
-                                googleAvatarRetry + 1
-
-                              window.setTimeout(
-                                () =>
-                                  setGoogleAvatarRetry(
-                                    nextRetry,
-                                  ),
-                                nextRetry === 1
-                                  ? 350
-                                  : 900,
-                              )
-                            }}
-                          />
-                        )}
-                    </div>
-
-                    <div
-                      className={
-                        styles.googleAccountMeta
-                      }
-                    >
-                      <strong>
-                        {
-                          accountRef.current
-                            .displayName
-                        }
-                      </strong>
-                      <span>
-                        {googleEmail}
-                      </span>
-                    </div>
-                  </div>
-
-                  <OnboardingSyncRestoreStep
-                    email={
-                      googleEmail
-                    }
-                    account={
-                      accountRef.current
-                    }
-                    onContinue={() => {
-                      setStep(
-                        'defaultBrowser',
-                      )
-                    }}
-                  />
-                </>
-              ) : (
-                <>
-                  {hasGoogleClient ? (
-                    <>
-                      <button
-                        type="button"
-                        className={
-                          styles.googleBtn
-                        }
-                        onClick={
-                          handleGoogleSignIn
-                        }
-                        disabled={
-                          googleStarting
-                        }
-                      >
-                        <span
-                          className={
-                            styles.googleMark
-                          }
-                          aria-hidden="true"
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            width="20"
-                            height="20"
-                            role="img"
-                            aria-hidden="true"
-                          >
-                            <path
-                              fill="#EA4335"
-                              d="M12 10.2v3.9h5.4c-.23 1.26-.95 2.33-2.04 3.05l3.29 2.55c1.92-1.77 3.02-4.38 3.02-7.5 0-.72-.06-1.4-.19-2.05H12z"
-                            />
-                            <path
-                              fill="#4285F4"
-                              d="M12 22c2.73 0 5.02-.9 6.69-2.43l-3.29-2.55c-.91.61-2.08.98-3.4.98-2.61 0-4.82-1.76-5.61-4.12H3.01v2.6A10.09 10.09 0 0 0 12 22z"
-                            />
-                            <path
-                              fill="#FBBC05"
-                              d="M6.39 13.88A6.07 6.07 0 0 1 6.08 12c0-.65.11-1.28.31-1.88V7.52H3.01A10.09 10.09 0 0 0 1.92 12c0 1.63.39 3.18 1.09 4.48l3.38-2.6z"
-                            />
-                            <path
-                              fill="#34A853"
-                              d="M12 5.99c1.48 0 2.81.51 3.86 1.52l2.89-2.89C17.01 2.98 14.72 2 12 2A10.09 10.09 0 0 0 3.01 7.52l3.38 2.6C7.18 7.75 9.39 5.99 12 5.99z"
-                            />
-                          </svg>
-                        </span>
-
-                        {googleStarting
-                          ? isTauri
-                            ? t(
-                                'googleOpeningTauri',
-                              )
-                            : t(
-                                'googleRedirecting',
-                              )
-                          : t(
-                              'googleSignIn',
-                            )}
-                      </button>
-
-                      {isTauri ? (
-                        <p
-                          className={
-                            styles.redirectHint
-                          }
-                        >
-                          {t(
-                            'googleReturnHintTauri',
-                          )}
-                        </p>
-                      ) : (
-                        <p
-                          className={
-                            styles.redirectHint
-                          }
-                        >
-                          {t(
-                            'googleRedirectUri',
-                          )}
-
-                          <code>
-                            {
-                              redirectUri
-                            }
-                          </code>
-                        </p>
-                      )}
-
-                      {googleConfigHint && (
-                        <p
-                          className={
-                            styles.hint
-                          }
-                        >
-                          {
-                            googleConfigHint
-                          }
-                        </p>
-                      )}
-
-                      {googleError && (
-                        <p
-                          className={
-                            styles.error
-                          }
-                        >
-                          {
-                            googleError
-                          }
-                        </p>
-                      )}
-
-                      <p
-                        className={
-                          styles.divider
-                        }
-                      >
-                        {t(
-                          'orDivider',
-                        )}
-                      </p>
-                    </>
-                  ) : (
-                    <p
-                      className={
-                        styles.hint
-                      }
-                    >
-                      {t(
-                        'googleConfigMissing',
-                      )}
-                    </p>
-                  )}
-
-                  <label
-                    className={
-                      styles.fieldLabel
-                    }
-                  >
-                    {t(
-                      'displayNameLabel',
-                    )}
-
-                    <input
-                      className={
-                        styles.textInput
-                      }
-                      value={
-                        displayName
-                      }
-                      onChange={(
-                        event,
-                      ) =>
-                        setDisplayName(
-                          event
-                            .target
-                            .value,
-                        )
-                      }
-                      placeholder={t(
-                        'displayNamePlaceholder',
-                      )}
-                      maxLength={
-                        48
-                      }
-                      autoComplete="nickname"
-                    />
-                  </label>
-                </>
-              )}
-            </>
+            'home' && (
+            <OnboardingHomeStep
+              locale={
+                locale
+              }
+              footer={
+                footer
+              }
+              onBack={
+                goBack
+              }
+              onContinue={
+                goNext
+              }
+            />
           )}
 
           {step ===
             'defaultBrowser' && (
-            <OnboardingDefaultBrowserStep />
+            <OnboardingDefaultBrowserStep
+              footer={
+                footer
+              }
+              onBack={
+                goBack
+              }
+              onContinue={
+                goNext
+              }
+            />
           )}
 
           {step ===
             'done' && (
-            <>
-              <h2
-                className={
-                  styles.title
-                }
-              >
-                {t(
-                  'doneTitle',
-                )}
-              </h2>
-
-              <p
-                className={
-                  styles.lead
-                }
-              >
-                {importedCount >
-                0
-                  ? `${importedCount} ${t(
-                      'doneBookmarks',
-                    )}`
-                  : t(
-                      'doneEmptyMenu',
-                    )}
-
-                {importedPasswordCount >
-                0
-                  ? ` ${tf(
-                      locale,
-                      'gsImportDone',
-                      {
-                        count:
-                          importedPasswordCount,
-                      },
-                    )}`
-                  : ''}
-
-                {displayName.trim()
-                  ? ` ${t(
-                      'doneWelcome',
-                    )}, ${displayName.trim()}.`
-                  : ` ${t(
-                      'doneProfileLater',
-                    )}`}
-              </p>
-            </>
-          )}
-        </div>
-
-        {step !==
-          'welcome' && (
-          <footer
-            className={
-              styles.footer
-            }
-          >
-            {stepIndex >
-              0 &&
-              step !==
-                'done' && (
-                <button
-                  type="button"
-                  className={
-                    styles.ghostBtn
-                  }
-                  onClick={
-                    goBack
-                  }
-                >
-                  {t(
-                    'back',
-                  )}
-                </button>
-              )}
-
-            <div
-              className={
-                styles.footerSpacer
+            <OnboardingDoneStep
+              footer={
+                footer
+              }
+              name={
+                displayName.trim()
+              }
+              restored={
+                wasOnboardingRestored()
+              }
+              importedCount={
+                importedCount
+              }
+              importedPasswordCount={
+                importedPasswordCount
+              }
+              weatherLabel={
+                weatherLabel
+              }
+              onFinish={
+                finish
               }
             />
+          )}
+        </div>
+      </main>
 
-            {!(
-              step ===
-                'profile' &&
-              googleEmail
-            ) && (
-                <button
-                  type="button"
-                  className={
-                    styles.primaryBtn
-                  }
-                  onClick={
-                    step ===
-                    'done'
-                      ? finish
-                      : goNext
-                  }
-                >
-                  {step ===
-                  'done'
-                    ? t(
-                        'start',
-                      )
-                    : t(
-                        'continue',
-                      )}
-                </button>
-              )}
-          </footer>
-        )}
-      </div>
+      <div
+        ref={
+          setFooter
+        }
+        className={
+          styles.footer
+        }
+      />
     </div>,
     document.body,
   )

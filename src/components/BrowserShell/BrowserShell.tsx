@@ -1525,6 +1525,22 @@ export function BrowserShell() {
       null,
     )
 
+  const [
+    onboardingOpen,
+    setOnboardingOpen,
+  ] = useState(() => {
+    if (
+      !isOnboardingComplete() &&
+      isOAuthReturnUrl()
+    ) {
+      return false
+    }
+
+    return (
+      !isOnboardingComplete()
+    )
+  })
+
   const guidedTutorialStateRef = useRef({
     open: guidedTutorialOpen,
     step: guidedTutorialStep,
@@ -1544,6 +1560,7 @@ export function BrowserShell() {
 
     void setChromeWebviewSuppressed(
       settingsOpen ||
+        onboardingOpen ||
         developerToolsOpen ||
         crashRecoveryOpen ||
         siteUiQueue.length > 0 ||
@@ -1572,6 +1589,7 @@ export function BrowserShell() {
     guidedTutorialStep,
     historyPanelOpen,
     notificationPanelOpen,
+    onboardingOpen,
     passwordPromptOffer,
     settingsOpen,
     siteContextMenu,
@@ -1591,22 +1609,6 @@ export function BrowserShell() {
     useState<HomeLayout | null>(
       null,
     )
-
-  const [
-    onboardingOpen,
-    setOnboardingOpen,
-  ] = useState(() => {
-    if (
-      !isOnboardingComplete() &&
-      isOAuthReturnUrl()
-    ) {
-      return false
-    }
-
-    return (
-      !isOnboardingComplete()
-    )
-  })
 
   const [
     onboardingInitialStep,
@@ -7424,6 +7426,7 @@ export function BrowserShell() {
                 isHome &&
                 pinShortcutInteraction
               ) ||
+              onboardingOpen ||
               (
                 isBrowsing &&
                 historyPanelOpen
@@ -7436,6 +7439,7 @@ export function BrowserShell() {
                 isHome &&
                 pinShortcutInteraction
               ) ||
+              onboardingOpen ||
               (
                 isBrowsing &&
                 historyPanelOpen

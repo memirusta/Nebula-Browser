@@ -11,6 +11,7 @@ import { isTauri } from '../../platform/runtime'
 import { BrowserSourceList } from '../BrowserImport/BrowserSourceList'
 import { PasswordConflictList } from '../BrowserImport/PasswordConflictList'
 import importStyles from '../BrowserImport/BrowserImport.module.css'
+import { OnboardingActions } from './OnboardingActions'
 import styles from './OnboardingWizard.module.css'
 
 // What this step offers, and what is ticked for the default browser: bookmarks are what this step was always
@@ -19,6 +20,10 @@ const OFFER = { bookmarks: true, passwords: true } as const
 const DEFAULTS = { bookmarks: true, passwords: false } as const
 
 interface OnboardingImportStepProps {
+  /** The footer of the wizard, where this screen puts its buttons. */
+  footer: HTMLElement | null
+  onBack: () => void
+  onContinue: () => void
   /** The shortcuts made from the imported bookmarks (called once per import). */
   onShortcuts: (shortcuts: Shortcut[]) => void
   /** How many passwords were just saved to the vault. */
@@ -29,7 +34,7 @@ interface OnboardingImportStepProps {
  * First-run step: bring bookmarks (and, if wanted, saved passwords) over from the browsers found on this computer.
  * Only the browsers the user ticks are read.
  */
-export function OnboardingImportStep({ onShortcuts, onPasswordsAdded }: OnboardingImportStepProps) {
+export function OnboardingImportStep({ footer, onBack, onContinue, onShortcuts, onPasswordsAdded }: OnboardingImportStepProps) {
   const { locale, t } = useLocale()
   const { entries: vaultEntries } = usePasswordVault()
   const csvInput = useRef<HTMLInputElement>(null)
@@ -74,13 +79,28 @@ export function OnboardingImportStep({ onShortcuts, onPasswordsAdded }: Onboardi
 
   const intro = (
     <div className={styles.bookmarkIntro}>
-      <h2 className={styles.title}>{t('importStepTitle')}</h2>
+      <div className={styles.markBadge} aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 8l-9-5-9 5v8l9 5 9-5z" />
+          <path d="M3 8l9 5 9-5M12 13v8" />
+        </svg>
+      </div>
+      <h1 id="onboarding-title" className={styles.title}>{t('importStepTitle')}</h1>
       <p className={styles.lead}>{isTauri ? t('importStepLead') : t('importWebOnly')}</p>
     </div>
   )
 
   if (!isTauri) {
-    return <div className={styles.bookmarkStep}>{intro}</div>
+    return (
+      <div className={styles.bookmarkStep}>
+        {intro}
+        <OnboardingActions
+          slot={footer}
+          onBack={onBack}
+          primary={{ label: t('continue'), onClick: onContinue }}
+        />
+      </div>
+    )
   }
 
   if (imp.phase === 'conflicts' && imp.plan) {
@@ -95,24 +115,23 @@ export function OnboardingImportStep({ onShortcuts, onPasswordsAdded }: Onboardi
             disabled={imp.working}
           />
         </div>
-        <div className={importStyles.actions}>
-          <button type="button" className={importStyles.csvButton} onClick={imp.backFromConflicts} disabled={imp.working}>
-            {t('gsConflictBack')}
-          </button>
-          <button
-            type="button"
-            className={styles.bookmarkImportButton}
-            onClick={() => void imp.confirmConflicts()}
-            disabled={imp.working}
-          >
-            {imp.working ? t('importRunning') : t('gsConflictApply')}
-          </button>
-        </div>
+        <OnboardingActions
+          slot={footer}
+          onBack={imp.backFromConflicts}
+          backDisabled={imp.working}
+          primary={{
+            label: imp.working ? t('importRunning') : t('gsConflictApply'),
+            onClick: () => void imp.confirmConflicts(),
+            disabled: imp.working,
+            busy: imp.working,
+          }}
+        />
       </div>
     )
   }
 
   const found = imp.sources !== null && imp.sources.length > 0
+  const imported = Boolean(description && description.lines.length > 0 && !description.error)
 
   return (
     <div className={styles.bookmarkStep}>
@@ -150,19 +169,6 @@ export function OnboardingImportStep({ onShortcuts, onPasswordsAdded }: Onboardi
         onChange={(event) => void handleCsv(event)}
       />
 
-      {found && (
-        <div className={importStyles.actions}>
-          <button
-            type="button"
-            className={styles.bookmarkImportButton}
-            onClick={() => void imp.run()}
-            disabled={imp.working}
-          >
-            {imp.working ? t('importRunning') : t('importRun')}
-          </button>
-        </div>
-      )}
-
       {imp.problem && <p className={styles.bookmarkError}>{t('importNothingChosen')}</p>}
 
       {description && description.lines.length > 0 && (
@@ -186,6 +192,28 @@ export function OnboardingImportStep({ onShortcuts, onPasswordsAdded }: Onboardi
       {csvMessage && (
         <p className={csvMessage.error ? styles.bookmarkError : importStyles.hint}>{csvMessage.text}</p>
       )}
+
+      {/* Importing is the main action while there is something to import; afterwards the way on is. */}
+      <OnboardingActions
+        slot={footer}
+        onBack={onBack}
+        backDisabled={imp.working}
+        secondary={
+          found && !imported
+            ? { label: t('skip'), onClick: onContinue, disabled: imp.working }
+            : undefined
+        }
+        primary={
+          found && !imported
+            ? {
+                label: imp.working ? t('importRunning') : t('importRun'),
+                onClick: () => void imp.run(),
+                disabled: imp.working,
+                busy: imp.working,
+              }
+            : { label: t('continue'), onClick: onContinue, disabled: imp.working }
+        }
+      />
     </div>
   )
 }

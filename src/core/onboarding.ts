@@ -1,11 +1,18 @@
 export const ONBOARDING_COMPLETE_KEY = 'nebula-onboarding-complete-v1'
 export const ONBOARDING_IMPORTED_SHORTCUTS_KEY = 'nebula-onboarding-imported-shortcuts'
 export const ONBOARDING_RESUME_STEP_KEY = 'nebula-onboarding-resume-step'
+export const ONBOARDING_RESTORED_KEY = 'nebula-onboarding-restored'
 
+/**
+ * Screens in order. `restore` is only shown when the Google account has a Nebula Sync backup, `bookmarks` is
+ * the browser-import screen and `home` is the home-screen (region and weather) screen.
+ */
 export const ONBOARDING_STEPS = [
   'welcome',
-  'bookmarks',
   'profile',
+  'restore',
+  'bookmarks',
+  'home',
   'defaultBrowser',
   'done',
 ] as const
@@ -22,6 +29,29 @@ export function isOnboardingComplete(): boolean {
 
 export function completeOnboarding(): void {
   localStorage.setItem(ONBOARDING_COMPLETE_KEY, '1')
+
+  try {
+    sessionStorage.removeItem(ONBOARDING_RESTORED_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+/** Restoring a Sync backup reloads the app; this remembers it did happen, for the summary at the end. */
+export function markOnboardingRestored(): void {
+  try {
+    sessionStorage.setItem(ONBOARDING_RESTORED_KEY, '1')
+  } catch {
+    // ignore
+  }
+}
+
+export function wasOnboardingRestored(): boolean {
+  try {
+    return sessionStorage.getItem(ONBOARDING_RESTORED_KEY) === '1'
+  } catch {
+    return false
+  }
 }
 
 export function saveOnboardingResumeStep(step: OnboardingStep): void {

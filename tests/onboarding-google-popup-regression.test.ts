@@ -24,12 +24,13 @@ test('desktop Google Sync authorization opens inside a Nebula popup window', () 
   assert.match(syncBody, /let _ = popup\.close\(\);/)
 })
 
-test('successful Google sign-in embeds the existing Sync restore UI on profile', () => {
+test('successful Google sign-in shows the linked account on profile and leads to the backup screen', () => {
   const wizard = source('../src/components/Onboarding/OnboardingWizard.tsx')
+  const profile = source('../src/components/Onboarding/OnboardingProfileStep.tsx')
   const onboarding = source('../src/core/onboarding.ts')
 
-  assert.match(wizard, /googleLinked/)
-  assert.match(wizard, /googleAccountCard/)
+  assert.match(profile, /googleLinked/)
+  assert.match(profile, /googleAccountCard/)
   assert.match(wizard, /<OnboardingSyncRestoreStep/)
   assert.match(wizard, /email=\{\s*googleEmail\s*\}/)
   assert.match(wizard, /account=\{\s*accountRef\.current\s*\}/)
