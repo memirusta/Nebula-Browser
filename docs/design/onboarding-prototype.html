@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Nebula onboarding prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Figtree:wght@400;500;600;700;800&family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Three visual directions for the same seven screens. Each one is a set of tokens. */
+  :root { --radius: 18px; }
+  [data-dir="a"] {
+    --font-head: 'Sora', 'Segoe UI', sans-serif; --font-body: 'Inter', 'Segoe UI', sans-serif;
+    --bg: radial-gradient(900px 600px at 15% 0%, rgba(40,120,90,.35), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(40,110,140,.28), transparent 60%), #07110c;
+    --card: rgba(14,28,20,.72); --card-border: rgba(190,230,205,.16); --shadow: 0 30px 80px rgba(0,0,0,.55);
+    --text: #f1f5f2; --muted: rgba(220,230,223,.62); --faint: rgba(220,230,223,.38);
+    --accent: #7ec8e3; --accent-2: #8fd6b4; --on-accent: #06222c; --field: rgba(0,0,0,.28); --field-border: rgba(190,230,205,.18);
+    --primary: linear-gradient(135deg, #7ec8e3, #8fd6b4);
+    --soft: rgba(126,200,227,.10); --soft-border: rgba(126,200,227,.35); --ok: #8fd6b4;
+  }
+  [data-dir="b"] {
+    --font-head: 'Plus Jakarta Sans', 'Segoe UI', sans-serif; --font-body: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+    --bg: radial-gradient(800px 500px at 10% 0%, rgba(99,102,241,.16), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(20,184,166,.14), transparent 60%), #f4f6fb;
+    --card: #ffffff; --card-border: rgba(15,23,42,.08); --shadow: 0 24px 60px rgba(30,41,90,.14);
+    --text: #0f172a; --muted: #5b6478; --faint: #667089;
+    --accent: #4f46e5; --accent-2: #0d9488; --on-accent: #ffffff; --field: #f4f6fb; --field-border: rgba(15,23,42,.12);
+    --primary: linear-gradient(135deg, #4f46e5, #6366f1);
+    --soft: rgba(79,70,229,.07); --soft-border: rgba(79,70,229,.35); --ok: #0d9488;
+  }
+  [data-dir="b"] { color-scheme: light; }
+  /* The dark look of B: the same indigo accent on a calm dark neutral. It follows Windows unless the toolbar says otherwise. */
+  @media (prefers-color-scheme: dark) {
+    [data-dir="b"]:not([data-scheme="light"]) {
+      color-scheme: dark;
+      --bg: radial-gradient(800px 520px at 10% 0%, rgba(99,102,241,.20), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(45,212,191,.10), transparent 60%), #0e1017;
+      --card: rgba(24,27,38,.82); --card-border: rgba(255,255,255,.09); --shadow: 0 30px 80px rgba(0,0,0,.55);
+      --text: #f2f4fa; --muted: #a3acc2; --faint: #8d96b0;
+      --accent: #818cf8; --accent-2: #2dd4bf; --on-accent: #ffffff; --field: rgba(255,255,255,.05); --field-border: rgba(255,255,255,.13);
+      --primary: linear-gradient(135deg, #6366f1, #818cf8); --soft: rgba(129,140,248,.13); --soft-border: rgba(129,140,248,.42); --ok: #5eead4;
+    }
+  }
+  [data-dir="b"][data-scheme="dark"] {
+    color-scheme: dark;
+    --bg: radial-gradient(800px 520px at 10% 0%, rgba(99,102,241,.20), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(45,212,191,.10), transparent 60%), #0e1017;
+    --card: rgba(24,27,38,.82); --card-border: rgba(255,255,255,.09); --shadow: 0 30px 80px rgba(0,0,0,.55);
+    --text: #f2f4fa; --muted: #a3acc2; --faint: #8d96b0;
+    --accent: #818cf8; --accent-2: #2dd4bf; --on-accent: #ffffff; --field: rgba(255,255,255,.05); --field-border: rgba(255,255,255,.13);
+    --primary: linear-gradient(135deg, #6366f1, #818cf8); --soft: rgba(129,140,248,.13); --soft-border: rgba(129,140,248,.42); --ok: #5eead4;
+  }
+  [data-dir="c"] {
+    --font-head: 'Space Grotesk', 'Segoe UI', sans-serif; --font-body: 'Inter', 'Segoe UI', sans-serif;
+    --bg: radial-gradient(900px 600px at 20% -10%, rgba(139,92,246,.40), transparent 60%), radial-gradient(800px 600px at 100% 110%, rgba(56,189,248,.22), transparent 60%), #0a0616;
+    --card: rgba(22,15,46,.74); --card-border: rgba(196,181,253,.18); --shadow: 0 30px 90px rgba(10,4,40,.7), 0 0 0 1px rgba(139,92,246,.10);
+    --text: #f4f0ff; --muted: rgba(228,220,255,.64); --faint: rgba(228,220,255,.38);
+    --accent: #a78bfa; --accent-2: #38bdf8; --on-accent: #12082e; --field: rgba(8,4,24,.45); --field-border: rgba(196,181,253,.20);
+    --primary: linear-gradient(135deg, #8b5cf6, #38bdf8);
+    --soft: rgba(167,139,250,.12); --soft-border: rgba(167,139,250,.45); --ok: #86efac;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { min-height: 100vh; font: 15px/1.5 var(--font-body); color: var(--text); background: var(--bg); background-attachment: fixed; }
+  button, input, select { font: inherit; color: inherit; }
+
+  .toolbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
+    padding: 8px 10px; border-radius: 999px; background: rgba(20,20,28,.82); color: #eee; font: 12px/1 system-ui, sans-serif; backdrop-filter: blur(8px); }
+  .toolbar button { border: 0; background: transparent; color: #cfd3dc; padding: 7px 12px; border-radius: 999px; cursor: pointer; }
+  .toolbar button[aria-pressed="true"] { background: #fff; color: #111; font-weight: 600; }
+  .toolbar label { display: flex; gap: 6px; align-items: center; padding: 0 6px; cursor: pointer; }
+  .toolbar select { background: #2b2d38; color: #fff; border: 0; border-radius: 999px; padding: 6px 10px; font: 12px/1 system-ui, sans-serif; }
+  .toolbar .sep { width: 1px; height: 16px; background: rgba(255,255,255,.2); }
+
+  .stage { min-height: 100vh; display: grid; place-items: center; padding: 70px 16px 28px; }
+  .card { width: min(680px, 100%); border-radius: 28px; background: var(--card); border: 1px solid var(--card-border); box-shadow: var(--shadow);
+    backdrop-filter: blur(24px) saturate(1.2); overflow: hidden; }
+
+  /* Stepper: the steps by name, so it is clear how far along the person is */
+  .steps { display: flex; gap: 6px; padding: 22px 32px 0; }
+  .step { flex: 1; min-width: 0; }
+  .step .bar { height: 4px; border-radius: 4px; background: var(--field-border); overflow: hidden; }
+  .step .bar i { display: block; height: 100%; width: 0; background: var(--primary); border-radius: 4px; transition: width .35s ease; }
+  .step.done .bar i, .step.now .bar i { width: 100%; }
+  .step span { display: block; margin-top: 7px; font-size: 11px; letter-spacing: .02em; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step.now span { color: var(--text); font-weight: 600; }
+
+  .body { padding: 34px 40px 12px; min-height: 410px; animation: rise .35s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  .mark { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 20px; background: var(--soft); border: 1px solid var(--soft-border); color: var(--accent); }
+  h1 { font: 700 30px/1.15 var(--font-head); letter-spacing: -.02em; margin-bottom: 10px; }
+  .lead { color: var(--muted); font-size: 15.5px; max-width: 520px; margin-bottom: 26px; }
+  .note { color: var(--faint); font-size: 12.5px; margin-top: 14px; display: flex; gap: 7px; align-items: flex-start; }
+
+  .field { display: grid; gap: 7px; margin-bottom: 14px; }
+  .field > span { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .input, select.input { width: 100%; height: 48px; padding: 0 14px; border-radius: 13px; background: var(--field); border: 1px solid var(--field-border); outline: none; }
+  .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--soft); }
+
+  .btn { height: 48px; padding: 0 22px; border-radius: 13px; border: 1px solid transparent; cursor: pointer; font-weight: 600; display: inline-flex; gap: 10px; align-items: center; justify-content: center; }
+  .btn.primary { background: var(--primary); color: var(--on-accent); box-shadow: 0 10px 28px -10px var(--accent); }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.google { width: 100%; background: #fff; color: #1f1f1f; border-color: rgba(0,0,0,.08); }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--text); background: var(--soft); }
+  .btn.line { background: transparent; border-color: var(--field-border); color: var(--text); }
+  .or { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--faint); font-size: 12.5px; }
+  .or::before, .or::after { content: ""; height: 1px; flex: 1; background: var(--field-border); }
+
+  .footer { display: flex; align-items: center; gap: 10px; padding: 18px 40px 30px; }
+  .footer .grow { flex: 1; }
+
+  .cards { display: grid; gap: 10px; }
+  .src { border: 1px solid var(--field-border); border-radius: 15px; background: var(--field); overflow: hidden; transition: border-color .2s, background .2s; }
+  .src.on { border-color: var(--soft-border); background: var(--soft); }
+  .src header { display: flex; gap: 12px; align-items: center; padding: 13px 14px; cursor: pointer; }
+  .src .logo { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; }
+  .src .meta { flex: 1; min-width: 0; } .src .meta b { display: block; font-weight: 600; } .src .meta small { color: var(--muted); font-size: 12.5px; }
+  .src .chev { color: var(--faint); transition: transform .2s; } .src.open .chev { transform: rotate(90deg); }
+  .src .opts { display: none; padding: 0 14px 14px 60px; gap: 8px; } .src.open .opts { display: grid; }
+  .check { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+  .check input { accent-color: var(--accent); width: 17px; height: 17px; }
+  .check small { color: var(--muted); }
+
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--field-border); border-radius: 15px; background: var(--field); margin: 14px 0; cursor: pointer; }
+  .toggle small { color: var(--muted); display: block; font-size: 12.5px; }
+  .sw { width: 44px; height: 26px; border-radius: 99px; background: var(--field-border); position: relative; transition: background .2s; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .toggle.on .sw { background: var(--accent); } .toggle.on .sw::after { transform: translateX(18px); }
+
+  .big { display: grid; place-items: center; text-align: center; padding-top: 6px; }
+  .tick { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); border: 1px solid var(--soft-border); color: var(--ok); margin-bottom: 20px; animation: pop .5s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from { transform: scale(.5); opacity: 0; } }
+  .sum { width: 100%; max-width: 440px; text-align: left; display: grid; gap: 8px; margin-top: 8px; }
+  .sum div { display: flex; gap: 10px; align-items: center; padding: 11px 14px; border-radius: 13px; background: var(--field); border: 1px solid var(--field-border); color: var(--muted); }
+  .sum b { color: var(--text); font-weight: 600; margin-left: auto; }
+  .sum svg { color: var(--ok); flex: none; }
+
+  /* Layouts. "card" is how the onboarding looks today: a small window over the app. "stage" and "split" use the whole
+     window, like the welcome pages of other browsers. */
+  /* Values that the Tune panel changes (inline on <body>). */
+  body { --side-w: 308px; --cx: 0.15; --col: 620px; --vy: 0; --btn-r: 240px; --btn-b: 44px; --back-l: 56px;
+    --art-size: 130; --art-x: -26; --art-y: -40; --art-bright: 1.1; --fade: 1.08; }
+  .side, .halo { display: none; }
+  .main { display: block; }
+
+  [data-layout="stage"] .halo, [data-layout="split"] .halo { display: block; position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+  .halo svg { position: absolute; right: -6vw; top: 50%; width: min(62vw, 760px); height: auto; transform: translateY(-50%); color: var(--accent); opacity: .10; }
+  [data-layout="split"] .halo svg { display: none; }
+  .stage, .card, .toolbar { position: relative; z-index: 1; }
+  .toolbar { position: fixed; z-index: 5; }
+
+  [data-layout="stage"] .stage { padding: 90px 24px 40px; }
+  [data-layout="stage"] .card { width: min(760px, 100%); background: transparent; border: 0; box-shadow: none; backdrop-filter: none; overflow: visible; }
+  [data-layout="stage"] .steps { padding: 0; }
+  [data-layout="stage"] .body { padding: 44px 0 14px; min-height: 440px; }
+  [data-layout="stage"] .footer { padding: 18px 0 0; }
+  [data-layout="stage"] h1 { font-size: 46px; margin-bottom: 14px; }
+  [data-layout="stage"] .lead { font-size: 17.5px; max-width: 580px; margin-bottom: 32px; }
+  [data-layout="stage"] .mark { width: 64px; height: 64px; border-radius: 20px; margin-bottom: 26px; }
+  [data-layout="stage"] .field > span { font-size: 13px; }
+  [data-layout="stage"] .input, [data-layout="stage"] select.input { height: 54px; font-size: 16px; }
+  [data-layout="stage"] .btn { height: 54px; padding: 0 28px; font-size: 16px; }
+
+  [data-layout="split"] .stage { padding: 0; display: block; }
+  [data-layout="split"] .card { width: 100%; min-height: 100vh; border-radius: 0; border: 0; box-shadow: none; display: grid; grid-template-columns: var(--side-w) minmax(520px, 46%) 1fr; backdrop-filter: none; }
+  [data-layout="split"] .side { display: flex; flex-direction: column; gap: 28px; padding: 56px 28px 36px; background: var(--soft); border-right: 1px solid var(--card-border); }
+  [data-layout="split"] .main { display: grid; grid-template-rows: 1fr; min-height: 100vh; min-width: 0; }
+  .art { display: none; }
+  [data-layout="split"] .art { display: block; position: relative; margin: 16px 16px 16px 0; border-radius: 28px; overflow: hidden; background: #07041a;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.07), 0 24px 70px rgba(10,6,40,.35); min-height: calc(100vh - 32px); }
+  .art canvas, .art img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .art img { object-fit: cover; display: none; }
+  .art.photo img { display: block; } .art.photo canvas { display: none; }
+
+  /* Corner: no panel. The art fades out from the top-right corner into the page, behind the content. It is meant for the
+     dark look: on the light look the panel is the better shape. */
+  [data-layout="split"][data-art="corner"] .card { grid-template-columns: var(--side-w) 1fr; }
+  [data-layout="split"][data-art="corner"] .art { position: fixed; top: 0; right: 0; width: min(80vw, 1400px); height: 100vh; min-height: 0; margin: 0;
+    border-radius: 0; box-shadow: none; background: transparent; z-index: 0; pointer-events: none;
+    -webkit-mask-image: radial-gradient(ellipse calc(90% * var(--fade)) calc(105% * var(--fade)) at 100% 0%, #000 0%, rgba(0,0,0,.82) 26%, rgba(0,0,0,.38) 52%, transparent 80%);
+            mask-image: radial-gradient(ellipse calc(90% * var(--fade)) calc(105% * var(--fade)) at 100% 0%, #000 0%, rgba(0,0,0,.82) 26%, rgba(0,0,0,.38) 52%, transparent 80%); }
+  [data-layout="split"][data-art="corner"] .art { isolation: isolate; }
+  [data-layout="split"][data-art="corner"] .art::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: none; mix-blend-mode: screen; }
+  [data-eff="light"][data-layout="split"][data-art="corner"] .art::after { background: radial-gradient(130% 130% at 76% 26%, rgba(129,140,248,.62), rgba(167,139,250,.52) 55%, rgba(129,140,248,.46)); }
+  [data-eff="light"][data-layout="split"][data-art="corner"] .art img, [data-eff="light"][data-layout="split"][data-art="corner"] .art canvas { filter: brightness(calc(var(--art-bright) * 1.22)) saturate(1.2); }
+  /* the subject of a photograph sits in its middle, so in the corner shape the photograph is moved up and to the right */
+  [data-layout="split"][data-art="corner"] .art img { inset: auto; top: calc(var(--art-y) * 1vh); right: calc(var(--art-x) * 1vh); width: calc(var(--art-size) * 1vh); height: calc(var(--art-size) * 1vh); filter: brightness(var(--art-bright)); }
+  [data-layout="split"][data-art="corner"] .art canvas { filter: brightness(var(--art-bright)); }
+  [data-layout="split"][data-art="corner"] .main, [data-layout="split"][data-art="corner"] .side { position: relative; z-index: 1; }
+  [data-layout="split"][data-art="corner"] .footer { background: transparent; }
+  .art::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(4,2,16,.55) 100%); }
+  .art.nogl { background: radial-gradient(60% 50% at 40% 40%, rgba(124,58,237,.65), transparent 70%), radial-gradient(50% 45% at 70% 65%, rgba(56,189,248,.45), transparent 70%), #07041a; }
+  [data-layout="split"] .steps { display: none; }
+  [data-layout="split"] .body { display: flex; flex-direction: column; justify-content: center; min-height: 0; padding: 86px 0 96px;
+    width: min(var(--col), calc(100% - 88px)); margin-left: max(44px, calc((100% - var(--col)) * var(--cx))); transform: translateY(calc(var(--vy) * 1vh)); }
+  [data-layout="split"] .footer { position: fixed; left: calc(var(--side-w) + var(--back-l)); right: var(--btn-r); bottom: var(--btn-b); z-index: 4; padding: 0; border: 0; background: transparent; pointer-events: none; }
+  [data-layout="split"] .footer .btn { pointer-events: auto; }
+  [data-layout="split"] .big { place-items: start; text-align: left; }
+  [data-layout="split"] .big .lead { margin-left: 0; }
+  [data-layout="split"] h1 { font-size: 42px; }
+  [data-layout="split"] .lead { font-size: 17px; }
+  [data-layout="split"] .input, [data-layout="split"] select.input, [data-layout="split"] .btn { height: 52px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand .mark { margin: 0; width: 46px; height: 46px; border-radius: 14px; }
+  .brand b { font: 700 22px/1 var(--font-head); letter-spacing: -.01em; }
+  .tag { color: var(--muted); font-size: 14px; max-width: 240px; }
+  .vsteps { display: grid; gap: 4px; margin-top: 6px; }
+  .vstep { display: flex; align-items: center; gap: 11px; padding: 8px 10px; font-size: 14px; border-radius: 12px; color: var(--faint); font-weight: 500; }
+  .vstep i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 12px/1 var(--font-body); border: 1px solid var(--field-border); font-style: normal; flex: none; }
+  .vstep.done { color: var(--muted); } .vstep.done i { background: var(--primary); color: var(--on-accent); border-color: transparent; }
+  .vstep.now { color: var(--text); background: var(--card); box-shadow: 0 0 0 1px var(--card-border); } .vstep.now i { border-color: var(--accent); color: var(--accent); }
+  .minute { margin-top: auto; color: var(--faint); font-size: 12.5px; }
+
+  @media (max-width: 1120px) {
+    [data-layout="split"] .card { grid-template-columns: var(--side-w) 1fr; }
+    [data-layout="split"] .art { display: none; }
+  }
+  [data-drag="1"] .art { pointer-events: auto !important; cursor: grab; }
+  [data-drag="1"] .art:active { cursor: grabbing; }
+  .tune { position: fixed; top: 108px; right: 14px; z-index: 8; width: 300px; max-height: calc(100vh - 124px); overflow: auto; padding: 14px 14px 12px;
+    border-radius: 16px; background: rgba(20,20,28,.94); color: #e8eaf2; font: 12px/1.35 system-ui, sans-serif; box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+  .tune[hidden] { display: none; }
+  .tune h3 { font: 600 13px/1 system-ui, sans-serif; margin: 2px 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .tune .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 9px; }
+  .tune .row output { color: #aab3ff; font-variant-numeric: tabular-nums; }
+  .tune .row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: #8b8dff; }
+  .tune .group { margin: 12px 0 6px; color: #8a90a6; text-transform: uppercase; letter-spacing: .06em; font-size: 10.5px; }
+  .tune .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .tune button { border: 0; border-radius: 8px; padding: 7px 10px; background: #343748; color: #fff; cursor: pointer; font: 12px system-ui, sans-serif; }
+  .tune button.on { background: #6366f1; }
+  .tune textarea { width: 100%; height: 92px; margin-top: 8px; border-radius: 8px; border: 1px solid #3a3d52; background: #12131a; color: #cfd3e6; font: 11px ui-monospace, monospace; padding: 8px; resize: vertical; }
+  @media (max-width: 1120px) { [data-layout="split"][data-art="corner"] .art { display: block; } }
+  @media (max-width: 900px) {
+    [data-layout="split"] .card { grid-template-columns: 1fr; } [data-layout="split"] .side { display: none; }
+    [data-layout="split"] .steps { display: flex; padding: 0 0 20px; }
+    [data-layout="split"] .main { display: block; padding: 40px 22px; }
+    [data-layout="split"] .body { display: block; padding: 0 0 8px; width: auto; margin-left: 0; transform: none; }
+    [data-layout="split"] .footer { position: static; padding: 18px 0 24px; pointer-events: auto; }
+  }
+  @media (max-width: 560px) { .body, .footer { padding-left: 22px; padding-right: 22px; } .steps { padding-left: 22px; padding-right: 22px; } .step span { display: none; } h1 { font-size: 25px; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body data-dir="b" data-layout="split" data-art="panel">
+<div class="toolbar" role="toolbar" aria-label="Prototype controls">
+  <span>Look</span>
+  <button data-dir-btn="a" aria-pressed="false">A · Aurora</button>
+  <button data-dir-btn="b" aria-pressed="true">B · Indigo</button>
+  <button data-dir-btn="c" aria-pressed="false">C · Violet</button>
+  <span class="sep"></span>
+  <span>Mode (B)</span>
+  <button data-scheme-btn="auto" aria-pressed="true">Auto</button>
+  <button data-scheme-btn="light" aria-pressed="false">Light</button>
+  <button data-scheme-btn="dark" aria-pressed="false">Dark</button>
+  <span class="sep"></span>
+  <span>Layout</span>
+  <button data-layout-btn="card" aria-pressed="false">Card (today)</button>
+  <button data-layout-btn="stage" aria-pressed="false">Stage</button>
+  <button data-layout-btn="split" aria-pressed="true">Split</button>
+  <span class="sep"></span>
+  <span>Art</span>
+  <button data-art-btn="panel" aria-pressed="true">Panel</button>
+  <button data-art-btn="corner" aria-pressed="false">Corner</button>
+  <select id="artpick" aria-label="Art"></select>
+  <span class="sep"></span>
+  <span>Font</span>
+  <select id="fontpick" aria-label="Font"></select>
+  <span class="sep"></span>
+  <button id="tunebtn" aria-pressed="false">Tune</button>
+  <label><input type="checkbox" id="backup" checked> Google backup found</label>
+  <span class="sep"></span>
+  <button id="restart">Restart</button>
+</div>
+
+<aside class="tune" id="tune" hidden aria-label="Tune"></aside>
+<div class="halo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></div>
+<main class="stage"><section class="card" aria-live="polite">
+  <aside class="side" id="side"></aside>
+  <div class="main">
+    <div class="steps" id="steps"></div>
+    <div class="body" id="body"></div>
+    <div class="footer" id="footer"></div>
+  </div>
+  <div class="art" id="art" aria-hidden="true"><canvas id="nebula"></canvas><img id="artimg" alt=""></div>
+</section></main>
+
+<script>
+(() => {
+  const svg = (d, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const ICON = {
+    moon: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>', 26),
+    user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', 26),
+    cloud: svg('<path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.5 1.5A4 4 0 0 0 6.5 19z"/>', 26),
+    box: svg('<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>', 26),
+    home: svg('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>', 26),
+    globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>', 26),
+    check: svg('<path d="M20 6L9 17l-5-5"/>', 40),
+    ok: svg('<path d="M20 6L9 17l-5-5"/>', 17),
+    shield: svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>', 15),
+    chev: svg('<path d="M9 6l6 6-6 6"/>', 18),
+    g: '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2.1 5-4.5 6.6v5.5h7.3c4.3-4 6.5-9.8 6.5-16.1z"/><path fill="#34A853" d="M24 46c6.1 0 11.2-2 14.9-5.5l-7.3-5.5c-2 1.4-4.6 2.2-7.6 2.2-5.9 0-10.8-4-12.6-9.3H3.9v5.7C7.6 41.1 15.2 46 24 46z"/><path fill="#FBBC05" d="M11.4 28c-.5-1.4-.7-2.8-.7-4.4s.3-3 .7-4.4v-5.7H3.9C2.4 16.5 1.5 20.1 1.5 24s.9 7.5 2.4 10.5z"/><path fill="#EA4335" d="M24 10.6c3.3 0 6.3 1.1 8.7 3.4l6.5-6.5C35.2 3.8 30.1 1.5 24 1.5 15.2 1.5 7.6 6.4 3.9 13.5l7.5 5.7c1.8-5.3 6.7-8.6 12.6-8.6z"/></svg>',
+  };
+
+  const state = { i: 0, name: '', lang: 'English', open: 'Brave', bm: true, pw: true, chrome: false, weather: true, country: 'Türkiye', city: 'Ankara' };
+  const backupFound = () => document.getElementById('backup').checked;
+  const flow = () => [
+    { id: 'welcome', label: 'Welcome' }, { id: 'profile', label: 'Profile' },
+    ...(backupFound() ? [{ id: 'restore', label: 'Backup' }] : []),
+    { id: 'import', label: 'Import' }, { id: 'home', label: 'Home screen' }, { id: 'default', label: 'Default' }, { id: 'done', label: 'Done' },
+  ];
+
+  const screens = {
+    welcome: () => ({
+      body: `<div class="mark">${ICON.moon}</div><h1>Welcome to Nebula</h1>
+        <p class="lead">A browser that gets out of your way. Setting it up takes about a minute, and you can skip anything.</p>
+        <label class="field"><span>Language</span><select class="input" id="lang">${['English','Türkçe','Deutsch','Español','Français','Italiano','日本語','Русский','Bahasa Indonesia'].map(l => `<option ${l===state.lang?'selected':''}>${l}</option>`).join('')}</select></label>`,
+      footer: `<span class="grow"></span><button class="btn primary" data-next>Get started</button>`,
+    }),
+    profile: () => ({
+      body: `<div class="mark">${ICON.user}</div><h1>Make it yours</h1>
+        <p class="lead">Sign in with Google to set up your profile and Nebula Sync in one step, or just pick a name.</p>
+        <button class="btn google" data-next>${ICON.g} Sign in with Google</button>
+        <div class="or">or</div>
+        <label class="field"><span>Display name</span><input class="input" id="name" placeholder="Your name" value="${state.name}"></label>
+        <p class="note">${ICON.shield} Google opens in a separate Nebula window and closes by itself when you are done.</p>`,
+      footer: `<button class="btn ghost" data-back>Back</button><span class="grow"></span><button class="btn primary" data-next>Continue</button>`,
+    }),
+    restore: () => ({
+      body: `<div class="mark">${ICON.cloud}</div><h1>We found your backup</h1>
+        <p class="lead">There is a Nebula Sync backup for <b style="color:var(--text)">you@gmail.com</b>. Enter your Sync password to bring your passwords back.</p>
+        <label class="field"><span>Nebula Sync password</span><input class="input" type="password" placeholder="Your Sync password"></label>
+        <p class="note">${ICON.shield} This password is only used to decrypt your synchronized passwords, on this computer.</p>`,
+      footer: `<button class="btn ghost" data-back>Back</button><span class="grow"></span><button class="btn ghost" data-next>Skip</button><button class="btn primary" data-next>Restore backup</button>`,
+    }),
+    import: () => {
+      const src = (n, color, sub, extra = '') => {
+        const open = state.open === n;
+        return `<div class="src ${open?'open':''} ${(n==='Brave'&&(state.bm||state.pw))||(n==='Chrome'&&state.chrome)?'on':''}" data-src="${n}">
+          <header><span class="logo" style="background:${color}">${n[0]}</span><span class="meta"><b>${n}</b><small>${sub}</small></span><span class="chev">${ICON.chev}</span></header>${extra}</div>`;
+      };
+      const braveOpts = `<div class="opts"><label class="check"><input type="checkbox" data-opt="bm" ${state.bm?'checked':''}> Bookmarks <small>24</small></label><label class="check"><input type="checkbox" data-opt="pw" ${state.pw?'checked':''}> Passwords <small>12</small></label></div>`;
+      const taking = [state.bm ? '24 bookmarks' : '', state.pw ? '12 passwords' : ''].filter(Boolean).join(' and ');
+      return {
+        body: `<div class="mark">${ICON.box}</div><h1>Bring things over</h1>
+          <p class="lead">Nebula found these browsers on this computer. Pick what to bring, and nothing else is touched.</p>
+          <div class="cards">${src('Brave', '#fb542b', (state.bm||state.pw) ? 'Will bring: ' + taking : 'Nothing selected', braveOpts)}${src('Chrome', '#4285f4', state.chrome ? 'Will bring: 108 bookmarks' : 'Nothing selected', `<div class="opts"><label class="check"><input type="checkbox" data-opt="chrome" ${state.chrome?'checked':''}> Bookmarks <small>108</small></label></div>`)}${src('Edge', '#0f9d58', 'No bookmarks or passwords found')}</div>
+          <p class="note">${ICON.shield} Passwords go into Nebula's encrypted vault on this computer. If one account has two different passwords, you choose which to keep.</p>`,
+        footer: `<button class="btn ghost" data-back>Back</button><span class="grow"></span><button class="btn ghost" data-next>Skip</button><button class="btn primary" data-next>Import selected</button>`,
+      };
+    },
+    home: () => ({
+      body: `<div class="mark">${ICON.home}</div><h1>Your home screen</h1>
+        <p class="lead">Nebula's home screen can show the weather where you are. You can change this any time in Settings.</p>
+        <div class="toggle ${state.weather?'on':''}" id="weather"><span><b>Show the weather</b><small>Uses the city you pick, nothing else.</small></span><span class="sw"></span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;${state.weather?'':'opacity:.4;pointer-events:none'}">
+          <label class="field"><span>Country</span><select class="input" id="country">${['Türkiye','Germany','Spain','France','Italy','Japan','United States'].map(c => `<option ${c===state.country?'selected':''}>${c}</option>`).join('')}</select></label>
+          <label class="field"><span>City</span><input class="input" id="city" value="${state.city}"></label>
+        </div>`,
+      footer: `<button class="btn ghost" data-back>Back</button><span class="grow"></span><button class="btn ghost" data-next>Skip</button><button class="btn primary" data-next>Continue</button>`,
+    }),
+    default: () => ({
+      body: `<div class="mark">${ICON.globe}</div><h1>Make Nebula your default browser</h1>
+        <p class="lead">Links from other apps will open in Nebula. Windows asks you to confirm, so this opens its Default Apps settings.</p>
+        <button class="btn line" style="width:100%">Open Windows settings</button>
+        <p class="note">${ICON.shield} You can change this back in Windows at any time.</p>`,
+      footer: `<button class="btn ghost" data-back>Back</button><span class="grow"></span><button class="btn ghost" data-next>Not now</button><button class="btn primary" data-next>Continue</button>`,
+    }),
+    done: () => ({
+      body: `<div class="big"><div class="tick">${ICON.check}</div><h1>You're all set</h1>
+        <p class="lead" style="margin-bottom:18px">Here is what Nebula set up for you.</p>
+        <div class="sum">
+          <div>${ICON.ok} Profile <b>${state.name || 'Mehmet'}</b></div>
+          ${backupFound() ? `<div>${ICON.ok} Sync backup <b>Restored</b></div>` : ''}
+          <div>${ICON.ok} Imported <b>${[state.bm ? '24 bookmarks' : '', state.pw ? '12 passwords' : ''].filter(Boolean).join(', ') || 'Nothing'}</b></div>
+          <div>${ICON.ok} Weather <b>${state.weather ? state.city : 'Off'}</b></div>
+        </div></div>`,
+      footer: `<span class="grow"></span><button class="btn primary" data-restart style="min-width:200px">Open Nebula</button>`,
+    }),
+  };
+
+  function render() {
+    const f = flow();
+    state.i = Math.min(state.i, f.length - 1);
+    document.getElementById('steps').innerHTML = f.map((s, n) =>
+      `<div class="step ${n < state.i ? 'done' : n === state.i ? 'now' : ''}"><div class="bar"><i></i></div><span>${s.label}</span></div>`).join('');
+    document.getElementById('side').innerHTML = `
+      <div class="brand"><span class="mark">${ICON.moon}</span><b>Nebula</b></div>
+      <p class="tag">A browser that gets out of your way.</p>
+      <div class="vsteps">${f.map((s, n) => `<div class="vstep ${n < state.i ? 'done' : n === state.i ? 'now' : ''}"><i>${n < state.i ? '\u2713' : n + 1}</i>${s.label}</div>`).join('')}</div>
+      <p class="minute">About a minute. You can skip anything.</p>`;
+    const out = screens[f[state.i].id]();
+    const body = document.getElementById('body');
+    body.innerHTML = out.body; body.style.animation = 'none'; void body.offsetWidth; body.style.animation = '';
+    document.getElementById('footer').innerHTML = out.footer;
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.closest('[data-next]')) { state.i += 1; render(); return; }
+    if (t.closest('[data-back]')) { state.i = Math.max(0, state.i - 1); render(); return; }
+    if (t.closest('[data-restart]') || t.closest('#restart')) { state.i = 0; render(); return; }
+    const sch = t.closest('[data-scheme-btn]');
+    if (sch) { const v = sch.dataset.schemeBtn; if (v === 'auto') delete document.body.dataset.scheme; else document.body.dataset.scheme = v; document.querySelectorAll('[data-scheme-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b === sch))); return; }
+    const artBtn = t.closest('[data-art-btn]');
+    if (artBtn) { document.body.dataset.art = artBtn.dataset.artBtn; document.querySelectorAll('[data-art-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b === artBtn))); return; }
+    const lay = t.closest('[data-layout-btn]');
+    if (lay) { document.body.dataset.layout = lay.dataset.layoutBtn; document.querySelectorAll('[data-layout-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b === lay))); return; }
+    const dir = t.closest('[data-dir-btn]');
+    if (dir) { document.body.dataset.dir = dir.dataset.dirBtn; document.querySelectorAll('[data-dir-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b === dir))); return; }
+    const src = t.closest('.src header'); if (src) { const n = src.parentElement.dataset.src; state.open = state.open === n ? '' : n; render(); return; }
+    if (t.closest('#weather')) { state.weather = !state.weather; render(); }
+  });
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'backup') { render(); return; }
+    if (t.dataset.opt) { state[t.dataset.opt] = t.checked; render(); return; }
+    if (t.id === 'lang') state.lang = t.value;
+    if (t.id === 'country') state.country = t.value;
+  });
+  document.addEventListener('input', (e) => { if (e.target.id === 'name') state.name = e.target.value; if (e.target.id === 'city') state.city = e.target.value; });
+  // Font pairs: heading font, body font. "" keeps the look's own pair.
+  const FONTS = [
+    ['Look default', '', ''],
+    ['Plus Jakarta Sans', "'Plus Jakarta Sans'", "'Plus Jakarta Sans'"],
+    ['Inter', "'Inter'", "'Inter'"],
+    ['Geist', "'Geist'", "'Geist'"],
+    ['Manrope', "'Manrope'", "'Manrope'"],
+    ['DM Sans', "'DM Sans'", "'DM Sans'"],
+    ['Figtree', "'Figtree'", "'Figtree'"],
+    ['Outfit + Inter', "'Outfit'", "'Inter'"],
+    ['Sora + Inter', "'Sora'", "'Inter'"],
+    ['Space Grotesk + Inter', "'Space Grotesk'", "'Inter'"],
+    ['Segoe UI (today)', "'Segoe UI'", "'Segoe UI'"],
+  ];
+  const pick = document.getElementById('fontpick');
+  pick.innerHTML = FONTS.map(([label], n) => '<option value="' + n + '">' + label + '</option>').join('');
+  pick.addEventListener('change', () => {
+    const [, head, body] = FONTS[Number(pick.value)];
+    if (!head) { document.body.style.removeProperty('--font-head'); document.body.style.removeProperty('--font-body'); return; }
+    document.body.style.setProperty('--font-head', head + ", 'Segoe UI', sans-serif");
+    document.body.style.setProperty('--font-body', body + ", 'Segoe UI', sans-serif");
+  });
+  const applyEff = () => {
+    const b = document.body;
+    b.dataset.eff = b.dataset.dir === 'b' ? (b.dataset.scheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) : 'dark';
+  };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyEff);
+  document.addEventListener('click', () => setTimeout(applyEff, 0));
+  applyEff();
+  window.__fonts = FONTS;
+
+  // Tune: sliders for placement, size and brightness, and dragging the art. Values are kept in this browser and can be copied.
+  const TUNE = [
+    ['Content', null],
+    ['--cx', 'Position (0 left, 0.5 centre, 1 right)', 0, 1, 0.01, 0.15, ''],
+    ['--col', 'Width', 460, 760, 4, 620, 'px'],
+    ['--vy', 'Height (up / down)', -25, 25, 1, 0, 'vh'],
+    ['Buttons', null],
+    ['--btn-r', 'Next: from the right edge', 12, 500, 2, 240, 'px'],
+    ['--btn-b', 'From the bottom edge', 12, 240, 2, 44, 'px'],
+    ['--back-l', 'Back: from the side panel', 12, 700, 2, 56, 'px'],
+    ['Side panel', null],
+    ['--side-w', 'Width', 190, 380, 2, 308, 'px'],
+    ['Art (corner shape)', null],
+    ['--art-size', 'Size', 70, 220, 1, 130, 'vh'],
+    ['--art-x', 'Place: right edge', -90, 30, 1, -26, 'vh'],
+    ['--art-y', 'Place: top edge', -110, 40, 1, -40, 'vh'],
+    ['--art-bright', 'Brightness', 0.5, 1.8, 0.02, 1.1, ''],
+    ['--fade', 'How far it spreads', 0.5, 1.8, 0.02, 1.08, ''],
+  ];
+  const KEY = 'nebulaOnboardingTune';
+  let tune = {};
+  try { tune = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (_) { tune = {}; }
+  const defaults = Object.fromEntries(TUNE.filter((t) => t[1] !== null).map((t) => [t[0], t[5]]));
+  const unit = Object.fromEntries(TUNE.filter((t) => t[1] !== null).map((t) => [t[0], t[6]]));
+  const applyTune = () => {
+    for (const name of Object.keys(defaults)) {
+      const v = tune[name] ?? defaults[name];
+      document.body.style.setProperty(name, unit[name] === 'px' ? v + 'px' : String(v));
+    }
+  };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(tune)); } catch (_) {} };
+  const panel = document.getElementById('tune');
+  const fmt = (name, v) => (name === '--cx' || name === '--art-bright' || name === '--fade' ? Number(v).toFixed(2) : v) + (unit[name] ? ' ' + unit[name] : '');
+  function drawTune() {
+    panel.innerHTML = '<h3>Tune <span><button id="tuneDrag" class="' + (document.body.dataset.drag === '1' ? 'on' : '') + '">Drag the art</button></span></h3>' +
+      TUNE.map((t) => t[1] === null ? '<div class="group">' + t[0] + '</div>' :
+        '<div class="row"><label for="t' + t[0] + '">' + t[1] + '</label><output id="o' + t[0] + '">' + fmt(t[0], tune[t[0]] ?? t[5]) + '</output>' +
+        '<input type="range" id="t' + t[0] + '" data-tune="' + t[0] + '" min="' + t[2] + '" max="' + t[3] + '" step="' + t[4] + '" value="' + (tune[t[0]] ?? t[5]) + '"></div>').join('') +
+      '<div class="actions"><button id="tuneReset">Reset</button><button id="tuneCopy">Copy values</button></div><textarea id="tuneOut" readonly placeholder="Press Copy values, then paste them in the chat"></textarea>';
+  }
+  panel.addEventListener('input', (e) => {
+    const name = e.target.dataset.tune; if (!name) return;
+    tune[name] = Number(e.target.value); applyTune(); save();
+    document.getElementById('o' + name).textContent = fmt(name, tune[name]);
+  });
+  panel.addEventListener('click', async (e) => {
+    const id = e.target.id;
+    if (id === 'tuneReset') { tune = {}; save(); applyTune(); drawTune(); }
+    if (id === 'tuneDrag') { document.body.dataset.drag = document.body.dataset.drag === '1' ? '0' : '1'; e.target.classList.toggle('on'); if (document.body.dataset.drag === '1') document.body.dataset.art = 'corner'; }
+    if (id === 'tuneCopy') {
+      const out = { look: document.body.dataset.dir, mode: document.body.dataset.scheme || 'auto', layout: document.body.dataset.layout, art: document.body.dataset.art,
+        image: document.getElementById('artpick').selectedOptions[0].text, font: document.getElementById('fontpick').selectedOptions[0].text };
+      for (const name of Object.keys(defaults)) out[name] = tune[name] ?? defaults[name];
+      const text = JSON.stringify(out, null, 2); const box = document.getElementById('tuneOut'); box.value = text; box.select();
+      try { await navigator.clipboard.writeText(text); } catch (_) { try { document.execCommand('copy'); } catch (_) {} }
+    }
+  });
+  document.getElementById('tunebtn').addEventListener('click', (e) => {
+    panel.hidden = !panel.hidden; e.currentTarget.setAttribute('aria-pressed', String(!panel.hidden)); if (!panel.hidden) drawTune();
+  });
+  // drag the art: moving the pointer moves it, the wheel changes its size
+  let dragging = null;
+  const artEl = document.getElementById('art');
+  artEl.addEventListener('pointerdown', (e) => { if (document.body.dataset.drag !== '1') return; dragging = { x: e.clientX, y: e.clientY }; artEl.setPointerCapture(e.pointerId); });
+  artEl.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const vh = innerHeight / 100;
+    tune['--art-x'] = Math.round(((tune['--art-x'] ?? defaults['--art-x']) - (e.clientX - dragging.x) / vh) * 10) / 10;
+    tune['--art-y'] = Math.round(((tune['--art-y'] ?? defaults['--art-y']) + (e.clientY - dragging.y) / vh) * 10) / 10;
+    dragging = { x: e.clientX, y: e.clientY }; applyTune(); save(); if (!panel.hidden) drawTune();
+  });
+  artEl.addEventListener('pointerup', () => { dragging = null; });
+  artEl.addEventListener('wheel', (e) => {
+    if (document.body.dataset.drag !== '1') return; e.preventDefault();
+    tune['--art-size'] = Math.min(220, Math.max(70, Math.round(((tune['--art-size'] ?? defaults['--art-size']) - e.deltaY / 20) * 10) / 10));
+    applyTune(); save(); if (!panel.hidden) drawTune();
+  }, { passive: false });
+  applyTune();
+
+  // The art: the generated nebula, or a real photograph (NASA, ESA, CSA, STScI). The photographs are served next to this page
+  // while the design is being decided; none of them is part of the repository.
+  const ART = [
+    ['Generated nebula', '', ''],
+    ['Cosmic Cliffs (Webb)', '/art/webb-carina-cosmic-cliffs.jpg', '50% 55%'],
+    ['Mystic Mountain (Hubble)', '/art/hubble-mystic-mountain.jpg', '52% 38%'],
+    ['Crab Nebula (STScI, 3000 px)', '/art/crab-nebula-stsci-3000.jpg', '45% 52%'],
+  ];
+  const artPick = document.getElementById('artpick');
+  artPick.innerHTML = ART.map(([label], n) => '<option value="' + n + '">' + label + '</option>').join('');
+  artPick.value = '3';
+  document.body.dataset.art = 'corner';
+  document.querySelectorAll('[data-art-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.artBtn === 'corner')));
+  artPick.addEventListener('change', () => {
+    const [, src, pos] = ART[Number(artPick.value)];
+    const art = document.getElementById('art'), img = document.getElementById('artimg');
+    if (!src) { art.classList.remove('photo'); img.removeAttribute('src'); return; }
+    img.style.objectPosition = pos; img.src = src; art.classList.add('photo');
+  });
+  artPick.dispatchEvent(new Event('change'));
+  // The nebula. Drawn on the graphics card from a few lines of maths, so there is no image to ship, it stays sharp at any size,
+  // and it can take its colours from the look that is chosen. With reduced motion it is drawn once and stays still.
+  (function nebula() {
+    const canvas = document.getElementById('nebula');
+    const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' });
+    if (!gl) { canvas.parentElement.classList.add('nogl'); return; }
+    const vert = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }';
+    const frag = `
+      precision highp float;
+      uniform vec2 uRes; uniform float uTime; uniform vec3 uA; uniform vec3 uB; uniform vec3 uC;
+      float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+        return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x), mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y); }
+      float fbm(vec2 p){ float v = 0., a = .5; mat2 m = mat2(1.6, 1.2, -1.2, 1.6); for (int i = 0; i < 6; i++) { v += a * noise(p); p = m * p; a *= .5; } return v; }
+      void main(){
+        vec2 uv = (gl_FragCoord.xy - .5 * uRes) / min(uRes.x, uRes.y);
+        float t = uTime * .025;
+        vec2 q = vec2(fbm(uv * 0.9 + t), fbm(uv * 0.9 + vec2(5.2, 1.3) - t));
+        vec2 r = vec2(fbm(uv * 1.1 + 2.0 * q + vec2(1.7, 9.2) + 1.2 * t), fbm(uv * 1.1 + 2.0 * q + vec2(8.3, 2.8) - 1.0 * t));
+        float f = fbm(uv * 1.0 + 2.4 * r);
+        vec3 col = mix(uA, uB, smoothstep(.06, .60, f));
+        col = mix(col, uC, clamp(length(q) * .75, 0., 1.) * smoothstep(.25, .85, f));
+        col += pow(smoothstep(.34, .9, f), 1.7) * .95 * vec3(1., .88, 1.);
+        col += .24 * uC * smoothstep(.65, .0, length(uv - vec2(.12, -.05)));
+        col *= .78 + .9 * smoothstep(1.2, .05, length(uv - vec2(.08, .02)));
+        float dust = fbm(uv * 3.2 + r * 1.4); col *= .90 + .22 * dust;
+        vec2 g = gl_FragCoord.xy / uRes.y * 46.; vec2 id = floor(g);
+        float h = hash(id), tw = .55 + .45 * sin(uTime * 1.6 + h * 40.);
+        vec2 off = (vec2(hash(id + 1.7), hash(id + 3.1)) - .5) * .7;
+        float star = smoothstep(.07, .0, length(fract(g) - .5 - off)) * step(.935, h);
+        float big = smoothstep(.07, .0, length(fract(g * .22) - .5 - (vec2(hash(floor(g * .22) + 5.), hash(floor(g * .22) + 9.)) - .5) * .5)) * step(.95, hash(floor(g * .22)));
+        col += (star * tw + big * .4) * vec3(.9, .92, 1.);
+        gl_FragColor = vec4(col, 1.);
+      }`;
+    const compile = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? sh : null; };
+    const vs = compile(gl.VERTEX_SHADER, vert), fs = compile(gl.FRAGMENT_SHADER, frag);
+    if (!vs || !fs) { canvas.parentElement.classList.add('nogl'); return; }
+    const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.parentElement.classList.add('nogl'); return; }
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const u = (n) => gl.getUniformLocation(prog, n);
+    const PALETTE = { // deep, mid, accent
+      a: [[.02, .08, .07], [.10, .50, .45], [.30, .65, .90]],
+      b: [[.04, .03, .16], [.34, .22, .86], [.12, .66, .88]],
+      c: [[.05, .02, .16], [.48, .24, .90], [.20, .68, .92]],
+    };
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let start = performance.now();
+    function draw(now) {
+      if (canvas.offsetParent !== null && !document.hidden) {
+        const r = canvas.getBoundingClientRect(), k = Math.min(window.devicePixelRatio || 1, 1.5) * 0.8;
+        const w = Math.max(2, Math.round(r.width * k)), h = Math.max(2, Math.round(r.height * k));
+        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
+        const pal = PALETTE[document.body.dataset.dir] || PALETTE.b;
+        gl.uniform2f(u('uRes'), w, h); gl.uniform1f(u('uTime'), reduce ? 40 : (now - start) / 1000 + 40);
+        gl.uniform3fv(u('uA'), pal[0]); gl.uniform3fv(u('uB'), pal[1]); gl.uniform3fv(u('uC'), pal[2]);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      if (!reduce) requestAnimationFrame(draw);
+    }
+    if (reduce) { draw(0); addEventListener('resize', () => draw(0)); document.addEventListener('click', () => setTimeout(() => draw(0), 50)); }
+    else requestAnimationFrame(draw);
+  })();
+
+  render();
+})();
+</script>
+</body>
+</html>

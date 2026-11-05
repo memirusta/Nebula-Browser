@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint src",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "node scripts/tauri-cli.mjs",
     "tauri:build": "tauri build",
     "tauri:build:binary": "tauri build --no-bundle --target x86_64-pc-windows-msvc",
     "tauri:build:x64": "tauri build --target x86_64-pc-windows-msvc",
