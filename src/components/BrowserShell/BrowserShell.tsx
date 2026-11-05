@@ -1346,6 +1346,37 @@ export function BrowserShell() {
     string | null
   >(null)
 
+  const passwordSuggestLabels = useMemo(
+    () => ({
+      all: t('pwdSuggestAll'),
+      filtered: t('pwdSuggestFiltered'),
+      passkey: t('pwdSuggestPasskey'),
+    }),
+    [t],
+  )
+
+  const passwordSaveLabels = useMemo(() => {
+    const shared = {
+      site: t('pwdBubbleSite'),
+      account: t('pwdBubbleAccount'),
+      password: t('pwdBubblePassword'),
+    }
+    return {
+      save: {
+        ...shared,
+        title: t('pwdSaveTitle'),
+        save: t('pwdSaveBtn'),
+        dismiss: t('pwdBubbleNotNow'),
+      },
+      update: {
+        ...shared,
+        title: t('pwdBubbleUpdateTitle'),
+        save: t('pwdBubbleUpdateBtn'),
+        dismiss: t('pwdBubbleKeepOld'),
+      },
+    }
+  }, [t])
+
   const passwordBridge =
     usePasswordBridge({
       enabled:
@@ -1361,6 +1392,10 @@ export function BrowserShell() {
       activeUrl,
       entries:
         passwordEntries,
+      suggestLabels:
+        passwordSuggestLabels,
+      saveLabels:
+        passwordSaveLabels,
       onVaultChange:
         reloadPasswordVault,
     })

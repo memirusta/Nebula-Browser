@@ -2,7 +2,7 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum RevealFailure {
+pub(crate) enum RevealFailure {
     Unavailable,
     Cancelled,
     Failed,
@@ -24,12 +24,12 @@ impl PasswordRevealResult {
     }
 }
 
-fn trusted_shell(webview_label: &str, window_label: &str) -> bool {
+pub(crate) fn trusted_shell(webview_label: &str, window_label: &str) -> bool {
     webview_label == window_label
         && (webview_label == "main" || webview_label.starts_with("nebula-window-"))
 }
 
-fn verification_message(message: &str) -> Option<String> {
+pub(crate) fn verification_message(message: &str) -> Option<String> {
     let message = message
         .trim()
         .chars()
@@ -177,6 +177,18 @@ mod windows_hello {
                 .verified
             );
         }
+    }
+}
+
+/// Windows Hello for another action that needs the person to be there (exporting the passwords): blocks until
+/// the person answers, so it must not run on the UI thread. Only a verified answer is Ok.
+#[cfg(target_os = "windows")]
+pub(crate) fn verify_blocking(hwnd: isize, message: String) -> Result<(), RevealFailure> {
+    let result = windows_hello::verify(hwnd, message);
+    if result.verified {
+        Ok(())
+    } else {
+        Err(result.reason.unwrap_or(RevealFailure::Failed))
     }
 }
 

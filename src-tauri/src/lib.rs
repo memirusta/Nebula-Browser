@@ -40,6 +40,8 @@ mod native_notification;
 mod network_address;
 mod notification_broker;
 mod notification_history;
+mod passkeys;
+mod password_export;
 mod password_reveal;
 mod password_webview;
 mod proxy_error_hint;
@@ -647,6 +649,11 @@ fn webview_setup_tab_error_pages(app: tauri::AppHandle, label: String) -> Result
 
     if result.is_err() {
         teardown_tab_webview_integrations(&app, &label);
+    } else {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            webview_privacy::clear_remembered_form_entries(&handle).await;
+        });
     }
 
     result
@@ -2074,6 +2081,7 @@ pub fn run() {
             secure_password_vault::password_vault_save,
             secure_password_vault::password_vault_clear,
             password_reveal::password_verify_reveal,
+            password_export::password_export_csv,
             system_stats::get_system_stats,
             wallpaper_media::wallpaper_import_video,
             wallpaper_media::wallpaper_clear_videos,

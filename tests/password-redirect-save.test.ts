@@ -110,7 +110,7 @@ test('split login username step can surface and fill a saved account before the 
   assert.match(bridgeScript, /hasCredentialAction/)
   assert.match(bridgeScript, /return 'username'/)
   assert.match(bridge, /poll\.hasPasswordField && !poll\.hasUsernameField/)
-  assert.match(bridge, /fillTarget: poll\.hasPasswordField/)
+  assert.match(bridge, /const fillTarget[^=]*= poll\.hasPasswordField/)
   assert.match(bridge, /filledUsernameRef/)
   assert.match(shell, /<PasswordFillPrompt/)
 })
@@ -247,7 +247,7 @@ test('explicit account choice stays sticky until the password step consumes it',
     /current\.fillTarget,\s*true,\s*\)\.catch/,
   )
   assert.match(hookSource, /const autoFilled = await acceptFill\(/)
-  assert.match(hookSource, /if \(autoFilled\) return/)
+  assert.match(hookSource, /if \(autoFilled\) \{\s*await clearSuggestions\(tabId\)\s*return/)
   assert.match(hookSource, /filledUsernameRef\.current = null/)
 })
 

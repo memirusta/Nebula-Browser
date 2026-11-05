@@ -117,6 +117,7 @@ commands.allow = [
   "password_vault_load",
   "password_vault_save",
   "password_verify_reveal",
+  "password_export_csv",
   "password_vault_clear"
 ]
 

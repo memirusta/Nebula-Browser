@@ -214,6 +214,7 @@ export interface BrowserPrivacyOptions {
   permissionPolicy: 'ask' | 'block'
   permissionExceptions: string
   cookieBannerBlocking: boolean
+  passkeyList: boolean
   siteNotifications: boolean
   showNotificationContent: boolean
   notificationAllowedSites: string[]
@@ -265,6 +266,7 @@ let privacyOptions: BrowserPrivacyOptions = {
   permissionPolicy: 'ask',
   permissionExceptions: '',
   cookieBannerBlocking: true,
+  passkeyList: true,
   siteNotifications: true,
   showNotificationContent: true,
   notificationAllowedSites: [],

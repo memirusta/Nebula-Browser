@@ -20,7 +20,9 @@ import {
   listChromiumPasswordSources,
   type ChromiumPasswordSource,
 } from '../../platform/browserPasswordImport'
+import { exportPasswordsCsv } from '../../platform/passwordExport'
 import { isTauri } from '../../platform/runtime'
+import { showAppConfirmation } from '../../core/appDialog'
 import { usePasswordReveal } from '../../hooks/usePasswordReveal'
 import { usePasswordVault } from '../../hooks/usePasswordVault'
 import { getIntlLocale, tf } from '../../core/locale'
@@ -83,6 +85,8 @@ export function AccountSettingsSection({
   const [pwSecret, setPwSecret] = useState('')
   const [editingPassword, setEditingPassword] = useState<SavedPassword | null>(null)
   const [passwordEditError, setPasswordEditError] = useState<'conflict' | 'failed' | 'required' | null>(null)
+  const [exportingPasswords, setExportingPasswords] = useState(false)
+  const [exportMessage, setExportMessage] = useState<{ kind: 'done' | 'error'; text: string } | null>(null)
   const editOperation = useRef(0)
   const discardPasswordEdit = useCallback(() => {
     ++editOperation.current
@@ -322,6 +326,36 @@ export function AccountSettingsSection({
   const hasGoogle = isGoogleSignInSupported()
   const sessionLinked = loadGoogleBrowserSession()?.email === account?.email
 
+  const handleExportPasswords = async () => {
+    if (exportingPasswords) return
+    setExportMessage(null)
+    const accepted = await showAppConfirmation(t('accountExportWarning'), t('accountExportTitle'), {
+      acceptLabel: t('accountExportContinue'),
+      cancelLabel: t('cancel'),
+    })
+    if (!accepted) return
+    setExportingPasswords(true)
+    try {
+      const result = await exportPasswordsCsv({
+        message: t('accountExportReason'),
+        title: t('accountExportCsv'),
+        fileName: 'nebula-passwords.csv',
+      })
+      if (result.status === 'exported') {
+        setExportMessage({
+          kind: 'done',
+          text: tf(locale, 'accountExportDone', { count: result.count, file: result.fileName ?? '' }),
+        })
+      } else if (result.status === 'unavailable') {
+        setExportMessage({ kind: 'error', text: t('accountPasswordHelloUnavailable') })
+      } else if (result.status === 'failed') {
+        setExportMessage({ kind: 'error', text: t('accountExportFailed') })
+      }
+    } finally {
+      setExportingPasswords(false)
+    }
+  }
+
   return (
     <>
       <div className={styles.accountCard}>
@@ -453,6 +487,16 @@ export function AccountSettingsSection({
         >
           {t('accountImportCsv')}
         </button>
+        {isTauri && (
+          <button
+            type="button"
+            className={styles.actionBtn}
+            onClick={() => void handleExportPasswords()}
+            disabled={exportingPasswords || entries.length === 0}
+          >
+            {t('accountExportCsv')}
+          </button>
+        )}
         <input
           ref={csvInputRef}
           type="file"
@@ -461,6 +505,11 @@ export function AccountSettingsSection({
           onChange={(event) => void handleCsvSelected(event)}
         />
       </div>
+      {exportMessage && (
+        <p className={exportMessage.kind === 'done' ? styles.accountSuccess : styles.accountError} role="status">
+          {exportMessage.text}
+        </p>
+      )}
       {importMessage && <p className={styles.accountSuccess}>{importMessage}</p>}
       {importError && <p className={styles.accountError}>{importError}</p>}
       {passwordEditError && <p role="alert" className={styles.accountError}>

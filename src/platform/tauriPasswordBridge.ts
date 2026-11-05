@@ -10,6 +10,12 @@ import {
   type PasswordBridgePollResult,
   type PasswordFillTarget,
 } from '../core/passwordBridgeScript'
+import {
+  buildPasswordSaveScript,
+  buildPasswordSuggestScript,
+  type PasswordSaveBubble,
+  type PasswordSuggestPayload,
+} from '../core/passwordSuggest'
 import { isTauri } from './runtime'
 
 const tabScriptChains = new Map<string, Promise<string | null>>()
@@ -124,6 +130,77 @@ export async function listenForPasswordStepEvents(
       url: payload.url,
       username: payload.username ?? '',
       password: payload.password ?? '',
+    })
+  })
+}
+
+/** Hands the list of saved accounts to the page's own list under the sign-in field. `missing` means the page has
+ * no such list (the shell then asks with its own prompt); `null` means the script could not be run. */
+export async function pushPasswordSuggestions(
+  shortcutId: string,
+  payload: PasswordSuggestPayload,
+): Promise<'ok' | 'missing' | null> {
+  const raw = await runTabScriptExclusive(shortcutId, buildPasswordSuggestScript(payload))
+  if (!raw) return null
+  if (raw.includes('missing')) return 'missing'
+  return raw.includes('ok') ? 'ok' : null
+}
+
+/** Shows the bubble that offers to save or update a password in the page (`null` takes it away). Answers like
+ * `pushPasswordSuggestions`. */
+export async function pushPasswordSaveBubble(
+  shortcutId: string,
+  bubble: PasswordSaveBubble | null,
+): Promise<'ok' | 'missing' | null> {
+  const raw = await runTabScriptExclusive(shortcutId, buildPasswordSaveScript(bubble))
+  if (!raw) return null
+  if (raw.includes('missing')) return 'missing'
+  return raw.includes('ok') ? 'ok' : null
+}
+
+export interface PasswordSuggestEvent {
+  kind: 'pick' | 'wanted' | 'save' | 'dismiss'
+  shortcutId: string
+  origin: string
+  url: string
+  username: string
+}
+
+interface NativePasswordSuggestPayload {
+  kind?: string
+  tabLabel?: string
+  origin?: string
+  url?: string
+  username?: string
+}
+
+/** A pick in the page's account list, or the page asking for the list (a field was focused before it had one). */
+export async function listenForPasswordSuggestEvents(
+  handler: (event: PasswordSuggestEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return () => {}
+
+  return listen<NativePasswordSuggestPayload>('nebula-password-suggest', (event) => {
+    const payload = event.payload
+    if (
+      payload.kind !== 'pick' &&
+      payload.kind !== 'wanted' &&
+      payload.kind !== 'save' &&
+      payload.kind !== 'dismiss'
+    ) {
+      return
+    }
+    if (!payload.tabLabel || !payload.origin || !payload.url) return
+
+    const shortcutId = shortcutIdForTabWebviewLabel(payload.tabLabel)
+    if (!shortcutId) return
+
+    handler({
+      kind: payload.kind,
+      shortcutId,
+      origin: payload.origin,
+      url: payload.url,
+      username: payload.username ?? '',
     })
   })
 }
