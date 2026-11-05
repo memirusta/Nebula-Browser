@@ -131,3 +131,12 @@
   gap: 10px;
   margin-top: 16px;
 }
+
+.browserList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -2px 0 2px 26px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
+}

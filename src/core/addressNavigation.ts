@@ -1,3 +1,5 @@
+import { localFileUrlFromInput } from './localDocument.ts'
+
 function parseIpv4(hostname: string): number[] | null {
   const parts = hostname.split('.')
   if (parts.length !== 4) return null
@@ -51,6 +53,10 @@ export function resolveNavigationInput(
 ): string | null {
   const trimmed = value.trim()
   if (!trimmed) return null
+
+  // A file on this computer, by its path or file address (paths may contain spaces).
+  const localFile = localFileUrlFromInput(trimmed)
+  if (localFile) return localFile
 
   if (trimmed.includes(' ')) return fallbackSearchUrl
 

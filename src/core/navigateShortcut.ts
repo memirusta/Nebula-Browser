@@ -6,6 +6,7 @@ import {
   shortcutFromUrl,
   visitShortcutIdFromUrl,
 } from './shortcutFromUrl'
+import { localDocumentLabel } from './localDocument'
 import type { Shortcut } from './types'
 
 function isSearchEngineUrl(url: string): boolean {
@@ -91,7 +92,8 @@ export function resolveShortcutForOpen(
   return {
     shortcut: {
       id: visitId,
-      label: targetUrl,
+      // A local file is named by its file name until the page has a title of its own.
+      label: /^file:/i.test(targetUrl) ? localDocumentLabel(targetUrl) : targetUrl,
       url: targetUrl,
     },
     forceLoad,

@@ -97,6 +97,8 @@ export interface PrivacySettings {
   permissionPolicy: 'ask' | 'block'
   permissionExceptions: string
   cookieBannerBlocking: boolean
+  /** Show the passkeys Windows has for a site in Nebula's own list (off: the web view's own pop-up is used). */
+  passkeyList: boolean
 }
 
 export interface NotificationSettings {
@@ -188,6 +190,7 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     permissionPolicy: 'ask',
     permissionExceptions: '',
     cookieBannerBlocking: true,
+    passkeyList: true,
   },
   notifications: {
     downloadNotifications: true,
@@ -434,6 +437,7 @@ export function normalizeNebulaSettings(
       cookieBannerBlocking: typeof p?.cookieBannerBlocking === 'boolean'
         ? p.cookieBannerBlocking
         : d.privacy.cookieBannerBlocking,
+      passkeyList: typeof p?.passkeyList === 'boolean' ? p.passkeyList : d.privacy.passkeyList,
     },
     notifications: {
       downloadNotifications:

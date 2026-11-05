@@ -93,8 +93,9 @@ commands.allow = [
   "wallpaper_import_video",
   "get_network_stats",
   "get_system_memory_pressure",
-  "detect_default_browser",
-  "import_default_browser_bookmarks",
+  "browser_import_diagnostics",
+  "list_browser_import_sources",
+  "import_browser_bookmarks",
   "list_chromium_password_sources",
   "import_default_browser_passwords",
   "exchange_google_oauth_token",
@@ -116,6 +117,7 @@ commands.allow = [
   "password_vault_load",
   "password_vault_save",
   "password_verify_reveal",
+  "password_export_csv",
   "password_vault_clear"
 ]
 

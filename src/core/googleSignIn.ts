@@ -3,9 +3,15 @@ import { isTauri } from '../platform/runtime'
 import { exchangeGoogleOAuthToken } from '../platform/googleOAuth'
 import { enableGoogleSyncLoopback } from '../platform/googleSync'
 
+/** What the native side answers when the person closes the sign-in window (same text as `SIGN_IN_CANCELLED` in
+ * `src-tauri/src/google_oauth.rs`). */
+export const GOOGLE_SIGN_IN_CANCELLED = 'Google sign-in was cancelled.'
+
 export interface GoogleSignInResult {
   claims: GoogleProfileClaims | null
   error?: string
+  /** The person closed the sign-in window: nothing failed, so nothing is shown. */
+  cancelled?: boolean
 }
 
 export interface GoogleProfileClaims {
@@ -148,6 +154,10 @@ export async function signInWithGoogleProfile(
           : typeof error === 'string'
             ? error
             : 'Google girisi basarisiz.'
+
+      if (message === GOOGLE_SIGN_IN_CANCELLED) {
+        return { claims: null, cancelled: true }
+      }
 
       if (import.meta.env.DEV) {
         console.warn('[nebula] Google sign-in failed', error)

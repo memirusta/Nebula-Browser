@@ -10,11 +10,20 @@ import {
 } from '../core/passwordMatch'
 import { settleSaveDraft } from '../core/passwordSaveSettle'
 import { PasswordStepFlowTracker } from '../core/passwordStepFlow'
+import {
+  entryForPickedAccount,
+  suggestionAccounts,
+  type PasswordSaveLabels,
+  type PasswordSuggestLabels,
+} from '../core/passwordSuggest'
 import type { SavedPassword } from '../core/passwordVault'
 import { upsertPasswordEntry } from '../core/passwordVault'
 import {
   fillPasswordOnTab,
   listenForPasswordStepEvents,
+  listenForPasswordSuggestEvents,
+  pushPasswordSaveBubble,
+  pushPasswordSuggestions,
   tickPasswordBridge,
 } from '../platform/tauriPasswordBridge'
 import { isTauri } from '../platform/runtime'
@@ -53,7 +62,18 @@ interface UsePasswordBridgeOptions {
   activeTabId: string | null
   activeUrl: string | null
   entries: SavedPassword[]
+  /** The words of the heading of the account list drawn under the sign-in field. */
+  suggestLabels: PasswordSuggestLabels
+  /** The words of the bubble that offers to save a new password, and of the one that offers to update one. */
+  saveLabels: { save: PasswordSaveLabels; update: PasswordSaveLabels }
   onVaultChange: () => void | Promise<void>
+}
+
+/** What the page's account list was last given for a tab, so a pick in it can be matched to a saved login. */
+interface TabSuggestions {
+  pageUrl: string
+  matches: SavedPassword[]
+  fillTarget: 'username' | 'password' | 'both'
 }
 
 function isHttpUrl(url: string | null): url is string {
@@ -68,6 +88,8 @@ export function usePasswordBridge({
   activeTabId,
   activeUrl,
   entries,
+  suggestLabels,
+  saveLabels,
   onVaultChange,
 }: UsePasswordBridgeOptions) {
   const [offer, setOffer] = useState<PasswordBridgeOffer | null>(null)
@@ -102,6 +124,15 @@ export function usePasswordBridge({
     at: number
   } | null>(null)
   const entriesRef = useRef(entries)
+  const suggestLabelsRef = useRef(suggestLabels)
+  // Per tab: the accounts the page's list holds, and what was last sent (so an unchanged list is not sent again).
+  const suggestionsRef = useRef<Map<string, TabSuggestions>>(new Map())
+  const suggestionKeyRef = useRef<Map<string, string>>(new Map())
+  const wakeRef = useRef<(() => void) | null>(null)
+  const saveLabelsRef = useRef(saveLabels)
+  // Whether the save offer is shown as the page's own bubble (and for which document), not as the prompt over the page.
+  const inlineSaveRef = useRef(false)
+  const saveBubbleKeyRef = useRef<string | null>(null)
   const activeTabIdRef = useRef(activeTabId)
   const activeUrlRef = useRef(activeUrl)
 
@@ -123,6 +154,14 @@ export function usePasswordBridge({
   useEffect(() => {
     entriesRef.current = entries
   }, [entries])
+
+  useEffect(() => {
+    suggestLabelsRef.current = suggestLabels
+  }, [suggestLabels])
+
+  useEffect(() => {
+    saveLabelsRef.current = saveLabels
+  }, [saveLabels])
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId
@@ -269,10 +308,72 @@ export function usePasswordBridge({
     return true
   }, [onVaultChange])
 
-  const clearOffer = useCallback((_shortcutId?: string) => {
+  const clearOffer = useCallback((shortcutId?: string) => {
+    if (inlineSaveRef.current) {
+      // The bubble in the page goes with the offer.
+      inlineSaveRef.current = false
+      saveBubbleKeyRef.current = null
+      const tabId = shortcutId ?? activeTabIdRef.current
+      if (tabId) void pushPasswordSaveBubble(tabId, null)
+    }
     saveDraftRef.current = null
     setOffer(null)
     offerRef.current = null
+  }, [])
+
+  /** Gives the page's account list its accounts. False when the page has no such list: the caller then asks with
+   * its own prompt. An unchanged list is not sent again. */
+  const showSuggestions = useCallback(async (
+    tabId: string,
+    docId: string | null,
+    suggestions: TabSuggestions,
+  ): Promise<boolean> => {
+    const accounts = suggestionAccounts(suggestions.matches)
+    const labels = suggestLabelsRef.current
+    const key = JSON.stringify([docId, accounts, labels])
+    suggestionsRef.current.set(tabId, suggestions)
+    if (suggestionKeyRef.current.get(tabId) === key) return true
+    const result = await pushPasswordSuggestions(tabId, { accounts, labels })
+    if (result === 'missing') return false
+    if (result === 'ok') suggestionKeyRef.current.set(tabId, key)
+    return true
+  }, [])
+
+  /** The page has no sign-in form for these accounts (any more): its list is emptied and closed. With `announce`,
+   * a sign-in form is there but no account is saved for it: the page still gets the words of its list once per
+   * document, because it may fill the list with passkeys. */
+  const clearSuggestions = useCallback(async (tabId: string, announce = false) => {
+    suggestionsRef.current.delete(tabId)
+    const key = suggestionKeyRef.current.get(tabId)
+    const emptyKey = announce ? `empty:${docIdRef.current ?? ''}` : 'empty'
+    if (announce ? key === emptyKey : !key || key === 'empty' || key.startsWith('empty:')) return
+    const result = await pushPasswordSuggestions(tabId, {
+      accounts: [],
+      labels: suggestLabelsRef.current,
+    })
+    if (result === 'ok' || result === 'missing') suggestionKeyRef.current.set(tabId, emptyKey)
+  }, [])
+
+  /** Shows the save/update offer as a bubble in the page. False when the page cannot show one: the caller then asks
+   * with its own prompt. The same document is not sent the bubble twice. */
+  const showSaveBubble = useCallback(async (
+    tabId: string,
+    offer: PasswordBridgeOffer,
+    docId: string | null,
+  ): Promise<boolean> => {
+    const update =
+      findExistingPassword(entriesRef.current, offer.vaultUrl ?? offer.pageUrl, offer.username) !== null
+    const key = JSON.stringify([docId, offer.username, update])
+    if (saveBubbleKeyRef.current === key) return true
+    const labels = update ? saveLabelsRef.current.update : saveLabelsRef.current.save
+    const result = await pushPasswordSaveBubble(tabId, {
+      site: offer.label,
+      username: offer.username,
+      labels,
+    })
+    if (result === 'missing') return false
+    if (result === 'ok') saveBubbleKeyRef.current = key
+    return true
   }, [])
 
   const dismissOffer = useCallback(() => {
@@ -424,6 +525,13 @@ export function usePasswordBridge({
         const pageUrl = poll.href && isHttpUrl(poll.href) ? poll.href : tabUrl
         docIdRef.current = poll.docId ?? null
 
+        // A save offer shown as the page's own bubble: a new document (the login went on to another page) gets it again.
+        const shownOffer = offerRef.current
+        if (shownOffer?.mode === 'save' && inlineSaveRef.current) {
+          await showSaveBubble(tabId, shownOffer, poll.docId ?? null)
+          return
+        }
+
         // A password change has no account field: it belongs to the site's one saved account.
         const pendingUsername = poll.pending?.password
           ? poll.pending.username || accountForPasswordChange(entriesRef.current, poll.pending.url || pageUrl)
@@ -473,6 +581,11 @@ export function usePasswordBridge({
             passwordOrigins: draft.passwordOrigins,
           }
           offerRef.current = saveOffer
+          // The offer is made in the page itself; only a page that cannot show it gets the prompt over the page.
+          if (await showSaveBubble(tabId, saveOffer, poll.docId ?? null)) {
+            inlineSaveRef.current = true
+            return
+          }
           setOffer(saveOffer)
           return
         }
@@ -480,6 +593,7 @@ export function usePasswordBridge({
         const dismissKeyForPage = dismissKey(tabId, pageUrl)
         if (!poll.hasPasswordField && !poll.hasUsernameField) {
           if (nextOffer?.mode === 'fill') clearOffer(tabId)
+          await clearSuggestions(tabId)
           return
         }
 
@@ -502,7 +616,10 @@ export function usePasswordBridge({
 
         const matchRole = poll.hasPasswordField ? 'password' : 'username'
         let matches = matchPasswordsForUrl(pageUrl, entriesRef.current, matchRole)
-        if (matches.length === 0) return
+        if (matches.length === 0) {
+          await clearSuggestions(tabId, true)
+          return
+        }
 
         // If the user chose an account on step 1, keep that credential selected
         // across navigation and prefer it on the password step, but only if the
@@ -526,7 +643,10 @@ export function usePasswordBridge({
               pageUrl,
               poll.hasUsernameField ? 'both' : 'password',
             )
-            if (autoFilled) return
+            if (autoFilled) {
+              await clearSuggestions(tabId)
+              return
+            }
 
             // If the provider rejected the scripted fill, release the sticky
             // selection so the normal chooser can recover instead of looping.
@@ -548,6 +668,17 @@ export function usePasswordBridge({
 
         if (nextOffer?.mode === 'save') return
 
+        const fillTarget: 'username' | 'password' | 'both' = poll.hasPasswordField
+          ? (poll.hasUsernameField ? 'both' : 'password')
+          : 'username'
+
+        // The accounts are listed under the sign-in field itself. Only a page that cannot show that list gets the
+        // prompt over the page.
+        if (await showSuggestions(tabId, poll.docId ?? null, { pageUrl, matches, fillTarget })) {
+          if (nextOffer?.mode === 'fill') clearOffer(tabId)
+          return
+        }
+
         const fillOffer: PasswordBridgeOffer = {
           mode: 'fill',
           shortcutId: tabId,
@@ -556,9 +687,7 @@ export function usePasswordBridge({
           password: matches[0].password,
           label: labelFromUrl(pageUrl),
           matches,
-          fillTarget: poll.hasPasswordField
-            ? (poll.hasUsernameField ? 'both' : 'password')
-            : 'username',
+          fillTarget,
         }
         offerRef.current = fillOffer
         setOffer(fillOffer)
@@ -580,6 +709,11 @@ export function usePasswordBridge({
       pollTimer = window.setTimeout(() => void run(), pollDelayRef.current)
     }
     const startupTimer = window.setTimeout(() => void run(), STARTUP_DELAY_MS)
+    // A field was focused before the page had its list: look at the page now instead of at the next poll.
+    wakeRef.current = () => {
+      if (pollTimer) window.clearTimeout(pollTimer)
+      void run()
+    }
     const onVisibility = () => {
       if (document.hidden) return
       if (pollTimer) window.clearTimeout(pollTimer)
@@ -588,6 +722,7 @@ export function usePasswordBridge({
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
+      wakeRef.current = null
       if (pollTimer) window.clearTimeout(pollTimer)
       window.clearTimeout(startupTimer)
       document.removeEventListener('visibilitychange', onVisibility)
@@ -598,8 +733,78 @@ export function usePasswordBridge({
     activeUrl,
     acceptFill,
     clearOffer,
+    clearSuggestions,
+    showSuggestions,
+    showSaveBubble,
     stageSaveCandidate,
   ])
+
+  // A pick in the account list under the sign-in field. The page only says which user name was chosen; the
+  // login is taken from the accounts the shell offered for that tab, and the fill is done from here.
+  useEffect(() => {
+    if (!enabled || !isTauri) return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void listenForPasswordSuggestEvents((event) => {
+      if (event.shortcutId !== activeTabIdRef.current) return
+
+      // The answer to the save/update bubble: the login to save is the one the shell kept, never anything the
+      // page sent.
+      if (event.kind === 'save' || event.kind === 'dismiss') {
+        const current = offerRef.current
+        if (!current || current.mode !== 'save' || !inlineSaveRef.current) return
+        if (current.shortcutId !== event.shortcutId) return
+        if (event.kind === 'dismiss') {
+          clearOffer(current.shortcutId)
+          return
+        }
+        void acceptSave({
+          pageUrl: current.pageUrl,
+          vaultUrl: current.vaultUrl,
+          username: current.username,
+          password: current.password,
+          label: current.label,
+          usernameOrigins: current.usernameOrigins,
+          passwordOrigins: current.passwordOrigins,
+        }).catch((error) => {
+          console.error('Password save failed', error)
+        })
+        return
+      }
+
+      if (event.kind === 'wanted') {
+        pollDelayRef.current = ACTIVE_POLL_MS
+        wakeRef.current?.()
+        return
+      }
+
+      const offered = suggestionsRef.current.get(event.shortcutId)
+      if (!offered) return
+      if (passwordOriginFromUrl(event.url) !== passwordOriginFromUrl(offered.pageUrl)) return
+      const entry = entryForPickedAccount(offered.matches, event.username)
+      if (!entry) return
+      void acceptFill(entry, event.shortcutId, offered.pageUrl, offered.fillTarget, true).catch(
+        (error) => {
+          console.error('Password fill failed', error)
+        },
+      )
+    })
+      .then((dispose) => {
+        if (disposed) dispose()
+        else unlisten = dispose
+      })
+      .catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('[nebula] password suggest listener failed', error)
+        }
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [enabled, acceptFill, acceptSave, clearOffer])
 
   return {
     offer,

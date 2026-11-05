@@ -58,6 +58,10 @@ mod imp {
         pub permission_exceptions: Vec<String>,
         #[serde(default)]
         pub cookie_banner_blocking: bool,
+        /// Passkeys are listed in Nebula's own list (see `passkeys.rs`). A tab whose options are not known yet
+        /// counts as on, see `passkey_list_enabled`.
+        #[serde(default = "default_true")]
+        pub passkey_list: bool,
         #[serde(default)]
         pub site_notifications: bool,
         #[serde(default = "default_true")]
@@ -166,6 +170,15 @@ mod imp {
             .ok()
             .and_then(|options| options.get(label).cloned())
             .unwrap_or_default()
+    }
+
+    /// Whether the tab may show passkeys in Nebula's own list.
+    pub fn passkey_list_enabled(label: &str) -> bool {
+        OPTIONS
+            .lock()
+            .ok()
+            .and_then(|options| options.get(label).map(|options| options.passkey_list))
+            .unwrap_or(true)
     }
 
     pub fn notification_delivery_policy(
@@ -1493,7 +1506,9 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{apply, notification_delivery_policy, teardown, PrivacyOptions};
+pub use imp::{
+    apply, notification_delivery_policy, passkey_list_enabled, teardown, PrivacyOptions,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BrowsingDataKind {
@@ -1872,6 +1887,30 @@ async fn clear_profile_data_through(
         .map_err(|_| format!("timed out clearing {what}"))?
         .map_err(|_| format!("clearing {what} was dropped before it finished"))?
 }
+
+/// WebView2 remembers what was typed into forms and offers it back in its own "Saved info" list. Nebula keeps its
+/// own accounts and turns that store off, but entries remembered before (or by an earlier version) were still
+/// offered. They are removed once per run, as soon as a browsing tab gives the profile a WebView to clear through.
+#[cfg(target_os = "windows")]
+pub async fn clear_remembered_form_entries(app: &tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL;
+
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if DONE.load(Ordering::Relaxed) {
+        return;
+    }
+    if clear_profile_data_and_wait(app, COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL)
+        .await
+        .is_ok()
+    {
+        DONE.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub async fn clear_remembered_form_entries(_app: &tauri::AppHandle) {}
 
 #[cfg(target_os = "windows")]
 pub async fn factory_reset_profiles(app: &tauri::AppHandle) -> Result<(), String> {

@@ -1,0 +1,282 @@
+/* Shared by the first-run import step and the Google account setup. Colours follow the surrounding panel. */
+
+.sourceList {
+  color: var(--nebula-text, #f1f5f2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sourceRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.sourceRow:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sourceRow input {
+  margin-top: 3px;
+}
+
+.sourceText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--nebula-text-muted, rgba(232, 239, 233, 0.6));
+}
+
+.badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(61, 122, 87, 0.35);
+  color: #9fe8b8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.csvHint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.csvButton {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.csvButton:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.conflictTitle {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.conflictLead {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(232, 239, 233, 0.78);
+}
+
+.conflictList {
+  color: var(--nebula-text, #f1f5f2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(46vh, 340px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.conflict {
+  margin: 0;
+  padding: 10px 12px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflictLegend {
+  padding: 0 6px;
+  font-size: 0.88rem;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.conflictUser {
+  font-size: 0.8rem;
+  color: rgba(232, 239, 233, 0.62);
+  word-break: break-all;
+}
+
+.choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.choice input {
+  margin-top: 3px;
+}
+
+.choiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.what {
+  margin: 0;
+  color: var(--nebula-text, #f1f5f2);
+  padding: 10px 14px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.whatLegend {
+  padding: 0 6px;
+  font-size: 0.85rem;
+  color: rgba(232, 239, 233, 0.78);
+}
+
+.resultText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.resultLine {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(244, 247, 245, 0.72);
+}
+
+.resultError {
+  padding: 12px 14px;
+  border: 1px solid rgba(243, 163, 163, 0.28);
+  border-radius: 12px;
+  background: rgba(243, 163, 163, 0.06);
+}
+
+.resultError .resultLine {
+  color: #f3b3b3;
+}
+
+.hiddenFile {
+  display: none;
+}
+
+.details {
+  font-size: 0.8rem;
+  color: var(--nebula-text-muted, rgba(232, 239, 233, 0.6));
+}
+
+.details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.detailsText {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+/* One card per browser: the checkbox, the name that opens the options, what will be taken, the options. */
+.sourceCard {
+  color: var(--nebula-text, #f1f5f2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+}
+
+.sourceCard:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.sourceHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.nameButton {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.nameButton:focus-visible {
+  outline: 2px solid var(--nebula-accent, #8fd6b4);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.chevron,
+.chevronOpen {
+  color: var(--nebula-text-muted, rgba(232, 239, 233, 0.6));
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.sourceSummary {
+  padding: 0 12px 10px 38px;
+  font-size: 0.8rem;
+  color: var(--nebula-text-muted, rgba(232, 239, 233, 0.6));
+}
+
+.sourceOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px 14px 38px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}

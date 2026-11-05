@@ -44,6 +44,9 @@ mod imp {
     const SITE_PRINT_REQUEST_EVENT: &str = "nebula-site-print-request";
     const SITE_ZOOM_REQUEST_EVENT: &str = "nebula-site-zoom-request";
     const PASSWORD_STEP_EVENT: &str = "nebula-password-step";
+    const PASSWORD_SUGGEST_EVENT: &str = "nebula-password-suggest";
+    /// The list of saved accounts under a sign-in field (see the header of the script).
+    const PASSWORD_SUGGEST_SCRIPT: &str = include_str!("site_scripts/password_suggest.js");
     const SITE_UI_TIMEOUT: Duration = Duration::from_secs(60);
     const POPUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
     const MAX_PENDING_SITE_UI_PER_TAB: usize = 8;
@@ -233,6 +236,19 @@ mod imp {
         url: String,
         username: String,
         password: String,
+    }
+
+    /// A pick from the account list under a sign-in field, the page asking for the list, or the answer to the
+    /// bubble that offers to save a password. Never carries a password: the shell fills the form, and saves the
+    /// login, from its own copy.
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PasswordSuggestPayload {
+        kind: String,
+        tab_label: String,
+        origin: String,
+        url: String,
+        username: String,
     }
 
     #[derive(Clone, Serialize)]
@@ -2732,6 +2748,243 @@ if (container) queueCandidate(container);
         validated_http_document_source_values(&message_source, &top_level_source)
     }
 
+    /// Passkey requests from the page script: which passkeys Windows has for the site, and a sign-in with one of
+    /// them. The origin is the message's verified source, never what the page says; the relying party id must be
+    /// that origin's host or a parent domain; the credential must be one Windows lists for it. Windows Hello's
+    /// check blocks, so the work runs on its own thread.
+    fn handle_passkey_message(
+        app: &AppHandle,
+        tab_label: &str,
+        source_origin: &str,
+        value: &serde_json::Value,
+    ) {
+        let text = |key: &str| {
+            value
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+        };
+        let kind = text("kind");
+        let request_id = text("requestId");
+        let rp_id = text("rpId");
+        let url = text("url");
+        let url_matches_source = url::Url::parse(url)
+            .ok()
+            .is_some_and(|url| url.origin().ascii_serialization() == source_origin);
+        if text("origin") != source_origin
+            || !url_matches_source
+            || url.len() > 8192
+            || request_id.is_empty()
+            || request_id.len() > 64
+            || !request_id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            || !crate::passkeys::rp_id_allowed(rp_id, source_origin)
+        {
+            return;
+        }
+        let (app, label, origin) = (
+            app.clone(),
+            tab_label.to_string(),
+            source_origin.to_string(),
+        );
+        let (request_id, rp_id) = (request_id.to_string(), rp_id.to_string());
+        match kind {
+            "list" => {
+                std::thread::spawn(move || list_passkeys(&app, &label, &request_id, &rp_id));
+            }
+            "sign" => {
+                let Some(credential_id) =
+                    crate::passkeys::decode_b64url(text("credentialId"), 1024)
+                else {
+                    return;
+                };
+                let challenge = text("challenge");
+                let user_verification = text("userVerification");
+                if challenge.len() > 2048 || user_verification.len() > 16 {
+                    return;
+                }
+                let (challenge, user_verification) =
+                    (challenge.to_string(), user_verification.to_string());
+                std::thread::spawn(move || {
+                    sign_with_passkey(
+                        &app,
+                        &label,
+                        &origin,
+                        &request_id,
+                        &rp_id,
+                        &credential_id,
+                        &challenge,
+                        &user_verification,
+                    );
+                });
+            }
+            _ => {}
+        }
+    }
+
+    fn deliver_passkey_answer(app: &AppHandle, tab_label: &str, payload: serde_json::Value) {
+        let Some(webview) = app.get_webview(tab_label) else {
+            return;
+        };
+        let Ok(literal) = serde_json::to_string(&payload.to_string()) else {
+            return;
+        };
+        let _ = webview.eval(format!(
+            "if (typeof window.__nebulaPasskeys === 'function') window.__nebulaPasskeys({literal});"
+        ));
+    }
+
+    fn list_passkeys(app: &AppHandle, tab_label: &str, request_id: &str, rp_id: &str) {
+        // Switched off in the settings: no passkeys are offered, so the page's request goes to the web view.
+        let found = if crate::webview_privacy::passkey_list_enabled(tab_label) {
+            crate::passkeys::list_for_rp(rp_id, false).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let passkeys = found
+            .iter()
+            .filter(|passkey| passkey.rp_id.is_empty() || passkey.rp_id == rp_id)
+            .filter(|passkey| !passkey.label().is_empty())
+            .map(|passkey| {
+                serde_json::json!({
+                    "id": crate::passkeys::encode_b64url(&passkey.credential_id),
+                    "name": passkey.label(),
+                })
+            })
+            .collect::<Vec<_>>();
+        deliver_passkey_answer(
+            app,
+            tab_label,
+            serde_json::json!({ "requestId": request_id, "kind": "list", "passkeys": passkeys }),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn sign_with_passkey(
+        app: &AppHandle,
+        tab_label: &str,
+        origin: &str,
+        request_id: &str,
+        rp_id: &str,
+        credential_id: &[u8],
+        challenge: &str,
+        user_verification: &str,
+    ) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        static SIGNING: AtomicBool = AtomicBool::new(false);
+        struct Release;
+        impl Drop for Release {
+            fn drop(&mut self) {
+                SIGNING.store(false, Ordering::SeqCst);
+            }
+        }
+
+        let refuse = || {
+            deliver_passkey_answer(
+                app,
+                tab_label,
+                serde_json::json!({
+                    "requestId": request_id,
+                    "kind": "result",
+                    "ok": false,
+                    "error": "NotAllowedError",
+                }),
+            );
+        };
+        if !crate::webview_privacy::passkey_list_enabled(tab_label) {
+            refuse();
+            return;
+        }
+        // One Windows Hello prompt at a time.
+        if SIGNING.swap(true, Ordering::SeqCst) {
+            refuse();
+            return;
+        }
+        let _release = Release;
+
+        // The credential has to be one Windows itself lists for this site.
+        let offered = crate::passkeys::list_for_rp(rp_id, false)
+            .unwrap_or_default()
+            .iter()
+            .any(|passkey| {
+                passkey.credential_id == credential_id
+                    && (passkey.rp_id.is_empty() || passkey.rp_id == rp_id)
+            });
+        let client_data = crate::passkeys::client_data_json(challenge, origin);
+        let window = app
+            .get_webview(tab_label)
+            .and_then(|webview| webview.window().hwnd().ok());
+        let (true, Some(client_data), Some(window)) = (offered, client_data, window) else {
+            refuse();
+            return;
+        };
+
+        match crate::passkeys::get_assertion(
+            window,
+            rp_id,
+            credential_id,
+            &client_data,
+            user_verification,
+        ) {
+            Ok(assertion) => deliver_passkey_answer(
+                app,
+                tab_label,
+                serde_json::json!({
+                    "requestId": request_id,
+                    "kind": "result",
+                    "ok": true,
+                    "credentialId": crate::passkeys::encode_b64url(&assertion.credential_id),
+                    "clientDataJSON": crate::passkeys::encode_b64url(client_data.as_bytes()),
+                    "authenticatorData": crate::passkeys::encode_b64url(&assertion.authenticator_data),
+                    "signature": crate::passkeys::encode_b64url(&assertion.signature),
+                    "userHandle": (!assertion.user_handle.is_empty())
+                        .then(|| crate::passkeys::encode_b64url(&assertion.user_handle)),
+                }),
+            ),
+            Err(_) => refuse(),
+        }
+    }
+
+    /// A message from the account list script, accepted only from the exact page it was injected into and only in
+    /// the two shapes it sends.
+    fn validated_password_suggest(
+        value: &serde_json::Value,
+        source_origin: &str,
+        tab_label: &str,
+    ) -> Option<PasswordSuggestPayload> {
+        let text = |key: &str| {
+            value
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+        };
+        let kind = text("kind");
+        let origin = text("origin");
+        let url = text("url");
+        let username = text("username");
+        let claimed_url_matches_source = url::Url::parse(url)
+            .ok()
+            .is_some_and(|url| url.origin().ascii_serialization() == source_origin);
+        let shape_ok = match kind {
+            // "save" and "dismiss" answer the save/update bubble; like "wanted" they carry no name.
+            "wanted" | "save" | "dismiss" => username.is_empty(),
+            "pick" => !username.trim().is_empty(),
+            _ => false,
+        };
+        (origin == source_origin
+            && claimed_url_matches_source
+            && shape_ok
+            && url.len() <= 8192
+            && username.len() <= 1024)
+            .then(|| PasswordSuggestPayload {
+                kind: kind.to_string(),
+                tab_label: tab_label.to_string(),
+                origin: origin.to_string(),
+                url: url.to_string(),
+                username: username.to_string(),
+            })
+    }
+
     fn host_label(uri: &str) -> String {
         url::Url::parse(uri)
             .ok()
@@ -3206,6 +3459,18 @@ if (container) queueCandidate(container);
                     core.AddScriptToExecuteOnDocumentCreated(
                         PCWSTR(protocol_script.as_ptr()),
                         &protocol_script_complete,
+                    )?;
+
+                    // The account list under a sign-in field. It also needs the message bridge before
+                    // the page can see it, so it is registered right after the script above.
+                    let suggest_script = HSTRING::from(PASSWORD_SUGGEST_SCRIPT);
+                    let suggest_script_complete =
+                        AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(
+                            |_result, _id| Ok(()),
+                        ));
+                    core.AddScriptToExecuteOnDocumentCreated(
+                        PCWSTR(suggest_script.as_ptr()),
+                        &suggest_script_complete,
                     )?;
 
                     let protocol_app = app_for_handlers.clone();
@@ -3721,6 +3986,31 @@ if (container) queueCandidate(container);
                                             "action": action,
                                         }),
                                     );
+                                }
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-passkeys")
+                            {
+                                handle_passkey_message(
+                                    &protocol_app,
+                                    &protocol_label,
+                                    &source_origin,
+                                    &value,
+                                );
+                                return Ok(());
+                            }
+
+                            if value.get("type").and_then(serde_json::Value::as_str)
+                                == Some("nebula-password-suggest")
+                            {
+                                if let Some(payload) = validated_password_suggest(
+                                    &value,
+                                    &source_origin,
+                                    &protocol_label,
+                                ) {
+                                    let _ = protocol_app.emit(PASSWORD_SUGGEST_EVENT, payload);
                                 }
                                 return Ok(());
                             }
@@ -4456,6 +4746,64 @@ if (container) queueCandidate(container);
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn the_account_list_only_reports_picks_and_requests_from_its_own_page() {
+            let accept = |message: serde_json::Value| {
+                validated_password_suggest(&message, "https://example.com", "nebula-tab-a")
+            };
+            let pick = serde_json::json!({
+                "kind": "pick",
+                "origin": "https://example.com",
+                "url": "https://example.com/login",
+                "username": "me@example.com",
+            });
+            let payload = accept(pick.clone()).expect("a pick from the page itself");
+            assert_eq!(payload.username, "me@example.com");
+            assert_eq!(payload.tab_label, "nebula-tab-a");
+            for kind in ["wanted", "save", "dismiss"] {
+                assert!(accept(serde_json::json!({
+                    "kind": kind, "origin": "https://example.com", "url": "https://example.com/", "username": "",
+                }))
+                .is_some(), "{kind}");
+            }
+
+            // Another origin, a made-up kind, an empty pick, a request that carries a name, or no password-free
+            // shape at all are all dropped.
+            let mut other_origin = pick.clone();
+            other_origin["origin"] = "https://evil.example".into();
+            assert!(accept(other_origin).is_none());
+            let mut other_url = pick.clone();
+            other_url["url"] = "https://evil.example/login".into();
+            assert!(accept(other_url).is_none());
+            let mut unknown_kind = pick.clone();
+            unknown_kind["kind"] = "fill".into();
+            assert!(accept(unknown_kind).is_none());
+            let mut empty_pick = pick.clone();
+            empty_pick["username"] = "  ".into();
+            assert!(accept(empty_pick).is_none());
+            for kind in ["wanted", "save", "dismiss"] {
+                let mut with_name = pick.clone();
+                with_name["kind"] = kind.into();
+                assert!(accept(with_name).is_none(), "{kind} with a name");
+            }
+            let mut long_name = pick;
+            long_name["username"] = "a".repeat(2000).into();
+            assert!(accept(long_name).is_none());
+        }
+
+        #[test]
+        fn the_account_list_script_is_limited_to_the_top_frame_of_web_pages() {
+            let script = PASSWORD_SUGGEST_SCRIPT;
+            assert!(script.contains("window.top !== window"));
+            assert!(script.contains("window.location.protocol !== 'http:'"));
+            // It is installed once, cannot be replaced by the page, and the list is not readable by it.
+            assert!(script.contains("configurable: false"));
+            assert!(script.contains("mode: 'closed'"));
+            // Only real clicks and keys choose; the page never receives a password.
+            assert!(script.contains("!event.isTrusted"));
+            assert!(!script.to_lowercase().contains("password:"));
+        }
 
         #[test]
         fn site_ui_queue_is_bounded_per_tab() {

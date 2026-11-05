@@ -40,6 +40,11 @@ interface PopupRuntime {
 
 const popupByContentLabel = new Map<string, PopupRuntime>()
 
+/** True when this window created the popup whose content webview has this label. */
+export function ownsSitePopupContent(contentLabel: string): boolean {
+  return popupByContentLabel.has(contentLabel)
+}
+
 function safeLabelSuffix(requestId: string): string {
   const clean = requestId.replace(/[^A-Za-z0-9-]/g, '-')
   return clean || `popup-${Date.now()}`

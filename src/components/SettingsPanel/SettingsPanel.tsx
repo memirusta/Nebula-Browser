@@ -259,6 +259,7 @@ const SETTINGS_SEARCH_KEYS: Record<SettingsCategoryId, readonly LocaleMessageKey
     'permissionPolicy',
     'currentSitePermissions',
     'cookieBannerBlocking',
+    'passkeyList',
     'permissionExceptions',
     'privateMode',
     'privacyExceptions',
@@ -1605,6 +1606,12 @@ function CategoryContent({
             hint={t('cookieBannerBlockingHint')}
             checked={privacy.cookieBannerBlocking}
             onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
+          />
+          <SettingToggleRow
+            label={t('passkeyList')}
+            hint={t('passkeyListHint')}
+            checked={privacy.passkeyList}
+            onChange={() => onUpdate('privacy', 'passkeyList', !privacy.passkeyList)}
           />
           <SettingTextRow
             label={t('permissionExceptions')}

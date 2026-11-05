@@ -68,6 +68,14 @@ export function isSearchShortcutId(id: string): boolean {
 export function visitShortcutIdFromUrl(rawUrl: string): string {
   try {
     const parsed = new URL(rawUrl)
+    // A local file has no host: each file gets its own tab id instead of all of them sharing one.
+    if (parsed.protocol === 'file:') {
+      const path = decodeURIComponent(parsed.pathname).toLowerCase()
+      let hash = 5381
+      for (const character of parsed.host + path) hash = ((hash << 5) + hash + character.charCodeAt(0)) >>> 0
+      const slug = path.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(-40)
+      return `visit-file-${slug}-${hash.toString(36)}`
+    }
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
     if (!host) return 'visit-unknown'
 
