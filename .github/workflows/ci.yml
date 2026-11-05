@@ -16,39 +16,69 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Two commits are enough to compare a merge (or a push) with the commit before it.
+          fetch-depth: 2
+
+      # "validate" is a required check of the main branch, so this job must run and succeed for every change.
+      # When only documentation changed, the slow steps below are skipped instead of the whole job.
+      - name: Find out whether anything besides documentation changed
+        id: scope
+        shell: bash
+        run: |
+          files="$(git diff --name-only HEAD^1 HEAD 2>/dev/null || true)"
+          if [ -z "$files" ]; then
+            echo "No changed files could be listed: running everything."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          elif echo "$files" | grep -qvE '^(.*\.md|docs/.*|LICENSE)$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only documentation changed: the build and the tests are skipped."
+            echo "$files"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Node
+        if: steps.scope.outputs.code == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Set up Rust
+        if: steps.scope.outputs.code == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
 
       - name: Install frontend dependencies
+        if: steps.scope.outputs.code == 'true'
         run: npm ci
 
       - name: Frontend lint
+        if: steps.scope.outputs.code == 'true'
         run: npm run lint
 
       - name: Regression tests
+        if: steps.scope.outputs.code == 'true'
         run: npm run test:regression
 
       - name: Frontend build
+        if: steps.scope.outputs.code == 'true'
         run: npm run build
 
       - name: Rust formatting
+        if: steps.scope.outputs.code == 'true'
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
       - name: Rust clippy
+        if: steps.scope.outputs.code == 'true'
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Rust tests
+        if: steps.scope.outputs.code == 'true'
         working-directory: src-tauri
         run: cargo test --all-targets --features extension-native-smoke
