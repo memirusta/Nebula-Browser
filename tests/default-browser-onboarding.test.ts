@@ -235,3 +235,29 @@ test('the first-run screens bundle Plus Jakarta Sans locally, with its licence',
   // Nothing is loaded from the network.
   assert.doesNotMatch(css, /https?:\/\//)
 })
+
+test('light or dark is chosen on the first screen and becomes the app theme', () => {
+  const welcome = source('../src/components/Onboarding/OnboardingWelcomeStep.tsx')
+  const wizard = source('../src/components/Onboarding/OnboardingWizard.tsx')
+  const css = source('../src/components/Onboarding/OnboardingWizard.module.css')
+  const shell = source('../src/components/BrowserShell/BrowserShell.tsx')
+    .split(String.fromCharCode(13, 10))
+    .join(String.fromCharCode(10))
+
+  // Under the language: two radio choices, and what is shown as chosen is applied when the person goes on.
+  assert.match(welcome, /role="radiogroup"/)
+  assert.match(welcome, /type="radio"/)
+  assert.match(welcome, /onSchemeChange\(scheme\)\s*\n\s*\n\s*onContinue\(\)/)
+
+  // The screens show the chosen theme, or Windows' mode while none was chosen.
+  assert.match(wizard, /data-scheme=\{\s*scheme\s*\}/)
+  assert.match(wizard, /theme === 'light'/)
+  assert.match(wizard, /systemDark\s*\?\s*'dark'\s*:\s*'light'/)
+
+  // The shell writes it to the app's own theme setting.
+  assert.match(shell, /updateCategory\(\s*'appearance',\s*'theme',\s*theme,\s*\)/)
+
+  // The dark look follows that choice, not the media query.
+  assert.match(css, /\.root\[data-scheme='dark'\] \{/)
+  assert.doesNotMatch(css, /@media \(prefers-color-scheme/)
+})

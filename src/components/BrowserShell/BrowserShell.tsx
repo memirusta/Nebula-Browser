@@ -7949,6 +7949,19 @@ export function BrowserShell() {
             initialStep={
               onboardingInitialStep
             }
+            theme={
+              settings.appearance
+                .theme
+            }
+            onThemeChange={(
+              theme,
+            ) =>
+              updateCategory(
+                'appearance',
+                'theme',
+                theme,
+              )
+            }
             onApplyImportedShortcuts={
               handleApplyImportedShortcuts
             }

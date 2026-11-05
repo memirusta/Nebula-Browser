@@ -90,33 +90,32 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  .root {
-    --bg:
-      radial-gradient(800px 520px at 10% 0%, rgba(99, 102, 241, 0.2), transparent 60%),
-      radial-gradient(700px 500px at 100% 100%, rgba(45, 212, 191, 0.1), transparent 60%),
-      #0e1017;
-    --card: rgba(24, 27, 38, 0.82);
-    --card-border: rgba(255, 255, 255, 0.09);
-    --pop: #1b1e2b;
-    --text: #f2f4fa;
-    --muted: #a3acc2;
-    --faint: #8d96b0;
-    --accent: #818cf8;
-    --field: rgba(255, 255, 255, 0.05);
-    --field-border: rgba(255, 255, 255, 0.13);
-    --primary: linear-gradient(135deg, #6366f1, #818cf8);
-    --soft: rgba(129, 140, 248, 0.13);
-    --soft-border: rgba(129, 140, 248, 0.42);
-    --ok: #5eead4;
-    --danger: #f3a3a3;
-    --art-filter: brightness(var(--art-bright));
-    --haze: none;
-    --nebula-error-line: rgba(243, 163, 163, 0.28);
-    --nebula-error-bg: rgba(243, 163, 163, 0.06);
+/* Dark: chosen on the first screen (or Windows' mode until then). The wizard sets data-scheme. */
+.root[data-scheme='dark'] {
+  --bg:
+    radial-gradient(800px 520px at 10% 0%, rgba(99, 102, 241, 0.2), transparent 60%),
+    radial-gradient(700px 500px at 100% 100%, rgba(45, 212, 191, 0.1), transparent 60%),
+    #0e1017;
+  --card: rgba(24, 27, 38, 0.82);
+  --card-border: rgba(255, 255, 255, 0.09);
+  --pop: #1b1e2b;
+  --text: #f2f4fa;
+  --muted: #a3acc2;
+  --faint: #8d96b0;
+  --accent: #818cf8;
+  --field: rgba(255, 255, 255, 0.05);
+  --field-border: rgba(255, 255, 255, 0.13);
+  --primary: linear-gradient(135deg, #6366f1, #818cf8);
+  --soft: rgba(129, 140, 248, 0.13);
+  --soft-border: rgba(129, 140, 248, 0.42);
+  --ok: #5eead4;
+  --danger: #f3a3a3;
+  --art-filter: brightness(var(--art-bright));
+  --haze: none;
+  --nebula-error-line: rgba(243, 163, 163, 0.28);
+  --nebula-error-bg: rgba(243, 163, 163, 0.06);
 
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 .root {
@@ -613,6 +612,65 @@
 .googleBtn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Light or dark, chosen on the first screen --------------------------------------------- */
+
+.welcomeSetup .themeGroup {
+  margin-top: 22px;
+}
+
+.themeChoices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.themeCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  border: 1px solid var(--field-border);
+  border-radius: 13px;
+  background: var(--field);
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.themeCard:hover {
+  color: var(--text);
+}
+
+.themeCard:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--text);
+}
+
+.themeCard:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Google account ----------------------------------------------------------------------- */

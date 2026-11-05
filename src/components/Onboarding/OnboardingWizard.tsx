@@ -27,6 +27,7 @@ import {
   wasOnboardingRestored,
   type OnboardingStep,
 } from '../../core/onboarding'
+import type { NebulaTheme } from '../../core/nebulaSettings'
 import type { Shortcut } from '../../core/types'
 import nebulaArt from '../../assets/onboarding/crab-nebula.jpg'
 import { OnboardingImportStep } from './OnboardingImportStep'
@@ -49,6 +50,10 @@ export interface OnboardingResult {
 interface OnboardingWizardProps {
   open: boolean
   initialStep?: OnboardingStep
+  /** The app's theme. Until a light or dark one was chosen, the screens follow Windows. */
+  theme: NebulaTheme
+  /** The person chose light or dark here; it becomes the app's theme. */
+  onThemeChange: (theme: 'light' | 'dark') => void
   onApplyImportedShortcuts?: (
     shortcuts: Shortcut[],
   ) => void
@@ -87,9 +92,33 @@ const STEP_LABEL: Record<
   done: 'stepDone',
 }
 
+/** Whether Windows is in dark mode right now (and when it changes). */
+function useSystemPrefersDark(): boolean {
+  const [dark, setDark] = useState(() =>
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+      : true,
+  )
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setDark(query.matches)
+
+    query.addEventListener('change', update)
+
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return dark
+}
+
 export function OnboardingWizard({
   open,
   initialStep,
+  theme,
+  onThemeChange,
   onApplyImportedShortcuts,
   onComplete,
 }: OnboardingWizardProps) {
@@ -103,6 +132,19 @@ export function OnboardingWizard({
     ONBOARDING_COPY,
     locale,
   )
+
+  // The screens look the way the app will: the chosen theme, or Windows' while none was chosen.
+  const systemDark =
+    useSystemPrefersDark()
+
+  const scheme: 'light' | 'dark' =
+    theme === 'light'
+      ? 'light'
+      : theme === 'dark'
+        ? 'dark'
+        : systemDark
+          ? 'dark'
+          : 'light'
 
   const [
     step,
@@ -802,6 +844,9 @@ export function OnboardingWizard({
       className={
         styles.root
       }
+      data-scheme={
+        scheme
+      }
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
@@ -976,6 +1021,12 @@ export function OnboardingWizard({
               }
               onLocaleChange={
                 setLocale
+              }
+              scheme={
+                scheme
+              }
+              onSchemeChange={
+                onThemeChange
               }
               footer={
                 footer
