@@ -56,3 +56,6 @@ docs/ARCHITECTURE.md
 *.orig
 *.rej
 *.tmp
+
+# Local working rules for the coding agent: kept on the computer, not published
+AGENTS.md
