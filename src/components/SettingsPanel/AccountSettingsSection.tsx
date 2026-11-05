@@ -252,7 +252,8 @@ export function AccountSettingsSection({
 
   useEffect(() => {
     if (!isTauri) return
-    void listChromiumPasswordSources().then(setPasswordSources)
+    // Firefox is recognised but has no direct import (its CSV export is used); only the readable browsers get a button.
+    void listChromiumPasswordSources().then((sources) => setPasswordSources(sources.filter((source) => !source.csvOnly)))
   }, [])
 
   const handleImportBrowserPasswords = useCallback(
@@ -260,7 +261,7 @@ export function AccountSettingsSection({
       setImportingPasswords(true)
       setImportError(null)
       setImportMessage(null)
-      void importDefaultBrowserPasswords(200, browser)
+      void importDefaultBrowserPasswords(browser)
         .then(async (imported) => {
           await mergeEntries(
             imported.map((item) => ({

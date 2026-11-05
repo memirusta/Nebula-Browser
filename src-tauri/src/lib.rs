@@ -1,5 +1,5 @@
 mod app_lifecycle;
-mod browser_bookmarks;
+mod browser_import;
 mod browser_passwords;
 mod browser_profile;
 mod browser_tab_transfers;
@@ -31,6 +31,7 @@ mod google_oauth;
 mod google_sync;
 mod http_response;
 mod layout_audit;
+mod local_document;
 mod main_webview_layout;
 mod media_session;
 #[cfg(target_os = "windows")]
@@ -859,9 +860,15 @@ fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result
         return Err("navigation is limited to browser tabs".to_string());
     }
     let parsed = url.parse::<url::Url>().map_err(|error| error.to_string())?;
-    if !matches!(parsed.scheme(), "http" | "https" | "about")
-        || (parsed.scheme() == "about" && parsed.as_str() != "about:blank")
-    {
+    // Web addresses and a blank page. A file address only for a document of a known kind: only the shell calls
+    // this command, and it never passes it a file address that a web page asked for.
+    let allowed = match parsed.scheme() {
+        "http" | "https" => true,
+        "about" => parsed.as_str() == "about:blank",
+        "file" => local_document::is_openable_local_url(&parsed),
+        _ => false,
+    };
+    if !allowed {
         return Err(format!(
             "navigation scheme '{}' is not allowed",
             parsed.scheme()
@@ -2072,8 +2079,9 @@ pub fn run() {
             wallpaper_media::wallpaper_clear_videos,
             system_stats::get_network_stats,
             system_stats::get_system_memory_pressure,
-            browser_bookmarks::detect_default_browser,
-            browser_bookmarks::import_default_browser_bookmarks,
+            browser_import::browser_import_diagnostics,
+            browser_import::list_browser_import_sources,
+            browser_import::import_browser_bookmarks,
             browser_passwords::list_chromium_password_sources,
             browser_passwords::import_default_browser_passwords,
             google_oauth::exchange_google_oauth_token,

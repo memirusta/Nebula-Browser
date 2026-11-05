@@ -28,7 +28,9 @@ where
             if is_supported_external_url(value) {
                 Some(value.to_owned())
             } else {
-                None
+                // "Open with Nebula" hands over the path of the file: an existing document of a known kind
+                // (a .html page, a PDF, a picture) opens in a tab. The program's own path never matches.
+                crate::local_document::file_url_for_document(value)
             }
         })
         .collect()
@@ -157,5 +159,26 @@ mod tests {
                 "http://example.org/two".to_string(),
             ],
         );
+    }
+
+    #[test]
+    fn opening_a_document_with_nebula_hands_over_its_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let page = dir.path().join("design proposal.html");
+        std::fs::write(&page, "<p>hi</p>").unwrap();
+        let program = dir.path().join("tool.exe");
+        std::fs::write(&program, "x").unwrap();
+
+        let urls = extract_external_urls(vec![
+            r"C:\Program Files\Nebula\app.exe".to_string(),
+            page.display().to_string(),
+            program.display().to_string(),
+            dir.path().join("missing.html").display().to_string(),
+            "file:///C:/Windows/notepad.exe".to_string(),
+        ]);
+
+        // Only the existing document opens; the program, the missing file and a file address do not.
+        assert_eq!(urls.len(), 1, "{urls:?}");
+        assert!(urls[0].starts_with("file:///") && urls[0].ends_with("design%20proposal.html"));
     }
 }

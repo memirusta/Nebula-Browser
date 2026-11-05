@@ -75,6 +75,7 @@ import {
   closeSitePopupForContent,
   isPopupContentLabel,
   openSitePopup,
+  ownsSitePopupContent,
 } from '../../platform/tauriPopup'
 import {
   listenSiteCloseWindows,
@@ -156,10 +157,13 @@ import {
   faviconForUrl,
   shortcutFromTab,
   shortcutIdForTabWebviewLabel,
+  TAB_WEBVIEW_PREFIX,
   tabWebviewLabel,
   titleFromUrl,
   type BrowserTab,
 } from '../../core/browserTab'
+import { windowMayOpenLocalFile } from '../../core/localDocument'
+import { windowHandlesNewWindowRequest } from '../../core/siteNewWindowOwnership'
 import {
   closesWhenEmptied,
   resolveBrowserDropAction,
@@ -4436,6 +4440,53 @@ export function BrowserShell() {
             ),
             () => listenSiteNewWindows(
               (payload) => {
+                // The request is announced to every window; only the window that owns the page that asked
+                // opens the tab or the popup.
+                const openerShortcutId =
+                  shortcutIdForTabWebviewLabel(
+                    payload.tabLabel,
+                  )
+                if (
+                  !windowHandlesNewWindowRequest({
+                    isTabLabel:
+                      payload.tabLabel.startsWith(
+                        TAB_WEBVIEW_PREFIX,
+                      ),
+                    isPopupLabel:
+                      isPopupContentLabel(
+                        payload.tabLabel,
+                      ),
+                    ownsTab:
+                      openerShortcutId !== null &&
+                      tabsRef.current.some(
+                        (tab) =>
+                          tab.shortcutId ===
+                          openerShortcutId,
+                      ),
+                    ownsPopup:
+                      ownsSitePopupContent(
+                        payload.tabLabel,
+                      ),
+                  })
+                ) {
+                  return
+                }
+
+                // A page never sends a tab to a file on this computer (only a local page may open its
+                // sibling local pages).
+                if (
+                  !windowMayOpenLocalFile(
+                    payload.uri,
+                    tabsRef.current.find(
+                      (tab) =>
+                        tab.shortcutId ===
+                        openerShortcutId,
+                    )?.url,
+                  )
+                ) {
+                  return
+                }
+
                 if (
                   !payload.features
                     .isPopup

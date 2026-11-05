@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { shortcutsFromImportedBookmarks } from '../../core/bookmarkImport'
 import {
   googleRedirectUri,
   isGoogleSignInSupported,
@@ -11,7 +10,7 @@ import {
   loadNebulaAccount,
   type NebulaAccount,
 } from '../../core/nebulaAccount'
-import { getLocaleCopy, tf } from '../../core/locale'
+import { tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import {
@@ -23,11 +22,7 @@ import {
   type OnboardingStep,
 } from '../../core/onboarding'
 import type { Shortcut } from '../../core/types'
-import {
-  detectDefaultBrowser,
-  importDefaultBrowserBookmarks,
-  type BrowserInfo,
-} from '../../platform/browserImport'
+import { OnboardingImportStep } from './OnboardingImportStep'
 import { OnboardingSyncRestoreStep } from './OnboardingSyncRestoreStep'
 import { OnboardingDefaultBrowserStep } from './OnboardingDefaultBrowserStep'
 import { OnboardingWelcomeStep } from './OnboardingWelcomeStep'
@@ -56,135 +51,6 @@ type Step = OnboardingStep
 const STEPS: readonly Step[] =
   ONBOARDING_STEPS
 
-const BOOKMARK_COPY = {
-  en: {
-    title: 'Pick up where you left off.',
-    lead: (browser: string) =>
-      `Bring your bookmarks from ${browser} to Nebula.`,
-    detected: 'Bookmarks found',
-    searching: 'Detecting your default browser…',
-    unavailable: 'No supported bookmark source was found.',
-    webOnly: 'Bookmark import is available in the desktop app.',
-    import: 'Import bookmarks',
-    importing: 'Importing…',
-    imported: 'Bookmarks imported',
-    ready: (count: number) =>
-      `${count} sites are ready in Nebula`,
-  },
-  tr: {
-    title: 'Kaldığın yerden devam et.',
-    lead: (browser: string) =>
-      `${browser} yer imlerini Nebula’ya taşı.`,
-    detected: 'Yer imleri bulundu',
-    searching: 'Varsayılan tarayıcı algılanıyor…',
-    unavailable: 'Desteklenen bir yer imi kaynağı bulunamadı.',
-    webOnly: 'Yer imi içe aktarma masaüstü uygulamasında kullanılabilir.',
-    import: 'Yer imlerini içe aktar',
-    importing: 'İçe aktarılıyor…',
-    imported: 'Yer imleri içe aktarıldı',
-    ready: (count: number) =>
-      `${count} site Nebula’da hazır`,
-  },
-  es: {
-    title: 'Continúa donde lo dejaste.',
-    lead: (browser: string) =>
-      `Trae tus marcadores de ${browser} a Nebula.`,
-    detected: 'Marcadores encontrados',
-    searching: 'Detectando tu navegador predeterminado…',
-    unavailable: 'No se encontró ninguna fuente de marcadores compatible.',
-    webOnly: 'La importación de marcadores está disponible en la aplicación de escritorio.',
-    import: 'Importar marcadores',
-    importing: 'Importando…',
-    imported: 'Marcadores importados',
-    ready: (count: number) =>
-      `${count} sitios listos en Nebula`,
-  },
-  de: {
-    title: 'Mach dort weiter, wo du aufgehört hast.',
-    lead: (browser: string) =>
-      `Übertrage deine Lesezeichen aus ${browser} zu Nebula.`,
-    detected: 'Lesezeichen gefunden',
-    searching: 'Standardbrowser wird erkannt…',
-    unavailable: 'Es wurde keine unterstützte Lesezeichenquelle gefunden.',
-    webOnly: 'Der Lesezeichenimport ist in der Desktop-App verfügbar.',
-    import: 'Lesezeichen importieren',
-    importing: 'Wird importiert…',
-    imported: 'Lesezeichen importiert',
-    ready: (count: number) =>
-      `${count} Websites sind in Nebula bereit`,
-  },
-  fr: {
-    title: 'Reprenez là où vous vous êtes arrêté.',
-    lead: (browser: string) =>
-      `Importez vos favoris de ${browser} dans Nebula.`,
-    detected: 'Favoris trouvés',
-    searching: 'Détection de votre navigateur par défaut…',
-    unavailable: 'Aucune source de favoris compatible n’a été trouvée.',
-    webOnly: 'L’importation des favoris est disponible dans l’application de bureau.',
-    import: 'Importer les favoris',
-    importing: 'Importation…',
-    imported: 'Favoris importés',
-    ready: (count: number) =>
-      `${count} sites sont prêts dans Nebula`,
-  },
-  id: {
-    title: 'Lanjutkan dari tempat terakhir.',
-    lead: (browser: string) =>
-      `Bawa bookmark Anda dari ${browser} ke Nebula.`,
-    detected: 'Bookmark ditemukan',
-    searching: 'Mendeteksi browser bawaan…',
-    unavailable: 'Tidak ada sumber bookmark yang didukung.',
-    webOnly: 'Impor bookmark tersedia di aplikasi desktop.',
-    import: 'Impor bookmark',
-    importing: 'Mengimpor…',
-    imported: 'Bookmark diimpor',
-    ready: (count: number) =>
-      `${count} situs siap di Nebula`,
-  },
-  ru: {
-    title: 'Продолжите с того места, где остановились.',
-    lead: (browser: string) =>
-      `Перенесите закладки из ${browser} в Nebula.`,
-    detected: 'Закладки найдены',
-    searching: 'Определение браузера по умолчанию…',
-    unavailable: 'Поддерживаемый источник закладок не найден.',
-    webOnly: 'Импорт закладок доступен в настольном приложении.',
-    import: 'Импортировать закладки',
-    importing: 'Импорт…',
-    imported: 'Закладки импортированы',
-    ready: (count: number) =>
-      `${count} сайтов готовы в Nebula`,
-  },
-  it: {
-    title: 'Riprendi da dove avevi interrotto.',
-    lead: (browser: string) =>
-      `Porta i tuoi segnalibri da ${browser} a Nebula.`,
-    detected: 'Segnalibri trovati',
-    searching: 'Rilevamento del browser predefinito…',
-    unavailable: 'Non è stata trovata una fonte di segnalibri supportata.',
-    webOnly: 'L’importazione dei segnalibri è disponibile nell’app desktop.',
-    import: 'Importa segnalibri',
-    importing: 'Importazione…',
-    imported: 'Segnalibri importati',
-    ready: (count: number) =>
-      `${count} siti pronti in Nebula`,
-  },
-  ja: {
-    title: '前回の続きから始めましょう。',
-    lead: (browser: string) =>
-      `${browser} のブックマークを Nebula に移行します。`,
-    detected: 'ブックマークが見つかりました',
-    searching: '既定のブラウザーを検出中…',
-    unavailable: '対応するブックマーク元が見つかりませんでした。',
-    webOnly: 'ブックマークのインポートはデスクトップアプリで利用できます。',
-    import: 'ブックマークをインポート',
-    importing: 'インポート中…',
-    imported: 'ブックマークをインポートしました',
-    ready: (count: number) =>
-      `${count} 件のサイトを Nebula で利用できます`,
-  },
-} as const
-
 export function OnboardingWizard({
   open,
   initialStep,
@@ -197,8 +63,6 @@ export function OnboardingWizard({
     t,
   } = useLocale()
 
-  const bookmarkCopy = getLocaleCopy(BOOKMARK_COPY, locale)
-
   const [
     step,
     setStep,
@@ -208,27 +72,13 @@ export function OnboardingWizard({
   )
 
   const [
-    browserInfo,
-    setBrowserInfo,
-  ] = useState<BrowserInfo | null>(
-    null,
-  )
-
-  const [
-    importing,
-    setImporting,
-  ] = useState(false)
-
-  const [
-    importError,
-    setImportError,
-  ] = useState<string | null>(
-    null,
-  )
-
-  const [
     importedCount,
     setImportedCount,
+  ] = useState(0)
+
+  const [
+    importedPasswordCount,
+    setImportedPasswordCount,
   ] = useState(0)
 
   const [
@@ -272,14 +122,6 @@ export function OnboardingWizard({
     useRef<HTMLDivElement>(
       null,
     )
-
-  const browserDisplayName =
-    browserInfo &&
-    browserInfo.browser !==
-      'unknown' &&
-    browserInfo.displayName.trim()
-      ? browserInfo.displayName
-      : t('genericBrowser')
 
   useDialogFocusTrap({
     active: open,
@@ -396,19 +238,11 @@ export function OnboardingWizard({
       'welcome',
     )
 
-    setBrowserInfo(
-      null,
-    )
-
-    setImporting(
-      false,
-    )
-
-    setImportError(
-      null,
-    )
-
     setImportedCount(
+      0,
+    )
+
+    setImportedPasswordCount(
       0,
     )
 
@@ -554,85 +388,44 @@ export function OnboardingWizard({
     locale,
   ])
 
-  useEffect(() => {
-    if (
-      !open ||
-      step !==
-        'bookmarks'
-    ) {
-      return
-    }
-
-    void detectDefaultBrowser()
-      .then(
-        setBrowserInfo,
-      )
-  }, [
-    open,
-    step,
-  ])
-
-  const handleImportBookmarks =
+  const handleImportedShortcuts =
     useCallback(
-      async () => {
-        setImporting(
-          true,
+      (
+        shortcuts: Shortcut[],
+      ) => {
+        importedShortcutsRef.current =
+          shortcuts
+
+        setImportedCount(
+          shortcuts.length,
         )
 
-        setImportError(
-          null,
-        )
-
-        try {
-          const bookmarks =
-            await importDefaultBrowserBookmarks(
-              40,
-            )
-
-          const shortcuts =
-            shortcutsFromImportedBookmarks(
-              bookmarks,
-            )
-
-          importedShortcutsRef.current =
-            shortcuts
-
-          setImportedCount(
-            shortcuts.length,
-          )
-
-          if (
-            shortcuts.length >
-            0
-          ) {
-            saveOnboardingImportedShortcuts(
-              shortcuts,
-            )
-          }
-
-          if (
-            shortcuts.length ===
-            0
-          ) {
-            setImportError(
-              t(
-                'bookmarksNone',
-              ),
-            )
-          }
-        } catch {
-          setImportError(
-            t(
-              'bookmarksFailed',
-            ),
-          )
-        } finally {
-          setImporting(
-            false,
+        if (
+          shortcuts.length >
+          0
+        ) {
+          saveOnboardingImportedShortcuts(
+            shortcuts,
           )
         }
       },
-      [t],
+      [],
+    )
+
+  const handlePasswordsAdded =
+    useCallback(
+      (
+        count: number,
+      ) => {
+        setImportedPasswordCount(
+          (
+            current,
+          ) =>
+            current +
+            count,
+        )
+      },
+      [],
     )
 
   const finish =
@@ -858,161 +651,14 @@ export function OnboardingWizard({
 
           {step ===
             'bookmarks' && (
-            <div
-              className={
-                styles.bookmarkStep
+            <OnboardingImportStep
+              onShortcuts={
+                handleImportedShortcuts
               }
-            >
-              <div
-                className={
-                  styles.bookmarkIntro
-                }
-              >
-                <h2
-                  className={
-                    styles.title
-                  }
-                >
-                  {
-                    bookmarkCopy.title
-                  }
-                </h2>
-
-                <p
-                  className={
-                    styles.lead
-                  }
-                >
-                  {isTauri
-                    ? browserInfo
-                      ? bookmarkCopy.lead(
-                          browserDisplayName,
-                        )
-                      : bookmarkCopy.searching
-                    : bookmarkCopy.webOnly}
-                </p>
-              </div>
-
-              {importedCount >
-              0 ? (
-                <div
-                  className={
-                    styles.bookmarkSuccessCard
-                  }
-                >
-                  <div
-                    className={
-                      styles.bookmarkSuccessIcon
-                    }
-                    aria-hidden="true"
-                  >
-                    ✓
-                  </div>
-
-                  <div
-                    className={
-                      styles.bookmarkSourceText
-                    }
-                  >
-                    <strong>
-                      {
-                        bookmarkCopy.imported
-                      }
-                    </strong>
-
-                    <span>
-                      {
-                        bookmarkCopy.ready(
-                          importedCount,
-                        )
-                      }
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  className={
-                    styles.bookmarkSourceCard
-                  }
-                >
-                  <div
-                    className={
-                      styles.bookmarkBrowserMark
-                    }
-                    aria-hidden="true"
-                  >
-                    {
-                      browserDisplayName
-                        .trim()
-                        .slice(
-                          0,
-                          1,
-                        )
-                        .toUpperCase() ||
-                      'B'
-                    }
-                  </div>
-
-                  <div
-                    className={
-                      styles.bookmarkSourceText
-                    }
-                  >
-                    <strong>
-                      {
-                        browserInfo
-                          ? browserDisplayName
-                          : t(
-                              'genericBrowser',
-                            )
-                      }
-                    </strong>
-
-                    <span>
-                      {browserInfo
-                        ? browserInfo
-                            .bookmarksAvailable
-                          ? bookmarkCopy.detected
-                          : bookmarkCopy.unavailable
-                        : bookmarkCopy.searching}
-                    </span>
-                  </div>
-
-                  {isTauri &&
-                    browserInfo
-                      ?.bookmarksAvailable && (
-                      <button
-                        type="button"
-                        className={
-                          styles.bookmarkImportButton
-                        }
-                        onClick={() =>
-                          void handleImportBookmarks()
-                        }
-                        disabled={
-                          importing
-                        }
-                      >
-                        {importing
-                          ? bookmarkCopy.importing
-                          : bookmarkCopy.import}
-                      </button>
-                    )}
-                </div>
-              )}
-
-              {importError && (
-                <p
-                  className={
-                    styles.bookmarkError
-                  }
-                >
-                  {
-                    importError
-                  }
-                </p>
-              )}
-            </div>
+              onPasswordsAdded={
+                handlePasswordsAdded
+              }
+            />
           )}
 
           {step ===
@@ -1352,6 +998,18 @@ export function OnboardingWizard({
                   : t(
                       'doneEmptyMenu',
                     )}
+
+                {importedPasswordCount >
+                0
+                  ? ` ${tf(
+                      locale,
+                      'gsImportDone',
+                      {
+                        count:
+                          importedPasswordCount,
+                      },
+                    )}`
+                  : ''}
 
                 {displayName.trim()
                   ? ` ${t(

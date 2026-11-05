@@ -336,14 +336,15 @@ mod imp {
         }
     }
 
+    /// The failures a site's own protections can cause, so that "turn the protections off for this site" is a
+    /// fair thing to offer: a connection that was reset, and a response the page could not use. Everything the
+    /// error page words as "This site can't be reached" ("could not connect", "unreachable", "disconnected" and
+    /// "connection aborted", which is also what a navigation that a site's own script replaced looks like) gets
+    /// the error page and nothing else.
     fn should_offer_compatibility_retry(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> bool {
         matches!(
             status,
-            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
-                | COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
-                | COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED
-                | COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT
-                | COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
                 | COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE
         )
     }
@@ -1197,6 +1198,24 @@ mod imp {
             assert!(should_offer_compatibility_retry(
                 COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET
             ));
+            assert!(!should_offer_compatibility_retry(
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED
+            ));
+        }
+
+        #[test]
+        fn a_site_that_cannot_be_reached_never_gets_the_compatibility_prompt() {
+            // "This site can't be reached": nothing the protections do could have caused it.
+            for status in [
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
+                COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED,
+                COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE,
+                COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
+            ] {
+                assert!(!should_offer_compatibility_retry(status));
+                assert!(!compatibility_retry_applies(status, false));
+            }
         }
 
         #[test]
@@ -1208,15 +1227,9 @@ mod imp {
 
         #[test]
         fn no_internet_never_blames_the_site_or_the_protections() {
-            for status in [
-                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
-                COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED,
-                COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE,
-                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
-            ] {
-                assert!(compatibility_retry_applies(status, false));
-                assert!(!compatibility_retry_applies(status, true));
-            }
+            let status = COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET;
+            assert!(compatibility_retry_applies(status, false));
+            assert!(!compatibility_retry_applies(status, true));
             assert!(!compatibility_retry_applies(
                 COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
                 false

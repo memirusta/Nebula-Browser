@@ -765,6 +765,150 @@ catShortcutsDesc: {
     en: 'Stay signed in on Gmail, YouTube, and sites that use Google sign-in.',
   },
   gsCsvPick: { tr: 'CSV dosyası seç', en: 'Choose CSV file' },
+  gsBrowsersLead: {
+    tr: 'Hangi tarayıcılardan alınsın?',
+    en: 'Which browsers should passwords come from?',
+  },
+  gsBrowserLogins: {
+    tr: '{count} kayıtlı şifre',
+    en: '{count} saved passwords',
+  },
+  gsBrowserDefault: {
+    tr: 'Varsayılan',
+    en: 'Default',
+  },
+  gsNoBrowserSelected: {
+    tr: 'Önce en az bir tarayıcı seç.',
+    en: 'Select at least one browser first.',
+  },
+  gsFirefoxCsvHint: {
+    tr: 'Firefox bulundu. Şifrelerini doğrudan okuyamıyoruz: Firefox’ta about:logins sayfasını aç, ⋯ menüsünden «Parolaları dışa aktar» de, sonra CSV dosyasını seç.',
+    en: 'Firefox was found. Nebula cannot read its passwords directly: open about:logins in Firefox, choose “Export passwords” from the ⋯ menu, then pick the CSV file.',
+  },
+  gsBrowserReadFailed: {
+    tr: '{browser} okunamadı.',
+    en: '{browser} could not be read.',
+  },
+  gsConflictsTitle: {
+    tr: 'Aynı hesap için farklı şifreler var',
+    en: 'Different passwords for the same account',
+  },
+  gsConflictsLead: {
+    tr: 'Bu hesapların şifresi farklı yerlerde farklı. Nebula’da hangisi saklansın? Önerilen, en son kullanılan ya da kaydedilendir.',
+    en: 'These accounts have different passwords in different places. Which one should Nebula keep? The suggestion is the one used or saved most recently.',
+  },
+  gsConflictRecommended: {
+    tr: 'Önerilen',
+    en: 'Suggested',
+  },
+  gsConflictLastUsed: {
+    tr: 'Son kullanım veya kayıt: {date}',
+    en: 'Last used or saved: {date}',
+  },
+  gsConflictNoDate: {
+    tr: 'Tarih bilgisi yok',
+    en: 'No date available',
+  },
+  gsConflictNebula: {
+    tr: 'Nebula’da kayıtlı',
+    en: 'Already saved in Nebula',
+  },
+  gsConflictApply: {
+    tr: 'Seçimlerle içe aktar',
+    en: 'Import with these choices',
+  },
+  gsConflictBack: {
+    tr: 'Geri',
+    en: 'Back',
+  },
+  importStepTitle: {
+    tr: 'Kullandığın tarayıcılardan taşı',
+    en: 'Bring things over from the browsers you use',
+  },
+  importStepLead: {
+    tr: 'Nebula bu bilgisayardaki tarayıcıları buldu. Taşımak istediklerini seç.',
+    en: 'Nebula found the browsers on this computer. Pick the ones to bring things from.',
+  },
+  importWhatLabel: {
+    tr: 'Neler taşınsın?',
+    en: 'What should come over?',
+  },
+  importBookmarksOption: {
+    tr: 'Yer işaretleri',
+    en: 'Bookmarks',
+  },
+  importBookmarksHint: {
+    tr: 'Ana sayfaya kısayol olarak eklenir: her siteden bir tane, en son kullanılan 40 site.',
+    en: 'Added to the home page as shortcuts: one per site, the 40 most recently used sites.',
+  },
+  importPasswordsOption: {
+    tr: 'Kayıtlı şifreler',
+    en: 'Saved passwords',
+  },
+  importPasswordsHint: {
+    tr: 'Nebula’nın şifreli kasasına kaydedilir. Aynı hesapta farklı şifreler çıkarsa hangisinin kalacağını sen seçersin.',
+    en: 'Saved in Nebula’s encrypted vault. If the same account has different passwords, you choose which one stays.',
+  },
+  importRun: {
+    tr: 'Seçilenleri içe aktar',
+    en: 'Import selected',
+  },
+  importRunning: {
+    tr: 'İçe aktarılıyor…',
+    en: 'Importing…',
+  },
+  importNothingChosen: {
+    tr: 'Önce neyi taşıyacağını seç.',
+    en: 'Choose what to bring over first.',
+  },
+  importDone: {
+    tr: 'İçe aktarıldı',
+    en: 'Imported',
+  },
+  importBookmarksDone: {
+    tr: '{count} yer işareti ana sayfaya eklendi.',
+    en: '{count} bookmarks were added to the home page.',
+  },
+  importBookmarksMore: {
+    tr: '{count} site daha var; en son kullanılanlar eklendi.',
+    en: '{count} more sites were left out; the most recently used were added.',
+  },
+  importNoBrowsers: {
+    tr: 'Bu bilgisayarda aktarılabilecek bir tarayıcı bulunamadı.',
+    en: 'No browser to import from was found on this computer.',
+  },
+  importBrowserBookmarks: {
+    tr: '{count} yer işareti',
+    en: '{count} bookmarks',
+  },
+  importSearching: {
+    tr: 'Tarayıcılar aranıyor…',
+    en: 'Looking for browsers…',
+  },
+  importWebOnly: {
+    tr: 'İçe aktarma masaüstü uygulamasında kullanılabilir.',
+    en: 'Importing is available in the desktop app.',
+  },
+  importWillTake: {
+    tr: 'Alınacak: {details}',
+    en: 'Will import: {details}',
+  },
+  importNothingThere: {
+    tr: 'Seçtiğin tarayıcılarda taşınacak bir şey bulunamadı.',
+    en: 'Nothing to bring over was found in the browsers you picked.',
+  },
+  importDetails: {
+    tr: 'Ayrıntılar',
+    en: 'Details',
+  },
+  importListFailed: {
+    tr: 'Tarayıcı listesi alınamadı. Uygulamayı yeniden başlatmayı dene; sorun sürerse aşağıdaki ayrıntıyı bildir.',
+    en: 'The list of browsers could not be read. Try restarting the app; if it keeps happening, report the detail below.',
+  },
+  importRetry: {
+    tr: 'Tekrar dene',
+    en: 'Try again',
+  },
   gsSkip: { tr: 'Şimdilik atla', en: 'Skip for now' },
   gsApply: { tr: 'Bağla', en: 'Link' },
   gsApplying: { tr: 'Bağlanıyor…', en: 'Linking…' },
@@ -773,8 +917,8 @@ catShortcutsDesc: {
     en: 'Password import is available in the desktop app.',
   },
   gsImportSourceMissing: {
-    tr: 'Chrome veya Edge şifre veritabanı bulunamadı.',
-    en: 'No Chrome or Edge password database was found.',
+    tr: 'Desteklenen bir tarayıcıda kayıtlı şifre bulunamadı.',
+    en: 'No saved passwords were found in a supported browser.',
   },
   gsImportDone: { tr: '{count} şifre aktarıldı.', en: '{count} passwords imported.' },
   gsImportFailed: { tr: 'Şifre aktarımı başarısız.', en: 'Password import failed.' },
