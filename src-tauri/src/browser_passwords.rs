@@ -582,11 +582,8 @@ fn copy_login_db_to_temp(login_data: &Path) -> Result<PathBuf, String> {
             .map(|value| value.as_millis())
             .unwrap_or(0)
     ));
-    std::fs::copy(login_data, &temp).map_err(|error| {
-        format!(
-            "Veritabanı kopyalanamadı (tarayıcı açıksa kilitli olabilir — kapatıp tekrar dene): {error}"
-        )
-    })?;
+    std::fs::copy(login_data, &temp)
+        .map_err(|error| import_error("copy-failed", &[&error.to_string()]))?;
 
     let source_stem = login_data
         .file_name()
@@ -725,6 +722,17 @@ pub fn list_chromium_password_sources() -> Vec<ChromiumPasswordSource> {
     )
 }
 
+/// What an import says when it fails for a reason the person can act on: `nebula-import:<code>[:<detail>...]`. The
+/// window turns the code into a sentence in the person's language, so no sentence is written here.
+fn import_error(code: &str, details: &[&str]) -> String {
+    let mut message = format!("nebula-import:{code}");
+    for detail in details {
+        message.push(':');
+        message.push_str(detail);
+    }
+    message
+}
+
 /// Reads the saved passwords of one browser (all of its profiles). `limit` is only a safety valve for callers
 /// that want one; the importer passes none, so every saved login comes over.
 #[tauri::command]
@@ -733,14 +741,11 @@ pub fn import_default_browser_passwords(
     browser: Option<String>,
 ) -> Result<Vec<ImportedPassword>, String> {
     let browser_id = browser.as_deref();
-    let source = resolve_password_source_for(browser_id).ok_or_else(|| {
-        if let Some(id) = browser_id {
-            return format!("{id} şifre veritabanı bulunamadı.");
-        }
-        "Chromium tabanlı tarayıcı şifre veritabanı bulunamadı.".to_string()
-    })?;
+    let source = resolve_password_source_for(browser_id)
+        .ok_or_else(|| import_error("database-missing", &[browser_id.unwrap_or("")]))?;
 
-    let master_key = chromium_master_key(&source.user_data)?;
+    let master_key = chromium_master_key(&source.user_data)
+        .map_err(|detail| import_error("key-unavailable", &[&detail]))?;
     let source_id = browser_id
         .map(str::to_string)
         .or_else(|| installation_id_for(&source.user_data))
@@ -762,31 +767,26 @@ struct ImportStats {
     app_bound_skipped: usize,
 }
 
+/// Why nothing came over: the browser shows passwords but its file has no rows, its newer app-bound encryption cannot
+/// be opened from outside, or the rows could not be decrypted. Each is a code (see `import_error`).
 fn import_failure_message(stats: &ImportStats) -> String {
     if stats.total_rows == 0 {
-        return "Chrome'da şifre görünüyor ama dosyadan okunamadı. chrome://password-manager/passwords → sağ üst ⚙️ → Dışa aktar (CSV) ile «CSV içe aktar» kullan.".to_string();
+        return import_error("unreadable", &[]);
     }
 
+    let total = stats.total_rows.to_string();
     if stats.app_bound_skipped > 0 && stats.decryptable == 0 {
-        return format!(
-            "{} şifre kaydı var ama Chrome/Edge'in yeni app-bound şifrelemesi dışarıdan açılamıyor. \
-             Tarayıcıda Şifreler → Dışa aktar (CSV) yapıp buradan «CSV içe aktar» kullan.",
-            stats.total_rows
-        );
+        return import_error("app-bound-all", &[&total]);
     }
 
     if stats.app_bound_skipped > 0 {
-        return format!(
-            "{} kayıttan {} tanesi yeni app-bound şifrelemede; dışarıdan aktarılamıyor. \
-             Kalanlar için CSV dışa aktarmayı dene.",
-            stats.total_rows, stats.app_bound_skipped
+        return import_error(
+            "app-bound-some",
+            &[&total, &stats.app_bound_skipped.to_string()],
         );
     }
 
-    format!(
-        "{} şifre kaydı var ama çözülemedi. Farklı Windows kullanıcısı veya bozuk veritabanı olabilir; CSV dene.",
-        stats.total_rows
-    )
+    import_error("undecryptable", &[&total])
 }
 
 fn read_cell_bytes(row: &rusqlite::Row<'_>, index: usize) -> Result<Vec<u8>, rusqlite::Error> {
@@ -818,7 +818,7 @@ fn import_from_user_data(
 ) -> Result<Vec<ImportedPassword>, String> {
     let login_paths = login_data_paths_in_user_data(user_data);
     if login_paths.is_empty() {
-        return Err("Login Data dosyası bulunamadı.".to_string());
+        return Err(import_error("login-data-missing", &[]));
     }
 
     let mut imported = Vec::new();
@@ -1305,6 +1305,51 @@ mod tests {
             let imported = import_from_user_data(&user_data, &KEY, None, "chromium").unwrap();
             assert_eq!(imported.len(), 1);
             assert_eq!(imported[0].last_used_ms, None);
+        }
+
+        #[test]
+        fn a_failed_import_says_why_with_a_code_the_window_can_put_in_words() {
+            let stats = |total_rows, decryptable, app_bound_skipped| ImportStats {
+                total_rows,
+                decryptable,
+                decrypt_failed: 0,
+                app_bound_skipped,
+            };
+            assert_eq!(
+                import_failure_message(&stats(0, 0, 0)),
+                "nebula-import:unreadable"
+            );
+            assert_eq!(
+                import_failure_message(&stats(12, 0, 12)),
+                "nebula-import:app-bound-all:12"
+            );
+            assert_eq!(
+                import_failure_message(&stats(12, 7, 5)),
+                "nebula-import:app-bound-some:12:5"
+            );
+            assert_eq!(
+                import_failure_message(&stats(12, 0, 0)),
+                "nebula-import:undecryptable:12"
+            );
+            assert_eq!(
+                import_error("database-missing", &["brave"]),
+                "nebula-import:database-missing:brave"
+            );
+            assert_eq!(
+                import_error("login-data-missing", &[]),
+                "nebula-import:login-data-missing"
+            );
+        }
+
+        #[test]
+        fn a_missing_login_database_is_reported_as_a_code() {
+            let dir = tempfile::tempdir().unwrap();
+            let user_data = dir.path().join("User Data");
+            std::fs::create_dir_all(&user_data).unwrap();
+            assert_eq!(
+                import_from_user_data(&user_data, &KEY, None, "chrome").unwrap_err(),
+                "nebula-import:login-data-missing"
+            );
         }
 
         #[test]

@@ -197,8 +197,9 @@ test('Account is three tabs - Profile, Nebula Sync, Passwords - that all stay in
 
 test('a failed password import tells the person why in every language, instead of a bare "failed"', () => {
   const account = read('src/components/SettingsPanel/AccountSettingsSection.tsx')
-  // The native reason (Turkish) is kept for Turkish; elsewhere an import that cannot work says to use the CSV export,
-  // and any other failure keeps the reason next to the general message.
+  // The native side says why with a code that is put in words in every language; a failure without a code says to use
+  // the CSV export when that is what helps, and otherwise keeps the reason next to the general message.
+  assert.match(account, /describePasswordImportError\(locale, error\) \?\?/)
   assert.match(account, /needsCsvFor\(error\)\s+\? t\('gsImportNeedsCsv'\)/)
   assert.match(account, /`\$\{t\('accountImportFailed'\)\} \(\$\{nativeMessage\}\)`/)
   assert.match(read('src/core/googleAccountSetup.ts'), /export function needsCsvFor/)

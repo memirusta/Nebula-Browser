@@ -9,6 +9,7 @@ import {
 import { GoogleAccountSetupModal } from '../GoogleAccountSetupModal/GoogleAccountSetupModal'
 import { GoogleSyncSettings } from './GoogleSyncSettings'
 import { needsCsvFor } from '../../core/googleAccountSetup'
+import { describePasswordImportError, messageOf } from '../../core/passwordImportError'
 import { SettingGroup } from './SettingControls'
 import { SETTINGS_GROUP_COPY } from './settingsGroupCopy'
 import { consumePasswordsTabRequest, onPasswordsTabRequest } from './accountTabRequest'
@@ -309,19 +310,17 @@ export function AccountSettingsSection({
           )
         })
         .catch((error: unknown) => {
-          const nativeMessage =
-            error instanceof Error ? error.message : typeof error === 'string' ? error : ''
-          // The native side explains why in Turkish. In another language an automatic import that cannot work (the
-          // browser's app-bound encryption, no readable database) says to use the CSV export, and any other failure
-          // keeps the reason next to the general message instead of hiding it.
+          const nativeMessage = messageOf(error)
+          // The native side says why with a code, put in words here in the person's language (an import that cannot
+          // work says to use the CSV export). Anything without a code (a database error, a system message) keeps its
+          // reason next to the general message instead of hiding it.
           const message =
-            locale === 'tr' && nativeMessage
-              ? nativeMessage
-              : needsCsvFor(error)
-                ? t('gsImportNeedsCsv')
-                : nativeMessage
-                  ? `${t('accountImportFailed')} (${nativeMessage})`
-                  : t('accountImportFailed')
+            describePasswordImportError(locale, error) ??
+            (needsCsvFor(error)
+              ? t('gsImportNeedsCsv')
+              : nativeMessage
+                ? `${t('accountImportFailed')} (${nativeMessage})`
+                : t('accountImportFailed'))
           setImportError(message)
         })
         .finally(() => {

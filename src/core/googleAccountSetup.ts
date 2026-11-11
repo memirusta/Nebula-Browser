@@ -2,6 +2,7 @@ import { importDefaultBrowserPasswords, listChromiumPasswordSources } from '../p
 import type { ImportedPassword } from './passwordImport'
 import { t, tf, type NebulaLocale } from './locale'
 import { isTauri } from '../platform/runtime'
+import { messageOf, passwordImportNeedsCsv } from './passwordImportError'
 
 export interface PasswordSyncResult {
   ok: boolean
@@ -23,8 +24,8 @@ export interface BrowserPasswordsRead {
 }
 
 export function needsCsvFor(error: unknown): boolean {
-  const nativeMessage =
-    error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  if (passwordImportNeedsCsv(error)) return true
+  const nativeMessage = messageOf(error)
   return (
     nativeMessage.includes('app-bound') ||
     nativeMessage.includes('CSV') ||
