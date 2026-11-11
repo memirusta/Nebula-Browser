@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula palet bağları</title>
+<style>
+  /* Design prototype: which colour of the palette each place of Nebula uses. Left: a live mock of the home screen and of
+     Settings. Right: every place by name, with the colour it is bound to. Hover a place to see it on the mock, click a part of
+     the mock to find its place. Nothing here is the real app; the choices can be copied as text at the bottom. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ui-bg: #0b0d16; --ui-panel: #141726; --ui-line: rgba(255,255,255,.09); --ui-text: #eef0fa; --ui-muted: #9aa2bd;
+    --ui-acc: #8b8ffb;
+  }
+  body { font: 14px/1.4 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif; background: var(--ui-bg); color: var(--ui-text); }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 440px; min-height: 100vh; }
+  .stage { padding: 18px 20px 40px; display: grid; gap: 16px; align-content: start; }
+  .side { background: var(--ui-panel); border-left: 1px solid var(--ui-line); height: 100vh; position: sticky; top: 0; overflow-y: auto; padding: 16px 16px 30px; }
+
+  h1 { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+  .sub { color: var(--ui-muted); font-size: 12.5px; margin-top: 2px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip, .btn { border: 1px solid var(--ui-line); background: rgba(255,255,255,.04); color: var(--ui-text); border-radius: 10px; padding: 6px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .chip:hover, .btn:hover { background: rgba(255,255,255,.09); }
+  .chip.on { border-color: var(--ui-acc); box-shadow: 0 0 0 2px rgba(139,143,251,.25); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .group { color: var(--ui-muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin: 16px 0 8px; }
+
+  /* ---------- the mock ---------- */
+  .mocks { display: grid; gap: 16px; }
+  .mock { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--ui-line); background: var(--m-bg); color: var(--m-text); font-size: 13px; }
+  .mockLabel { position: absolute; left: 12px; bottom: 8px; z-index: 9; font-size: 11px; font-weight: 700; color: var(--m-muted); letter-spacing: .06em; text-transform: uppercase; }
+  .home { height: 340px; }
+  .wall { position: absolute; inset: 0; overflow: hidden; }
+  .wall i { position: absolute; width: 360px; height: 360px; border-radius: 50%; filter: blur(70px); opacity: .55; }
+  .wall i:nth-child(1) { left: -90px; top: -120px; background: var(--w1); }
+  .wall i:nth-child(2) { right: -100px; top: 20px; background: var(--w2); }
+  .wall i:nth-child(3) { left: 30%; bottom: -200px; background: var(--w3); }
+  .dome { position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 50%; height: 62px; border-radius: 0 0 50% 50% / 0 0 100% 100%; background: var(--m-glass); border: 1px solid var(--m-line); border-top: 0; display: flex; justify-content: center; align-items: flex-start; gap: 8px; padding-top: 10px; }
+  .wb { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--m-card-solid); border: 1px solid var(--m-line); color: var(--p-winBtn); font-size: 12px; font-weight: 800; }
+  .toolbar { position: absolute; right: 14px; top: 14px; display: grid; gap: 9px; }
+  .tb { position: relative; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--m-card-solid); border: 1px solid var(--m-line); color: var(--m-text); }
+  .badge { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; font-size: 10px; font-weight: 700; display: grid; place-items: center; background: var(--p-badge); color: var(--on-badge); }
+  .wdg { position: absolute; left: 14px; width: 150px; border-radius: 12px; background: var(--m-card); border: 1px solid var(--m-line); overflow: hidden; }
+  .wdg.w1 { top: 58px; } .wdg.w2 { top: 150px; }
+  .wdgHead { display: flex; align-items: center; gap: 6px; padding: 5px 9px; font-size: 11px; background: var(--m-headbar); border-bottom: 1px solid var(--m-line); }
+  .wdgDot { width: 7px; height: 7px; border-radius: 50%; background: var(--p-widgetDot); }
+  .wdg svg { display: block; width: 100%; height: 50px; }
+  .search { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); width: 300px; height: 40px; border-radius: 20px; background: var(--m-card-solid); border: 1px solid var(--m-line); display: flex; align-items: center; padding: 0 16px; color: var(--m-muted); }
+  .search.focused { border-color: var(--p-focusRing); box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-focusRing) 30%, transparent); }
+  .who { position: absolute; left: 50%; top: 204px; transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; }
+  .ring { padding: 3px; border-radius: 50%; background: var(--p-avatarRing); }
+  .av { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; background: var(--p-avatar); color: var(--on-avatar); font-weight: 800; font-size: 20px; }
+  .greet { color: var(--p-greeting); font-weight: 300; letter-spacing: .04em; font-size: 14px; }
+  .clock { position: absolute; left: 16px; bottom: 26px; font-size: 26px; font-weight: 300; }
+
+  .settings { display: grid; grid-template-columns: 190px 1fr; height: 460px; }
+  .nav { padding: 16px 10px; background: var(--m-soft); border-right: 1px solid var(--m-line); display: grid; align-content: start; gap: 3px; }
+  .nav b { font-size: 15px; padding: 0 8px 10px; }
+  .ni { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 9px; color: var(--m-muted); }
+  .ni svg { width: 16px; height: 16px; }
+  .ni.sel { background: var(--m-surface); color: var(--m-text); box-shadow: 0 0 0 1px var(--m-line); font-weight: 600; }
+  .ni.sel svg { color: var(--p-navIcon); }
+  .body { padding: 14px 18px; overflow: hidden; display: grid; gap: 10px; align-content: start; }
+  .body h2 { font-size: 20px; font-weight: 800; }
+  .card { border: 1px solid var(--m-line); border-radius: 14px; background: var(--m-card); padding: 11px 13px; display: grid; gap: 10px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tile { height: 44px; border-radius: 9px; border: 2px solid var(--m-line); display: grid; place-items: end start; padding: 4px 7px; font-size: 11px; font-weight: 600; }
+  .tile.t1 { background: linear-gradient(145deg, #0c0e19, #1b1e2b); color: #fff; } .tile.t2 { background: linear-gradient(145deg, #f2f3fb, #fff); color: #0f1330; } .tile.t3 { background: linear-gradient(145deg, #07110c, #12241a); color: #fff; }
+  .tile.sel { border-color: var(--p-selectRing); box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-selectRing) 28%, transparent); }
+  .sw { display: flex; gap: 9px; align-items: center; }
+  .sw i { width: 22px; height: 22px; border-radius: 50%; display: block; }
+  .sw i.sel { box-shadow: 0 0 0 2px var(--m-card-solid), 0 0 0 4px var(--p-selectRing); }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .row small { color: var(--m-muted); display: block; font-size: 11.5px; }
+  .tg { width: 40px; height: 23px; border-radius: 12px; border: 1px solid var(--m-line); background: color-mix(in srgb, var(--m-text) 26%, transparent); position: relative; flex: none; }
+  .tg::after { content: ''; position: absolute; left: 2px; top: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .tg.on { background: var(--p-toggleOn); border-color: transparent; }
+  .tg.on::after { left: 19px; }
+  .rng { width: 150px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--m-text) 18%, transparent); position: relative; flex: none; }
+  .rng::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 3px; background: var(--p-sliderFill); }
+  .rng::after { content: ''; position: absolute; left: calc(62% - 7px); top: -4px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .mb { border: 0; border-radius: 10px; padding: 8px 14px; font: inherit; font-weight: 700; font-size: 12.5px; background: var(--p-mainBtn); color: var(--on-mainBtn); }
+  .sb { border: 1px solid var(--m-line); border-radius: 10px; padding: 8px 14px; font: inherit; font-weight: 600; font-size: 12.5px; background: var(--m-surface); color: var(--m-text); }
+  .db { border: 1px solid color-mix(in srgb, var(--p-dangerBtn) 55%, transparent); border-radius: 10px; padding: 8px 14px; font: inherit; font-weight: 600; font-size: 12.5px; background: color-mix(in srgb, var(--p-dangerBtn) 10%, transparent); color: var(--p-dangerBtn); }
+  .tick { color: var(--p-tick); font-weight: 800; }
+  .lnk { color: var(--p-link); text-decoration: underline; text-underline-offset: 2px; }
+  .inp { height: 34px; border-radius: 9px; border: 1px solid var(--m-line); background: var(--m-surface); padding: 0 11px; display: flex; align-items: center; color: var(--m-muted); width: 190px; }
+  .inp.focused { border-color: var(--p-focusRing); box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-focusRing) 30%, transparent); }
+
+  /* a part of the mock that belongs to the place that is hovered in the list */
+  [data-place] { cursor: pointer; }
+  [data-place].hl { outline: 2px dashed #ff3df2; outline-offset: 3px; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { outline-color: #ffe14d; } }
+
+  /* ---------- the list ---------- */
+  .base { display: grid; gap: 7px; }
+  .baseRow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+  .baseRow label { font-size: 12.5px; }
+  .baseRow small { display: block; color: var(--ui-muted); font-size: 11px; }
+  input[type=color] { width: 38px; height: 26px; border: 1px solid var(--ui-line); border-radius: 7px; background: none; padding: 0; cursor: pointer; }
+  input[type=range] { width: 160px; accent-color: var(--ui-acc); }
+  .derived { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .dchip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ui-muted); border: 1px solid var(--ui-line); border-radius: 8px; padding: 2px 7px 2px 3px; }
+  .dchip i { width: 16px; height: 16px; border-radius: 5px; display: block; border: 1px solid rgba(255,255,255,.15); }
+  .place { display: grid; grid-template-columns: 1fr 150px 54px; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 10px; border: 1px solid transparent; }
+  .place:hover, .place.hl { background: rgba(255,255,255,.05); border-color: var(--ui-line); }
+  .place .nm { font-size: 12.5px; font-weight: 600; }
+  .place .nm small { display: block; font-weight: 400; color: var(--ui-muted); font-size: 11px; }
+  .place select { width: 100%; background: #0e1120; color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 8px; padding: 5px 6px; font: inherit; font-size: 12px; }
+  .contrast { font-size: 11px; font-weight: 700; text-align: right; }
+  .ok { color: #5eead4; } .warn { color: #fbbf24; } .bad { color: #fb7185; }
+  .flash { animation: flash .9s ease; }
+  @keyframes flash { 30% { background: rgba(255,225,77,.28); } }
+  textarea { width: 100%; height: 150px; background: #0e1120; color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 10px; padding: 9px; font: 11.5px/1.45 ui-monospace, Consolas, monospace; resize: vertical; }
+  .note { color: var(--ui-muted); font-size: 11.5px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage">
+    <div>
+      <h1>Nebula · palet bağları</h1>
+      <p class="sub">Renkleri seç, sonra her yerin hangi renge bağlı olacağına karar ver. Sağdaki listede bir yerin üstüne gelince maket üzerinde işaretlenir; maketteki bir parçaya tıklayınca listede bulunur.</p>
+    </div>
+    <div class="bar" id="paletteBar"></div>
+    <div class="bar">
+      <span class="sub">Tema:</span>
+      <button class="chip" data-theme="dark">Koyu</button>
+      <button class="chip" data-theme="light">Açık</button>
+      <span class="sub" style="margin-left:10px">Duvar kâğıdı:</span>
+      <button class="chip" id="wallBtn">Sabit</button>
+    </div>
+    <div class="mocks">
+      <section class="mock home" id="home">
+        <div class="wall"><i></i><i></i><i></i></div>
+        <div class="dome"><span class="wb" data-place="winBtn">–</span><span class="wb" data-place="winBtn">▢</span><span class="wb" data-place="winBtn">✕</span></div>
+        <div class="toolbar">
+          <div class="tb">⚙</div>
+          <div class="tb">🔔︎<span class="badge" data-place="badge">7</span></div>
+          <div class="tb">↺</div>
+        </div>
+        <div class="wdg w1">
+          <div class="wdgHead"><span class="wdgDot" data-place="widgetDot"></span>RAM <span style="margin-left:auto">0.9 GB · 3%</span></div>
+          <svg viewBox="0 0 150 50" preserveAspectRatio="none"><path data-place="chart1" d="M0 36 L20 34 L40 37 L60 30 L80 33 L100 24 L120 28 L150 20" fill="none" stroke="var(--p-chart1)" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="wdg w2">
+          <div class="wdgHead"><span class="wdgDot" data-place="widgetDot"></span>CPU <span style="margin-left:auto">11%</span></div>
+          <svg viewBox="0 0 150 50" preserveAspectRatio="none"><path data-place="chart2" d="M0 40 L20 38 L40 12 L55 40 L80 36 L100 39 L120 30 L150 37" fill="none" stroke="var(--p-chart2)" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="search">🔍︎&nbsp; Search or type URL…</div>
+        <div class="who">
+          <div class="ring" data-place="avatarRing"><div class="av" data-place="avatar">M</div></div>
+          <div class="greet" data-place="greeting">Welcome back Mehmet</div>
+        </div>
+        <div class="clock">03:08 PM</div>
+        <span class="mockLabel">Ana ekran</span>
+      </section>
+
+      <section class="mock settings" id="settings">
+        <div class="nav">
+          <b>Settings</b>
+          <div class="ni sel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-place="navIcon"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>Appearance</div>
+          <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7M6 10v9h12v-9"/></svg>Home</div>
+          <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 20c1-4 4-6 8-6s7 2 8 6"/></svg>Account</div>
+          <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg>Privacy</div>
+        </div>
+        <div class="body">
+          <h2>Appearance</h2>
+          <div class="card">
+            <div class="tiles"><div class="tile t1 sel" data-place="selectRing">Koyu</div><div class="tile t2">Açık</div><div class="tile t3">Forest</div></div>
+            <div class="sw"><i id="sw0"></i><i id="sw1"></i><i id="sw2" class="sel" data-place="selectRing"></i><i id="sw3"></i><i id="sw4"></i><i id="sw5"></i></div>
+          </div>
+          <div class="card">
+            <div class="row"><div>Right toolbar<small>Settings and notification icons</small></div><div class="tg on" data-place="toggleOn"></div></div>
+            <div class="row"><div>Reduce animations<small>Make menu transitions nearly instant</small></div><div class="tg"></div></div>
+            <div class="row"><div>Background blur<small>Softens the image behind glass</small></div><div class="rng" data-place="sliderFill"></div></div>
+          </div>
+          <div class="btns">
+            <button class="mb" data-place="mainBtn">Open Nebula</button>
+            <button class="sb">Reset</button>
+            <button class="db" data-place="dangerBtn">Sign out</button>
+            <span><span class="tick" data-place="tick">✓</span> Restored</span>
+            <span class="lnk" data-place="link">Nebula Sync</span>
+            <div class="inp focused" data-place="focusRing">Display name…</div>
+          </div>
+        </div>
+        <span class="mockLabel" style="left:200px">Ayarlar · Görünüm</span>
+      </section>
+    </div>
+  </main>
+
+  <aside class="side">
+    <h1>Temel renkler</h1>
+    <p class="sub">Dört renk seçersin; diğer her şey bunlardan türer.</p>
+    <div class="base" id="base" style="margin-top:10px"></div>
+    <div class="group">Vurgudan otomatik türeyenler</div>
+    <div class="derived" id="derived"></div>
+
+    <div class="group">Yerler ve bağlı oldukları renk</div>
+    <div class="bar" style="margin-bottom:8px">
+      <button class="btn" id="recommend">Önerilen bağlar</button>
+      <button class="btn" id="allAccent">Hepsini vurguya bağla</button>
+    </div>
+    <div id="places"></div>
+
+    <div class="group">Karar özeti</div>
+    <p class="note">Bunu kopyalayıp bana yapıştır; hangi yerin hangi renge bağlı olacağını aynen uygularım.</p>
+    <textarea id="out" readonly></textarea>
+    <div class="bar" style="margin-top:8px"><button class="btn" id="copy">Kopyala</button><span class="note" id="copied"></span></div>
+  </aside>
+</div>
+
+<script>
+/* ---------- colour maths ---------- */
+const hex2rgb = (h) => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+const rgb2hex = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+function rgb2hsl(r, g, b) { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let h = 0, s = 0; const l = (mx + mn) / 2; if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
+function hsl2rgb(h, s, l) { h = ((h % 360) + 360) % 360; const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2; let r = 0, g = 0, b = 0; if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0]; else if (h < 180) [r, g, b] = [0, c, x]; else if (h < 240) [r, g, b] = [0, x, c]; else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x]; return [(r + m) * 255, (g + m) * 255, (b + m) * 255]; }
+const hsl = (h, s, l) => rgb2hex(...hsl2rgb(h, s, l));
+const lum = (hex) => { const [r, g, b] = hex2rgb(hex).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }); return .2126 * r + .7152 * g + .0722 * b; };
+const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+const rgba = (hex, a) => { const [r, g, b] = hex2rgb(hex); return `rgba(${r},${g},${b},${a})`; };
+const onColor = (hex) => ratio(hex, '#ffffff') >= ratio(hex, '#0b0f1a') ? '#ffffff' : '#0b0f1a';
+
+/* ---------- state ---------- */
+const PALETTES = {
+  'İndigo':   { dark: '#8b8ffb', light: '#4f46e5', gold: '#d4c48a', hue: 232, sat: .35 },
+  'Okyanus':  { dark: '#38bdf8', light: '#0284c7', gold: '#fcd34d', hue: 205, sat: .38 },
+  'Zümrüt':   { dark: '#34d399', light: '#059669', gold: '#fbbf24', hue: 160, sat: .32 },
+  'Gül':      { dark: '#fb7185', light: '#e11d48', gold: '#fcd34d', hue: 345, sat: .3 },
+  'Kehribar': { dark: '#fbbf24', light: '#d97706', gold: '#fde68a', hue: 35,  sat: .3 },
+  'Grafit':   { dark: '#a1a1aa', light: '#52525b', gold: '#d4c48a', hue: 240, sat: .06 },
+};
+const SOURCES = [
+  ['accent', 'Vurgu'], ['accentStrong', 'Vurgu (koyu uç)'], ['accentGrad', 'Vurgu gradyanı'], ['accentSoft', 'Vurgu (yumuşak)'],
+  ['gold', 'Altın'], ['secondary', 'İkincil (türev)'], ['success', 'Başarı'], ['danger', 'Hata'], ['text', 'Yazı'],
+];
+const INK = ['accent', 'accentStrong', 'gold', 'secondary', 'success', 'danger', 'text'];
+const FILL = ['accentGrad', 'accent', 'accentStrong', 'accentSoft', 'gold', 'secondary', 'success', 'danger'];
+const PLACES = [
+  ['Ana ekran', 'winBtn', 'Pencere düğmeleri simgesi (küçült / büyüt / kapat)', 'ink', 'gold', 'Semi-Lunar kubbesi'],
+  ['Ana ekran', 'greeting', '“Welcome back” karşılama yazısı', 'ink', 'gold', 'Ana ekran'],
+  ['Ana ekran', 'avatar', 'Profil avatarı (daire)', 'fill', 'accentGrad', 'Ana ekran'],
+  ['Ana ekran', 'avatarRing', 'Avatar halkası', 'fill', 'accent', 'Ana ekran'],
+  ['Ana ekran', 'badge', 'Bildirim rozeti (zildeki sayı)', 'fill', 'accentGrad', 'Sağ araç çubuğu'],
+  ['Ana ekran', 'widgetDot', 'Widget başlık noktası (RAM / CPU)', 'fill', 'accent', 'Sol widget'],
+  ['Ana ekran', 'chart1', 'Widget grafiği · 1. çizgi (RAM)', 'ink', 'accent', 'Sol widget'],
+  ['Ana ekran', 'chart2', 'Widget grafiği · 2. çizgi (CPU)', 'ink', 'secondary', 'Sol widget'],
+  ['Ayarlar', 'navIcon', 'Seçili menü öğesinin simgesi', 'ink', 'accent', 'Ayarlar menüsü'],
+  ['Ayarlar', 'selectRing', 'Seçili karo / renk dairesi çerçevesi', 'ink', 'accent', 'Görünüm kartı'],
+  ['Ayarlar', 'toggleOn', 'Açık anahtar (toggle)', 'fill', 'accentGrad', 'Tüm ayarlar'],
+  ['Ayarlar', 'sliderFill', 'Kaydırıcı dolgusu', 'fill', 'accent', 'Tüm ayarlar'],
+  ['Ayarlar', 'mainBtn', 'Ana buton (Open Nebula, Save, Continue…)', 'fill', 'accentGrad', 'Her yer'],
+  ['Ayarlar', 'focusRing', 'Odak halkası (bir alan seçilince)', 'ink', 'accent', 'Her yer'],
+  ['Ayarlar', 'link', 'Bağlantı yazısı (Nebula Sync…)', 'ink', 'accent', 'Her yer'],
+  ['Ayarlar', 'tick', 'Başarı işareti (✓ Restored)', 'ink', 'success', 'Her yer'],
+  ['Ayarlar', 'dangerBtn', 'Tehlikeli eylem (Sign out, Sıfırla…)', 'ink', 'danger', 'Her yer'],
+];
+const state = {
+  palette: 'İndigo', theme: 'dark', wall: false,
+  base: { accent: null, gold: null, success: null, danger: null },
+  hue: 232, sat: .35,
+  bind: {},
+};
+const defaults = () => Object.fromEntries(PLACES.map(p => [p[1], p[4]]));
+state.bind = defaults();
+function loadPalette(name) {
+  const p = PALETTES[name]; state.palette = name; state.hue = p.hue; state.sat = p.sat;
+  state.pal = p; applyBaseDefaults();
+}
+function applyBaseDefaults() {
+  const p = PALETTES[state.palette];
+  state.base.accent = state.theme === 'dark' ? p.dark : p.light;
+  state.base.gold = state.theme === 'dark' ? p.gold : hsl(...rgb2hsl(...hex2rgb(p.gold)).map((v, i) => i === 2 ? v * .55 : v));
+  state.base.success = state.theme === 'dark' ? '#5eead4' : '#0d9488';
+  state.base.danger = state.theme === 'dark' ? '#fb7185' : '#e11d48';
+}
+
+/* ---------- derive and paint ---------- */
+function derive() {
+  const a = state.base.accent, [h, s, l] = rgb2hsl(...hex2rgb(a));
+  const strong = hsl(h, Math.min(1, s * 1.05), l * (state.theme === 'dark' ? .78 : .86));
+  return {
+    accent: a, accentStrong: strong, accentGrad: `linear-gradient(135deg, ${strong}, ${a})`, accentSoft: rgba(a, .18),
+    gold: state.base.gold, secondary: hsl(h + 42, s, l), success: state.base.success, danger: state.base.danger, text: null,
+    glow: rgba(a, .55), border: rgba(a, .42), on: onColor(a),
+  };
+}
+function neutrals() {
+  const H = state.hue, S = state.sat;
+  return state.theme === 'dark' ? {
+    bg: hsl(H, S, .07), card: hsl(H, S * .8, .13), cardSolid: hsl(H, S * .8, .15), surface: hsl(H, S * .7, .18), soft: hsl(H, S * .7, .11), head: hsl(H, S, .09),
+    line: 'rgba(255,255,255,.1)', text: '#f2f4fc', muted: '#a6adc8', glass: 'rgba(255,255,255,.08)',
+  } : {
+    bg: hsl(H, S * 1.1, .96), card: '#ffffffcc', cardSolid: '#ffffff', surface: hsl(H, S * .8, .94), soft: hsl(H, S * .8, .93), head: hsl(H, S, .93),
+    line: 'rgba(15,19,60,.12)', text: '#0f1330', muted: '#586081', glass: 'rgba(255,255,255,.7)',
+  };
+}
+function paint() {
+  const d = derive(), n = neutrals(), root = document.documentElement.style;
+  const mockStyle = [home, settings].map(el => el.style);
+  const set = (k, v) => mockStyle.forEach(st => st.setProperty(k, v));
+  set('--m-bg', n.bg); set('--m-card', n.card); set('--m-card-solid', n.cardSolid); set('--m-surface', n.surface); set('--m-soft', n.soft);
+  set('--m-headbar', n.head); set('--m-line', n.line); set('--m-text', n.text); set('--m-muted', n.muted); set('--m-glass', n.glass);
+  const w1 = state.wall ? d.accent : '#6b3dff', w2 = state.wall ? d.secondary : '#2a9cc4', w3 = state.wall ? d.accentStrong : '#8a3fb0';
+  set('--w1', w1); set('--w2', w2); set('--w3', w3);
+  const col = (src) => src === 'text' ? n.text : d[src];
+  const rows = [];
+  PLACES.forEach(([area, id, name, kind]) => {
+    const src = state.bind[id], c = col(src);
+    set('--p-' + id, c);
+    let fillBase = src === 'accentGrad' ? d.accent : src === 'accentSoft' ? d.accent : c;
+    const on = kind === 'fill' ? (src === 'accentSoft' ? n.text : onColor(fillBase)) : null;
+    if (on) set('--on-' + id, on);
+    // a contrast figure: ink against the card, fill against its own text
+    const base = n.cardSolid.length === 7 ? n.cardSolid : '#ffffff';
+    const r = kind === 'ink' ? ratio(c, base) : (id === 'avatar' || id === 'badge' || id === 'mainBtn' ? ratio(fillBase, on) : ratio(fillBase, base));
+    rows.push([id, r]);
+  });
+  // list
+  rows.forEach(([id, r]) => {
+    const el = document.querySelector(`[data-c="${id}"]`); if (!el) return;
+    el.textContent = r.toFixed(1) + ':1'; el.className = 'contrast ' + (r >= 4.5 ? 'ok' : r >= 3 ? 'warn' : 'bad');
+  });
+  document.getElementById('derived').innerHTML = [
+    ['Vurgu', d.accent], ['Koyu uç', d.accentStrong], ['Yumuşak', d.accentSoft], ['Kenarlık', d.border], ['Parlama', d.glow], ['Üstündeki yazı', d.on], ['İkincil', d.secondary],
+  ].map(([t, v]) => `<span class="dchip"><i style="background:${v}"></i>${t}</span>`).join('');
+  ['sw0', 'sw1', 'sw2', 'sw3', 'sw4', 'sw5'].forEach((id, i) => { document.getElementById(id).style.background = [d.accent, d.secondary, d.accentStrong, d.gold, d.success, d.danger][[2, 1, 0, 3, 4, 5][i]]; });
+  document.getElementById('sw2').style.background = d.accent;
+  renderOut(d);
+}
+
+/* ---------- ui ---------- */
+const home = document.getElementById('home'), settings = document.getElementById('settings');
+function renderBar() {
+  const bar = document.getElementById('paletteBar');
+  bar.innerHTML = '<span class="sub">Palet:</span>' + Object.entries(PALETTES).map(([name, p]) =>
+    `<button class="chip ${state.palette === name ? 'on' : ''}" data-pal="${name}"><span class="dot" style="background:${state.theme === 'dark' ? p.dark : p.light}"></span>${name}</button>`).join('');
+  document.querySelectorAll('[data-theme]').forEach(b => b.classList.toggle('on', b.dataset.theme === state.theme));
+  document.getElementById('wallBtn').textContent = state.wall ? 'Palete uysun' : 'Sabit';
+  document.getElementById('wallBtn').classList.toggle('on', state.wall);
+}
+function renderBase() {
+  const box = document.getElementById('base');
+  const row = (key, label, hint) => `<div class="baseRow"><label>${label}<small>${hint}</small></label><input type="color" data-base="${key}" value="${state.base[key]}"></div>`;
+  box.innerHTML =
+    row('accent', 'Vurgu', 'seçili, odak, ana buton, anahtar, rozet…') +
+    row('gold', 'Altın', 'karşılama yazısı, pencere düğmeleri') +
+    row('success', 'Başarı', 'işaretler (sabit kalması önerilir)') +
+    row('danger', 'Hata', 'tehlikeli eylemler (sabit kalması önerilir)') +
+    `<div class="baseRow"><label>Nötr ton (renk)<small>zemin ve yüzeylerin tonu</small></label><input type="range" id="hue" min="0" max="360" value="${state.hue}"></div>` +
+    `<div class="baseRow"><label>Nötr ton (canlılık)<small>0 = gri, yükseldikçe renkli</small></label><input type="range" id="sat" min="0" max="60" value="${Math.round(state.sat * 100)}"></div>`;
+  box.querySelectorAll('[data-base]').forEach(i => i.addEventListener('input', () => { state.base[i.dataset.base] = i.value; paint(); }));
+  document.getElementById('hue').addEventListener('input', e => { state.hue = +e.target.value; paint(); });
+  document.getElementById('sat').addEventListener('input', e => { state.sat = e.target.value / 100; paint(); });
+}
+function renderPlaces() {
+  const box = document.getElementById('places'); let area = '', html = '';
+  PLACES.forEach(([a, id, name, kind, def, where]) => {
+    if (a !== area) { html += `<div class="group" style="margin-top:10px">${a}</div>`; area = a; }
+    const opts = (kind === 'ink' ? INK : FILL).map(s => `<option value="${s}" ${state.bind[id] === s ? 'selected' : ''}>${SOURCES.find(x => x[0] === s)?.[1] ?? s}</option>`).join('');
+    html += `<div class="place" data-row="${id}"><div class="nm">${name}<small>${where} · ${kind === 'ink' ? 'yazı / çizgi / simge' : 'dolgu'}</small></div><select data-sel="${id}">${opts}</select><div class="contrast" data-c="${id}"></div></div>`;
+  });
+  box.innerHTML = html;
+  box.querySelectorAll('[data-sel]').forEach(s => s.addEventListener('change', () => { state.bind[s.dataset.sel] = s.value; paint(); }));
+  box.querySelectorAll('[data-row]').forEach(r => {
+    r.addEventListener('mouseenter', () => hl(r.dataset.row, true));
+    r.addEventListener('mouseleave', () => hl(r.dataset.row, false));
+  });
+}
+function hl(id, on) { document.querySelectorAll(`[data-place="${id}"]`).forEach(e => e.classList.toggle('hl', on)); document.querySelector(`[data-row="${id}"]`)?.classList.toggle('hl', on); }
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-place]'); if (t) { const r = document.querySelector(`[data-row="${t.dataset.place}"]`); r.scrollIntoView({ block: 'center', behavior: 'smooth' }); r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash'); return; }
+  const pal = e.target.closest('[data-pal]'); if (pal) { loadPalette(pal.dataset.pal); renderAll(); return; }
+  const th = e.target.closest('[data-theme]'); if (th) { state.theme = th.dataset.theme; applyBaseDefaults(); renderAll(); return; }
+});
+document.getElementById('wallBtn').addEventListener('click', () => { state.wall = !state.wall; renderBar(); paint(); });
+document.getElementById('recommend').addEventListener('click', () => { state.bind = defaults(); renderPlaces(); paint(); });
+document.getElementById('allAccent').addEventListener('click', () => { PLACES.forEach(([, id, , kind]) => { state.bind[id] = kind === 'ink' ? 'accent' : 'accentGrad'; }); renderPlaces(); paint(); });
+function renderOut(d) {
+  const lines = [`Palet: ${state.palette} · Tema: ${state.theme === 'dark' ? 'koyu' : 'açık'} · Duvar kâğıdı: ${state.wall ? 'palete uyar' : 'sabit'}`,
+    `Vurgu ${state.base.accent} · Altın ${state.base.gold} · Başarı ${state.base.success} · Hata ${state.base.danger} · Nötr ton ${state.hue}°, canlılık %${Math.round(state.sat * 100)}`, '', 'Yer → renk:'];
+  PLACES.forEach(([a, id, name]) => { lines.push(`- ${name}: ${SOURCES.find(s => s[0] === state.bind[id])[1]}`); });
+  document.getElementById('out').value = lines.join('\n');
+}
+document.getElementById('copy').addEventListener('click', async () => {
+  const t = document.getElementById('out'); t.select(); try { await navigator.clipboard.writeText(t.value); document.getElementById('copied').textContent = 'Kopyalandı'; } catch { document.getElementById('copied').textContent = 'Seçili: Ctrl+C ile kopyala'; }
+});
+function renderAll() { renderBar(); renderBase(); renderPlaces(); paint(); }
+loadPalette('İndigo'); renderAll();
+</script>
+</body>
+</html>
