@@ -89,6 +89,7 @@ body {
   --nebula-badge-ink: var(--nebula-on-accent);
   --nebula-success: #5eead4;
   --nebula-danger: #fb7185;
+  --nebula-warning: #f4b95f;
 
   --nebula-shell-bg: #0c0e19;
   --nebula-pop: #1b1e2b;
@@ -124,6 +125,7 @@ body {
   --nebula-badge-ink: var(--nebula-on-accent);
   --nebula-success: #0d9488;
   --nebula-danger: #e11d48;
+  --nebula-warning: #b45309;
 
   --nebula-gold-ink: color-mix(in srgb, var(--nebula-gold) 38%, #1c1a10);
 

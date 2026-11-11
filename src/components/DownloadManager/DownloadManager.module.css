@@ -7,15 +7,11 @@
   --panel-height: 390px;
   --panel-preferred-top: var(--panel-anchor-top, calc(26px + var(--title-bar-height, 0px)));
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 22px;
-  color: rgba(255, 255, 255, 0.94);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 38%),
-    rgba(13, 17, 20, 0.92);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(34px) saturate(1.35);
-  -webkit-backdrop-filter: blur(34px) saturate(1.35);
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: var(--ui-radius, 14px);
+  color: var(--nebula-text);
+  background: var(--nebula-pop);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
   animation: panelIn 180ms var(--ease-out-expo);
   transform-origin: top right;
 }
@@ -38,13 +34,13 @@
   justify-content: space-between;
   min-height: 68px;
   padding: 14px 14px 10px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--nebula-glass-border);
 }
 
 .eyebrow {
   display: block;
   margin-bottom: 2px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--nebula-text-muted);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.13em;
@@ -68,7 +64,7 @@
 .closeButton,
 .itemActions button {
   border: 0;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--nebula-text);
   background: transparent;
   cursor: pointer;
 }
@@ -82,8 +78,8 @@
 .textButton:hover,
 .closeButton:hover,
 .itemActions button:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.09);
+  color: var(--nebula-text);
+  background: var(--nebula-surface-2);
 }
 
 .closeButton {
@@ -106,10 +102,10 @@
 .error {
   margin: 10px 14px 0;
   padding: 8px 11px;
-  border: 1px solid rgba(255, 112, 112, 0.2);
+  border: 1px solid color-mix(in srgb, var(--nebula-danger) 32%, transparent);
   border-radius: 10px;
-  color: #ffb0b0;
-  background: rgba(255, 72, 72, 0.1);
+  color: var(--nebula-danger);
+  background: color-mix(in srgb, var(--nebula-danger) 14%, transparent);
   font-size: 12px;
 }
 
@@ -120,7 +116,7 @@
   overflow: auto;
   padding: 8px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--nebula-field-border) transparent;
 }
 
 .item {
@@ -135,17 +131,17 @@
 }
 
 .item:hover {
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--nebula-surface-2);
 }
 
 .itemReview {
   margin: 2px 0 8px;
-  border: 1px solid rgba(255, 180, 105, 0.22);
-  background: linear-gradient(110deg, rgba(151, 89, 32, 0.16), rgba(255, 255, 255, 0.025));
+  border: 1px solid color-mix(in srgb, var(--nebula-warning) 32%, transparent);
+  background: color-mix(in srgb, var(--nebula-warning) 14%, transparent);
 }
 
 .itemReview:hover {
-  background: linear-gradient(110deg, rgba(151, 89, 32, 0.23), rgba(255, 255, 255, 0.055));
+  background: color-mix(in srgb, var(--nebula-warning) 22%, transparent);
 }
 
 .fileGlyph {
@@ -153,28 +149,28 @@
   width: 38px;
   height: 38px;
   padding: 9px;
-  border: 1px solid rgba(194, 159, 255, 0.22);
+  border: 1px solid var(--nebula-soft-border);
   border-radius: 12px;
-  color: #d2b8ff;
-  background: rgba(126, 76, 202, 0.18);
+  color: var(--nebula-accent-ink);
+  background: var(--nebula-soft);
   place-items: center;
 }
 
 .fileGlyphCompleted {
-  border-color: rgba(106, 224, 158, 0.22);
-  color: #7de5ab;
-  background: rgba(50, 160, 99, 0.14);
+  border-color: color-mix(in srgb, var(--nebula-success) 32%, transparent);
+  color: var(--nebula-success);
+  background: color-mix(in srgb, var(--nebula-success) 14%, transparent);
 }
 
 .fileGlyphFailed {
-  border-color: rgba(255, 119, 119, 0.2);
-  color: #ff9393;
-  background: rgba(194, 68, 68, 0.13);
+  border-color: color-mix(in srgb, var(--nebula-danger) 32%, transparent);
+  color: var(--nebula-danger);
+  background: color-mix(in srgb, var(--nebula-danger) 14%, transparent);
 }
 
 .riskMessage {
   margin: 5px 0 0;
-  color: #ffc48a;
+  color: var(--nebula-warning);
   font-size: 10.5px;
   line-height: 1.35;
 }
@@ -185,7 +181,7 @@
   gap: 7px;
   margin-bottom: 5px;
   overflow: hidden;
-  color: rgba(255, 218, 171, 0.73);
+  color: var(--nebula-warning);
   font-size: 10px;
   white-space: nowrap;
 }
@@ -209,19 +205,19 @@
 
 .reviewBadge {
   flex: 0 0 auto;
-  border: 1px solid rgba(255, 183, 100, 0.32);
-  color: #ffd29c;
-  background: rgba(168, 99, 35, 0.24);
+  border: 1px solid color-mix(in srgb, var(--nebula-warning) 32%, transparent);
+  color: var(--nebula-warning);
+  background: color-mix(in srgb, var(--nebula-warning) 14%, transparent);
 }
 
 .statusChip {
-  color: rgba(255, 255, 255, 0.67);
-  background: rgba(255, 255, 255, 0.07);
+  color: var(--nebula-text);
+  background: var(--nebula-surface-2);
 }
 
 .reviewHint {
   margin: 3px 0 0;
-  color: rgba(255, 230, 194, 0.66);
+  color: var(--nebula-warning);
   font-size: 10px;
   line-height: 1.35;
 }
@@ -236,7 +232,7 @@
   overflow: hidden;
   padding: 0;
   border: 0;
-  color: rgba(255, 255, 255, 0.94);
+  color: var(--nebula-text);
   background: transparent;
   font: inherit;
   font-size: 13px;
@@ -264,7 +260,7 @@
 }
 
 .fileName:not(:disabled):hover {
-  color: #d8bdff;
+  color: var(--nebula-accent-ink);
 }
 
 .meta {
@@ -273,7 +269,7 @@
   gap: 6px;
   margin-top: 4px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.46);
+  color: var(--nebula-text-muted);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -288,7 +284,7 @@
   gap: 6px;
   margin-top: 2px;
   overflow: hidden;
-  color: rgba(202, 171, 255, 0.7);
+  color: var(--nebula-accent-ink);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -297,7 +293,7 @@
 .transferMetaCompact {
   gap: 5px;
   margin-top: 1px;
-  color: rgba(202, 171, 255, 0.64);
+  color: var(--nebula-accent-ink);
   font-size: 10px;
 }
 
@@ -307,15 +303,15 @@
   margin-top: 7px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--nebula-glass-border);
 }
 
 .progressFill {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #8f54e8, #d1a8ff);
-  box-shadow: 0 0 12px rgba(177, 118, 255, 0.5);
+  background: var(--nebula-gradient);
+  box-shadow: 0 0 12px var(--nebula-accent-glow);
   transition: width 120ms linear;
 }
 
@@ -343,26 +339,26 @@
   width: auto;
   min-width: 46px;
   padding: 6px 9px;
-  border: 1px solid rgba(194, 159, 255, 0.2);
-  color: #dfc8ff;
+  border: 1px solid var(--nebula-soft-border);
+  color: var(--nebula-accent-ink);
   font-size: 10.5px;
   font-weight: 650;
   white-space: nowrap;
 }
 
 .itemActions .actionDanger {
-  border-color: rgba(255, 119, 119, 0.24);
-  color: #ffaaaa;
+  border-color: color-mix(in srgb, var(--nebula-danger) 32%, transparent);
+  color: var(--nebula-danger);
 }
 
 .itemActions .actionKeep {
-  border-color: rgba(204, 169, 255, 0.46);
-  color: #f0e6ff;
-  background: rgba(126, 76, 202, 0.28);
+  border-color: var(--nebula-soft-border);
+  color: var(--nebula-accent-ink);
+  background: var(--nebula-soft);
 }
 
 .itemActions .actionKeep:hover {
-  background: rgba(144, 93, 221, 0.45);
+  background: color-mix(in srgb, var(--nebula-accent) 26%, transparent);
 }
 
 .empty {
@@ -381,10 +377,10 @@
   height: 46px;
   margin-bottom: 12px;
   padding: 11px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--nebula-glass-border);
   border-radius: 15px;
-  color: #c9a5ff;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--nebula-accent-ink);
+  background: var(--nebula-surface-2);
   place-items: center;
 }
 
@@ -395,15 +391,15 @@
 .empty p {
   max-width: 270px;
   margin: 6px 0 0;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--nebula-text-muted);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .panel footer {
   padding: 9px 16px 11px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.35);
+  border-top: 1px solid var(--nebula-glass-border);
+  color: var(--nebula-text-muted);
   font-size: 10px;
   text-align: center;
 }

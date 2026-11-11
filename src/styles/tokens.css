@@ -52,6 +52,7 @@
   --nebula-text-muted: rgba(220, 225, 230, 0.55);
   --nebula-success: #4ade80;
   --nebula-danger: #ff6b8a;
+  --nebula-warning: #f4b95f;
 
   /* Surfaces, fields and the main button of the redesigned screens. The light and dark themes set their own
      values (global.css); these are what the Forest theme gets. */

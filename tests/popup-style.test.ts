@@ -9,10 +9,21 @@ const read = (path: string) =>
 const THEMED = [
   'src/components/SiteUiPrompt/SiteUiPrompt.module.css',
   'src/components/PasswordFillPrompt/PasswordFillPrompt.module.css',
+  'src/components/SiteInfoPanel/SiteInfoPanel.module.css',
+  'src/components/DownloadManager/DownloadManager.module.css',
+  'src/components/NotificationPanel/NotificationPanel.module.css',
+  'src/components/ExtensionsPanel/ExtensionsPanel.module.css',
+  'src/components/TabSearch/TabSearch.module.css',
+  'src/components/PrivateBrowsingPanel/PrivateBrowsingPanel.module.css',
+  'src/components/SiteContextMenu/SiteContextMenu.module.css',
 ]
 
-/** Colours that are not the theme's: the black of a shadow and the dimming layer behind a dialog. */
-const ALLOWED = [/^rgba\(0, 0, 0, /, /^rgba\(4, 7, 14, /, /^rgba\(15, 19, 48, /, /^rgba\(31, 41, 90, /]
+/** Colours that are not the theme's: the black of a shadow, the dimming layer behind a dialog, brand logos. */
+const ALLOWED = [
+  /^rgba\(0, 0, 0, /, /^rgba\(4, 7, 14, /, /^rgba\(15, 19, 48, /, /^rgba\(31, 41, 90, /,
+  // The logos of Instagram and WhatsApp in the notification panel keep their own colours.
+  /^#(6954d8|c33c9e|f39a42|176a46|20ad68|fff|e8fff1)$/i, /^rgba\((255, 156, 105|103, 236, 158), /,
+]
 
 function colourLiterals(css: string): string[] {
   return (css.replace(/\/\*[\s\S]*?\*\//g, '').match(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g) ?? []).filter(
@@ -48,4 +59,15 @@ test('the prompt, the app dialog and the password prompts compose the shared sur
   // The app dialog and the "save password" prompt use this stylesheet, so they follow too.
   assert.match(read('src/components/AppDialog/AppDialogHost.tsx'), /from '\.\.\/SiteUiPrompt\/SiteUiPrompt\.module\.css'/)
   assert.match(read('src/components/PasswordSavePrompt/PasswordSavePrompt.tsx'), /from '\.\.\/SiteUiPrompt\/SiteUiPrompt\.module\.css'/)
+})
+
+test('the panels and menus use the card, the borders and the status colours of the theme, and no glass blur', () => {
+  for (const path of THEMED.slice(2)) {
+    const css = read(path)
+    assert.ok(css.includes('var(--nebula-pop)'), `${path} is a card of the theme`)
+    assert.doesNotMatch(css, /backdrop-filter/, `${path} has no blur of its own`)
+  }
+  // Status colours come from tokens, so they are right in the light theme too.
+  assert.match(read('src/styles/tokens.css'), /--nebula-warning: #f4b95f;/)
+  assert.match(read('src/styles/global.css'), /--nebula-warning: #b45309;/)
 })
