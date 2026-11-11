@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import type { NebulaLocale } from '../../core/locale'
 import { computeViewportLunarSize } from '../../core/lunarSizing'
@@ -17,6 +17,9 @@ interface GuidedTutorialProps {
   onSkip: () => void
   onComplete: () => void
 }
+
+/** The width of the bubble: narrow enough to sit beside what it points at. */
+const BUBBLE_WIDTH = 340
 
 function StepIcon({ target }: { target: TutorialTargetId }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -57,7 +60,7 @@ export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx
   const nextRef = useRef<HTMLButtonElement>(null)
   const [layout, setLayout] = useState(() => ({
     spotlight: null as TutorialRect | null,
-    card: tutorialCardPosition(null, { width: window.innerWidth, height: window.innerHeight }, 350),
+    card: tutorialCardPosition(null, { width: window.innerWidth, height: window.innerHeight }, 300, 0, BUBBLE_WIDTH),
   }))
 
   useDialogFocusTrap({ active: open, containerRef: cardRef, initialFocusRef: nextRef, onEscape: onSkip })
@@ -68,8 +71,8 @@ export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx
       const lunar = computeViewportLunarSize(window.innerWidth, window.innerHeight, lunarWidthPx, lunarHeightPx)
       const spotlight = targetRect(current.target, lunar.width, lunar.height)
       const card = tutorialCardPosition(spotlight, { width: window.innerWidth, height: window.innerHeight },
-        cardRef.current?.offsetHeight ?? 350,
-        current.target === 'top-edge' || current.target === 'semi-lunar' ? lunar.height : 0)
+        cardRef.current?.offsetHeight ?? 300,
+        current.target === 'top-edge' || current.target === 'semi-lunar' ? lunar.height : 0, BUBBLE_WIDTH)
       setLayout((previous) => JSON.stringify(previous) === JSON.stringify({ spotlight, card }) ? previous : { spotlight, card })
     }
     update()
@@ -99,13 +102,15 @@ export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx
     left: spotlight.left, top: spotlight.top, width: spotlight.width, height: spotlight.height,
     borderRadius: spotlight.radius,
   } : undefined
+  const bubbleStyle = { left: card.left, top: card.top, width: card.width, maxHeight: card.maxHeight, '--pointer': card.arrow + 'px' } as CSSProperties
 
+  // A bubble beside what it points at: a ring around the target and a card with a pointer, not a dimmed screen with a
+  // form in the middle. The first two steps are practice (the real menu has to open), so nothing is dimmed at all.
   return createPortal(
     <div className={[styles.overlay, practice ? styles.practiceOverlay : ''].join(' ')}>
-      {spotlight
-        ? <div className={styles.spotlight} data-target={current.target} style={spotlightStyle} aria-hidden="true" />
-        : <div className={styles.scrim} aria-hidden="true" />}
-      <section ref={cardRef} className={styles.card} style={card} data-compact={card.maxHeight < 300 || undefined}
+      {spotlight && <div className={styles.spotlight} data-target={current.target} style={spotlightStyle} aria-hidden="true" />}
+      <section ref={cardRef} className={styles.bubble} style={bubbleStyle} data-side={card.side}
+        data-compact={card.maxHeight < 260 || undefined}
         role="dialog" aria-modal="true" aria-labelledby="nebula-guided-tutorial-title"
         aria-describedby="nebula-guided-tutorial-body" tabIndex={-1} data-tutorial-step={safeStep}
         onKeyDown={(event) => {
@@ -114,21 +119,10 @@ export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx
           if (event.key === 'ArrowRight' && !event.repeat) { event.preventDefault(); advance() }
         }}>
         <header className={styles.header}>
-          <span className={styles.brand}>{copy.categoryLabel}</span>
+          <span className={styles.progress}>{copy.progress} {safeStep + 1} / {copy.steps.length}</span>
           <button type="button" className={styles.skipButton} onClick={onSkip}>{copy.skipAll}<span aria-hidden="true">×</span></button>
         </header>
-        <nav className={styles.steps} aria-label={copy.progress}>
-          {copy.steps.map((item, index) => <button key={item.target} type="button"
-            aria-label={copy.progress + ' ' + (index + 1) + ': ' + item.eyebrow}
-            aria-current={index === safeStep ? 'step' : undefined} onClick={() => onStepChange(index)}>
-            <span className={styles.stepNumber}>{String(index + 1).padStart(2, '0')}</span>
-            <span>{item.eyebrow}</span>
-          </button>)}
-        </nav>
         <div ref={bodyRef} className={styles.body}>
-          <div className={styles.stepHeading}>
-            <span className={styles.progress}>{copy.progress} {safeStep + 1} / {copy.steps.length}</span>
-          </div>
           <div aria-live="polite" aria-atomic="true">
             <h2 id="nebula-guided-tutorial-title">{current.title}</h2>
             <p id="nebula-guided-tutorial-body">{current.body}</p>
@@ -145,6 +139,11 @@ export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx
           <button type="button" className={styles.backButton} disabled={safeStep === 0} onClick={() => onStepChange(safeStep - 1)}>
             <span aria-hidden="true">←</span>{copy.previous}
           </button>
+          <nav className={styles.dots} aria-label={copy.progress}>
+            {copy.steps.map((item, index) => <button key={item.target} type="button"
+              aria-label={copy.progress + ' ' + (index + 1) + ': ' + item.eyebrow}
+              aria-current={index === safeStep ? 'step' : undefined} onClick={() => onStepChange(index)} />)}
+          </nav>
           <button ref={nextRef} type="button" className={styles.nextButton} onClick={advance}>
             {finish ? copy.finish : copy.next}<span aria-hidden="true">{finish ? '✓' : '→'}</span>
           </button>

@@ -21,6 +21,7 @@ const THEMED = [
   'src/components/StoreRecoveryNotice/StoreRecoveryNotice.module.css',
   'src/components/CrashRecoveryPrompt/CrashRecoveryPrompt.module.css',
   'src/components/PrintDialog/PrintDialog.module.css',
+  'src/components/GuidedTutorial/GuidedTutorial.module.css',
 ]
 
 /** Colours that are not the theme's: the black of a shadow, the dimming layer behind a dialog, brand logos. */

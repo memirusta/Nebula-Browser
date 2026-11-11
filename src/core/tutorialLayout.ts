@@ -6,6 +6,8 @@ export interface TutorialRect {
   radius: number
 }
 
+export type TutorialSide = 'below' | 'above' | 'left' | 'free'
+
 export function tutorialStepIndex(step: number, count: number): number {
   return Number.isFinite(step) ? Math.max(0, Math.min(count - 1, Math.trunc(step))) : 0
 }
@@ -26,33 +28,49 @@ export function tutorialCardPosition(
   viewport: { width: number; height: number },
   measuredHeight: number,
   topClearance = 0,
+  maxWidth = 440,
 ) {
   const margin = 16
   const gap = 18
   // The native Semi-Lunar WebView sits above this DOM surface. Reserve its
   // actual height even when the guide needs to scroll in a short window.
   const minTop = Math.max(margin, topClearance > 0 ? topClearance + gap : margin)
-  const width = Math.max(0, Math.min(440, viewport.width - margin * 2))
+  const width = Math.max(0, Math.min(maxWidth, viewport.width - margin * 2))
   const maxHeight = Math.max(0, viewport.height - minTop - margin)
   const height = Math.min(measuredHeight, maxHeight)
   const clampX = (left: number) => Math.max(margin, Math.min(left, viewport.width - width - margin))
   const clampY = (top: number) => Math.max(minTop, Math.min(top, viewport.height - height - margin))
   let left = (viewport.width - width) / 2
   let top = (viewport.height - height) / 2
+  // Which side of the target the card sits on, so a bubble can point at it.
+  let side: TutorialSide = 'free'
   if (target) {
     left = clampX(target.left + target.width / 2 - width / 2)
     const below = Math.max(target.top + target.height, topClearance) + gap
     if (target.left >= width + gap + margin) {
       left = target.left - width - gap
       top = target.top + target.height / 2 - height / 2
+      side = 'left'
     } else if (below + height <= viewport.height - margin) {
       top = below
+      side = 'below'
     } else if (target.top - gap - height >= margin) {
       top = target.top - gap - height
+      side = 'above'
     } else {
       // A short window has no non-overlapping placement. Keep navigation visible.
       top = viewport.height - height - margin
     }
   }
-  return { left: clampX(left), top: clampY(top), width, maxHeight }
+  const finalLeft = clampX(left)
+  const finalTop = clampY(top)
+  // Where the pointer of a bubble touches it: along its top or bottom edge, or down its right edge.
+  const pointer = target
+    ? side === 'left'
+      ? target.top + target.height / 2 - finalTop
+      : target.left + target.width / 2 - finalLeft
+    : 0
+  const extent = side === 'left' ? height : width
+  const arrow = Math.max(22, Math.min(pointer, extent - 22))
+  return { left: finalLeft, top: finalTop, width, maxHeight, side, arrow }
 }
