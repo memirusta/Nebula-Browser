@@ -10,9 +10,9 @@
 
 .frame {
   position: relative;
-  border: 1.5px dashed rgba(126, 200, 227, 0.55);
+  border: 1.5px dashed rgba(var(--nebula-accent-rgb), 0.55);
   border-radius: inherit;
-  box-shadow: 0 0 0 1px rgba(126, 200, 227, 0.12);
+  box-shadow: 0 0 0 1px rgba(var(--nebula-accent-rgb), 0.12);
   pointer-events: auto;
 }
 
@@ -66,8 +66,8 @@
   border-radius: 2px;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(126, 200, 227, 0.75) 0,
-    rgba(126, 200, 227, 0.75) 2px,
+    rgba(var(--nebula-accent-rgb), 0.75) 0,
+    rgba(var(--nebula-accent-rgb), 0.75) 2px,
     transparent 2px,
     transparent 4px
   );
@@ -99,8 +99,8 @@
 
 .toggleBtnActive,
 .sizeBtnActive {
-  background: rgba(126, 200, 227, 0.2);
-  border-color: rgba(126, 200, 227, 0.45);
+  background: rgba(var(--nebula-accent-rgb), 0.2);
+  border-color: rgba(var(--nebula-accent-rgb), 0.45);
   color: var(--nebula-accent);
 }
 

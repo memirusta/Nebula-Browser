@@ -541,7 +541,7 @@
 }
 
 .networkArrowUp {
-  color: #c18cff;
+  color: var(--nebula-secondary);
 }
 
 .networkSpeedCard > div {
@@ -576,7 +576,7 @@
   background:
     linear-gradient(
       180deg,
-      rgba(126, 200, 227, 0.04),
+      rgba(var(--nebula-accent-rgb), 0.04),
       transparent
     );
 }
@@ -605,11 +605,11 @@
 }
 
 .networkDownloadLine {
-  stroke: var(--nebula-accent);
+  stroke: var(--nebula-accent-ink);
 }
 
 .networkUploadLine {
-  stroke: #c18cff;
+  stroke: var(--nebula-secondary);
 }
 
 .networkLegend {
@@ -637,7 +637,7 @@
 }
 
 .networkLegendUpload {
-  background: #c18cff;
+  background: var(--nebula-secondary);
 }
 
 .networkLegend > small {

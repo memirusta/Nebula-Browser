@@ -50,7 +50,7 @@
   background:
     radial-gradient(
       circle at 20% 18%,
-      rgba(126, 200, 227, 0.14),
+      rgba(var(--nebula-accent-rgb), 0.14),
       transparent 34%
     ),
     radial-gradient(

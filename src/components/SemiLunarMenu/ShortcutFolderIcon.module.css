@@ -16,8 +16,8 @@
 }
 
 .folderDropHover {
-  border-color: rgba(126, 200, 227, 0.55);
-  box-shadow: 0 0 0 2px rgba(126, 200, 227, 0.25);
+  border-color: rgba(var(--nebula-accent-rgb), 0.55);
+  box-shadow: 0 0 0 2px rgba(var(--nebula-accent-rgb), 0.25);
 }
 
 .folderDropTarget .grid {

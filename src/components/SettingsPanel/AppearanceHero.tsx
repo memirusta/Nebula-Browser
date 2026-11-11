@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { DEFAULT_ACCENT_COLOR, type NebulaSettings } from '../../core/nebulaSettings'
 import type { AmbientWallpaperPreset, WallpaperConfig } from '../../core/wallpaperConfig'
+import { ColorSpectrum } from './ColorSpectrum'
 import styles from './AppearanceHero.module.css'
 
 type Theme = NebulaSettings['appearance']['theme']
@@ -22,12 +23,17 @@ const PRESETS: Array<{ id: AmbientWallpaperPreset; name: string }> = [
 /** The first colour is the theme's own (what the default accent means); the rest are the person's choice. */
 const ACCENTS = [DEFAULT_ACCENT_COLOR, '#8b8ffb', '#a78bfa', '#f472b6', '#fb7185', '#fbbf24', '#34d399']
 
+/** The detail colour (the welcome text, the window buttons): the first is what every install started with. */
+const DETAILS = ['#d4c48a', '#fcd34d', '#fb923c', '#f472b6', '#a3e635', '#94a3b8']
+
 interface Props {
-  title: { theme: string; wallpaper: string; accent: string }
+  title: { theme: string; wallpaper: string; accent: string; detail: string; detailHint: string }
   themeLabels: Record<Theme, string>
   ownImage: string
   ownVideo: string
   accentDefault: string
+  customColor: string
+  spectrumLabels: { shade: string; hue: string; hex: string }
   theme: Theme
   onTheme: (theme: Theme) => void
   wallpaper: WallpaperConfig
@@ -36,6 +42,8 @@ interface Props {
   onPickVideo: () => void
   accentColor: string
   onAccent: (color: string) => void
+  detailColor: string
+  onDetail: (color: string) => void
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -44,6 +52,81 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h3 className={styles.sectionTitle}>{title}</h3>
       {children}
     </div>
+  )
+}
+
+/**
+ * A row of colours to choose from and, after them, a plain "+" circle that opens the colour picker under the row. When
+ * the colour is none of the choices, that circle is filled with it.
+ */
+function ColorChoice({
+  title,
+  hint,
+  colors,
+  firstLabel,
+  value,
+  onChange,
+  customColor,
+  spectrumLabels,
+}: {
+  title: string
+  hint?: string
+  colors: readonly string[]
+  /** The name of the first colour, when it is the theme's own. */
+  firstLabel?: string
+  value: string
+  onChange: (color: string) => void
+  customColor: string
+  spectrumLabels: { shade: string; hue: string; hex: string }
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const customChosen = !colors.some((color) => color.toLowerCase() === value.toLowerCase())
+
+  return (
+    <Section title={title}>
+      {hint && <p className={styles.sectionHint}>{hint}</p>}
+      <div className={styles.accents} role="group" aria-label={title}>
+        {colors.map((color, index) => {
+          const selected = value.toLowerCase() === color.toLowerCase()
+          const name = index === 0 && firstLabel ? firstLabel : color
+          return (
+            <button
+              key={color}
+              type="button"
+              className={styles.swatch}
+              data-selected={selected}
+              aria-pressed={selected}
+              aria-label={name}
+              title={name}
+              style={{ background: color }}
+              onClick={() => onChange(color)}
+            />
+          )
+        })}
+        <button
+          type="button"
+          className={`${styles.swatch} ${styles.customSwatch}`}
+          data-selected={customChosen}
+          aria-pressed={customChosen}
+          aria-expanded={pickerOpen}
+          aria-label={customColor}
+          title={customColor}
+          style={customChosen ? { background: value, borderStyle: 'solid', borderColor: 'transparent' } : undefined}
+          onClick={() => setPickerOpen((current) => !current)}
+        >
+          {!customChosen && (
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          )}
+        </button>
+      </div>
+      {pickerOpen && (
+        <div className={styles.picker}>
+          <ColorSpectrum value={value} onChange={onChange} labels={spectrumLabels} />
+        </div>
+      )}
+    </Section>
   )
 }
 
@@ -125,26 +208,25 @@ export function AppearanceHero(props: Props) {
         </div>
       </Section>
 
-      <Section title={props.title.accent}>
-        <div className={styles.accents} role="group" aria-label={props.title.accent}>
-          {ACCENTS.map((color, index) => {
-            const selected = props.accentColor.toLowerCase() === color.toLowerCase()
-            return (
-              <button
-                key={color}
-                type="button"
-                className={styles.swatch}
-                data-selected={selected}
-                aria-pressed={selected}
-                aria-label={index === 0 ? props.accentDefault : color}
-                title={index === 0 ? props.accentDefault : color}
-                style={{ background: color }}
-                onClick={() => props.onAccent(color)}
-              />
-            )
-          })}
-        </div>
-      </Section>
+      <ColorChoice
+        title={props.title.accent}
+        colors={ACCENTS}
+        firstLabel={props.accentDefault}
+        value={props.accentColor}
+        onChange={props.onAccent}
+        customColor={props.customColor}
+        spectrumLabels={props.spectrumLabels}
+      />
+
+      <ColorChoice
+        title={props.title.detail}
+        hint={props.title.detailHint}
+        colors={DETAILS}
+        value={props.detailColor}
+        onChange={props.onDetail}
+        customColor={props.customColor}
+        spectrumLabels={props.spectrumLabels}
+      />
     </div>
   )
 }

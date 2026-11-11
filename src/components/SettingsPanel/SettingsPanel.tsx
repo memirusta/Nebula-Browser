@@ -28,7 +28,6 @@ import { requestPasswordsTab } from './accountTabRequest'
 import { AppearanceHero } from './AppearanceHero'
 import { SETTINGS_GROUP_COPY } from './settingsGroupCopy'
 import {
-  SettingColorRow,
   SettingDangerRow,
   SettingRangeRow,
   SettingResetRow,
@@ -1021,11 +1020,13 @@ function CategoryContent({
         <>
           <SettingGroup>
             <AppearanceHero
-              title={{ theme: t('theme'), wallpaper: groupCopy.wallpaper, accent: t('accentColor') }}
+              title={{ theme: t('theme'), wallpaper: groupCopy.wallpaper, accent: t('accentColor'), detail: groupCopy.detailColor, detailHint: groupCopy.detailColorHint }}
               themeLabels={{ forest: t('themeForest'), dark: t('themeDark'), light: t('themeLight') }}
               ownImage={groupCopy.ownImage}
               ownVideo={groupCopy.ownVideo}
               accentDefault={groupCopy.accentDefault}
+              customColor={groupCopy.customColor}
+              spectrumLabels={{ shade: groupCopy.colorShade, hue: groupCopy.colorHue, hex: groupCopy.colorHex }}
               theme={appearance.theme}
               onTheme={(v) => onUpdate('appearance', 'theme', v)}
               wallpaper={wallpaperConfig}
@@ -1034,6 +1035,8 @@ function CategoryContent({
               onPickVideo={onPickVideoWallpaper}
               accentColor={appearance.accentColor}
               onAccent={(v) => onUpdate('appearance', 'accentColor', v)}
+              detailColor={appearance.goldColor}
+              onDetail={(v) => onUpdate('appearance', 'goldColor', v)}
             />
           </SettingGroup>
           <SettingGroup title={groupCopy.general}>
@@ -1122,20 +1125,6 @@ function CategoryContent({
                 step={2}
                 unit="%"
                 onChange={(v) => onUpdate('appearance', 'glassContrast', v / 100)}
-              />
-            </SettingGroup>
-            <SettingGroup title={groupCopy.colors}>
-              <SettingColorRow
-                label={t('accentColor')}
-                hint={t('accentColorHint')}
-                value={appearance.accentColor}
-                onChange={(v) => onUpdate('appearance', 'accentColor', v)}
-              />
-              <SettingColorRow
-                label={t('goldColor')}
-                hint={t('goldColorHint')}
-                value={appearance.goldColor}
-                onChange={(v) => onUpdate('appearance', 'goldColor', v)}
               />
             </SettingGroup>
             <SettingGroup title={groupCopy.lunar}>
