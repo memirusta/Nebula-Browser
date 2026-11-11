@@ -26,7 +26,7 @@ test('Settings fill the window: the menu at the left, the content beside it, no 
 test('the menu and the content take the colours of the theme and open with a short animation', () => {
   const css = read('src/components/SettingsPanel/SettingsPanel.module.css')
 
-  assert.match(block(css, '.navItemActive'), /background: var\(--nebula-surface\);/)
+  assert.match(css, /\.navItemActive,\n\.navItemActive:hover \{[^}]*background: color-mix\(in srgb, var\(--nebula-accent\) 14%, var\(--nebula-surface\)\);/)
   assert.match(block(css, '.navItem:hover'), /background: var\(--nebula-soft\);/)
   assert.match(block(css, '.nav'), /border-right: 1px solid var\(--nebula-glass-border\);/)
   assert.match(css, /--nav-w: 288px;/)
@@ -149,7 +149,7 @@ test('the many sliders and timings sit in a closed "Advanced" section, in nine l
   assert.ok(!lunarAdvanced.includes('groupCopy.behavior'))
 
   // A native details element: closed until opened, keyboard and screen reader friendly.
-  assert.match(read('src/components/SettingsPanel/SettingControls.tsx'), /<details className=\{styles\.advanced\}>/)
+  assert.match(read('src/components/SettingsPanel/SettingControls.tsx'), /<details\n\s+className=\{styles\.advanced\}/)
   const copy = read('src/components/SettingsPanel/settingsGroupCopy.ts')
   for (const key of ['advanced', 'accentDefault', 'ownImage', 'ownVideo']) assert.equal(copy.split(`    ${key}: `).length - 1, 9, `${key} in nine languages`)
 })

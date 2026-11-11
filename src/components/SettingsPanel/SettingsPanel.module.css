@@ -149,11 +149,13 @@
   color: var(--nebula-text);
 }
 
-.navItemActive {
-  background: var(--nebula-surface);
+.navItemActive,
+.navItemActive:hover {
+  /* The chosen page carries the accent; pointing at another one only lightens it, so the two never look alike. */
+  background: color-mix(in srgb, var(--nebula-accent) 14%, var(--nebula-surface));
   color: var(--nebula-text);
   font-weight: 600;
-  box-shadow: 0 0 0 1px var(--nebula-glass-border);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--nebula-accent) 32%, transparent);
 }
 
 .navIcon {
@@ -497,15 +499,32 @@
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
+/* A button like the others (it also stands alone), red only in its text and when it is pointed at. */
 .dangerBtn {
-  border-color: rgba(255, 96, 96, 0.45);
-  background: rgba(255, 72, 72, 0.14);
-  color: #ffb4b4;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: var(--ui-radius-sm);
+  border: 1px solid var(--nebula-field-border);
+  background: var(--nebula-surface-2);
+  color: #ff9a9a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
 }
 
-.dangerBtn:hover {
-  background: rgba(255, 72, 72, 0.24);
-  border-color: rgba(255, 120, 120, 0.6);
+:global([data-theme='light']) .dangerBtn {
+  color: #c0322f;
+}
+
+.dangerBtn:hover:not(:disabled) {
+  background: rgba(255, 72, 72, 0.14);
+  border-color: rgba(255, 96, 96, 0.4);
+}
+
+.dangerBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .placeholder {

@@ -224,10 +224,20 @@ export function SettingGroup({ title, children }: { title?: string; children: Re
   )
 }
 
+/** The Advanced sections that were opened, kept while the window lives so a page left and come back to stays as it was. */
+const openedAdvanced = new Set<string>()
+
 /** Settings most people never touch: closed until opened, so the page shows what matters first. */
 export function SettingAdvanced({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <details className={styles.advanced}>
+    <details
+      className={styles.advanced}
+      open={openedAdvanced.has(title)}
+      onToggle={(event) => {
+        if (event.currentTarget.open) openedAdvanced.add(title)
+        else openedAdvanced.delete(title)
+      }}
+    >
       <summary className={styles.advancedSummary}>
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />

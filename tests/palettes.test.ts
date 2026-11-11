@@ -153,3 +153,19 @@ test('a drag of the shade square is not ended by the hue bar losing focus: only 
   assert.doesNotMatch(spectrum, /onBlur=\{endDrag\}/)
   assert.match(spectrum, /onPointerUp=\{endDrag\}\n\s+onPointerCancel=\{endDrag\}\n\s+onChange=\{\(event\) => emitMove/)
 })
+
+test('small Settings polish: the dome is frosted white in the light theme, "Sign out" is a button like the others, the chosen page carries the accent, Advanced stays open', () => {
+  const dome = read('src/components/SemiLunarMenu/SemiLunarMenu.module.css')
+  assert.match(dome, /:global\(\[data-theme='light'\]\) \.glassFrost \{\n\s+opacity: 1;\n\s+background:\n\s+linear-gradient\(180deg, rgba\(255, 255, 255, 0\.34\)/)
+
+  const css = read('src/components/SettingsPanel/SettingsPanel.module.css')
+  const danger = css.slice(css.indexOf('.dangerBtn {'), css.indexOf('.dangerBtn:disabled'))
+  assert.match(danger, /padding: 8px 16px;/)
+  assert.match(danger, /background: var\(--nebula-surface-2\);/)
+  assert.doesNotMatch(danger, /rgba\(255, 96, 96, 0\.45\)/)
+  assert.match(css, /\.navItemActive,\n\.navItemActive:hover \{\n[^}]*color-mix\(in srgb, var\(--nebula-accent\) 14%, var\(--nebula-surface\)\)/)
+
+  const controls = read('src/components/SettingsPanel/SettingControls.tsx')
+  assert.match(controls, /const openedAdvanced = new Set<string>\(\)/)
+  assert.match(controls, /open=\{openedAdvanced\.has\(title\)\}/)
+})

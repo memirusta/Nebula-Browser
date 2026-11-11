@@ -367,6 +367,21 @@
   opacity: 0;
 }
 
+/* The light theme: the frost lightens instead of darkening, so the dome is frosted white glass, not grey. */
+:global([data-theme='light']) .glassFrost {
+  opacity: 1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.18) 100%),
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.4), transparent 70%);
+}
+
+:global([data-theme='light']) .glassFill {
+  box-shadow:
+    0 16px 48px rgba(31, 41, 90, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3);
+}
+
 .arcStroke {
   position: absolute;
   inset: 0;
