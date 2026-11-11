@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula pop-up ve eğitim planı</title>
+<style>
+  /* Design prototype for the pop-ups and the tutorial: each decision is a row of choices; the preview shows them together,
+     in any theme and palette. Nothing here is the real app. The choices are collected as text at the bottom. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --ui-bg: #0b0d16; --ui-panel: #141726; --ui-line: rgba(255,255,255,.1); --ui-text: #eef0fa; --ui-muted: #9aa2bd; --ui-acc: #8b8ffb; }
+  body { font: 14px/1.45 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif; background: var(--ui-bg); color: var(--ui-text); }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 430px; min-height: 100vh; }
+  .stage { padding: 18px 22px 60px; display: grid; gap: 14px; align-content: start; }
+  .side { background: var(--ui-panel); border-left: 1px solid var(--ui-line); height: 100vh; position: sticky; top: 0; overflow-y: auto; padding: 16px 16px 40px; }
+  h1 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
+  h2 { font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ui-muted); margin: 20px 0 8px; }
+  .sub { color: var(--ui-muted); font-size: 12.5px; margin-top: 2px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  .chip { border: 1px solid var(--ui-line); background: rgba(255,255,255,.04); color: var(--ui-text); border-radius: 10px; padding: 6px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .chip:hover { background: rgba(255,255,255,.09); }
+  .chip.on { border-color: var(--ui-acc); box-shadow: 0 0 0 2px rgba(139,143,251,.28); background: rgba(139,143,251,.12); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .row { display: grid; gap: 6px; margin-bottom: 10px; }
+  .row > b { font-size: 12.5px; }
+  .row > span { color: var(--ui-muted); font-size: 12px; margin-top: -3px; }
+  .note { color: var(--ui-muted); font-size: 12px; line-height: 1.5; }
+  .card { background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 14px; padding: 14px; }
+
+  /* ---------- the theme of the mocks ---------- */
+  .mock { --r: 18px; position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--ui-line); background: var(--bg); color: var(--text); font-size: 13px; isolation: isolate; }
+  .wall { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
+  .wall i { position: absolute; width: 340px; height: 340px; border-radius: 50%; filter: blur(70px); opacity: .5; }
+  .wall i:nth-child(1) { left: -80px; top: -110px; background: var(--w1); }
+  .wall i:nth-child(2) { right: -90px; top: 10px; background: var(--w2); }
+  .wall i:nth-child(3) { left: 30%; bottom: -190px; background: var(--w3); }
+
+  /* a page behind a popup */
+  .page { height: 400px; }
+  .fake { position: absolute; left: 24px; right: 24px; top: 24px; display: grid; gap: 10px; opacity: .8; }
+  .fake i { display: block; height: 11px; border-radius: 6px; background: var(--line); }
+  .fake i:nth-child(1) { width: 38%; height: 16px; } .fake i:nth-child(2) { width: 90%; } .fake i:nth-child(3) { width: 74%; } .fake i:nth-child(4) { width: 82%; }
+  .anchor { position: absolute; top: 12px; right: 30px; width: 30px; height: 30px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: grid; place-items: center; }
+  .scrimLayer { position: absolute; inset: 0; transition: opacity .2s; }
+  .where { position: absolute; display: grid; }
+  .where.menu { right: 24px; top: 52px; } .where.panel { right: 22px; top: 52px; } .where.prompt { left: 24px; top: 14px; } .where.modal { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+  /* ---------- the popup, built from the choices ---------- */
+  .pop { width: 330px; color: var(--text); border-radius: var(--r); overflow: hidden; position: relative; }
+  .pop[data-surface='solid'] { background: var(--card); border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+  .pop[data-surface='glass'] { background: color-mix(in srgb, var(--card) 68%, transparent); backdrop-filter: blur(22px) saturate(1.4); border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); box-shadow: 0 18px 50px rgba(0,0,0,.3), inset 0 1px rgba(255,255,255,.14); }
+  .pop[data-surface='strip'] { background: var(--card); border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+  .pop[data-surface='strip']::before { content: ''; display: block; height: 3px; background: var(--grad); }
+  .pop.menu { width: 210px; } .pop.modal { width: 380px; }
+  .pop.motion-rise { animation: rise .26s cubic-bezier(.22,1,.36,1); } .pop.motion-scale { animation: scale .26s cubic-bezier(.34,1.3,.64,1); transform-origin: top right; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } } @keyframes scale { from { opacity: 0; transform: scale(.9); } }
+  .head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 4px; }
+  .head .ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--ink); flex: none; }
+  .head h4 { font-size: 14px; font-weight: 700; flex: 1; min-width: 0; }
+  .head .x { width: 24px; height: 24px; border-radius: 8px; border: 0; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; }
+  .head.plain .ico { display: none; }
+  .body { padding: 6px 14px 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .foot { display: flex; gap: 8px; justify-content: flex-end; padding: 4px 14px 14px; }
+  .b { border-radius: 10px; padding: 8px 14px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: default; border: 1px solid var(--line); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+  .pop[data-btn='gradient'] .b.pri { background: var(--grad); color: var(--on); border-color: transparent; }
+  .pop[data-btn='flat'] .b.pri { background: var(--acc); color: var(--on); border-color: transparent; }
+  .pop[data-btn='soft'] .b.pri { background: color-mix(in srgb, var(--acc) 20%, transparent); color: var(--ink); border-color: color-mix(in srgb, var(--acc) 40%, transparent); }
+  .b.danger { color: var(--danger); }
+  .item { padding: 9px 14px; display: flex; align-items: center; gap: 9px; font-size: 12.5px; }
+  .item:hover, .item.hover { background: color-mix(in srgb, var(--acc) 12%, transparent); }
+  .item.sep { border-top: 1px solid var(--line); }
+  .dl { padding: 8px 14px; display: grid; gap: 5px; font-size: 12.5px; }
+  .dl .bar2 { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; } .dl .bar2 i { display: block; height: 100%; background: var(--grad); }
+  .dl small { color: var(--muted); font-size: 11.5px; }
+
+  /* ---------- the tutorial mocks ---------- */
+  .home { height: 380px; }
+  .dome { position: absolute; left: 50%; top: 0; transform: translateX(-50%); width: 52%; height: 60px; border-radius: 0 0 50% 50% / 0 0 100% 100%; background: color-mix(in srgb, var(--card) 70%, transparent); border: 1px solid var(--line); border-top: 0; }
+  .edge { position: absolute; left: 24%; right: 24%; top: 0; height: 12px; }
+  .wdg { position: absolute; left: 14px; width: 132px; height: 66px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); } .wdg.a { top: 74px; } .wdg.b { top: 152px; }
+  .search { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); width: 280px; height: 38px; border-radius: 19px; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; padding-left: 14px; color: var(--muted); font-size: 12.5px; }
+  .tools { position: absolute; right: 14px; top: 14px; display: grid; gap: 8px; } .tools i { width: 32px; height: 32px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); display: block; }
+  .av { position: absolute; left: 50%; top: 204px; transform: translateX(-50%); width: 54px; height: 54px; border-radius: 50%; background: var(--grad); }
+  .spot { position: absolute; border: 1.5px solid var(--ink); border-radius: 18px; box-shadow: 0 0 0 999px rgba(4,7,14,.58); transition: all .25s; pointer-events: none; }
+  .tcard { position: absolute; width: 300px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0,0,0,.45); transition: all .25s; overflow: hidden; }
+  .tcard .th { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 8px; font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .tcard .tb { padding: 0 16px 12px; } .tcard h5 { font-size: 17px; letter-spacing: -.02em; margin-bottom: 5px; } .tcard p { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .tcard .tf { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .tabs { display: flex; gap: 5px; padding: 0 14px 10px; } .tabs span { flex: 1; font-size: 10px; padding: 6px 7px; border-radius: 8px; background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--muted); } .tabs span.on { background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--ink); }
+  .dots { display: flex; gap: 5px; } .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); } .dots i.on { width: 16px; border-radius: 4px; background: var(--acc); }
+  .pbar { height: 3px; background: var(--line); } .pbar i { display: block; height: 100%; background: var(--grad); transition: width .25s; }
+  .bubble { position: absolute; width: 250px; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 16px 50px rgba(0,0,0,.4); transition: all .25s; }
+  .bubble::before { content: ''; position: absolute; top: -6px; left: 28px; width: 12px; height: 12px; background: var(--card); border-left: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg); }
+  .bubble h5 { font-size: 14px; margin-bottom: 3px; } .bubble p { font-size: 12px; color: var(--muted); }
+  .bubble .bf { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
+  .check { position: absolute; right: 58px; bottom: 14px; width: 250px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 16px 50px rgba(0,0,0,.4); padding: 12px 14px; }
+  .check h5 { font-size: 13.5px; } .check .cl { display: grid; gap: 7px; margin-top: 9px; }
+  .check .it { display: flex; gap: 9px; align-items: center; font-size: 12.5px; color: var(--muted); } .check .it.done { color: var(--text); }
+  .check .it i { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 10px; font-style: normal; } .check .it.done i { background: var(--acc); border-color: var(--acc); color: var(--on); }
+  .strip { position: absolute; left: 14px; right: 14px; bottom: 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 12px 40px rgba(0,0,0,.4); padding: 10px 14px; display: flex; align-items: center; gap: 12px; }
+  .strip div { flex: 1; font-size: 12.5px; } .strip b { display: block; font-size: 13.5px; }
+
+  /* ---------- the side ---------- */
+  .inv { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .inv td, .inv th { padding: 6px 6px; border-bottom: 1px solid var(--ui-line); text-align: left; vertical-align: middle; }
+  .inv th { color: var(--ui-muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .inv input { accent-color: var(--ui-acc); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; background: rgba(255,255,255,.08); color: var(--ui-muted); }
+  textarea { width: 100%; min-height: 250px; background: #0b0d16; color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 10px; padding: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; resize: vertical; }
+  .btn2 { border: 0; border-radius: 10px; padding: 9px 14px; background: var(--ui-acc); color: #0b0d16; font: inherit; font-weight: 700; cursor: pointer; margin-top: 8px; }
+  @media (max-width: 1000px) { .app { grid-template-columns: 1fr; } .side { position: static; height: auto; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage">
+    <div>
+      <h1>Pop-up'lar ve eğitim: plan</h1>
+      <p class="sub">Her karar bir sıra seçenek. Aşağıdaki önizleme seçtiklerini bir arada, istediğin tema ve paletle gösterir. Seçimlerin sağ altta metin olarak toplanır; kopyalayıp bana yapıştır.</p>
+    </div>
+
+    <div class="card">
+      <div class="bar" id="themeBar"></div>
+      <div class="bar" id="palBar" style="margin-top:8px"></div>
+    </div>
+
+    <h2>1 · Ortak pop-up kabuğu</h2>
+    <div class="card">
+      <div class="row"><b>Hangi pop-up'ı göstereyim?</b><div class="bar" id="sampleBar"></div></div>
+      <div class="row"><b>Yüzey</b><span>Tüm pop-up'ların aynı gövdesi; renkleri tema ve paletten gelir.</span><div class="bar" id="surfaceBar"></div></div>
+      <div class="row"><b>Köşe yuvarlaklığı</b><div class="bar" id="radiusBar"></div></div>
+      <div class="row"><b>Ana düğme</b><span>Ayarlar'daki ana düğmeyle aynı dil.</span><div class="bar" id="btnBar"></div></div>
+      <div class="row"><b>Başlık</b><div class="bar" id="headBar"></div></div>
+      <div class="row"><b>Açılış animasyonu</b><div class="bar" id="motionBar"></div></div>
+      <div class="row"><b>Arkası (yalnız pencere türü pop-up'lar)</b><div class="bar" id="scrimBar"></div></div>
+      <div class="bar" style="margin-bottom:10px"><button class="chip" id="replay">▶ Açılışı yeniden oynat</button></div>
+      <div class="mock page" id="pageMock"></div>
+    </div>
+
+    <h2>2 · Eğitim (tur) ekranı</h2>
+    <div class="card">
+      <div class="row"><b>Biçim</b><div class="bar" id="tutBar"></div></div>
+      <div class="row"><b>Hangi adım gösterilsin</b><div class="bar" id="stepBar"></div></div>
+      <div class="row"><b>İlerleme göstergesi</b><div class="bar" id="progBar"></div></div>
+      <div class="row"><b>Hangi adımlar olsun?</b><span>Şimdiki tur 4 adımlı: üst kenar, Semi-Lunar, arama, araç çubuğu.</span><div class="bar" id="stepsPick"></div></div>
+      <div class="row"><b>Atla düğmesi</b><div class="bar" id="skipBar"></div></div>
+      <div class="mock home" id="homeMock"></div>
+      <p class="note" style="margin-top:8px">Şimdiki tur kartı sabit koyu renklerle yazılmış: açık temada da koyu kalıyor ve palete uymuyor. Hangi biçimi seçersen seç, yeni sürümde tema ve paletten renk alır.</p>
+    </div>
+  </main>
+
+  <aside class="side">
+    <h2 style="margin-top:0">Hangi pop-up'lar önce?</h2>
+    <p class="note" style="margin-bottom:8px">Şu an 17 pop-up/panel stilinden yalnızca biri (Geçmiş) tema renklerini kullanıyor; geri kalanı sabit koyu renkli ve açık tema kuralı yok. "Sabit renk" sayısı, o dosyada tek tek elle yazılmış renk sayısıdır. İlk turda yapılacakları işaretle; kalanı sonraya bırakırız.</p>
+    <table class="inv" id="inv"></table>
+
+    <h2>Seçimlerim</h2>
+    <textarea id="out" readonly></textarea>
+    <button class="btn2" id="copy">Metni kopyala</button>
+  </aside>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s)
+const hsl = (h, s, l) => { s = Math.min(1, s); const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l); const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return '#' + [f(0), f(8), f(4)].map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('') }
+const lum = (hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2] }
+const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - t) + parseInt(b.slice(i, i + 2), 16) * t).toString(16).padStart(2, '0')).join('')
+
+const THEMES = { dark: 'Koyu', light: 'Açık', forest: 'Forest' }
+const PALS = {
+  indigo: { n: 'İndigo', d: '#8b8ffb', l: '#4f46e5', h: -1, s: .35 }, ocean: { n: 'Okyanus', d: '#38bdf8', l: '#0284c7', h: 205, s: .38 },
+  emerald: { n: 'Zümrüt', d: '#34d399', l: '#059669', h: 160, s: .32 }, rose: { n: 'Gül', d: '#fb7185', l: '#e11d48', h: 345, s: .3 },
+  amber: { n: 'Kehribar', d: '#fbbf24', l: '#d97706', h: 35, s: .3 }, graphite: { n: 'Grafit', d: '#a1a1aa', l: '#52525b', h: 240, s: .06 },
+}
+const SAMPLES = { permission: 'İzin isteği', downloads: 'İndirmeler paneli', update: 'Güncelleme penceresi', menu: 'Bağlam menüsü' }
+const TUTS = { card: 'Kart + spot ışığı', bubble: 'Balon (ipucu)', checklist: 'Kontrol listesi', strip: 'Alt şerit' }
+const STEPS = [['edge', 'Üst kenara git', 'Fareyi ekranın üst kenarına götür; Semi-Lunar menü açılır.', { l: 24, t: 0, w: 52, h: 14, who: 'dome' }],
+  ['lunar', 'Semi-Lunar menü', 'Kısayolların, klasörlerin ve araçların burada.', { l: 24, t: 0, w: 52, h: 62, who: 'dome' }],
+  ['search', 'Ara veya adres yaz', 'Ctrl + L ile adres çubuğuna git.', { l: 33, t: 146, w: 34, h: 46, who: 'search' }],
+  ['toolbar', 'Araç çubuğu', 'Ayarlar, bildirimler ve geçmiş sağ üstte.', { l: 92, t: 8, w: 7, h: 112, who: 'tools' }]]
+const EXTRA = { palette: 'Paleti ve rengini seç', shortcut: 'İlk kısayolunu ekle', sync: 'Yedekle ve eşitle (Sync)' }
+const INV = [
+  ['SiteUiPrompt', 'izin isteği', 29, 'öneri'], ['PasswordFillPrompt', 'şifre doldur', 10, 'öneri'], ['PasswordSavePrompt', 'şifre kaydet', 0, 'öneri'],
+  ['SiteInfoPanel', 'site bilgisi paneli', 48, 'panel'], ['DownloadManager', 'indirmeler', 61, 'panel'], ['NotificationPanel', 'bildirimler', 56, 'panel'],
+  ['ExtensionsPanel', 'eklentiler', 21, 'panel'], ['TabSearch', 'sekme arama', 27, 'panel'], ['PrivateBrowsingPanel', 'özel gezinti', 17, 'panel'],
+  ['SiteContextMenu', 'sağ tık menüsü', 13, 'menü'], ['AppUpdatePrompt', 'güncelleme', 15, 'pencere'], ['CrashRecoveryPrompt', 'çökme kurtarma', 18, 'pencere'],
+  ['StoreRecoveryNotice', 'veri kurtarma', 19, 'pencere'], ['GoogleAccountSetupModal', 'Google kurulumu', 15, 'pencere'], ['PrintDialog', 'yazdır', 88, 'pencere'],
+  ['AppDialog', 'onay / uyarı kutusu', 0, 'pencere'], ['HistoryPanel', 'geçmiş', 1, 'panel (zaten temalı)'],
+]
+
+const S = { theme: 'dark', pal: 'indigo', sample: 'permission', surface: 'solid', radius: 18, btn: 'gradient', head: 'icon', motion: 'rise', scrim: 'dim',
+  tut: 'card', step: 0, prog: 'tabs', skip: 'top', steps: { edge: true, lunar: true, search: true, toolbar: true, palette: false, shortcut: false, sync: false },
+  first: Object.fromEntries(INV.map((r) => [r[0], false])) }
+const LABELS = { surface: { solid: 'Düz kart', glass: 'Buzlu cam', strip: 'Vurgu şeritli kart' }, btn: { gradient: 'Gradyanlı (şimdiki ana düğme)', flat: 'Düz vurgu', soft: 'Yumuşak tonlu' },
+  head: { icon: 'Simge + başlık + kapat', plain: 'Yalnız başlık + kapat' }, motion: { rise: 'Hafif yukarı çık', scale: 'Köşesinden büyü', none: 'Animasyon yok' },
+  scrim: { none: 'Yok', dim: 'Karartma', blur: 'Bulanıklaştırma' }, prog: { tabs: 'Numaralı sekmeler', dots: 'Noktalar', bar: 'İnce çubuk' }, skip: { top: 'Sağ üstte "Atla"', foot: 'Altta, "Geri"nin yanında' } }
+
+function theme() {
+  const p = PALS[S.pal], t = S.theme
+  let bg, card, text, muted, line
+  if (t === 'dark') { bg = p.h < 0 ? '#0c0e19' : hsl(p.h, p.s, .07); card = p.h < 0 ? '#1b1e2b' : hsl(p.h, p.s * .8, .15); text = '#f2f4fc'; muted = '#a3abc7'; line = 'rgba(255,255,255,.1)' }
+  else if (t === 'light') { bg = p.h < 0 ? '#f2f3fb' : hsl(p.h, Math.min(1, p.s * 1.1), .96); card = '#ffffff'; text = '#0f1330'; muted = '#5b6384'; line = 'rgba(15,19,48,.1)' }
+  else { bg = '#07110c'; card = '#12241a'; text = '#e8f3ec'; muted = '#9db8a6'; line = 'rgba(255,255,255,.1)' }
+  let acc = t === 'light' ? p.l : p.d
+  if (t === 'forest' && S.pal === 'indigo') acc = '#7ec8e3'
+  const strong = mix(acc, '#000000', t === 'light' ? .14 : .2)
+  const on = lum(acc) > .4 ? '#0b0f1a' : '#ffffff'
+  const w = t === 'light' ? [acc, mix(acc, '#ffffff', .5), '#cbd5f5'] : [mix(acc, '#000', .25), mix(acc, '#7c3aed', .5), mix(acc, '#0ea5e9', .5)]
+  return { '--bg': bg, '--card': card, '--text': text, '--muted': muted, '--line': line, '--acc': acc, '--ink': acc, '--on': on,
+    '--grad': `linear-gradient(135deg, ${strong}, ${acc})`, '--danger': t === 'light' ? '#c0322f' : '#ff9a9a', '--w1': w[0], '--w2': w[1], '--w3': w[2] }
+}
+const applyTheme = (el) => { const v = theme(); for (const k in v) el.style.setProperty(k, v[k]) }
+
+function chips(id, items, key, extra) {
+  const host = $(id); host.innerHTML = ''
+  for (const [value, label] of Object.entries(items)) {
+    const b = document.createElement('button'); b.className = 'chip' + (S[key] === value || String(S[key]) === value ? ' on' : ''); b.textContent = label
+    b.onclick = () => { S[key] = typeof S[key] === 'number' ? Number(value) : value; render(); if (extra) extra() }; host.appendChild(b)
+  }
+}
+
+function popHtml() {
+  const x = '<button class="x">×</button>', ico = (d) => `<span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg></span>`
+  const head = (t, d) => `<div class="head ${S.head === 'plain' ? 'plain' : ''}">${ico(d)}<h4>${t}</h4>${x}</div>`
+  const bell = '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>', down = '<path d="M12 4v12m-5-5 5 5 5-5M5 20h14"/>', upd = '<path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/>'
+  if (S.sample === 'permission') return { cls: 'prompt', html: head('mail.example.com', bell) + '<div class="body">Bildirim göndermek istiyor. İstediğin zaman site ayarlarından değiştirebilirsin.</div><div class="foot"><span class="b">Engelle</span><span class="b pri">İzin ver</span></div>' }
+  if (S.sample === 'downloads') return { cls: 'panel', html: head('İndirmeler', down) + '<div class="dl"><div>nebula-2.1.exe</div><div class="bar2"><i style="width:62%"></i></div><small>62% · 14 MB/s</small></div><div class="dl"><div>rapor.pdf</div><small>Tamamlandı · Klasörde göster</small></div><div class="foot"><span class="b danger">Tümünü temizle</span></div>' }
+  if (S.sample === 'update') return { cls: 'modal', html: head('Nebula 2.1 hazır', upd) + '<div class="body">Yeni palet sistemi, yenilenen Ayarlar ve gizlilik iyileştirmeleri. Güncelleme birkaç saniye sürer.</div><div class="foot"><span class="b">Sonra</span><span class="b pri">Yeniden başlat ve güncelle</span></div>' }
+  return { cls: 'menu', html: '<div class="item">Yeni sekmede aç</div><div class="item hover">Kısayolu düzenle</div><div class="item">Klasöre taşı</div><div class="item sep" style="color:var(--danger)">Kaldır</div>' }
+}
+
+function renderPage() {
+  const m = $('#pageMock'); applyTheme(m); m.style.setProperty('--r', S.radius + 'px')
+  const p = popHtml(), modal = p.cls === 'modal'
+  const scrim = modal && S.scrim !== 'none' ? `<div class="scrimLayer" style="background:rgba(4,7,14,.55);${S.scrim === 'blur' ? 'backdrop-filter:blur(6px);' : ''}"></div>` : ''
+  m.innerHTML = `<div class="wall"><i></i><i></i><i></i></div><div class="fake"><i></i><i></i><i></i><i></i></div><div class="anchor"></div>${scrim}
+    <div class="where ${p.cls}"><div class="pop ${p.cls} motion-${S.motion}" data-surface="${S.surface}" data-btn="${S.btn}">${p.html}</div></div>`
+}
+
+function renderHome() {
+  const m = $('#homeMock'); applyTheme(m)
+  const list = STEPS.filter((s) => S.steps[s[0]]), cur = list[Math.min(S.step, list.length - 1)] || STEPS[0], idx = list.indexOf(cur), n = list.length
+  const W = m.clientWidth || 700, H = 380, r = cur[3]
+  const rect = { l: W * r.l / 100, t: r.t, w: W * r.w / 100, h: r.h }
+  const progress = S.prog === 'tabs' ? `<div class="tabs">${list.map((s, i) => `<span class="${i === idx ? 'on' : ''}">${String(i + 1).padStart(2, '0')} ${s[1].split(' ')[0]}</span>`).join('')}</div>`
+    : S.prog === 'dots' ? `<div class="dots">${list.map((s, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('')}</div>` : ''
+  const bar = S.prog === 'bar' ? `<div class="pbar"><i style="width:${(idx + 1) / n * 100}%"></i></div>` : ''
+  const skipTop = S.skip === 'top' ? '<span>Atla ×</span>' : '<span></span>'
+  const skipFoot = S.skip === 'foot' ? '<span class="b">Atla</span>' : ''
+  const nextBtn = `<span class="b pri" style="background:var(--grad);color:var(--on);border-color:transparent;border-radius:10px;padding:8px 14px;font-weight:600;font-size:12.5px">${idx === n - 1 ? 'Bitir ✓' : 'İleri →'}</span>`
+  let layer = ''
+  if (S.tut === 'card') {
+    const cardLeft = r.who === 'tools' ? rect.l - 320 : Math.min(W - 316, Math.max(16, rect.l + rect.w / 2 - 150)), cardTop = r.who === 'dome' ? 76 : r.who === 'search' ? 206 : 140
+    layer = `<div class="spot" style="left:${rect.l}px;top:${rect.t}px;width:${rect.w}px;height:${rect.h}px;${r.who === 'dome' ? 'border-radius:0 0 50% 50%/0 0 100% 100%' : ''}"></div>
+      <div class="tcard" style="left:${cardLeft}px;top:${cardTop}px"><div class="th"><span>Nebula turu</span>${skipTop}</div>${bar}${progress}
+      <div class="tb"><h5>${cur[1]}</h5><p>${cur[2]}</p></div><div class="tf"><span class="b" style="opacity:${idx ? 1 : .35}">← Geri</span>${skipFoot}${nextBtn}</div></div>`
+  } else if (S.tut === 'bubble') {
+    const left = Math.min(W - 266, Math.max(14, rect.l + rect.w / 2 - 40)), top = rect.t + rect.h + 14
+    layer = `<div class="spot" style="left:${rect.l}px;top:${rect.t}px;width:${rect.w}px;height:${rect.h}px;box-shadow:0 0 0 2px var(--ink);background:transparent;${r.who === 'dome' ? 'border-radius:0 0 50% 50%/0 0 100% 100%' : ''}"></div>
+      <div class="bubble" style="left:${left}px;top:${top}px"><h5>${cur[1]}</h5><p>${cur[2]}</p><div class="bf">${S.prog === 'dots' || S.prog === 'tabs' ? `<div class="dots">${list.map((s, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('')}</div>` : `<small style="color:var(--muted)">${idx + 1} / ${n}</small>`}<span style="display:flex;gap:8px;align-items:center">${S.skip === 'top' ? '<small style="color:var(--muted)">Atla</small>' : ''}${nextBtn}</span></div></div>`
+  } else if (S.tut === 'checklist') {
+    layer = `<div class="check"><h5>Nebula'ya alış (${Math.min(idx + 1, n)} / ${n})</h5>${S.prog === 'bar' ? `<div class="pbar" style="margin-top:8px;border-radius:2px"><i style="width:${(idx + 1) / n * 100}%"></i></div>` : ''}
+      <div class="cl">${list.map((s, i) => `<div class="it ${i <= idx ? 'done' : ''}"><i>${i <= idx ? '✓' : ''}</i>${s[1]}</div>`).join('')}</div>
+      <div class="bf" style="display:flex;justify-content:space-between;margin-top:10px;font-size:11.5px;color:var(--muted)"><span>${S.skip === 'top' ? 'Gizle ×' : ''}</span><span>Yaptıkça işaretlenir</span></div></div>`
+  } else {
+    layer = `<div class="spot" style="left:${rect.l}px;top:${rect.t}px;width:${rect.w}px;height:${rect.h}px;box-shadow:0 0 0 2px var(--ink);background:transparent;${r.who === 'dome' ? 'border-radius:0 0 50% 50%/0 0 100% 100%' : ''}"></div>
+      <div class="strip"><div><b>${cur[1]}</b>${cur[2]}</div>${S.prog === 'bar' ? `<small style="color:var(--muted)">${idx + 1}/${n}</small>` : `<div class="dots" style="flex:none">${list.map((s, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('')}</div>`}${S.skip === 'top' ? '<small style="color:var(--muted)">Atla</small>' : ''}${nextBtn}</div>`
+  }
+  m.innerHTML = `<div class="wall"><i></i><i></i><i></i></div><div class="dome"></div><div class="wdg a"></div><div class="wdg b"></div><div class="search">Ara veya adres yaz</div><div class="av"></div><div class="tools"><i></i><i></i><i></i></div>${layer}`
+}
+
+function render() {
+  $('#themeBar').innerHTML = ''; for (const [k, v] of Object.entries(THEMES)) { const b = document.createElement('button'); b.className = 'chip' + (S.theme === k ? ' on' : ''); b.textContent = v; b.onclick = () => { S.theme = k; render() }; $('#themeBar').appendChild(b) }
+  $('#palBar').innerHTML = ''; for (const [k, v] of Object.entries(PALS)) { const b = document.createElement('button'); b.className = 'chip' + (S.pal === k ? ' on' : ''); b.innerHTML = `<span class="dot" style="background:${S.theme === 'light' ? v.l : v.d}"></span>${v.n}`; b.onclick = () => { S.pal = k; render() }; $('#palBar').appendChild(b) }
+  chips('#sampleBar', SAMPLES, 'sample'); chips('#surfaceBar', LABELS.surface, 'surface'); chips('#radiusBar', { 10: '10 px', 14: '14 px', 18: '18 px', 24: '24 px' }, 'radius')
+  chips('#btnBar', LABELS.btn, 'btn'); chips('#headBar', LABELS.head, 'head'); chips('#motionBar', LABELS.motion, 'motion'); chips('#scrimBar', LABELS.scrim, 'scrim')
+  chips('#tutBar', TUTS, 'tut'); chips('#progBar', LABELS.prog, 'prog'); chips('#skipBar', LABELS.skip, 'skip')
+  const list = STEPS.filter((s) => S.steps[s[0]]); const sb = $('#stepBar'); sb.innerHTML = ''
+  list.forEach((s, i) => { const b = document.createElement('button'); b.className = 'chip' + (S.step === i ? ' on' : ''); b.textContent = (i + 1) + ' · ' + s[1]; b.onclick = () => { S.step = i; render() }; sb.appendChild(b) })
+  const sp = $('#stepsPick'); sp.innerHTML = ''
+  for (const s of STEPS) { const b = document.createElement('button'); b.className = 'chip' + (S.steps[s[0]] ? ' on' : ''); b.textContent = s[1]; b.onclick = () => { S.steps[s[0]] = !S.steps[s[0]]; S.step = 0; render() }; sp.appendChild(b) }
+  for (const [k, v] of Object.entries(EXTRA)) { const b = document.createElement('button'); b.className = 'chip' + (S.steps[k] ? ' on' : ''); b.textContent = '+ ' + v; b.onclick = () => { S.steps[k] = !S.steps[k]; render() }; sp.appendChild(b) }
+  renderPage(); renderHome(); renderInv(); renderOut()
+}
+
+function renderInv() {
+  $('#inv').innerHTML = '<tr><th></th><th>Pop-up</th><th>Tür</th><th>Sabit renk</th></tr>' + INV.map((r) => `<tr><td><input type="checkbox" data-k="${r[0]}" ${S.first[r[0]] ? 'checked' : ''}></td><td><b>${r[0]}</b><br><span class="note">${r[1]}</span></td><td><span class="tag">${r[3]}</span></td><td>${r[2]}</td></tr>`).join('')
+  document.querySelectorAll('#inv input').forEach((i) => i.onchange = () => { S.first[i.dataset.k] = i.checked; renderOut() })
+}
+
+function renderOut() {
+  const list = STEPS.filter((s) => S.steps[s[0]]).map((s) => s[1]).concat(Object.entries(EXTRA).filter(([k]) => S.steps[k]).map(([, v]) => v))
+  const first = INV.filter((r) => S.first[r[0]]).map((r) => r[0])
+  $('#out').value = [`POP-UP VE EĞİTİM SEÇİMLERİM`, ``, `[Ortak kabuk]`, `Yüzey: ${LABELS.surface[S.surface]}`, `Köşe: ${S.radius} px`, `Ana düğme: ${LABELS.btn[S.btn]}`, `Başlık: ${LABELS.head[S.head]}`, `Açılış: ${LABELS.motion[S.motion]}`, `Pencere arkası: ${LABELS.scrim[S.scrim]}`, ``,
+    `[Eğitim]`, `Biçim: ${TUTS[S.tut]}`, `İlerleme: ${LABELS.prog[S.prog]}`, `Atla: ${LABELS.skip[S.skip]}`, `Adımlar (${list.length}): ${list.join(' → ')}`, ``,
+    `[İlk turda yapılacak pop-up'lar]`, first.length ? first.join(', ') : '(seçilmedi: önerine bırak)', ``, `(önizleme: ${THEMES[S.theme]} tema, ${PALS[S.pal].n} palet)`].join('\n')
+}
+
+$('#replay').onclick = renderPage
+$('#copy').onclick = () => { $('#out').select(); navigator.clipboard?.writeText($('#out').value).catch(() => document.execCommand('copy')); $('#copy').textContent = 'Kopyalandı ✓'; setTimeout(() => $('#copy').textContent = 'Metni kopyala', 1500) }
+window.addEventListener('resize', renderHome)
+render()
+</script>
+</body>
+</html>
