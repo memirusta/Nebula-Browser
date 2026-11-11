@@ -62,8 +62,6 @@ mod imp {
     fn validated_site_icon_url(value: &str, origin: Option<&str>) -> Option<url::Url> {
         let url = url::Url::parse(value).ok()?;
         let host = url.host_str()?.to_ascii_lowercase();
-        let trusted_favicon_service =
-            url.scheme() == "https" && host == "www.google.com" && url.path() == "/s2/favicons";
         let origin_host = origin
             .and_then(|origin| url::Url::parse(origin).ok())
             .and_then(|origin| origin.host_str().map(str::to_ascii_lowercase))
@@ -81,8 +79,7 @@ mod imp {
             && ["whatsapp.net", "fbcdn.net"]
                 .iter()
                 .any(|domain| host_matches(&host, domain));
-        (url.scheme() == "https"
-            && (trusted_favicon_service || trusted_instagram_profile || trusted_whatsapp_profile))
+        (url.scheme() == "https" && (trusted_instagram_profile || trusted_whatsapp_profile))
             .then_some(url)
     }
 
@@ -147,15 +144,10 @@ mod imp {
         }
     }
 
-    /// Where a site's logo is looked for: its own icon file first, then the favicon service (which answers
-    /// 404 when it has no icon either, so a default globe is never taken for the site's logo).
+    /// Where a site's logo is looked for: its own icon file, and nowhere else. A favicon service would
+    /// learn which sites send notifications.
     fn logo_sources(host: &str) -> Vec<String> {
-        vec![
-            format!("https://{host}/favicon.ico"),
-            format!(
-                "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://{host}&size=64"
-            ),
-        ]
+        vec![format!("https://{host}/favicon.ico")]
     }
 
     /// The first usable image among `sources`: a picture format first (a site's own icon file is often an
@@ -695,9 +687,11 @@ mod imp {
         #[test]
         fn a_sites_logo_is_looked_for_at_its_own_icon_file_first() {
             let sources = logo_sources("www.chess.com");
-            assert_eq!(sources[0], "https://www.chess.com/favicon.ico");
-            assert!(sources[1].contains("gstatic.com/faviconV2"));
-            assert!(sources[1].contains("url=https://www.chess.com&"));
+            // Only the site itself: no favicon service is asked about it.
+            assert_eq!(
+                sources,
+                vec!["https://www.chess.com/favicon.ico".to_string()]
+            );
         }
 
         #[test]
@@ -755,14 +749,14 @@ mod imp {
         }
 
         #[test]
-        fn generic_site_icons_still_use_the_bounded_google_favicon_endpoint() {
+        fn a_favicon_service_is_not_a_trusted_icon_source() {
             assert!(validated_site_icon_url(
                 "https://www.google.com/s2/favicons?domain=example.com&sz=64",
                 Some("https://example.com"),
             )
-            .is_some());
+            .is_none());
             assert!(validated_site_icon_url(
-                "https://www.google.com/redirect?target=example.com",
+                "https://t1.gstatic.com/faviconV2?client=SOCIAL&url=https://example.com&size=64",
                 Some("https://example.com"),
             )
             .is_none());

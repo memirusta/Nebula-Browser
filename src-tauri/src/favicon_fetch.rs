@@ -99,20 +99,13 @@ pub async fn favicon_fetch(host: String) -> Result<Option<String>, String> {
         .redirect(reqwest::redirect::Policy::limited(3))
         .build()
         .map_err(|error| error.to_string())?;
-    // The site itself first. The service answers 404 when it has no icon either (`fallback_opts`
-    // asks for exactly that), so a default globe is never taken for the site's icon.
-    let sources = [
-        format!("https://{host}/favicon.ico"),
-        format!(
-            "https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://{host}&size=64"
-        ),
-    ];
-    for url in sources {
-        if let Some(bytes) = fetch_image(&client, &url).await {
-            return Ok(data_url(&bytes));
-        }
+    // Only the site itself is asked, so no third party learns which sites are visited. A site that has
+    // no icon file keeps the letter Nebula draws for it.
+    let url = format!("https://{host}/favicon.ico");
+    match fetch_image(&client, &url).await {
+        Some(bytes) => Ok(data_url(&bytes)),
+        None => Ok(None),
     }
-    Ok(None)
 }
 
 #[cfg(test)]

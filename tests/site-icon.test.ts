@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { siteIconSource } from '../src/core/siteIcon.ts'
+import { placeholderFavicon } from '../src/core/faviconPlaceholder.ts'
 
 const DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
 
@@ -9,16 +10,20 @@ test('an icon the page itself gave is used as it is', () => {
   assert.equal(siteIconSource(`  ${DATA}  `, 'https://example.com/'), DATA)
 })
 
-test('until an icon is kept, what was stored is shown, and the service address stands in when nothing was', () => {
+test('until an icon is kept, the letter is drawn; a favicon service stored by an older version is never shown', () => {
   const service = 'https://www.google.com/s2/favicons?domain=example.com&sz=64'
-  assert.equal(siteIconSource(service, 'https://example.com/'), service)
-  assert.match(siteIconSource(undefined, 'https://example.com/page'), /google\.com\/s2\/favicons/)
+  const gstatic = 'https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&url=https://example.com&size=64'
+  assert.equal(siteIconSource(service, 'https://example.com/'), placeholderFavicon('example.com'))
+  assert.equal(siteIconSource(gstatic, 'https://example.com/'), placeholderFavicon('example.com'))
+  assert.equal(siteIconSource(undefined, 'https://example.com/page'), placeholderFavicon('example.com'))
+  // An address of the site's own icon that was stored is still shown.
+  assert.equal(siteIconSource('https://example.com/icon.png', 'https://example.com/'), 'https://example.com/icon.png')
 })
 
-test('a private tab never uses or fills the cache', () => {
+test('a private tab never uses or fills the cache, and never shows a service either', () => {
   const stored = 'https://www.google.com/s2/favicons?domain=secret.example.com&sz=64'
-  assert.equal(siteIconSource(stored, 'https://secret.example.com/', { isPrivate: true }), stored)
-  assert.match(siteIconSource(undefined, 'https://secret.example.com/', { isPrivate: true }), /google\.com\/s2\/favicons/)
+  assert.equal(siteIconSource(stored, 'https://secret.example.com/', { isPrivate: true }), placeholderFavicon('secret.example.com'))
+  assert.equal(siteIconSource(undefined, 'https://secret.example.com/', { isPrivate: true }), placeholderFavicon('secret.example.com'))
 })
 
 test('addresses that are not a site get Nebula\'s own logo, not a request to anyone', () => {

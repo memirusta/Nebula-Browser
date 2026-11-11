@@ -159,10 +159,8 @@ test('editing a pin keeps its position and refreshes favicon when the site chang
   assert.deepEqual(result.pins.map((pin) => pin.id), [first.id, second.id])
   assert.equal(result.pins[0]?.title, 'Edited title')
   assert.equal(result.pins[0]?.url, 'https://wikipedia.org/wiki/Nebula')
-  assert.equal(
-    result.pins[0]?.favicon,
-    'https://www.google.com/s2/favicons?domain_url=https%3A%2F%2Fwikipedia.org%2F&sz=128',
-  )
+  // The old site's icon is dropped; the new one is drawn (a letter) or fetched, never stored as a service address.
+  assert.equal(result.pins[0]?.favicon, undefined)
 
   const storage = new MemoryStorage()
   storage.setItem(PINNED_SHORTCUTS_KEY, serializePinnedShortcuts({

@@ -41,7 +41,7 @@ export async function verifyTutorial({ cdp, load, size, evaluate, key, wait, roo
     assert.equal(await evaluate(`!!document.querySelector('button[aria-label=${label}]')`), true, `Missing ${label} demo tab`)
   }
   assert.equal(await evaluate(`(() => [...document.querySelectorAll('.tutorialDemoTab img')].every((icon) =>
-    icon.src.includes('google.com/s2/favicons')))()`), true, 'Demo tabs do not use the browser favicon source')
+    icon.src.startsWith('data:image/svg+xml')))()`), true, 'Demo tabs do not use the drawn site icon')
   checks += 4
   assert(await evaluate(`(() => {
     const tab = document.querySelector('button[aria-label=YouTube]'), r = tab.getBoundingClientRect();
