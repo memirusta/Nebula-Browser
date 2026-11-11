@@ -805,6 +805,8 @@ function ShortcutReference({
 }
 
 interface SettingsPanelProps {
+  /** A slider of the Semi-Lunar settings is held (true) or let go (false). */
+  onLunarPeekChange?: (active: boolean) => void
   passwordSettingsRequest?: number
   extensionsSettingsRequest?: number
   open: boolean
@@ -1873,6 +1875,7 @@ export function SettingsPanel({
   open,
   anchor: _anchor,
   onClose,
+  onLunarPeekChange,
   wallpaperConfig,
   onUpdateWallpaper,
   onPickWallpaper,
@@ -2049,6 +2052,13 @@ export function SettingsPanel({
       window.removeEventListener('blur', stop)
     }
   }, [peeking])
+
+  // Only the Semi-Lunar page cares: its menu is the thing to look at, and it is hidden while Settings is open.
+  const lunarPeek = peeking && activeId === 'semi-lunar'
+  useEffect(() => {
+    onLunarPeekChange?.(lunarPeek)
+    return () => onLunarPeekChange?.(false)
+  }, [lunarPeek, onLunarPeekChange])
 
   if (!visible) return null
 

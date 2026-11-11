@@ -20,6 +20,7 @@ import {
   listenDownloadUiState,
   listenToolbarUiState,
   listenGuidedTutorialState,
+  listenSettingsLunarPeek,
   listenTabCatalog,
   listenTabSearchRequests,
   listenViewMode,
@@ -104,6 +105,8 @@ export function ChromeApp() {
     open: false,
     step: 0,
   })
+  // A Semi-Lunar slider in Settings is being held: the menu is shown open so the change is seen on it.
+  const [settingsLunarPeek, setSettingsLunarPeek] = useState(false)
   const [downloadUi, setDownloadUi] = useState<DownloadUiStatePayload>({
     items: [],
     activeCount: 0,
@@ -198,6 +201,7 @@ export function ChromeApp() {
       () => listenDownloadUiState(setDownloadUi),
       () => listenToolbarUiState(setToolbarUi),
       () => listenGuidedTutorialState(setGuidedTutorial),
+      () => listenSettingsLunarPeek(setSettingsLunarPeek),
       () => listenZoomIndicator(showZoomIndicator),
       () => listenTabSpawned((shortcutId) => {
         setSpawnedTab((current) => ({ shortcutId, key: (current?.key ?? 0) + 1 }))
@@ -901,7 +905,7 @@ export function ChromeApp() {
       activeDownloadCount={downloadUi.activeCount}
       downloadProgress={downloadUi.aggregateProgress}
       downloadPanelOpen={browsingDownloadPanelOpen}
-      forceOpen={browsingDownloadPanelOpen || privateInfoOpen || extensionsOpen}
+      forceOpen={browsingDownloadPanelOpen || privateInfoOpen || extensionsOpen || settingsLunarPeek}
       tutorialExpansion={
         guidedTutorial.open && guidedTutorial.step === 1
           ? true

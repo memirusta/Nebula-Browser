@@ -203,3 +203,28 @@ test('a failed password import tells the person why in every language, instead o
   assert.match(account, /`\$\{t\('accountImportFailed'\)\} \(\$\{nativeMessage\}\)`/)
   assert.match(read('src/core/googleAccountSetup.ts'), /export function needsCsvFor/)
 })
+
+test('holding a Semi-Lunar slider shows the Semi-Lunar menu open, although it is hidden while Settings is open', () => {
+  // The Settings panel says when a slider of the Semi-Lunar page is held.
+  const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
+  assert.match(panel, /const lunarPeek = peeking && activeId === 'semi-lunar'/)
+  assert.match(panel, /onLunarPeekChange\?\.\(lunarPeek\)\s+return \(\) => onLunarPeekChange\?\.\(false\)/)
+
+  // The shell lets the menu show while it is held, and tells the menu's own webview to open.
+  const shell = read('src/components/BrowserShell/BrowserShell.tsx')
+  assert.match(shell, /\(settingsOpen && !settingsLunarPeek\) \|\|/)
+  assert.match(shell, /onLunarPeekChange=\{setSettingsLunarPeek\}/)
+  assert.match(shell, /emitSettingsLunarPeek\(settingsOpen && settingsLunarPeek\)/)
+
+  const bridge = read('src/core/nebulaBridge.ts')
+  assert.match(bridge, /const SETTINGS_LUNAR_PEEK_EVENT = 'nebula-settings-lunar-peek'/)
+  assert.match(bridge, /export async function emitSettingsLunarPeek/)
+  assert.match(bridge, /export function listenSettingsLunarPeek/)
+
+  // The menu's webview opens its menu while the slider is held, and not for any other page of Settings.
+  const chrome = read('src/ChromeApp.tsx')
+  assert.match(chrome, /listenSettingsLunarPeek\(setSettingsLunarPeek\)/)
+  assert.match(chrome, /forceOpen=\{browsingDownloadPanelOpen \|\| privateInfoOpen \|\| extensionsOpen \|\| settingsLunarPeek\}/)
+  // The menu stays open while the slider is held; it is not opened and closed in a loop.
+  assert.doesNotMatch(chrome, /lunarPeekOpen/)
+})

@@ -105,6 +105,7 @@ const TAB_SEARCH_REQUEST_EVENT = 'nebula-tab-search-request'
 const SITE_INFO_STATE_EVENT = 'nebula-site-info-state'
 const BROWSER_SHORTCUT_EVENT = 'nebula-browser-shortcut'
 const GUIDED_TUTORIAL_STATE_EVENT = 'nebula-guided-tutorial-state'
+const SETTINGS_LUNAR_PEEK_EVENT = 'nebula-settings-lunar-peek'
 
 function scoped(event: string): string {
   return scopedBrowserEvent(event)
@@ -313,4 +314,18 @@ export function listenGuidedTutorialState(
     scoped(GUIDED_TUTORIAL_STATE_EVENT),
     (event) => handler(event.payload),
   )
+}
+
+/**
+ * While a Semi-Lunar slider in Settings is held, the menu is shown open (it is hidden while Settings is open),
+ * so the change can be seen on the menu itself.
+ */
+export async function emitSettingsLunarPeek(active: boolean): Promise<void> {
+  if (!isTauri) return
+  await emit(scoped(SETTINGS_LUNAR_PEEK_EVENT), { active })
+}
+
+export function listenSettingsLunarPeek(handler: (active: boolean) => void): Promise<() => void> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<{ active: boolean }>(scoped(SETTINGS_LUNAR_PEEK_EVENT), (event) => handler(event.payload.active === true))
 }
