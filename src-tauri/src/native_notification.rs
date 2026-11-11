@@ -396,6 +396,14 @@ mod imp {
         Failed,
     }
 
+    /// Whether Windows knows this app identity from the Start Menu. A toast sent under an identity it does not
+    /// know is accepted without an error and never shown. The identity of a `tauri dev` build
+    /// (`com.nebula.browser.dev`) is not installed anywhere, so it goes through the process identity instead,
+    /// which is the installed Nebula's.
+    fn toast_identity_is_registered(identifier: &str) -> bool {
+        !identifier.ends_with(".dev")
+    }
+
     fn update_existing_conversation_toast(
         app: &AppHandle,
         data: &NotificationData,
@@ -403,13 +411,16 @@ mod imp {
     ) -> ToastUpdateOutcome {
         let tag = HSTRING::from(tag);
         let group = HSTRING::from(CONVERSATION_TOAST_GROUP);
-        let notifiers = [
-            ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-                app.config().identifier.as_str(),
-            )),
-            ToastNotificationManager::CreateToastNotifier(),
-            ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(POWERSHELL_APP_ID)),
-        ];
+        let mut notifiers = Vec::new();
+        if toast_identity_is_registered(app.config().identifier.as_str()) {
+            notifiers.push(ToastNotificationManager::CreateToastNotifierWithId(
+                &HSTRING::from(app.config().identifier.as_str()),
+            ));
+        }
+        notifiers.push(ToastNotificationManager::CreateToastNotifier());
+        notifiers.push(ToastNotificationManager::CreateToastNotifierWithId(
+            &HSTRING::from(POWERSHELL_APP_ID),
+        ));
         let mut saw_failure = false;
         for notifier in notifiers {
             let Ok(notifier) = notifier else {
@@ -609,14 +620,17 @@ mod imp {
         // Prefer Nebula's registered Start Menu identity even for a directly
         // launched release binary. This keeps the shell header branded as
         // Nebula instead of inheriting the emergency PowerShell fallback.
-        if let Ok(notifier) = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-            app.config().identifier.as_str(),
-        )) {
-            if notifier.Show(&toast).is_ok() {
-                if let (Some(tag), Some(generation)) = (toast_tag.as_deref(), toast_generation) {
-                    crate::notification_broker::mark_toast_thread_presented(tag, generation);
+        if toast_identity_is_registered(app.config().identifier.as_str()) {
+            if let Ok(notifier) = ToastNotificationManager::CreateToastNotifierWithId(
+                &HSTRING::from(app.config().identifier.as_str()),
+            ) {
+                if notifier.Show(&toast).is_ok() {
+                    if let (Some(tag), Some(generation)) = (toast_tag.as_deref(), toast_generation)
+                    {
+                        crate::notification_broker::mark_toast_thread_presented(tag, generation);
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             }
         }
 
@@ -636,7 +650,10 @@ mod imp {
 
     #[cfg(test)]
     mod tests {
-        use super::{first_logo, logo_extension, logo_sources, validated_site_icon_url};
+        use super::{
+            first_logo, logo_extension, logo_sources, toast_identity_is_registered,
+            validated_site_icon_url,
+        };
         use std::io::{Read, Write};
         use std::net::TcpListener;
         use std::time::Duration;
@@ -746,6 +763,12 @@ mod imp {
                 Some("https://www.instagram.com"),
             )
             .is_none());
+        }
+
+        #[test]
+        fn a_dev_build_does_not_send_toasts_under_an_identity_windows_does_not_know() {
+            assert!(toast_identity_is_registered("com.nebula.browser"));
+            assert!(!toast_identity_is_registered("com.nebula.browser.dev"));
         }
 
         #[test]
