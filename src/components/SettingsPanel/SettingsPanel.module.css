@@ -1,53 +1,39 @@
+/* Settings fill the window the way the first-run screens do: the menu at the left, the content, the colour of the
+   theme over a blurred copy of the background. The old dimmed backdrop is not needed any more. */
 .backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 400;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  display: none;
 }
 
-.backdropEnter {
-  animation: fadeIn 220ms var(--ease-out-expo) both;
+.backdropEnter,
+.backdropSettled,
+.backdropClosing {
+  animation: none;
 }
 
 .panel {
   position: fixed;
   z-index: 401;
-  left: 50%;
-  top: 50%;
-  width: min(1060px, calc(100vw - 32px));
-  height: min(720px, calc(100vh - 32px));
-  display: flex;
-  border-radius: 20px;
-  border: 1px solid var(--nebula-glass-border);
-
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.06),
-      transparent
-    ),
-    var(--nebula-glass);
-
-  backdrop-filter:
-    blur(var(--glass-blur))
-    saturate(var(--glass-saturate))
-    contrast(var(--glass-contrast));
-
-  -webkit-backdrop-filter:
-    blur(var(--glass-blur))
-    saturate(var(--glass-saturate))
-    contrast(var(--glass-contrast));
-
-  box-shadow:
-    0 24px 64px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 var(--nebula-glass-highlight);
-
+  inset: var(--title-bar-height, 0px) 0 0 0;
+  --nav-w: 288px;
+  --side-pad: clamp(24px, 3vw, 56px);
+  display: grid;
+  grid-template-columns: var(--nav-w) minmax(0, 1fr);
+  border: none;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--nebula-void) 72%, transparent);
+  backdrop-filter: blur(36px) saturate(1.25);
+  -webkit-backdrop-filter: blur(36px) saturate(1.25);
   overflow: hidden;
-  transform: translate(-50%, -50%) scale(1);
   opacity: 1;
-  transform-origin: center center;
+}
+
+/* A button, field or select does not take the font of the page by itself; without this the menu and the controls
+   keep the system font while the titles use the theme's. */
+.panel button,
+.panel input,
+.panel select,
+.panel textarea {
+  font-family: inherit;
 }
 
 .backdropSettled {
@@ -59,36 +45,38 @@
 }
 
 .panelEnter {
-  animation: scaleIn 360ms var(--ease-out-expo) forwards;
+  animation: settingsIn 550ms var(--ease-out-expo) both;
 }
 
 .panelClosing {
-  animation: scaleOut 280ms var(--ease-out-expo) forwards;
+  animation: settingsOut 260ms var(--ease-out-expo) forwards;
 }
 
-.backdropClosing {
-  animation: fadeOut 220ms var(--ease-out-expo) forwards;
-}
-
-@keyframes scaleIn {
-  0% {
+@keyframes settingsIn {
+  from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.04);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateY(20px) scale(0.992);
   }
 }
 
-@keyframes scaleOut {
-  0% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  100% {
+@keyframes settingsOut {
+  to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.06);
+    transform: translateY(12px) scale(0.996);
+  }
+}
+
+@keyframes settingsItemIn {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
+@keyframes settingsRise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
   }
 }
 
@@ -103,35 +91,52 @@
 }
 
 .nav {
-  width: 220px;
-  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.18);
+  gap: 4px;
+  padding: 30px 16px 20px;
+  overflow-y: auto;
+  border-right: 1px solid var(--nebula-glass-border);
+  background: color-mix(in srgb, var(--nebula-soft) 55%, transparent);
+}
+
+.navBrand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 18px;
+}
+
+.navBrand img {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px var(--nebula-glass-border);
 }
 
 .navTitle {
-  margin: 0 8px 16px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--nebula-text-muted);
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--nebula-text);
 }
 
 .navItem {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   padding: 10px 12px;
   border: none;
   border-radius: 12px;
   background: transparent;
   color: var(--nebula-text-muted);
-  font-size: 14px;
+  font-size: 14.5px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
   transition:
@@ -140,63 +145,146 @@
 }
 
 .navItem:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--nebula-soft);
   color: var(--nebula-text);
 }
 
 .navItemActive {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--nebula-surface);
   color: var(--nebula-text);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--nebula-glass-border);
 }
 
 .navIcon {
+  display: grid;
+  place-items: center;
   width: 22px;
-  font-size: 15px;
-  text-align: center;
   flex-shrink: 0;
 }
 
+.navIcon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.navItemActive .navIcon {
+  color: var(--nebula-accent);
+}
+
+.panelEnter .navItem {
+  animation: settingsItemIn 450ms var(--ease-out-expo) both;
+  animation-delay: calc(var(--i, 0) * 40ms + 160ms);
+}
+
 .content {
-  flex: 1;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .contentHeader {
-  padding: 24px 28px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* The title stays at the left, next to the menu; only the cards below are the centred 960px column. */
+  padding: 34px var(--side-pad) 18px;
+  border-bottom: 1px solid var(--nebula-glass-border);
 }
 
 .contentTitle {
   margin: 0;
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--nebula-text);
 }
 
 .contentDesc {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--nebula-text-muted);
 }
 
 .contentBody {
   flex: 1;
-  padding: 20px 28px 28px;
+  min-height: 0;
+  /* The cards are one readable column, 960px wide, in the middle of the WINDOW (not of the space right of the menu):
+     the left padding is what puts its left edge at 50vw - 480px, the right padding is what is left. When the window
+     is too narrow to centre it, the column sits next to the menu with the usual padding. */
+  padding-top: 20px;
+  padding-bottom: 70px;
+  padding-left: max(var(--side-pad), calc(50vw - 480px - var(--nav-w)));
+  padding-right: max(
+    var(--side-pad),
+    calc(100vw - var(--nav-w) - 960px - max(var(--side-pad), calc(50vw - 480px - var(--nav-w))))
+  );
   overflow-y: auto;
+}
+
+/* A group of settings: a small heading, then one card whose rows share the card's border. */
+.contentBody {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+}
+
+.group {
+  display: grid;
+  gap: 8px;
+}
+
+.groupTitle {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nebula-text-muted);
+}
+
+.groupBody {
+  overflow: hidden;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--nebula-surface-2) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+
+/* Two classes, so it wins over the padding of .row and of the other row kinds. */
+.group .groupBody > * {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.panelEnter .contentBody > * {
+  animation: settingsRise 450ms var(--ease-out-expo) both;
+}
+
+.panelEnter .contentBody > :nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.panelEnter .contentBody > :nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.panelEnter .contentBody > :nth-child(n + 4) {
+  animation-delay: 180ms;
 }
 
 .closeBtn {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 32px;
-  height: 32px;
-  border: none;
+  top: 22px;
+  right: clamp(20px, 3vw, 48px);
+  z-index: 6;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--nebula-glass-border);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--nebula-surface-2);
   color: var(--nebula-text-muted);
   font-size: 16px;
   cursor: pointer;
@@ -207,8 +295,14 @@
 }
 
 .closeBtn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--nebula-surface);
   color: var(--nebula-text);
+}
+
+@media (max-width: 760px) {
+  .panel {
+    --nav-w: 220px;
+  }
 }
 
 .row {
@@ -740,21 +834,23 @@
   width: 44px;
   height: 26px;
   padding: 0;
-  border: none;
+  border: 1px solid var(--nebula-field-border);
   border-radius: 13px;
-  background: color-mix(in srgb, var(--nebula-text) 18%, transparent);
+  background: color-mix(in srgb, var(--nebula-text) 26%, transparent);
   cursor: pointer;
   transition: background var(--duration-fast);
 }
 
 .toggleOn {
+  border-color: transparent;
   background: var(--nebula-primary);
 }
 
 .toggleThumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  /* The track has a 1px border, so 2px from its inside keeps the thumb centred. */
+  top: 2px;
+  left: 2px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -804,7 +900,7 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  width: min(200px, 42vw);
+  width: min(260px, 42vw);
 }
 
 .rangeInput {
@@ -1431,4 +1527,150 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* ---- "Advanced": closed until opened ---- */
+.advanced {
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--nebula-surface-2) 60%, transparent);
+}
+
+.advancedSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--nebula-text);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.advancedSummary::-webkit-details-marker {
+  display: none;
+}
+
+.advancedSummary svg {
+  transition: transform var(--duration-fast);
+}
+
+.advanced[open] > .advancedSummary svg {
+  transform: rotate(90deg);
+}
+
+
+.advancedSummary:hover {
+  background: var(--nebula-soft);
+  border-radius: 18px;
+}
+
+.advanced[open] > .advancedSummary {
+  border-radius: 18px 18px 0;
+  border-bottom: 1px solid var(--nebula-glass-border);
+}
+
+.advancedBody {
+  display: grid;
+  gap: 22px;
+  padding: 18px;
+}
+
+/* ---- live preview: while a slider is held, the panel steps aside so the change is seen on the real screen ---- */
+.panel {
+  transition:
+    background-color 160ms var(--ease-out-expo),
+    backdrop-filter 160ms var(--ease-out-expo);
+}
+
+.panelPeek {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.panelPeek .nav,
+.panelPeek .contentHeader,
+.panelPeek .closeBtn,
+.panelPeek .groupTitle,
+.panelPeek .advancedSummary {
+  opacity: 0.04;
+  transition: opacity 160ms var(--ease-out-expo);
+}
+
+.panelPeek .nav {
+  background: transparent;
+  border-right-color: transparent;
+}
+
+.panelPeek .contentHeader {
+  border-bottom-color: transparent;
+}
+
+.panelPeek .groupBody,
+.panelPeek .advanced {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.panelPeek .groupBody > *,
+.panelPeek .advancedBody > .group > .groupTitle {
+  opacity: 0.05;
+  transition: opacity 160ms var(--ease-out-expo);
+}
+
+/* The row being dragged stays, on a card of its own so it can be read against the screen behind. */
+.panelPeek .groupBody > *:has(input[type='range']:active) {
+  opacity: 1;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--nebula-pop) 94%, transparent);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.4);
+}
+
+/* ---- Account: three pages ---- */
+.accountTabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--nebula-surface-2) 70%, transparent);
+  justify-self: start;
+}
+
+.accountTab {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--nebula-text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.accountTab:hover {
+  color: var(--nebula-text);
+}
+
+.accountTab[data-selected='true'] {
+  background: var(--nebula-surface);
+  color: var(--nebula-text);
+  box-shadow: 0 0 0 1px var(--nebula-glass-border);
+}
+
+.accountPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.accountPanel[hidden] {
+  display: none;
 }

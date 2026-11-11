@@ -8,6 +8,10 @@ import {
 } from '../../core/googleSignIn'
 import { GoogleAccountSetupModal } from '../GoogleAccountSetupModal/GoogleAccountSetupModal'
 import { GoogleSyncSettings } from './GoogleSyncSettings'
+import { needsCsvFor } from '../../core/googleAccountSetup'
+import { SettingGroup } from './SettingControls'
+import { SETTINGS_GROUP_COPY } from './settingsGroupCopy'
+import { consumePasswordsTabRequest, onPasswordsTabRequest } from './accountTabRequest'
 import {
   buildGoogleBrowserSignInUrl,
   loadGoogleBrowserSession,
@@ -27,6 +31,7 @@ import { usePasswordReveal } from '../../hooks/usePasswordReveal'
 import { usePasswordVault } from '../../hooks/usePasswordVault'
 import { getIntlLocale, tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
+import { getLocaleCopy } from '../../core/locale'
 import styles from './SettingsPanel.module.css'
 
 interface AccountSettingsSectionProps {
@@ -71,7 +76,30 @@ export function AccountSettingsSection({
   openBrowseInBackground = true,
 }: AccountSettingsSectionProps) {
   const { locale, t } = useLocale()
+  const groupCopy = getLocaleCopy(SETTINGS_GROUP_COPY, locale)
   const [localName, setLocalName] = useState(userDisplayName)
+  // Profile, Nebula Sync and Passwords are three pages of the Account settings, not one long scroll. All three stay
+  // in the page (hidden when not shown) so what they keep, like the hidden file input of the CSV import, stays too.
+  const [tab, setTab] = useState<'profile' | 'sync' | 'passwords'>(() =>
+    consumePasswordsTabRequest() ? 'passwords' : 'profile',
+  )
+  const [focusPasswords, setFocusPasswords] = useState(tab === 'passwords')
+  useEffect(
+    () =>
+      onPasswordsTabRequest(() => {
+        consumePasswordsTabRequest()
+        setTab('passwords')
+        setFocusPasswords(true)
+      }),
+    [],
+  )
+  useEffect(() => {
+    if (tab !== 'passwords' || !focusPasswords) return
+    const heading = document.querySelector<HTMLElement>('[data-password-settings]')
+    heading?.scrollIntoView({ block: 'start' })
+    heading?.focus({ preventScroll: true })
+    setFocusPasswords(false)
+  }, [tab, focusPasswords])
   const [googleStarting, setGoogleStarting] = useState(false)
   const [googleError, setGoogleError] = useState<string | null>(null)
   const [googleConfigHint, setGoogleConfigHint] = useState<string | null>(null)
@@ -283,7 +311,17 @@ export function AccountSettingsSection({
         .catch((error: unknown) => {
           const nativeMessage =
             error instanceof Error ? error.message : typeof error === 'string' ? error : ''
-          const message = locale === 'tr' && nativeMessage ? nativeMessage : t('accountImportFailed')
+          // The native side explains why in Turkish. In another language an automatic import that cannot work (the
+          // browser's app-bound encryption, no readable database) says to use the CSV export, and any other failure
+          // keeps the reason next to the general message instead of hiding it.
+          const message =
+            locale === 'tr' && nativeMessage
+              ? nativeMessage
+              : needsCsvFor(error)
+                ? t('gsImportNeedsCsv')
+                : nativeMessage
+                  ? `${t('accountImportFailed')} (${nativeMessage})`
+                  : t('accountImportFailed')
           setImportError(message)
         })
         .finally(() => {
@@ -359,6 +397,27 @@ export function AccountSettingsSection({
 
   return (
     <>
+      <div className={styles.accountTabs} role="tablist" aria-label={t('catAccount')}>
+        {([
+          ['profile', groupCopy.accountProfile],
+          ...(account?.provider === 'google' && account.email ? [['sync', 'Nebula Sync']] : []),
+          ['passwords', t('accountPasswords')],
+        ] as Array<['profile' | 'sync' | 'passwords', string]>).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            className={styles.accountTab}
+            data-selected={tab === id}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.accountPanel} hidden={tab !== 'profile'}>
       <div className={styles.accountCard}>
         {account?.avatarUrl ? (
           <img className={styles.accountAvatar} src={account.avatarUrl} alt="" />
@@ -414,6 +473,7 @@ export function AccountSettingsSection({
         </button>
       </div>
 
+      <SettingGroup>
       {account?.provider === 'google' && onOpenBrowseUrl && (
         <div className={styles.row}>
           <div className={styles.rowText}>
@@ -428,10 +488,6 @@ export function AccountSettingsSection({
         </div>
       )}
       {sessionLinkMessage && <p className={styles.accountNote}>{sessionLinkMessage}</p>}
-
-      {account?.provider === 'google' && account.email && (
-        <GoogleSyncSettings email={account.email} />
-      )}
 
       {account?.provider === 'google' && (
         <div className={styles.row}>
@@ -455,8 +511,16 @@ export function AccountSettingsSection({
         </button>
       </div>
 
-      <div className={styles.sectionDivider} />
+      </SettingGroup>
+      </div>
 
+      <div className={styles.accountPanel} hidden={tab !== 'sync'}>
+        {account?.provider === 'google' && account.email && (
+          <GoogleSyncSettings email={account.email} />
+        )}
+      </div>
+
+      <div className={styles.accountPanel} hidden={tab !== 'passwords'}>
       <h3 className={styles.subsectionTitle} data-password-settings tabIndex={-1}>{t('accountPasswords')}</h3>
       <p className={styles.accountNote}>{t('accountPasswordsHint')}</p>
       <p className={styles.accountNote}>{t('accountPasswordHelloHint')}</p>
@@ -672,6 +736,8 @@ export function AccountSettingsSection({
           {t('accountAddPassword')}
         </button>
       )}
+
+      </div>
 
       <GoogleAccountSetupModal
         open={Boolean(googleSetupEmail)}
