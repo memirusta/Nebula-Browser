@@ -150,3 +150,70 @@ export function deriveAccentSet(accent: string, mode: PaletteMode): AccentSet {
     gradient: `linear-gradient(135deg, ${strong}, ${accent})`,
   }
 }
+
+export interface NeutralSet {
+  void: string
+  shellBg: string
+  pop: string
+  /** "r, g, b" of the glass tint. */
+  glassTintRgb: string
+  deep: string
+  surface2: string
+  textMuted: string
+}
+
+/** The colour moved lighter or darker, in small steps, until it reads against a background (4.5:1 by default). */
+function reachContrast(color: string, background: string, direction: 1 | -1, target = 4.5): string {
+  if (contrastRatio(color, background) >= target) return color
+  const [h, s, l] = rgbToHsl(...hexToRgb(color))
+  let next = color
+  let lightness = l
+  for (let i = 0; i < 100 && contrastRatio(next, background) < target; i += 1) {
+    lightness = clamp(lightness + direction * 0.01, 0.02, 0.98)
+    next = hsl(h, s, lightness)
+  }
+  return next
+}
+
+/**
+ * The neutrals (backgrounds, cards, glass) with a tint of the given hue, for the dark or the light theme. Null for the
+ * forest theme, which has its own greens. The same shapes as the built-in neutrals of each theme, only tinted.
+ */
+/** The colour a tone is shown as (a swatch, the picker): its hue and colourfulness at a middle brightness. */
+export function toneColor(hue: number, sat: number): string {
+  const [r, g, b] = hslToRgb(hue, clamp(sat / 0.6, 0, 1), 0.5)
+  return rgbToHex(r, g, b)
+}
+
+/** The tone of a picked colour: its hue and colourfulness; its brightness is not part of a tone. */
+export function toneFromColor(hex: string): { hue: number; sat: number } {
+  const [h, s] = rgbToHsl(...hexToRgb(hex))
+  return { hue: Math.round(h) % 360, sat: Math.round(clamp(s, 0, 1) * 0.6 * 100) / 100 }
+}
+
+export function neutralSet(hue: number, sat: number, mode: PaletteMode): NeutralSet | null {
+  if (mode === 'forest') return null
+  const s = clamp(sat, 0, 0.6)
+  if (mode === 'dark') {
+    const tint = hslToRgb(hue, s * 0.8, 0.13).map((v) => Math.round(v)).join(', ')
+    return {
+      void: hsl(hue, s, 0.07),
+      shellBg: hsl(hue, s, 0.07),
+      pop: hsl(hue, s * 0.8, 0.15),
+      glassTintRgb: tint,
+      deep: `rgba(${tint}, 0.86)`,
+      surface2: 'rgba(255, 255, 255, 0.05)',
+      textMuted: reachContrast(hsl(hue, Math.min(0.3, s), 0.72), hsl(hue, s * 0.8, 0.15), 1),
+    }
+  }
+  const tint = '255, 255, 255'
+  return {
+    void: hsl(hue, Math.min(1, s * 1.1), 0.96),
+    shellBg: hsl(hue, Math.min(1, s * 1.1), 0.96),
+    pop: '#ffffff',
+    glassTintRgb: tint,
+    deep: 'rgba(255, 255, 255, 0.78)',
+    surface2: hsl(hue, s * 0.8, 0.95),
+    textMuted: reachContrast(hsl(hue, Math.min(0.25, s), 0.4), hsl(hue, Math.min(1, s * 1.1), 0.96), -1),
+  }
+}

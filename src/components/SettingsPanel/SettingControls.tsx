@@ -1,9 +1,6 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
-import { getLocaleCopy } from '../../core/locale'
-import { SETTINGS_GROUP_COPY } from './settingsGroupCopy'
-import { ColorSpectrum } from './ColorSpectrum'
 import styles from './SettingsPanel.module.css'
 
 export function SettingToggleRow({
@@ -152,50 +149,6 @@ export function SettingTextRow({
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
       />
-    </div>
-  )
-}
-
-export function SettingColorRow({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string
-  hint: string
-  value: string
-  onChange: (value: string) => void
-}) {
-  const { locale } = useLocale()
-  const copy = getLocaleCopy(SETTINGS_GROUP_COPY, locale)
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className={styles.colorRowWrap}>
-      <div className={styles.row}>
-        <div className={styles.rowText}>
-          <div className={styles.rowLabel}>{label}</div>
-          <div className={styles.rowHint}>{hint}</div>
-        </div>
-        <button
-          type="button"
-          className={styles.colorSwatchBtn}
-          style={{ background: value }}
-          aria-label={label}
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-        />
-      </div>
-      {open && (
-        <div className={styles.colorPickerBody}>
-          <ColorSpectrum
-            value={value}
-            onChange={onChange}
-            labels={{ shade: copy.colorShade, hue: copy.colorHue, hex: copy.colorHex }}
-          />
-        </div>
-      )}
     </div>
   )
 }

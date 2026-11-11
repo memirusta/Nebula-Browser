@@ -288,20 +288,64 @@
 }
 
 /* ---- the selected state, the same for every kind of tile ---- */
+/* ---- palettes: the neutral, the accent and the detail colour of each, side by side ---- */
+.palettes {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.paletteTile {
+  display: grid;
+  gap: 7px;
+  padding: 7px 7px 9px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 13px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.paletteShot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 150, 0.25);
+}
+
+.paletteShot i {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
 .themeTile:hover,
 .wallpaperTile:hover,
+.paletteTile:hover,
 .ownTile:hover {
   border-color: color-mix(in srgb, var(--nebula-accent) 55%, transparent);
 }
 
 .themeTile[data-selected='true'],
 .wallpaperTile[data-selected='true'],
+.paletteTile[data-selected='true'],
 .ownTile[data-selected='true'] {
   border-color: var(--nebula-accent-ink);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--nebula-accent-ink) 28%, transparent);
 }
 
 @media (max-width: 900px) {
+  .palettes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .wallpapers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

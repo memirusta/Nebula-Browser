@@ -6714,7 +6714,14 @@ export function BrowserShell() {
     ).catch((error: unknown) => {
       console.error('[nebula appearance] Failed to apply webpage darkening.', error)
     })
-  }, [appearance, openTabIds, systemPrefersDark])
+    // Only what darkening reads: a colour changed in Settings must not send it to every open tab again.
+  }, [
+    appearance.darkenWebpages,
+    appearance.theme,
+    appearance.darkenWebpagesSiteOverrides,
+    openTabIds,
+    systemPrefersDark,
+  ])
 
   const editLayout =
     homeEditMode &&

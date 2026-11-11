@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { startTransition, useCallback, useEffect, useState } from 'react'
 import {
   DEFAULT_NEBULA_SETTINGS,
   NEBULA_SETTINGS_KEY,
@@ -9,18 +9,23 @@ import {
 } from '../core/nebulaSettings'
 import { applyHomeLayoutToSettings, type HomeLayout } from '../core/homeLayout'
 import { persistLocalStorage, useStorageSync } from '../core/storageSync'
+import { shareUnchanged } from '../core/shareUnchanged'
 
 export type { NebulaSettings }
 export { DEFAULT_NEBULA_SETTINGS }
+
+/**
+ * Choosing a colour is shown on the page at once (Settings does that), and saving it redraws the whole shell, which is
+ * slow. Saved as a transition, the redraw gives way to what the person is doing meanwhile instead of freezing it.
+ */
+const COLOUR_KEYS: ReadonlySet<PropertyKey> = new Set(['accentColor', 'goldColor', 'neutralHue', 'neutralSat'])
 
 export function useNebulaSettings() {
   const [settings, setSettings] = useState<NebulaSettings>(loadNebulaSettings)
 
   const reloadSettings = useCallback(() => {
     const next = loadNebulaSettings()
-    setSettings((prev) =>
-      JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
-    )
+    setSettings((prev) => shareUnchanged(prev, next))
     applyNebulaCssVars(next)
   }, [])
 
@@ -37,44 +42,59 @@ export function useNebulaSettings() {
       key: K,
       value: NebulaSettings[C][K],
     ) => {
-      setSettings((prev) =>
-        normalizeNebulaSettings({
-          ...prev,
-          [category]: { ...prev[category], [key]: value },
-        }),
-      )
+      const save = () =>
+        setSettings((prev) =>
+          shareUnchanged(
+            prev,
+            normalizeNebulaSettings({
+              ...prev,
+              [category]: { ...prev[category], [key]: value },
+            }),
+          ),
+        )
+      if (category === 'appearance' && COLOUR_KEYS.has(key)) startTransition(save)
+      else save()
     },
     [],
   )
 
   const resetCategory = useCallback((category: keyof NebulaSettings) => {
     setSettings((prev) =>
-      normalizeNebulaSettings({
-        ...prev,
-        [category]: DEFAULT_NEBULA_SETTINGS[category],
-      }),
+      shareUnchanged(
+        prev,
+        normalizeNebulaSettings({
+          ...prev,
+          [category]: DEFAULT_NEBULA_SETTINGS[category],
+        }),
+      ),
     )
   }, [])
 
   const resetAll = useCallback(() => {
-    setSettings({ ...DEFAULT_NEBULA_SETTINGS })
+    setSettings((prev) => shareUnchanged(prev, { ...DEFAULT_NEBULA_SETTINGS }))
   }, [])
 
   const togglePreviewOnHover = useCallback(() => {
     setSettings((prev) =>
-      normalizeNebulaSettings({
-        ...prev,
-        semiLunar: { ...prev.semiLunar, previewOnHover: !prev.semiLunar.previewOnHover },
-      }),
+      shareUnchanged(
+        prev,
+        normalizeNebulaSettings({
+          ...prev,
+          semiLunar: { ...prev.semiLunar, previewOnHover: !prev.semiLunar.previewOnHover },
+        }),
+      ),
     )
   }, [])
 
   const applyHomeLayout = useCallback((layout: HomeLayout) => {
     setSettings((prev) =>
-      normalizeNebulaSettings({
-        ...prev,
-        home: applyHomeLayoutToSettings(prev.home, layout),
-      }),
+      shareUnchanged(
+        prev,
+        normalizeNebulaSettings({
+          ...prev,
+          home: applyHomeLayoutToSettings(prev.home, layout),
+        }),
+      ),
     )
   }, [])
 

@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { DEFAULT_ACCENT_COLOR, type NebulaSettings } from '../../core/nebulaSettings'
 import type { AmbientWallpaperPreset, WallpaperConfig } from '../../core/wallpaperConfig'
+import { toneColor, toneFromColor } from '../../core/accentPalette'
+import { PALETTES } from '../../core/palettes'
 import { ColorSpectrum } from './ColorSpectrum'
 import styles from './AppearanceHero.module.css'
 
@@ -26,8 +28,24 @@ const ACCENTS = [DEFAULT_ACCENT_COLOR, '#8b8ffb', '#a78bfa', '#f472b6', '#fb7185
 /** The detail colour (the welcome text, the window buttons): the first is what every install started with. */
 const DETAILS = ['#d4c48a', '#fcd34d', '#fb923c', '#f472b6', '#a3e635', '#94a3b8']
 
+/** The tones to choose from: the theme's own first (it has no tone of its own), then the tone of each ready palette. */
+const OWN_TONE = { hue: -1, sat: 0.35, color: toneColor(233, 0.35) }
+const TONES = [OWN_TONE, ...PALETTES.slice(1).map((p) => ({ hue: p.hue, sat: p.sat, color: toneColor(p.hue, p.sat) }))]
+
+export interface PaletteTile {
+  id: string
+  label: string
+  /** What it looks like, in the colours of the theme that is on. */
+  accent: string
+  detail: string
+  neutral: string
+  selected: boolean
+}
+
 interface Props {
-  title: { theme: string; wallpaper: string; accent: string; detail: string; detailHint: string }
+  palettes: PaletteTile[]
+  onPalette: (id: string) => void
+  title: { theme: string; wallpaper: string; palette: string; accent: string; detail: string; detailHint: string; tone: string }
   themeLabels: Record<Theme, string>
   ownImage: string
   ownVideo: string
@@ -44,6 +62,12 @@ interface Props {
   onAccent: (color: string) => void
   detailColor: string
   onDetail: (color: string) => void
+  /** The tint of the backgrounds and cards: a hue in degrees (-1: the theme's own) and a colourfulness. */
+  toneHue: number
+  toneSat: number
+  onTone: (hue: number, sat: number) => void
+  /** What the pickers show while they are dragged, before the colour is saved. */
+  onPreview: { accent: (color: string) => void; detail: (color: string) => void; tone: (hue: number, sat: number) => void }
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -66,6 +90,7 @@ function ColorChoice({
   firstLabel,
   value,
   onChange,
+  onPreview,
   customColor,
   spectrumLabels,
 }: {
@@ -76,6 +101,8 @@ function ColorChoice({
   firstLabel?: string
   value: string
   onChange: (color: string) => void
+  /** Shown while the picker is dragged; onChange saves the colour when the drag ends. */
+  onPreview?: (color: string) => void
   customColor: string
   spectrumLabels: { shade: string; hue: string; hex: string }
 }) {
@@ -123,10 +150,44 @@ function ColorChoice({
       </div>
       {pickerOpen && (
         <div className={styles.picker}>
-          <ColorSpectrum value={value} onChange={onChange} labels={spectrumLabels} />
+          <ColorSpectrum value={value} onChange={onChange} onPreview={onPreview} labels={spectrumLabels} />
         </div>
       )}
     </Section>
+  )
+}
+
+/**
+ * The tint of the backgrounds and cards, chosen apart from the palettes: the theme's own, the tone of each palette, or
+ * any colour from the picker (only its hue and colourfulness count). The picker keeps the colour that was picked, so
+ * its marker does not jump to the tone's middle brightness while it is dragged.
+ */
+function ToneChoice(props: Pick<Props, 'toneHue' | 'toneSat' | 'onTone' | 'customColor' | 'spectrumLabels'> & { title: string; ownLabel: string; onPreviewTone: (hue: number, sat: number) => void }) {
+  const [picked, setPicked] = useState<string | null>(null)
+  const toneOf = (hex: string) => TONES.find((tone) => tone.color === hex) ?? { ...toneFromColor(hex), color: hex }
+  const current = props.toneHue < 0 ? OWN_TONE.color : toneColor(props.toneHue, props.toneSat)
+  const pickedTone = picked ? toneOf(picked) : null
+  const shown =
+    picked && pickedTone && pickedTone.hue === props.toneHue && (pickedTone.hue < 0 || pickedTone.sat === props.toneSat) ? picked : current
+
+  return (
+    <ColorChoice
+      title={props.title}
+      colors={TONES.map((tone) => tone.color)}
+      firstLabel={props.ownLabel}
+      value={shown}
+      onChange={(hex) => {
+        setPicked(hex)
+        const tone = toneOf(hex)
+        props.onTone(tone.hue, tone.hue < 0 ? props.toneSat : tone.sat)
+      }}
+      onPreview={(hex) => {
+        const tone = toneOf(hex)
+        props.onPreviewTone(tone.hue, tone.hue < 0 ? props.toneSat : tone.sat)
+      }}
+      customColor={props.customColor}
+      spectrumLabels={props.spectrumLabels}
+    />
   )
 }
 
@@ -208,12 +269,34 @@ export function AppearanceHero(props: Props) {
         </div>
       </Section>
 
+      <Section title={props.title.palette}>
+        <div className={styles.palettes} role="group" aria-label={props.title.palette}>
+          {props.palettes.map((palette) => (
+            <button
+              key={palette.id}
+              type="button"
+              className={styles.paletteTile}
+              data-selected={palette.selected}
+              aria-pressed={palette.selected}
+              onClick={() => props.onPalette(palette.id)}
+            >
+              <span className={styles.paletteShot} style={{ background: palette.neutral }} aria-hidden="true">
+                <i style={{ background: palette.accent }} />
+                <i style={{ background: palette.detail }} />
+              </span>
+              <span className={styles.tileName}>{palette.label}</span>
+            </button>
+          ))}
+        </div>
+      </Section>
+
       <ColorChoice
         title={props.title.accent}
         colors={ACCENTS}
         firstLabel={props.accentDefault}
         value={props.accentColor}
         onChange={props.onAccent}
+        onPreview={props.onPreview.accent}
         customColor={props.customColor}
         spectrumLabels={props.spectrumLabels}
       />
@@ -224,9 +307,23 @@ export function AppearanceHero(props: Props) {
         colors={DETAILS}
         value={props.detailColor}
         onChange={props.onDetail}
+        onPreview={props.onPreview.detail}
         customColor={props.customColor}
         spectrumLabels={props.spectrumLabels}
       />
+
+      {props.theme !== 'forest' && (
+        <ToneChoice
+          title={props.title.tone}
+          ownLabel={props.accentDefault}
+          toneHue={props.toneHue}
+          toneSat={props.toneSat}
+          onTone={props.onTone}
+          onPreviewTone={props.onPreview.tone}
+          customColor={props.customColor}
+          spectrumLabels={props.spectrumLabels}
+        />
+      )}
     </div>
   )
 }

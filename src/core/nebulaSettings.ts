@@ -1,4 +1,4 @@
-import { deriveAccentSet, readableInk } from './accentPalette'
+import { deriveAccentSet, neutralSet, readableInk } from './accentPalette'
 import { LEGACY_PREVIEW_ON_HOVER_KEY, SEMI_LUNAR_SETTINGS_KEY } from './semiLunarSettings'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
 import { DEFAULT_USER_DISPLAY_NAME } from './userProfile'
@@ -20,6 +20,9 @@ export interface AppearanceSettings {
   glassOpacity: number
   accentColor: string
   goldColor: string
+  /** Hue of the tint of the neutrals (backgrounds, cards), in degrees; -1 is the theme's own neutrals. */
+  neutralHue: number
+  neutralSat: number
   lunarGlassRgb: string
   lunarGlassOpacity: number
   lunarGlassBlurPx: number
@@ -129,6 +132,8 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     glassOpacity: 14,
     accentColor: '#7ec8e3',
     goldColor: '#d4c48a',
+    neutralHue: -1,
+    neutralSat: 0.35,
     lunarGlassRgb: '235, 242, 250',
     lunarGlassOpacity: 38,
     lunarGlassBlurPx: 160,
@@ -307,6 +312,8 @@ export function normalizeNebulaSettings(
       glassOpacity: clampNum(a?.glassOpacity, 0, 40, d.appearance.glassOpacity),
       accentColor: hexColor(a?.accentColor, d.appearance.accentColor),
       goldColor: hexColor(a?.goldColor, d.appearance.goldColor),
+      neutralHue: clampNum(a?.neutralHue, -1, 360, d.appearance.neutralHue),
+      neutralSat: clampFloat(a?.neutralSat, 0, 0.6, d.appearance.neutralSat),
       lunarGlassRgb,
       lunarGlassOpacity: migrateLunarGlassOpacity(
         a?.lunarGlassOpacity,
@@ -541,6 +548,21 @@ root.style.setProperty('--merge-folder-duration', `${mergeFolderDurationMs}ms`)
     root.style.setProperty('--nebula-accent-ink', set.ink)
     root.style.setProperty('--nebula-on-accent', set.on)
     root.style.setProperty('--nebula-secondary', set.secondary)
+  }
+
+  // Neutrals with a tint (a palette): written for the dark and the light theme only; -1 leaves the theme's own.
+  const neutralVars = ['--nebula-void', '--nebula-shell-bg', '--nebula-pop', '--nebula-glass-tint-rgb', '--nebula-deep', '--nebula-surface-2', '--nebula-text-muted'] as const
+  const neutrals = a.neutralHue >= 0 ? neutralSet(a.neutralHue, a.neutralSat, a.theme) : null
+  if (neutrals) {
+    root.style.setProperty('--nebula-void', neutrals.void)
+    root.style.setProperty('--nebula-shell-bg', neutrals.shellBg)
+    root.style.setProperty('--nebula-pop', neutrals.pop)
+    root.style.setProperty('--nebula-glass-tint-rgb', neutrals.glassTintRgb)
+    root.style.setProperty('--nebula-deep', neutrals.deep)
+    root.style.setProperty('--nebula-surface-2', neutrals.surface2)
+    root.style.setProperty('--nebula-text-muted', neutrals.textMuted)
+  } else {
+    for (const name of neutralVars) root.style.removeProperty(name)
   }
 
 root.style.setProperty('--nebula-gold', a.goldColor)

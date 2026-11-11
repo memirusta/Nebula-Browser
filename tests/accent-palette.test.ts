@@ -67,7 +67,7 @@ test('the secondary colour is a neighbour of the accent in hue and reads as a ch
 
 test('the page gets the whole set only for a colour the person chose; the default is each theme\'s own', () => {
   const settings = read('src/core/nebulaSettings.ts')
-  assert.match(settings, /import \{ deriveAccentSet, readableInk \} from '\.\/accentPalette'/)
+  assert.match(settings, /import \{ deriveAccentSet, neutralSet, readableInk \} from '\.\/accentPalette'/)
   for (const name of ['--nebula-accent-dim', '--nebula-accent-glow', '--nebula-accent-rgb', '--nebula-accent-strong', '--nebula-accent-ink', '--nebula-on-accent', '--nebula-secondary']) {
     assert.ok(settings.includes(`'${name}'`), name)
   }
@@ -154,15 +154,12 @@ test('the accent is picked in Settings with a colour picker - a square of shades
   assert.match(hero, /<ColorChoice\s+title=\{props\.title\.accent\}/)
   assert.match(hero, /<ColorChoice\s+title=\{props\.title\.detail\}[\s\S]*?onChange=\{props\.onDetail\}/)
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
-  assert.match(panel, /onDetail=\{\(v\) => onUpdate\('appearance', 'goldColor', v\)\}/)
+  assert.match(panel, /onDetail=\{\(v\) => chooseColours\(\{ goldColor: v \}\)\}/)
   const advanced = panel.slice(panel.indexOf('<SettingAdvanced'), panel.indexOf('</SettingAdvanced>'))
   assert.doesNotMatch(advanced, /label=\{t\('accentColor'\)\}/)
   assert.doesNotMatch(advanced, /label=\{t\('goldColor'\)\}/)
   // No rainbow ring any more: a dashed, plain circle.
   assert.doesNotMatch(read('src/components/SettingsPanel/AppearanceHero.module.css'), /conic-gradient/)
-
-  // Any colour row opens the same picker under its swatch.
-  assert.match(read('src/components/SettingsPanel/SettingControls.tsx'), /\{open && \(\s+<div className=\{styles\.colorPickerBody\}>\s+<ColorSpectrum/)
 
   const copy = read('src/components/SettingsPanel/settingsGroupCopy.ts')
   for (const key of ['customColor', 'colorShade', 'colorHue', 'colorHex', 'detailColor', 'detailColorHint']) assert.equal(copy.split(`    ${key}: `).length - 1, 9, `${key} in nine languages`)

@@ -425,7 +425,7 @@ export function ChromeApp() {
         location: fallbackPermission,
       },
     }
-  }, [activeUrl, catalog.activeTabId, settings.appearance, settings.privacy, siteInfoState, tabById])
+  }, [activeUrl, catalog.activeTabId, settings.appearance.darkenWebpagesSiteOverrides, settings.privacy, siteInfoState, tabById])
 
   useEffect(() => {
     const floatingPanelHeight = chromeOverlayMinimumHeight({
