@@ -17,7 +17,7 @@ body,
 }
 
 body {
-  font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--nebula-font);
   font-size: 14px;
   color: var(--nebula-text);
   background: var(--nebula-void);
@@ -57,26 +57,69 @@ body {
   --nebula-glass-highlight: rgba(220, 255, 230, 0.11);
 }
 
+/* Dark and light share the Indigo look the first-run screens have (docs/design/ui-palette-prototype.html): an indigo
+   accent with a gradient main button, a tinted neutral instead of black or green, and Plus Jakarta Sans. Forest keeps
+   its own colours. */
 [data-theme='dark'] {
-  --nebula-glass-tint-rgb: 10, 10, 13;
-  --nebula-void: #09090b;
-  --nebula-deep: rgba(10, 10, 13, 0.82);
+  --nebula-glass-tint-rgb: 24, 27, 44;
+  --nebula-void: #0c0e19;
+  --nebula-deep: rgba(24, 27, 44, 0.86);
+  --nebula-surface: rgba(255, 255, 255, 0.07);
+  --nebula-surface-2: rgba(255, 255, 255, 0.05);
 
-  --nebula-text: #f4f4f5;
-  --nebula-text-muted: rgba(244, 244, 245, 0.55);
+  --nebula-text: #f2f4fc;
+  --nebula-text-muted: #a6adc8;
 
-  --nebula-glass-border: rgba(255, 255, 255, 0.12);
+  --nebula-glass-border: rgba(255, 255, 255, 0.1);
   --nebula-glass-highlight: rgba(255, 255, 255, 0.08);
+  --nebula-field-border: rgba(255, 255, 255, 0.13);
+
+  --nebula-accent: #8b8ffb;
+  --nebula-accent-dim: rgba(139, 143, 251, 0.35);
+  --nebula-accent-glow: rgba(139, 143, 251, 0.55);
+  --nebula-primary: linear-gradient(135deg, #6366f1, #8b8ffb);
+  --nebula-on-primary: #ffffff;
+  --nebula-avatar: var(--nebula-primary);
+  --nebula-badge-bg: var(--nebula-primary);
+  --nebula-badge-ink: var(--nebula-on-primary);
+  --nebula-success: #5eead4;
+  --nebula-danger: #fb7185;
+
+  --nebula-shell-bg: #0c0e19;
+  --nebula-pop: #1b1e2b;
+  --nebula-font: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 [data-theme='light'] {
   --nebula-glass-tint-rgb: 255, 255, 255;
-  --nebula-void: #e4ebe6;
-  --nebula-deep: rgba(255, 255, 255, 0.72);
-  --nebula-text: #141814;
-  --nebula-text-muted: rgba(20, 24, 20, 0.55);
-  --nebula-glass-border: rgba(0, 0, 0, 0.12);
-  --nebula-glass-highlight: rgba(255, 255, 255, 0.5);
+  --nebula-void: #f2f3fb;
+  --nebula-deep: rgba(255, 255, 255, 0.78);
+  --nebula-surface: rgba(15, 19, 60, 0.05);
+  --nebula-surface-2: #f3f4fb;
+
+  --nebula-text: #0f1330;
+  --nebula-text-muted: #586081;
+
+  --nebula-glass-border: rgba(15, 19, 60, 0.1);
+  --nebula-glass-highlight: rgba(255, 255, 255, 0.6);
+  --nebula-field-border: rgba(15, 19, 60, 0.12);
+
+  --nebula-accent: #4f46e5;
+  --nebula-accent-dim: rgba(79, 70, 229, 0.3);
+  --nebula-accent-glow: rgba(79, 70, 229, 0.45);
+  --nebula-primary: linear-gradient(135deg, #4f46e5, #6d6ff5);
+  --nebula-on-primary: #ffffff;
+  --nebula-avatar: var(--nebula-primary);
+  --nebula-badge-bg: var(--nebula-primary);
+  --nebula-badge-ink: var(--nebula-on-primary);
+  --nebula-success: #0d9488;
+  --nebula-danger: #e11d48;
+
+  --nebula-gold-ink: color-mix(in srgb, var(--nebula-gold) 38%, #1c1a10);
+
+  --nebula-shell-bg: #f2f3fb;
+  --nebula-pop: #ffffff;
+  --nebula-font: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 

@@ -493,6 +493,13 @@ export function loadNebulaSettings(): NebulaSettings {
   } as Partial<NebulaSettings>)
 }
 
+/** The accent every install started with. It stands for "use the theme's accent", not for this exact colour. */
+export const DEFAULT_ACCENT_COLOR = '#7ec8e3'
+
+export function usesThemeAccent(accentColor: string): boolean {
+  return accentColor.toLowerCase() === DEFAULT_ACCENT_COLOR
+}
+
 export function applyNebulaCssVars(settings: NebulaSettings): void {
   const root = document.documentElement
   const { appearance: a, semiLunar: s, browsing: b } = settings
@@ -509,15 +516,23 @@ export function applyNebulaCssVars(settings: NebulaSettings): void {
 root.style.setProperty('--merge-anim-duration', `${mergeMs}ms`)
 root.style.setProperty('--merge-folder-delay', `${mergeFolderDelayMs}ms`)
 root.style.setProperty('--merge-folder-duration', `${mergeFolderDurationMs}ms`)
-root.style.setProperty('--nebula-accent', a.accentColor)
-root.style.setProperty(
-  '--nebula-accent-dim',
-  `rgba(${accentR}, ${accentG}, ${accentB}, 0.35)`,
-)
-root.style.setProperty(
-  '--nebula-accent-glow',
-  `rgba(${accentR}, ${accentG}, ${accentB}, 0.55)`,
-)
+  // The default accent means "the theme's own": the light and dark themes bring a colour of their own (styles/global.css),
+  // so nothing is written here. Only a colour the person chose is put on the page.
+  if (usesThemeAccent(a.accentColor)) {
+    root.style.removeProperty('--nebula-accent')
+    root.style.removeProperty('--nebula-accent-dim')
+    root.style.removeProperty('--nebula-accent-glow')
+  } else {
+    root.style.setProperty('--nebula-accent', a.accentColor)
+    root.style.setProperty(
+      '--nebula-accent-dim',
+      `rgba(${accentR}, ${accentG}, ${accentB}, 0.35)`,
+    )
+    root.style.setProperty(
+      '--nebula-accent-glow',
+      `rgba(${accentR}, ${accentG}, ${accentB}, 0.55)`,
+    )
+  }
 
 root.style.setProperty('--nebula-gold', a.goldColor)
 root.style.setProperty(
