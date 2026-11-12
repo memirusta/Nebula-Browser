@@ -60,13 +60,16 @@
 .actionHint kbd { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--nebula-field-border); border-bottom-width: 2px; border-radius: 5px; background: var(--nebula-surface-2); font-size: 11px; }
 
 .footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--nebula-glass-border); flex: 0 0 auto; }
-.dots { display: flex; align-items: center; gap: 6px; }
-.dots button { width: 7px; height: 7px; padding: 0; border: 0; border-radius: 50%; background: var(--nebula-glass-border); cursor: pointer; transition: width var(--duration-fast, 180ms), background var(--duration-fast, 180ms); }
-.dots button[aria-current='step'] { width: 18px; border-radius: 4px; background: var(--nebula-accent); }
+.dots { display: flex; align-items: center; }
+/* The button is 20 x 24 px so a finger or a pointer can hit it; the dot drawn in it is small. */
+.dots button { position: relative; width: 20px; height: 24px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.dots button::before { content: ''; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--nebula-text) 28%, transparent); transform: translate(-50%, -50%); transition: width var(--duration-fast, 180ms), background var(--duration-fast, 180ms); }
+.dots button:hover::before { background: color-mix(in srgb, var(--nebula-text) 50%, transparent); }
+.dots button[aria-current='step']::before { width: 18px; border-radius: 4px; background: var(--nebula-accent); }
 .backButton, .nextButton { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 8px 14px; border-radius: var(--ui-radius-sm, 10px); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .backButton { border: 1px solid transparent; background: transparent; color: var(--nebula-text-muted); }
 .backButton:hover:not(:disabled) { background: var(--nebula-surface-2); color: var(--nebula-text); }
-.backButton:disabled { opacity: .3; cursor: default; }
+.backButton:disabled { opacity: .4; cursor: default; }
 .nextButton { min-width: 96px; border: 1px solid transparent; background: var(--nebula-gradient); color: var(--nebula-on-accent); }
 .nextButton:hover { filter: brightness(1.07); }
 .bubble button:focus-visible { outline: 2px solid var(--nebula-accent); outline-offset: 2px; }

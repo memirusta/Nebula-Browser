@@ -72,8 +72,8 @@
 .itemBody { display: block; min-width: 0; }
 .itemTopline { display: flex; min-width: 0; margin-bottom: 5px; align-items: center; gap: 6px; }
 .siteName { overflow: hidden; color: var(--nebula-text-muted); font-size: 10.5px; font-weight: 760; letter-spacing: .035em; text-overflow: ellipsis; white-space: nowrap; }
-.kindBadge { flex: 0 0 auto; padding: 2px 7px; border: 1px solid var(--nebula-soft-border); border-radius: 999px; color: var(--nebula-accent-ink); background: var(--nebula-soft); font-size: 9.5px; font-weight: 720; }
-.itemTime { flex: 0 0 auto; margin-left: auto; color: var(--nebula-text-muted); font-size: 9.5px; }
+.kindBadge { flex: 0 0 auto; padding: 2px 7px; border: 1px solid var(--nebula-soft-border); border-radius: 999px; color: var(--nebula-accent-ink); background: var(--nebula-soft); font-size: 10.5px; font-weight: 720; }
+.itemTime { flex: 0 0 auto; margin-left: auto; color: var(--nebula-text-muted); font-size: 10.5px; }
 .itemTitle, .itemMessage, .meta { display: block; }
 .itemTitle { overflow: hidden; font-size: 13px; font-weight: 700; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
 .itemMessage { margin-top: 4px; color: var(--nebula-text); font-size: 12px; line-height: 1.45; opacity: .82; overflow-wrap: anywhere; white-space: pre-wrap; }

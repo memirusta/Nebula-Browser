@@ -86,3 +86,26 @@ test('the panels and menus use the card, the borders and the status colours of t
   assert.match(read('src/styles/tokens.css'), /--nebula-warning: #f4b95f;/)
   assert.match(read('src/styles/global.css'), /--nebula-warning: #b45309;/)
 })
+
+test('accessibility floor of the pop-ups: readable sizes, real hit areas, a ring for the keyboard, a success colour that reads on white', () => {
+  for (const path of THEMED) {
+    const css = withoutPaper(path, read(path))
+    for (const match of css.matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)) {
+      assert.ok(Number(match[1]) >= 10.5, `${path} has text of ${match[1]} px`)
+    }
+  }
+  // The progress dots of the tour are small to look at but 24 px high to hit (WCAG 2.2 target size).
+  const tour = read('src/components/GuidedTutorial/GuidedTutorial.module.css')
+  assert.match(tour, /\.dots button \{[^}]*width: 20px; height: 24px;/)
+  assert.match(tour, /\.backButton:disabled \{ opacity: \.4;/)
+  // A field gets a ring when the keyboard is in it, not only a tinted border.
+  assert.match(read('src/styles/popup.module.css'), /\.field:focus-visible \{\s+outline: 2px solid var\(--nebula-accent\);/)
+  // The success colour of the light theme is text on white: at least 4.5:1.
+  const light = /--nebula-success: (#[0-9a-f]{6});/.exec(read('src/styles/global.css').slice(read('src/styles/global.css').indexOf("[data-theme='light']")))![1]
+  const channel = (hex: string, at: number) => {
+    const v = parseInt(hex.slice(at, at + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  const luminance = 0.2126 * channel(light, 1) + 0.7152 * channel(light, 3) + 0.0722 * channel(light, 5)
+  assert.ok(1.05 / (luminance + 0.05) >= 4.5, `${light} on white`)
+})

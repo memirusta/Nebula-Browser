@@ -38,7 +38,7 @@
 
 .header h2 { margin: 2px 0 0; font-size: 21px; }
 .header kbd { padding: 5px 8px; border: 1px solid var(--nebula-field-border); border-radius: 7px; color: var(--nebula-text-muted); background: var(--nebula-surface-2); font: 600 10.5px/1 system-ui; }
-.eyebrow { color: var(--nebula-text-muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.eyebrow { color: var(--nebula-text-muted); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; }
 
 .search {
   flex-shrink: 0;
@@ -70,7 +70,7 @@
 .resultText strong { font-size: 13px; }
 .resultText span { margin-top: 4px; color: var(--nebula-text-muted); font-size: 10.5px; }
 .tabBadges { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
-.activeBadge, .privateBadge { padding: 4px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+.activeBadge, .privateBadge { padding: 4px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
 .activeBadge { color: var(--nebula-accent-ink); background: var(--nebula-soft); }
 .privateBadge { color: var(--nebula-on-accent); background: var(--nebula-gradient); }
 .actions { display: flex; padding-right: 8px; gap: 3px; }

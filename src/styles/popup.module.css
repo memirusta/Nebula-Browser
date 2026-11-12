@@ -163,6 +163,10 @@
   filter: brightness(1.07);
 }
 
+.btn:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+
 .btnDanger {
   color: var(--nebula-danger);
 }
@@ -189,4 +193,10 @@
 .field:focus {
   border-color: var(--nebula-accent);
   box-shadow: 0 0 0 3px var(--nebula-soft);
+}
+
+/* The keyboard gets a real ring, not only a tinted border. */
+.field:focus-visible {
+  outline: 2px solid var(--nebula-accent);
+  outline-offset: 1px;
 }

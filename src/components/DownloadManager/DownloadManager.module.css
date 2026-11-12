@@ -41,7 +41,7 @@
   display: block;
   margin-bottom: 2px;
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -182,7 +182,7 @@
   margin-bottom: 5px;
   overflow: hidden;
   color: var(--nebula-warning);
-  font-size: 10px;
+  font-size: 10.5px;
   white-space: nowrap;
 }
 
@@ -198,7 +198,7 @@
   width: fit-content;
   padding: 3px 6px;
   border-radius: 999px;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
   line-height: 1;
 }
@@ -218,7 +218,7 @@
 .reviewHint {
   margin: 3px 0 0;
   color: var(--nebula-warning);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 1.35;
 }
 
@@ -294,7 +294,7 @@
   gap: 5px;
   margin-top: 1px;
   color: var(--nebula-accent-ink);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .progressTrack {
@@ -400,7 +400,7 @@
   padding: 9px 16px 11px;
   border-top: 1px solid var(--nebula-glass-border);
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
   text-align: center;
 }
 
