@@ -1,13 +1,13 @@
 /**
  * The ready palettes: an accent (a lighter variant for the dark themes, a deeper one for the light theme), a detail
- * colour, and the tint of the neutrals (the backgrounds and cards). "Indigo" is the default: the colours each theme
- * brings, nothing written. Choosing one sets the accent, the detail colour and the neutral tint; any of them can be
+ * colour, and the tint of the neutrals (the backgrounds and cards). "Default" is the colours each theme brings, nothing
+ * written; "Indigo" is a palette like the others. Choosing one sets the accent, the detail colour and the neutral tint; any of them can be
  * changed afterwards.
  *
  * Kept free of imports so tests can read it as it is.
  */
 
-export type PaletteId = 'indigo' | 'ocean' | 'emerald' | 'rose' | 'amber' | 'graphite'
+export type PaletteId = 'default' | 'indigo' | 'ocean' | 'emerald' | 'rose' | 'amber' | 'graphite'
 
 export interface PaletteDef {
   id: PaletteId
@@ -23,7 +23,8 @@ export interface PaletteDef {
 }
 
 export const PALETTES: readonly PaletteDef[] = [
-  { id: 'indigo', dark: null, light: null, gold: null, hue: -1, sat: 0.35 },
+  { id: 'default', dark: null, light: null, gold: null, hue: -1, sat: 0.35 },
+  { id: 'indigo', dark: '#8b8ffb', light: '#4f46e5', gold: null, hue: 233, sat: 0.35 },
   { id: 'ocean', dark: '#38bdf8', light: '#0284c7', gold: '#fcd34d', hue: 205, sat: 0.38 },
   { id: 'emerald', dark: '#34d399', light: '#059669', gold: '#fbbf24', hue: 160, sat: 0.32 },
   { id: 'rose', dark: '#fb7185', light: '#e11d48', gold: '#fcd34d', hue: 345, sat: 0.3 },

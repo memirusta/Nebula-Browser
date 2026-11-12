@@ -66,31 +66,23 @@ body {
   --nebula-glass-highlight: rgba(220, 255, 230, 0.11);
 }
 
-/* Dark and light share the Indigo look the first-run screens have (docs/design/ui-palette-prototype.html): an indigo
-   accent with a gradient main button, a tinted neutral instead of black or green. Forest keeps its own colours. Every theme
-   uses Plus Jakarta Sans (styles/tokens.css). */
+/* The dark theme is a neutral black with the cyan accent (its accent set is the one in tokens.css, like Forest's), and Plus
+   Jakarta Sans. The light theme has the Indigo look the first-run screens have (docs/design/ui-palette-prototype.html): an
+   indigo accent, a tinted neutral. Forest keeps its own colours. Indigo is also a palette to choose in Settings. */
 [data-theme='dark'] {
-  --nebula-glass-tint-rgb: 24, 27, 44;
-  --nebula-void: #0c0e19;
-  --nebula-deep: rgba(24, 27, 44, 0.86);
+  --nebula-glass-tint-rgb: 10, 10, 13;
+  --nebula-void: #09090b;
+  --nebula-deep: rgba(10, 10, 13, 0.82);
   --nebula-surface: rgba(255, 255, 255, 0.07);
   --nebula-surface-2: rgba(255, 255, 255, 0.05);
 
-  --nebula-text: #f2f4fc;
-  --nebula-text-muted: #a6adc8;
+  --nebula-text: #f4f4f5;
+  --nebula-text-muted: #a1a1aa;
 
-  --nebula-glass-border: rgba(255, 255, 255, 0.1);
+  --nebula-glass-border: rgba(255, 255, 255, 0.12);
   --nebula-glass-highlight: rgba(255, 255, 255, 0.08);
   --nebula-field-border: rgba(255, 255, 255, 0.13);
 
-  --nebula-accent: #8b8ffb;
-  --nebula-accent-dim: rgba(139, 143, 251, 0.35);
-  --nebula-accent-glow: rgba(139, 143, 251, 0.55);
-  --nebula-accent-rgb: 139, 143, 251;
-  --nebula-accent-strong: #4046f8;
-  --nebula-accent-ink: #8b8ffb;
-  --nebula-on-accent: #0b0f1a;
-  --nebula-secondary: #d58bfb;
   --nebula-primary: var(--nebula-gradient);
   --nebula-on-primary: var(--nebula-on-accent);
   --nebula-avatar: var(--nebula-gradient);
@@ -100,8 +92,8 @@ body {
   --nebula-danger: #fb7185;
   --nebula-warning: #f4b95f;
 
-  --nebula-shell-bg: #0c0e19;
-  --nebula-pop: #1b1e2b;
+  --nebula-shell-bg: #09090b;
+  --nebula-pop: #18181b;
   --nebula-font: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 

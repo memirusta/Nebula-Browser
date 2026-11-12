@@ -807,7 +807,7 @@ function ShortcutReference({
 
 /** What each theme brings of its own: the accent and the background, for the tile of the default palette. */
 const THEME_OWN: Record<'dark' | 'light' | 'forest', { accent: string; neutral: string }> = {
-  dark: { accent: '#8b8ffb', neutral: '#0c0e19' },
+  dark: { accent: '#7ec8e3', neutral: '#09090b' },
   light: { accent: '#4f46e5', neutral: '#f2f3fb' },
   forest: { accent: '#7ec8e3', neutral: '#07110c' },
 }
@@ -1049,7 +1049,7 @@ function CategoryContent({
                 const own = THEME_OWN[appearance.theme]
                 const tint = def.hue >= 0 ? neutralSet(def.hue, def.sat, appearance.theme) : null
                 const names = {
-                  indigo: groupCopy.paletteIndigo, ocean: groupCopy.paletteOcean, emerald: groupCopy.paletteEmerald,
+                  default: groupCopy.paletteDefault, indigo: groupCopy.paletteIndigo, ocean: groupCopy.paletteOcean, emerald: groupCopy.paletteEmerald,
                   rose: groupCopy.paletteRose, amber: groupCopy.paletteAmber, graphite: groupCopy.paletteGraphite,
                 }
                 return {

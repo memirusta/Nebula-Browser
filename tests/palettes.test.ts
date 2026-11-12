@@ -10,15 +10,16 @@ const read = (path: string) =>
 
 const DEFAULTS = { accentColor: '#7ec8e3', goldColor: '#d4c48a' }
 
-test('six ready palettes; the first is the default, which writes nothing of its own', () => {
-  assert.deepEqual(PALETTES.map((p) => p.id), ['indigo', 'ocean', 'emerald', 'rose', 'amber', 'graphite'])
-  const indigo = PALETTES[0]
-  assert.equal(indigo.dark, null)
-  assert.equal(indigo.light, null)
-  assert.equal(indigo.gold, null)
-  assert.equal(indigo.hue, -1)
+test('the default and six ready palettes; the default writes nothing of its own, Indigo is a palette like the others', () => {
+  assert.deepEqual(PALETTES.map((p) => p.id), ['default', 'indigo', 'ocean', 'emerald', 'rose', 'amber', 'graphite'])
+  const theme = PALETTES[0]
+  assert.equal(theme.dark, null)
+  assert.equal(theme.light, null)
+  assert.equal(theme.gold, null)
+  assert.equal(theme.hue, -1)
   for (const palette of PALETTES.slice(1)) {
-    for (const colour of [palette.dark, palette.light, palette.gold]) assert.match(colour ?? '', /^#[0-9a-f]{6}$/i, palette.id)
+    for (const colour of [palette.dark, palette.light]) assert.match(colour ?? '', /^#[0-9a-f]{6}$/i, palette.id)
+    if (palette.gold !== null) assert.match(palette.gold, /^#[0-9a-f]{6}$/i, palette.id)
     assert.ok(palette.hue >= 0 && palette.hue <= 360, palette.id)
     assert.ok(palette.sat >= 0 && palette.sat <= 0.6, palette.id)
   }
@@ -90,7 +91,7 @@ test('the neutral tint is a setting, written to the page only for a palette that
   assert.match(hero, /onClick=\{\(\) => props\.onPalette\(palette\.id\)\}/)
 
   const copy = read('src/components/SettingsPanel/settingsGroupCopy.ts')
-  for (const key of ['palette', 'paletteIndigo', 'paletteOcean', 'paletteEmerald', 'paletteRose', 'paletteAmber', 'paletteGraphite']) {
+  for (const key of ['palette', 'paletteDefault', 'paletteIndigo', 'paletteOcean', 'paletteEmerald', 'paletteRose', 'paletteAmber', 'paletteGraphite']) {
     assert.equal(copy.split(`    ${key}: `).length - 1, 9, `${key} in nine languages`)
   }
 })
@@ -110,7 +111,7 @@ test('a tone is shown as a colour and read back from one: hue and colourfulness,
 test('the background tone has its own section: the theme\'s own, each palette\'s tone and a picker; not for forest, which has none', () => {
   const hero = read('src/components/SettingsPanel/AppearanceHero.tsx')
   assert.match(hero, /props\.theme !== 'forest' && \(\s+<ToneChoice/)
-  assert.match(hero, /const TONES = \[OWN_TONE, \.\.\.PALETTES\.slice\(1\)/)
+  assert.match(hero, /tones: \[own, \.\.\.PALETTES\.slice\(1\)/)
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   assert.match(panel, /onTone=\{\(hue, sat\) => chooseColours\(\{ neutralHue: hue, neutralSat: sat \}\)\}/)
   const copy = read('src/components/SettingsPanel/settingsGroupCopy.ts')

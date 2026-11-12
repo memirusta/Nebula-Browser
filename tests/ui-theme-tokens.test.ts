@@ -11,16 +11,27 @@ function block(css: string, selector: string): string {
   return css.slice(start, css.indexOf('\n}', start))
 }
 
-test('the light and dark themes carry the Indigo look: their own accent, main button, popover and font', () => {
+test('the light theme carries the Indigo look and the dark theme is a neutral black; both have a popover, a main button and the font', () => {
   const css = read('src/styles/global.css')
 
   for (const theme of ["[data-theme='dark']", "[data-theme='light']"]) {
     const rules = block(css, theme)
-    for (const token of ['--nebula-accent:', '--nebula-accent-dim:', '--nebula-accent-glow:', '--nebula-primary:', '--nebula-pop:', '--nebula-shell-bg:', '--nebula-font:', '--nebula-field-border:']) {
+    for (const token of ['--nebula-primary:', '--nebula-pop:', '--nebula-shell-bg:', '--nebula-font:', '--nebula-field-border:']) {
       assert.ok(rules.includes(token), `${theme} sets ${token}`)
     }
     assert.match(rules, /--nebula-font: 'Plus Jakarta Sans'/)
   }
+
+  // The light theme has an accent of its own (indigo); the dark theme uses the cyan accent set of tokens.css, like Forest.
+  const light = block(css, "[data-theme='light']")
+  for (const token of ['--nebula-accent:', '--nebula-accent-dim:', '--nebula-accent-glow:']) assert.ok(light.includes(token), `light sets ${token}`)
+  const dark = block(css, "[data-theme='dark']")
+  assert.doesNotMatch(dark, /--nebula-accent:/)
+  // Black: a neutral zinc, with no blue or purple in the background, the cards or the glass.
+  assert.match(dark, /--nebula-void: #09090b;/)
+  assert.match(dark, /--nebula-pop: #18181b;/)
+  assert.match(dark, /--nebula-deep: rgba\(10, 10, 13, 0\.82\);/)
+  assert.doesNotMatch(dark, /#0c0e19|#1b1e2b|24, 27, 44/)
 
   // Forest keeps what it had: no accent, no font of its own (the defaults in tokens.css apply).
   const forest = block(css, "[data-theme='forest']")

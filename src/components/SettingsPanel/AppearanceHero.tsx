@@ -10,7 +10,7 @@ type Theme = NebulaSettings['appearance']['theme']
 
 /** What a theme looks like, drawn small: its background, its card and its accent. */
 const THEMES: Array<{ id: Theme; bg: string; card: string; accent: string }> = [
-  { id: 'dark', bg: '#0c0e19', card: '#1b1e2b', accent: '#8b8ffb' },
+  { id: 'dark', bg: '#09090b', card: '#18181b', accent: '#7ec8e3' },
   { id: 'light', bg: '#f2f3fb', card: '#ffffff', accent: '#4f46e5' },
   { id: 'forest', bg: '#07110c', card: '#12241a', accent: '#7ec8e3' },
 ]
@@ -29,8 +29,11 @@ const ACCENTS = [DEFAULT_ACCENT_COLOR, '#8b8ffb', '#a78bfa', '#f472b6', '#fb7185
 const DETAILS = ['#d4c48a', '#fcd34d', '#fb923c', '#f472b6', '#a3e635', '#94a3b8']
 
 /** The tones to choose from: the theme's own first (it has no tone of its own), then the tone of each ready palette. */
-const OWN_TONE = { hue: -1, sat: 0.35, color: toneColor(233, 0.35) }
-const TONES = [OWN_TONE, ...PALETTES.slice(1).map((p) => ({ hue: p.hue, sat: p.sat, color: toneColor(p.hue, p.sat) }))]
+function tonesFor(theme: Theme) {
+  // The dark theme's own neutrals are black (a grey swatch); the light theme's are a pale indigo.
+  const own = { hue: -1, sat: 0.35, color: theme === 'dark' ? toneColor(0, 0) : toneColor(233, 0.35) }
+  return { own, tones: [own, ...PALETTES.slice(1).map((p) => ({ hue: p.hue, sat: p.sat, color: toneColor(p.hue, p.sat) }))] }
+}
 
 export interface PaletteTile {
   id: string
@@ -162,8 +165,9 @@ function ColorChoice({
  * any colour from the picker (only its hue and colourfulness count). The picker keeps the colour that was picked, so
  * its marker does not jump to the tone's middle brightness while it is dragged.
  */
-function ToneChoice(props: Pick<Props, 'toneHue' | 'toneSat' | 'onTone' | 'customColor' | 'spectrumLabels'> & { title: string; ownLabel: string; onPreviewTone: (hue: number, sat: number) => void }) {
+function ToneChoice(props: Pick<Props, 'toneHue' | 'toneSat' | 'onTone' | 'customColor' | 'spectrumLabels' | 'theme'> & { title: string; ownLabel: string; onPreviewTone: (hue: number, sat: number) => void }) {
   const [picked, setPicked] = useState<string | null>(null)
+  const { own: OWN_TONE, tones: TONES } = tonesFor(props.theme)
   const toneOf = (hex: string) => TONES.find((tone) => tone.color === hex) ?? { ...toneFromColor(hex), color: hex }
   const current = props.toneHue < 0 ? OWN_TONE.color : toneColor(props.toneHue, props.toneSat)
   const pickedTone = picked ? toneOf(picked) : null
@@ -316,6 +320,7 @@ export function AppearanceHero(props: Props) {
         <ToneChoice
           title={props.title.tone}
           ownLabel={props.accentDefault}
+          theme={props.theme}
           toneHue={props.toneHue}
           toneSat={props.toneSat}
           onTone={props.onTone}
