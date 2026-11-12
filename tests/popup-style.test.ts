@@ -22,6 +22,7 @@ const THEMED = [
   'src/components/CrashRecoveryPrompt/CrashRecoveryPrompt.module.css',
   'src/components/PrintDialog/PrintDialog.module.css',
   'src/components/GuidedTutorial/GuidedTutorial.module.css',
+  'src/components/HistoryPanel/HistoryPanel.module.css',
 ]
 
 /** Colours that are not the theme's: the black of a shadow, the dimming layer behind a dialog, brand logos. */
@@ -108,4 +109,14 @@ test('accessibility floor of the pop-ups: readable sizes, real hit areas, a ring
   }
   const luminance = 0.2126 * channel(light, 1) + 0.7152 * channel(light, 3) + 0.0722 * channel(light, 5)
   assert.ok(1.05 / (luminance + 0.05) >= 4.5, `${light} on white`)
+})
+
+test('buttons, fields and keys take the page font instead of the system one, and no pop-up asks for the system font', () => {
+  const global = read('src/styles/global.css')
+  assert.match(global, /button,\s+input,\s+select,\s+textarea,\s+kbd \{\s+font-family: inherit;\s+\}/)
+  for (const path of THEMED) assert.doesNotMatch(read(path), /system-ui/, path)
+})
+
+test('the site information panel is not capped at a height of its own: the window is its only limit', () => {
+  assert.match(read('src/components/SiteInfoPanel/SiteInfoPanel.tsx'), /'--panel-height': '1100px'/)
 })

@@ -405,7 +405,7 @@ export function SiteInfoPanel({
     <section
       ref={panelRef}
       className={[styles.panel, floatingPanel.viewportBound].join(' ')}
-      style={{ '--panel-preferred-top': `${top}px` } as CSSProperties}
+      style={{ '--panel-preferred-top': `${top}px`, '--panel-height': '1100px' } as CSSProperties}
       role="dialog"
       aria-modal="true"
       aria-labelledby="nebula-site-info-title"

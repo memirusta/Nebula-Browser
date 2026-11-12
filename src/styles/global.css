@@ -16,6 +16,15 @@ body,
   overflow: hidden;
 }
 
+/* Form controls and keys do not take the page's font by themselves; without this each button shows the system's. */
+button,
+input,
+select,
+textarea,
+kbd {
+  font-family: inherit;
+}
+
 body {
   font-family: var(--nebula-font);
   font-size: 14px;

@@ -64,5 +64,5 @@ test('the overlay keeps the room of the full bubble even when the bubble is smal
   assert.equal(chromeOverlayMinimumHeight(browsing), 0)
   assert.equal(chromeOverlayMinimumHeight({ ...browsing, hasSensitiveUsage: true }), 78)
   assert.equal(chromeOverlayMinimumHeight({ ...browsing, hasZoom: true, hasSensitiveUsage: true }), 138)
-  assert.equal(chromeOverlayMinimumHeight({ ...browsing, siteInfoOpen: true, hasSensitiveUsage: true }), 650)
+  assert.equal(chromeOverlayMinimumHeight({ ...browsing, siteInfoOpen: true, hasSensitiveUsage: true }), 1100)
 })

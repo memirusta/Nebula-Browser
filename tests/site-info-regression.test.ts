@@ -66,8 +66,12 @@ test('native chrome reserves room for each panel and releases it after closing',
     siteInfoOpen: false, privateInfoOpen: false, tabSearchOpen: false,
     isBrowsing: true, hasZoom: false, hasSensitiveUsage: false,
   }
-  for (const panel of ['siteInfoOpen', 'privateInfoOpen', 'extensionsOpen', 'tabSearchOpen'] as const) {
+  for (const panel of ['extensionsOpen', 'tabSearchOpen'] as const) {
     assert.equal(chromeOverlayMinimumHeight({ ...closed, [panel]: true }), 650)
+  }
+  // The site information and private browsing panels are as tall as their content, so they get all the window gives.
+  for (const panel of ['siteInfoOpen', 'privateInfoOpen'] as const) {
+    assert.equal(chromeOverlayMinimumHeight({ ...closed, [panel]: true }), 1100)
   }
   assert.equal(chromeOverlayMinimumHeight(closed), 0)
   assert.equal(chromeOverlayMinimumHeight({ ...closed, hasZoom: true }), 78)
