@@ -121,23 +121,46 @@ test('the site information panel is not capped at a height of its own: the windo
   assert.match(read('src/components/SiteInfoPanel/SiteInfoPanel.tsx'), /'--panel-height': '1100px'/)
 })
 
-test('every theme starts in the same font, and Settings can switch the whole interface to the system font', () => {
+test('every theme starts in the same font, and Settings offers the typefaces that ship with Nebula for the interface and the clock', () => {
   const tokens = read('src/styles/tokens.css')
   assert.match(tokens, /--nebula-font: 'Plus Jakarta Sans', 'Segoe UI'/)
   assert.doesNotMatch(tokens, /--nebula-font: 'Segoe UI', 'Inter'/)
 
+  // Each bundled typeface has its files, its @font-face and its licence next to it.
+  const fonts = [
+    ['Inter', 'inter', 'Inter-OFL.txt'], ['Manrope', 'manrope', 'Manrope-OFL.txt'], ['DM Sans', 'dm-sans', 'DMSans-OFL.txt'],
+    ['Space Grotesk', 'space-grotesk', 'SpaceGrotesk-OFL.txt'], ['Lexend', 'lexend', 'Lexend-OFL.txt'], ['JetBrains Mono', 'jetbrains-mono', 'JetBrainsMono-OFL.txt'],
+  ] as const
+  for (const [family, stem, licence] of fonts) {
+    assert.ok(tokens.includes(`font-family: '${family}';`), family)
+    assert.ok(tokens.includes(`../assets/fonts/${stem}-latin-wght-normal.woff2`), `${family} latin`)
+    assert.ok(tokens.includes(`../assets/fonts/${stem}-latin-ext-wght-normal.woff2`), `${family} latin-ext (Turkish)`)
+    assert.match(read(`src/assets/fonts/${licence}`), /SIL Open Font License, Version 1\.1/, `${family} licence`)
+  }
+
   const settings = read('src/core/nebulaSettings.ts')
-  assert.match(settings, /export type InterfaceFont = 'nebula' \| 'system'/)
+  assert.match(settings, /export type InterfaceFont = 'nebula' \| 'inter' \| 'manrope' \| 'dm-sans' \| 'space-grotesk' \| 'lexend' \| 'jetbrains-mono' \| 'system'/)
   assert.match(settings, /fontFamily: 'nebula',/)
-  assert.match(settings, /fontFamily: a\?\.fontFamily === 'system' \|\| a\?\.fontFamily === 'nebula' \? a\.fontFamily : d\.appearance\.fontFamily/)
-  // Only the system's font is written to the page; Nebula's is what the themes already bring.
-  assert.match(settings, /if \(a\.fontFamily === 'system'\) root\.style\.setProperty\('--nebula-font', SYSTEM_FONT_STACK\)\s+else root\.style\.removeProperty\('--nebula-font'\)/)
+  assert.match(settings, /\(INTERFACE_FONT_IDS as string\[\]\)\.includes\(a\.fontFamily\)/)
+  // Only a choice other than Nebula's own is written to the page; Nebula's is what the themes already bring.
+  assert.match(settings, /if \(a\.fontFamily === 'nebula'\) root\.style\.removeProperty\('--nebula-font'\)\s+else root\.style\.setProperty\('--nebula-font', INTERFACE_FONTS\[a\.fontFamily\]\.stack\)/)
 
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   assert.match(panel, /label=\{groupCopy\.fontFamily\}/)
-  assert.match(panel, /onUpdate\('appearance', 'fontFamily', value as NebulaSettings\['appearance'\]\['fontFamily'\]\)/)
+  assert.match(panel, /options=\{INTERFACE_FONT_IDS\.map\(/)
+  assert.match(panel, /\{ value: 'interface', label: groupCopy\.clockFontInterface \}/)
   const copy = read('src/components/SettingsPanel/settingsGroupCopy.ts')
-  for (const key of ['fontFamily', 'fontFamilyHint', 'fontSystem']) {
+  for (const key of ['fontFamily', 'fontFamilyHint', 'fontSystem', 'clockFontInterface']) {
     assert.equal(copy.split(`    ${key}: `).length - 1, 9, `${key} in nine languages`)
   }
+})
+
+test('the clock follows the interface font by default and any font of the list can be chosen; older choices keep a meaning', () => {
+  const settings = read('src/core/nebulaSettings.ts')
+  assert.match(settings, /export type ClockFontFamily = 'interface' \| Exclude<InterfaceFont, 'system'> \| 'serif' \| 'light'/)
+  assert.match(settings, /interface: 'var\(--nebula-font\)'/)
+  assert.match(settings, /clockFontFamily: 'interface',/)
+  // The old default ("system") now follows the interface, so the clock does not stay in another font; "mono" is JetBrains Mono.
+  assert.match(settings, /if \(value === 'system'\) return 'interface'\n\s+if \(value === 'mono'\) return 'jetbrains-mono'/)
+  assert.match(settings, /clockFontFamily: clockFontFamily\(h\?\.clockFontFamily, d\.home\.clockFontFamily\)/)
 })

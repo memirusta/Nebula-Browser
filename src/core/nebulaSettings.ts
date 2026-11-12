@@ -9,10 +9,24 @@ export type NebulaTheme = 'forest' | 'dark' | 'light'
 export type DarkenWebpagesMode = 'off' | 'auto' | 'always'
 export type DarkenWebpagesSiteMode = 'off' | 'always'
 export type SearchEngine = 'google' | 'duckduckgo' | 'bing'
-/** The typeface of the interface: Nebula's own (Plus Jakarta Sans) or the system's. */
-export type InterfaceFont = 'nebula' | 'system'
-/** The system's font, for the setting that switches to it. */
-export const SYSTEM_FONT_STACK = "'Segoe UI', system-ui, -apple-system, sans-serif"
+/** The typeface of the interface: Nebula's own (Plus Jakarta Sans), another one that ships with it, or the system's. */
+export type InterfaceFont = 'nebula' | 'inter' | 'manrope' | 'dm-sans' | 'space-grotesk' | 'lexend' | 'jetbrains-mono' | 'system'
+
+const FONT_FALLBACK = "'Segoe UI', system-ui, -apple-system, sans-serif"
+
+/** What each choice puts in --nebula-font; the typefaces are bundled (styles/tokens.css). */
+export const INTERFACE_FONTS: Record<InterfaceFont, { label: string; stack: string }> = {
+  nebula: { label: 'Plus Jakarta Sans', stack: `'Plus Jakarta Sans', ${FONT_FALLBACK}` },
+  inter: { label: 'Inter', stack: `'Inter', ${FONT_FALLBACK}` },
+  manrope: { label: 'Manrope', stack: `'Manrope', ${FONT_FALLBACK}` },
+  'dm-sans': { label: 'DM Sans', stack: `'DM Sans', ${FONT_FALLBACK}` },
+  'space-grotesk': { label: 'Space Grotesk', stack: `'Space Grotesk', ${FONT_FALLBACK}` },
+  lexend: { label: 'Lexend', stack: `'Lexend', ${FONT_FALLBACK}` },
+  'jetbrains-mono': { label: 'JetBrains Mono', stack: `'JetBrains Mono', Consolas, 'Courier New', monospace` },
+  system: { label: 'System', stack: FONT_FALLBACK },
+}
+
+export const INTERFACE_FONT_IDS = Object.keys(INTERFACE_FONTS) as InterfaceFont[]
 
 export interface AppearanceSettings {
   theme: NebulaTheme
@@ -33,13 +47,27 @@ export interface AppearanceSettings {
   lunarGlassBlurPx: number
 }
 
-export type ClockFontFamily = 'system' | 'serif' | 'mono' | 'light'
+/** The clock follows the interface's font (the default) or takes any of the interface typefaces, a serif, or a light sans. */
+export type ClockFontFamily = 'interface' | Exclude<InterfaceFont, 'system'> | 'serif' | 'light'
 
 export const CLOCK_FONT_FAMILIES: Record<ClockFontFamily, string> = {
-  system: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  interface: 'var(--nebula-font)',
+  nebula: INTERFACE_FONTS.nebula.stack,
+  inter: INTERFACE_FONTS.inter.stack,
+  manrope: INTERFACE_FONTS.manrope.stack,
+  'dm-sans': INTERFACE_FONTS['dm-sans'].stack,
+  'space-grotesk': INTERFACE_FONTS['space-grotesk'].stack,
+  lexend: INTERFACE_FONTS.lexend.stack,
+  'jetbrains-mono': INTERFACE_FONTS['jetbrains-mono'].stack,
   serif: 'Georgia, "Times New Roman", serif',
-  mono: '"JetBrains Mono", "Consolas", "Courier New", monospace',
   light: '"Segoe UI Light", "Helvetica Neue", "Arial", sans-serif',
+}
+
+/** What a clock font saved by an earlier version means now: the old default ("system") follows the interface, "mono" is JetBrains Mono. */
+function clockFontFamily(value: unknown, fallback: ClockFontFamily): ClockFontFamily {
+  if (value === 'system') return 'interface'
+  if (value === 'mono') return 'jetbrains-mono'
+  return typeof value === 'string' && value in CLOCK_FONT_FAMILIES ? (value as ClockFontFamily) : fallback
 }
 
 export type ModuleSize = 's' | 'm' | 'l'
@@ -152,7 +180,7 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     clockFontSize: 36,
     clockFontWeight: 300,
     clockShowDate: true,
-    clockFontFamily: 'system',
+    clockFontFamily: 'interface',
     showGreeting: true,
     showProfile: true,
     showPinnedStrip: true,
@@ -305,7 +333,10 @@ export function normalizeNebulaSettings(
         a?.theme === 'dark' || a?.theme === 'light' || a?.theme === 'forest'
           ? a.theme
           : d.appearance.theme,
-      fontFamily: a?.fontFamily === 'system' || a?.fontFamily === 'nebula' ? a.fontFamily : d.appearance.fontFamily,
+      fontFamily:
+        typeof a?.fontFamily === 'string' && (INTERFACE_FONT_IDS as string[]).includes(a.fontFamily)
+          ? (a.fontFamily as InterfaceFont)
+          : d.appearance.fontFamily,
       darkenWebpages:
         a?.darkenWebpages === 'auto' || a?.darkenWebpages === 'always' || a?.darkenWebpages === 'off'
           ? a.darkenWebpages
@@ -347,13 +378,7 @@ export function normalizeNebulaSettings(
       clockFontWeight: clampNum(h?.clockFontWeight, 300, 600, d.home.clockFontWeight),
       clockShowDate:
         typeof h?.clockShowDate === 'boolean' ? h.clockShowDate : d.home.clockShowDate,
-      clockFontFamily:
-        h?.clockFontFamily === 'serif' ||
-        h?.clockFontFamily === 'mono' ||
-        h?.clockFontFamily === 'light' ||
-        h?.clockFontFamily === 'system'
-          ? h.clockFontFamily
-          : d.home.clockFontFamily,
+      clockFontFamily: clockFontFamily(h?.clockFontFamily, d.home.clockFontFamily),
       showGreeting:
         typeof h?.showGreeting === 'boolean' ? h.showGreeting : d.home.showGreeting,
       showProfile:
@@ -583,9 +608,9 @@ root.style.setProperty(
   root.style.setProperty('--semi-lunar-hit-zone-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.style.setProperty('--browsing-chrome-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.dataset.theme = a.theme
-  // Nebula's own font is what the themes bring (styles/tokens.css); only the system's is written to the page.
-  if (a.fontFamily === 'system') root.style.setProperty('--nebula-font', SYSTEM_FONT_STACK)
-  else root.style.removeProperty('--nebula-font')
+  // Nebula's own font is what the themes bring (styles/tokens.css); any other choice is written to the page.
+  if (a.fontFamily === 'nebula') root.style.removeProperty('--nebula-font')
+  else root.style.setProperty('--nebula-font', INTERFACE_FONTS[a.fontFamily].stack)
   root.style.setProperty('--glass-blur', `${a.glassBlurPx}px`)
   root.style.setProperty('--glass-saturate', String(a.glassSaturate))
   root.style.setProperty('--glass-contrast', String(a.glassContrast))

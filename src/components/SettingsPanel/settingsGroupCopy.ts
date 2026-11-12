@@ -42,6 +42,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Font',
     fontFamilyHint: 'The typeface of the whole interface',
     fontSystem: 'System',
+    clockFontInterface: 'Same as the interface',
   },
   tr: {
     general: 'Genel',
@@ -85,6 +86,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Yazı tipi',
     fontFamilyHint: 'Arayüzün tamamının yazı tipi',
     fontSystem: 'Sistem',
+    clockFontInterface: 'Arayüzle aynı',
   },
   es: {
     general: 'General',
@@ -128,6 +130,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Fuente',
     fontFamilyHint: 'La tipografía de toda la interfaz',
     fontSystem: 'Sistema',
+    clockFontInterface: 'Igual que la interfaz',
   },
   de: {
     general: 'Allgemein',
@@ -171,6 +174,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Schriftart',
     fontFamilyHint: 'Die Schrift der gesamten Oberfläche',
     fontSystem: 'System',
+    clockFontInterface: 'Wie die Oberfläche',
   },
   fr: {
     general: 'Général',
@@ -214,6 +218,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Police',
     fontFamilyHint: "La police de toute l'interface",
     fontSystem: 'Système',
+    clockFontInterface: "Comme l'interface",
   },
   id: {
     general: 'Umum',
@@ -257,6 +262,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Font',
     fontFamilyHint: 'Jenis huruf seluruh antarmuka',
     fontSystem: 'Sistem',
+    clockFontInterface: 'Sama dengan antarmuka',
   },
   ru: {
     general: 'Общие',
@@ -300,6 +306,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Шрифт',
     fontFamilyHint: 'Шрифт всего интерфейса',
     fontSystem: 'Системный',
+    clockFontInterface: 'Как в интерфейсе',
   },
   it: {
     general: 'Generale',
@@ -343,6 +350,7 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'Carattere',
     fontFamilyHint: "Il carattere di tutta l'interfaccia",
     fontSystem: 'Sistema',
+    clockFontInterface: "Come l'interfaccia",
   },
   ja: {
     general: '一般',
@@ -386,5 +394,6 @@ export const SETTINGS_GROUP_COPY = {
     fontFamily: 'フォント',
     fontFamilyHint: 'インターフェース全体の書体',
     fontSystem: 'システム',
+    clockFontInterface: 'インターフェースと同じ',
   },
 } as const

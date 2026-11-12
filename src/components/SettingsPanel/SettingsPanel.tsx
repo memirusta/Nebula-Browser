@@ -20,7 +20,7 @@ import { IT_LOCALE_MESSAGES, JA_LOCALE_MESSAGES } from '../../core/localeMessage
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { showAppConfirmation } from '../../core/appDialog'
-import { DEFAULT_NEBULA_SETTINGS, applyNebulaCssVars, type NebulaSettings } from '../../core/nebulaSettings'
+import { DEFAULT_NEBULA_SETTINGS, INTERFACE_FONTS, INTERFACE_FONT_IDS, applyNebulaCssVars, type NebulaSettings } from '../../core/nebulaSettings'
 import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { WallpaperSettingsSection } from './WallpaperSettingsSection'
 import { SettingsNavIcon } from './SettingsNavIcon'
@@ -1121,10 +1121,10 @@ function CategoryContent({
               label={groupCopy.fontFamily}
               hint={groupCopy.fontFamilyHint}
               value={appearance.fontFamily}
-              options={[
-                { value: 'nebula', label: 'Nebula' },
-                { value: 'system', label: groupCopy.fontSystem },
-              ]}
+              options={INTERFACE_FONT_IDS.map((id) => ({
+                value: id,
+                label: id === 'system' ? groupCopy.fontSystem : INTERFACE_FONTS[id].label,
+              }))}
               onChange={(value) =>
                 onUpdate('appearance', 'fontFamily', value as NebulaSettings['appearance']['fontFamily'])
               }
@@ -1311,10 +1311,10 @@ function CategoryContent({
                   hint={t('clockFontFamilyHint')}
                   value={home.clockFontFamily}
                   options={[
-                    { value: 'system', label: t('clockFontSystem') },
+                    { value: 'interface', label: groupCopy.clockFontInterface },
+                    ...INTERFACE_FONT_IDS.filter((id) => id !== 'system').map((id) => ({ value: id, label: INTERFACE_FONTS[id].label })),
                     { value: 'light', label: t('clockFontLight') },
                     { value: 'serif', label: t('clockFontSerif') },
-                    { value: 'mono', label: t('clockFontMono') },
                   ]}
                   onChange={(v) =>
                     onUpdate('home', 'clockFontFamily', v as NebulaSettings['home']['clockFontFamily'])
