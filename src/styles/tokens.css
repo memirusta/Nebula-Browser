@@ -1,6 +1,6 @@
 /* Plus Jakarta Sans (SIL Open Font License 1.1, see src/assets/fonts), bundled so no screen waits for the network.
    Latin covers English and the other Western languages, Latin Extended adds Turkish; Russian and Japanese use the
-   system font. Only the light and dark themes use it (--nebula-font in global.css). */
+   system font. Every theme uses it (--nebula-font); Settings can switch it to the system font. */
 @font-face {
   font-family: 'Plus Jakarta Sans';
   font-style: normal;
@@ -64,7 +64,7 @@
   --nebula-on-primary: #06222c;
   --nebula-shell-bg: #1a2e22;
   --nebula-pop: #14201a;
-  --nebula-font: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  --nebula-font: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --ui-radius-sm: 10px;
   --ui-radius: 14px;
   --ui-radius-lg: 22px;

@@ -67,8 +67,8 @@ body {
 }
 
 /* Dark and light share the Indigo look the first-run screens have (docs/design/ui-palette-prototype.html): an indigo
-   accent with a gradient main button, a tinted neutral instead of black or green, and Plus Jakarta Sans. Forest keeps
-   its own colours. */
+   accent with a gradient main button, a tinted neutral instead of black or green. Forest keeps its own colours. Every theme
+   uses Plus Jakarta Sans (styles/tokens.css). */
 [data-theme='dark'] {
   --nebula-glass-tint-rgb: 24, 27, 44;
   --nebula-void: #0c0e19;

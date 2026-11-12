@@ -120,3 +120,24 @@ test('buttons, fields and keys take the page font instead of the system one, and
 test('the site information panel is not capped at a height of its own: the window is its only limit', () => {
   assert.match(read('src/components/SiteInfoPanel/SiteInfoPanel.tsx'), /'--panel-height': '1100px'/)
 })
+
+test('every theme starts in the same font, and Settings can switch the whole interface to the system font', () => {
+  const tokens = read('src/styles/tokens.css')
+  assert.match(tokens, /--nebula-font: 'Plus Jakarta Sans', 'Segoe UI'/)
+  assert.doesNotMatch(tokens, /--nebula-font: 'Segoe UI', 'Inter'/)
+
+  const settings = read('src/core/nebulaSettings.ts')
+  assert.match(settings, /export type InterfaceFont = 'nebula' \| 'system'/)
+  assert.match(settings, /fontFamily: 'nebula',/)
+  assert.match(settings, /fontFamily: a\?\.fontFamily === 'system' \|\| a\?\.fontFamily === 'nebula' \? a\.fontFamily : d\.appearance\.fontFamily/)
+  // Only the system's font is written to the page; Nebula's is what the themes already bring.
+  assert.match(settings, /if \(a\.fontFamily === 'system'\) root\.style\.setProperty\('--nebula-font', SYSTEM_FONT_STACK\)\s+else root\.style\.removeProperty\('--nebula-font'\)/)
+
+  const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
+  assert.match(panel, /label=\{groupCopy\.fontFamily\}/)
+  assert.match(panel, /onUpdate\('appearance', 'fontFamily', value as NebulaSettings\['appearance'\]\['fontFamily'\]\)/)
+  const copy = read('src/components/SettingsPanel/settingsGroupCopy.ts')
+  for (const key of ['fontFamily', 'fontFamilyHint', 'fontSystem']) {
+    assert.equal(copy.split(`    ${key}: `).length - 1, 9, `${key} in nine languages`)
+  }
+})

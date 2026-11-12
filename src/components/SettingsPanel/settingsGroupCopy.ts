@@ -39,6 +39,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Amber',
     paletteGraphite: 'Graphite',
     surfaceTone: 'Background tone',
+    fontFamily: 'Font',
+    fontFamilyHint: 'The typeface of the whole interface',
+    fontSystem: 'System',
   },
   tr: {
     general: 'Genel',
@@ -79,6 +82,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Kehribar',
     paletteGraphite: 'Grafit',
     surfaceTone: 'Arka plan tonu',
+    fontFamily: 'Yazı tipi',
+    fontFamilyHint: 'Arayüzün tamamının yazı tipi',
+    fontSystem: 'Sistem',
   },
   es: {
     general: 'General',
@@ -119,6 +125,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Ámbar',
     paletteGraphite: 'Grafito',
     surfaceTone: 'Tono del fondo',
+    fontFamily: 'Fuente',
+    fontFamilyHint: 'La tipografía de toda la interfaz',
+    fontSystem: 'Sistema',
   },
   de: {
     general: 'Allgemein',
@@ -159,6 +168,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Bernstein',
     paletteGraphite: 'Graphit',
     surfaceTone: 'Hintergrundton',
+    fontFamily: 'Schriftart',
+    fontFamilyHint: 'Die Schrift der gesamten Oberfläche',
+    fontSystem: 'System',
   },
   fr: {
     general: 'Général',
@@ -199,6 +211,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Ambre',
     paletteGraphite: 'Graphite',
     surfaceTone: 'Ton du fond',
+    fontFamily: 'Police',
+    fontFamilyHint: "La police de toute l'interface",
+    fontSystem: 'Système',
   },
   id: {
     general: 'Umum',
@@ -239,6 +254,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Ambar',
     paletteGraphite: 'Grafit',
     surfaceTone: 'Warna latar',
+    fontFamily: 'Font',
+    fontFamilyHint: 'Jenis huruf seluruh antarmuka',
+    fontSystem: 'Sistem',
   },
   ru: {
     general: 'Общие',
@@ -279,6 +297,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Янтарь',
     paletteGraphite: 'Графит',
     surfaceTone: 'Тон фона',
+    fontFamily: 'Шрифт',
+    fontFamilyHint: 'Шрифт всего интерфейса',
+    fontSystem: 'Системный',
   },
   it: {
     general: 'Generale',
@@ -319,6 +340,9 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'Ambra',
     paletteGraphite: 'Grafite',
     surfaceTone: 'Tono dello sfondo',
+    fontFamily: 'Carattere',
+    fontFamilyHint: "Il carattere di tutta l'interfaccia",
+    fontSystem: 'Sistema',
   },
   ja: {
     general: '一般',
@@ -359,5 +383,8 @@ export const SETTINGS_GROUP_COPY = {
     paletteAmber: 'アンバー',
     paletteGraphite: 'グラファイト',
     surfaceTone: '背景のトーン',
+    fontFamily: 'フォント',
+    fontFamilyHint: 'インターフェース全体の書体',
+    fontSystem: 'システム',
   },
 } as const

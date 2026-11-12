@@ -1118,6 +1118,18 @@ function CategoryContent({
               onChange={(value) => setLocale(value as NebulaLocale)}
             />
             <SettingSelectRow
+              label={groupCopy.fontFamily}
+              hint={groupCopy.fontFamilyHint}
+              value={appearance.fontFamily}
+              options={[
+                { value: 'nebula', label: 'Nebula' },
+                { value: 'system', label: groupCopy.fontSystem },
+              ]}
+              onChange={(value) =>
+                onUpdate('appearance', 'fontFamily', value as NebulaSettings['appearance']['fontFamily'])
+              }
+            />
+            <SettingSelectRow
               label={t('darkenWebpages')}
               hint={t('darkenWebpagesHint')}
               value={appearance.darkenWebpages}

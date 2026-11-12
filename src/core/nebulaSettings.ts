@@ -9,9 +9,14 @@ export type NebulaTheme = 'forest' | 'dark' | 'light'
 export type DarkenWebpagesMode = 'off' | 'auto' | 'always'
 export type DarkenWebpagesSiteMode = 'off' | 'always'
 export type SearchEngine = 'google' | 'duckduckgo' | 'bing'
+/** The typeface of the interface: Nebula's own (Plus Jakarta Sans) or the system's. */
+export type InterfaceFont = 'nebula' | 'system'
+/** The system's font, for the setting that switches to it. */
+export const SYSTEM_FONT_STACK = "'Segoe UI', system-ui, -apple-system, sans-serif"
 
 export interface AppearanceSettings {
   theme: NebulaTheme
+  fontFamily: InterfaceFont
   darkenWebpages: DarkenWebpagesMode
   darkenWebpagesSiteOverrides: Record<string, DarkenWebpagesSiteMode>
   glassBlurPx: number
@@ -124,6 +129,7 @@ export interface NebulaSettings {
 export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
   appearance: {
     theme: 'forest',
+    fontFamily: 'nebula',
     darkenWebpages: 'off',
     darkenWebpagesSiteOverrides: {},
     glassBlurPx: 40,
@@ -299,6 +305,7 @@ export function normalizeNebulaSettings(
         a?.theme === 'dark' || a?.theme === 'light' || a?.theme === 'forest'
           ? a.theme
           : d.appearance.theme,
+      fontFamily: a?.fontFamily === 'system' || a?.fontFamily === 'nebula' ? a.fontFamily : d.appearance.fontFamily,
       darkenWebpages:
         a?.darkenWebpages === 'auto' || a?.darkenWebpages === 'always' || a?.darkenWebpages === 'off'
           ? a.darkenWebpages
@@ -576,6 +583,9 @@ root.style.setProperty(
   root.style.setProperty('--semi-lunar-hit-zone-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.style.setProperty('--browsing-chrome-height', `${SEMI_LUNAR_HIT_ZONE_HEIGHT}px`)
   root.dataset.theme = a.theme
+  // Nebula's own font is what the themes bring (styles/tokens.css); only the system's is written to the page.
+  if (a.fontFamily === 'system') root.style.setProperty('--nebula-font', SYSTEM_FONT_STACK)
+  else root.style.removeProperty('--nebula-font')
   root.style.setProperty('--glass-blur', `${a.glassBlurPx}px`)
   root.style.setProperty('--glass-saturate', String(a.glassSaturate))
   root.style.setProperty('--glass-contrast', String(a.glassContrast))
