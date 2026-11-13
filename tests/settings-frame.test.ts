@@ -50,7 +50,7 @@ test('the menu has line icons and the brand, the Appearance settings are in titl
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   assert.match(panel, /<SettingsNavIcon id=\{cat\.id\} \/>/)
   assert.match(panel, /<img src="\/nebula-app-logo\.png"/)
-  for (const key of ['general', 'wallpaper', 'glass', 'colors', 'lunar']) {
+  for (const key of ['general', 'wallpaper', 'glass', 'lunar']) {
     assert.ok(panel.includes(`<SettingGroup title={groupCopy.${key}}>`), `group ${key}`)
   }
 
@@ -119,7 +119,7 @@ test('the title stays at the left, the cards are one 960px column in the middle,
 test('Appearance opens with the settings people change most, chosen by looking: theme, wallpaper and accent colour', () => {
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   const appearance = panel.slice(panel.indexOf("case 'appearance':"), panel.indexOf("case 'home':"))
-  assert.match(appearance, /<AppearanceHero[\s\S]*?onTheme=\{\(v\) => onUpdate\('appearance', 'theme', v\)\}[\s\S]*?onAccent=\{\(v\) => onUpdate\('appearance', 'accentColor', v\)\}/)
+  assert.match(appearance, /<AppearanceHero[\s\S]*?onTheme=\{\(v\) => onUpdate\('appearance', 'theme', v\)\}[\s\S]*?onAccent=\{\(v\) => chooseColours\(\{ accentColor: v \}\)\}/)
   // The theme is no longer a dropdown row; what is left in General is the language and the web page darkening.
   assert.doesNotMatch(appearance.slice(0, appearance.indexOf('<SettingAdvanced')), /label=\{t\('theme'\)\}/)
 
@@ -140,7 +140,7 @@ test('the many sliders and timings sit in a closed "Advanced" section, in nine l
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   const appearance = panel.slice(panel.indexOf("case 'appearance':"), panel.indexOf("case 'home':"))
   const advanced = appearance.slice(appearance.indexOf('<SettingAdvanced'), appearance.indexOf('</SettingAdvanced>'))
-  for (const key of ['wallpaper', 'glass', 'colors', 'lunar']) assert.ok(advanced.includes(`groupCopy.${key}`), `Appearance advanced: ${key}`)
+  for (const key of ['wallpaper', 'glass', 'lunar']) assert.ok(advanced.includes(`groupCopy.${key}`), `Appearance advanced: ${key}`)
 
   const lunar = panel.slice(panel.indexOf("case 'semi-lunar':"), panel.indexOf("case 'shortcuts':"))
   const lunarAdvanced = lunar.slice(lunar.indexOf('<SettingAdvanced'), lunar.indexOf('</SettingAdvanced>'))
@@ -157,7 +157,7 @@ test('the many sliders and timings sit in a closed "Advanced" section, in nine l
 test('holding a slider steps the panel aside so the change is seen on the real screen', () => {
   const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
   assert.match(panel, /const \[peeking, setPeeking\] = useState\(false\)/)
-  assert.match(panel, /closest\?\.\('input\[type="range"\]'\)\) setPeeking\(true\)/)
+  assert.match(panel, /closest\?\.\('input\[type="range"\]'\) \|\| target\.closest\?\.\('\[data-peek\]'\)\) setPeeking\(true\)/)
   for (const type of ['pointerup', 'pointercancel', 'blur']) assert.ok(panel.includes(`'${type}', stop`), type)
   assert.match(panel, /\$\{peeking \? styles\.panelPeek : ''\}/)
 

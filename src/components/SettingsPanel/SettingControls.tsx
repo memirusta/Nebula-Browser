@@ -153,34 +153,6 @@ export function SettingTextRow({
   )
 }
 
-export function SettingColorRow({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string
-  hint: string
-  value: string
-  onChange: (value: string) => void
-}) {
-  return (
-    <div className={styles.row}>
-      <div className={styles.rowText}>
-        <div className={styles.rowLabel}>{label}</div>
-        <div className={styles.rowHint}>{hint}</div>
-      </div>
-      <input
-        type="color"
-        className={styles.colorInput}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-      />
-    </div>
-  )
-}
-
 export function SettingResetRow({
   label,
   hint,

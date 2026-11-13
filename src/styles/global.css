@@ -77,11 +77,16 @@ body {
   --nebula-accent: #8b8ffb;
   --nebula-accent-dim: rgba(139, 143, 251, 0.35);
   --nebula-accent-glow: rgba(139, 143, 251, 0.55);
-  --nebula-primary: linear-gradient(135deg, #6366f1, #8b8ffb);
-  --nebula-on-primary: #ffffff;
-  --nebula-avatar: var(--nebula-primary);
-  --nebula-badge-bg: var(--nebula-primary);
-  --nebula-badge-ink: var(--nebula-on-primary);
+  --nebula-accent-rgb: 139, 143, 251;
+  --nebula-accent-strong: #4046f8;
+  --nebula-accent-ink: #8b8ffb;
+  --nebula-on-accent: #0b0f1a;
+  --nebula-secondary: #d58bfb;
+  --nebula-primary: var(--nebula-gradient);
+  --nebula-on-primary: var(--nebula-on-accent);
+  --nebula-avatar: var(--nebula-gradient);
+  --nebula-badge-bg: var(--nebula-accent);
+  --nebula-badge-ink: var(--nebula-on-accent);
   --nebula-success: #5eead4;
   --nebula-danger: #fb7185;
 
@@ -107,11 +112,16 @@ body {
   --nebula-accent: #4f46e5;
   --nebula-accent-dim: rgba(79, 70, 229, 0.3);
   --nebula-accent-glow: rgba(79, 70, 229, 0.45);
-  --nebula-primary: linear-gradient(135deg, #4f46e5, #6d6ff5);
-  --nebula-on-primary: #ffffff;
-  --nebula-avatar: var(--nebula-primary);
-  --nebula-badge-bg: var(--nebula-primary);
-  --nebula-badge-ink: var(--nebula-on-primary);
+  --nebula-accent-rgb: 79, 70, 229;
+  --nebula-accent-strong: #2c21e0;
+  --nebula-accent-ink: #4f46e5;
+  --nebula-on-accent: #ffffff;
+  --nebula-secondary: #be46e5;
+  --nebula-primary: var(--nebula-gradient);
+  --nebula-on-primary: var(--nebula-on-accent);
+  --nebula-avatar: var(--nebula-gradient);
+  --nebula-badge-bg: var(--nebula-accent);
+  --nebula-badge-ink: var(--nebula-on-accent);
   --nebula-success: #0d9488;
   --nebula-danger: #e11d48;
 
@@ -133,7 +143,7 @@ body {
   [role='button'],
   [tabindex]:not([tabindex='-1'])
 ):focus-visible {
-  outline: 2px solid var(--nebula-accent);
+  outline: 2px solid var(--nebula-accent-ink);
   outline-offset: 2px;
   box-shadow: 0 0 0 4px var(--nebula-accent-dim);
 }

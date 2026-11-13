@@ -14,7 +14,7 @@ export function CpuWidget({ stats }: CpuWidgetProps) {
         <span className={styles.value}>{stats.cpuPercent}%</span>
       </div>
       <div className={styles.chart}>
-        <Sparkline data={stats.cpuHistory} width={200} height={40} />
+        <Sparkline data={stats.cpuHistory} width={200} height={40} color="var(--nebula-secondary)" />
       </div>
     </div>
   )

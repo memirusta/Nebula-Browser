@@ -85,7 +85,8 @@ test('every widget header dot follows the selected accent color', () => {
 
   assert.match(
     widgetChrome,
-    /\.tabDot\s*\{[\s\S]*?background:\s*var\(--nebula-accent\)/,
+    // The ink of the accent (it follows the accent and stays visible when the accent is deep).
+    /\.tabDot\s*\{[\s\S]*?background:\s*var\(--nebula-accent-ink\)/,
   )
   assert.doesNotMatch(
     widgetChrome,

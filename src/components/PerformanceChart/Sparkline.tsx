@@ -2,9 +2,11 @@ interface SparklineProps {
   data: number[]
   width?: number
   height?: number
+  /** A colour or a variable such as var(--nebula-accent-ink); white was invisible on the light theme. */
+  color?: string
 }
 
-export function Sparkline({ data, width = 160, height = 36 }: SparklineProps) {
+export function Sparkline({ data, width = 160, height = 36, color = 'var(--nebula-accent-ink)' }: SparklineProps) {
   if (data.length < 2) return null
 
   const min = Math.min(...data) - 5
@@ -30,7 +32,7 @@ export function Sparkline({ data, width = 160, height = 36 }: SparklineProps) {
       <polyline
         points={points}
         fill="none"
-        stroke="rgba(255,255,255,0.85)"
+        style={{ stroke: color }}
         strokeWidth="1.5"
         strokeLinejoin="round"
         strokeLinecap="round"

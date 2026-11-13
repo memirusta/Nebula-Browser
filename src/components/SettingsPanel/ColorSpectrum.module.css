@@ -1,0 +1,97 @@
+.spectrum {
+  display: grid;
+  gap: 12px;
+  width: min(320px, 100%);
+}
+
+.area {
+  position: relative;
+  height: 170px;
+  border-radius: 12px;
+  cursor: crosshair;
+  touch-action: none;
+  box-shadow: inset 0 0 0 1px var(--nebula-glass-border);
+}
+
+.area:focus-visible {
+  outline: 2px solid var(--nebula-accent-ink);
+  outline-offset: 3px;
+}
+
+.thumb {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* The rainbow bar: every hue, left to right. */
+.hue {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    hsl(0, 100%, 50%),
+    hsl(60, 100%, 50%),
+    hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%),
+    hsl(240, 100%, 50%),
+    hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%)
+  );
+  cursor: pointer;
+}
+
+.hue::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.hexRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preview {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px var(--nebula-glass-border);
+}
+
+.hexInput {
+  width: 110px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--nebula-field-border);
+  border-radius: 9px;
+  background: var(--nebula-surface);
+  color: var(--nebula-text);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  text-transform: lowercase;
+}
+
+.hexInput:focus {
+  outline: none;
+  border-color: var(--nebula-accent-ink);
+}

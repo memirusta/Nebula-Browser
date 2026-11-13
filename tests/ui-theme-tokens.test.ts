@@ -53,17 +53,21 @@ test('the default accent means "the theme\'s own"; only a colour the person chos
   assert.match(settings, /export function usesThemeAccent\(accentColor: string\): boolean/)
 
   const apply = settings.slice(settings.indexOf('export function applyNebulaCssVars'))
+  // Nothing is written for the default: every variable of the set is removed, so the theme's own values apply.
   const branch = apply.slice(apply.indexOf('if (usesThemeAccent(a.accentColor))'), apply.indexOf("root.style.setProperty('--nebula-gold'"))
-  assert.match(branch, /removeProperty\('--nebula-accent'\)/)
-  assert.match(branch, /removeProperty\('--nebula-accent-dim'\)/)
-  assert.match(branch, /removeProperty\('--nebula-accent-glow'\)/)
-  assert.match(branch, /setProperty\('--nebula-accent', a\.accentColor\)/)
+  assert.match(branch, /for \(const name of accentVars\) root\.style\.removeProperty\(name\)/)
+  for (const name of ['--nebula-accent', '--nebula-accent-dim', '--nebula-accent-glow']) {
+    assert.ok(apply.includes(`'${name}',`), `${name} is in the list that is removed`)
+  }
+  // A chosen colour is written with everything worked out from it (see accent-palette.test.ts).
+  assert.match(branch, /setProperty\('--nebula-accent', set\.accent\)/)
 })
 
 test('the settings controls use the shared tokens instead of fixed white tints', () => {
   const css = read('src/components/SettingsPanel/SettingsPanel.module.css')
 
-  assert.match(block(css, '.toggleOn'), /var\(--nebula-primary\)/)
+  // A flat fill of the accent (the places and what they follow: accent-palette.test.ts).
+  assert.match(block(css, '.toggleOn'), /var\(--nebula-accent\)/)
   assert.match(block(css, '.actionBtn'), /var\(--nebula-field-border\)/)
   assert.match(css, /\.select option,\n\.select optgroup \{\n  background: var\(--nebula-pop\);/)
   assert.match(block(css, '.rangeInput'), /var\(--fill\)/)
@@ -81,9 +85,9 @@ test('the home screen follows the theme: readable greeting, toolbar, widget bar 
   assert.match(block(global, "[data-theme='light']"), /--nebula-gold-ink: color-mix\(in srgb, var\(--nebula-gold\) 38%, #1c1a10\);/)
   // The avatar is the main button gradient in the Indigo themes; Forest keeps its own.
   for (const theme of ["[data-theme='dark']", "[data-theme='light']"]) {
-    assert.match(block(global, theme), /--nebula-avatar: var\(--nebula-primary\);/)
+    assert.match(block(global, theme), /--nebula-avatar: var\(--nebula-gradient\);/)
     // The count on the bell is white on the main button gradient; the dark ink stays for Forest's light blue.
-    assert.match(block(global, theme), /--nebula-badge-bg: var\(--nebula-primary\);\s+--nebula-badge-ink: var\(--nebula-on-primary\);/)
+    assert.match(block(global, theme), /--nebula-badge-bg: var\(--nebula-accent\);\s+--nebula-badge-ink: var\(--nebula-on-accent\);/)
   }
   assert.doesNotMatch(block(global, "[data-theme='forest']"), /--nebula-avatar|--nebula-badge/)
   assert.match(block(read('src/components/RightToolbar/RightToolbar.module.css'), '.badge'), /background: var\(--nebula-badge-bg, var\(--nebula-accent\)\);\s+color: var\(--nebula-badge-ink, #0a1420\);/)

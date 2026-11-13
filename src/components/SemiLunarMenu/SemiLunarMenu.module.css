@@ -830,7 +830,7 @@
 }
 
 .shortcutDropHover {
-  border-color: rgba(126, 200, 227, 0.65) !important;
+  border-color: rgba(var(--nebula-accent-rgb), 0.65) !important;
 }
 
 .shortcutDropTarget .faviconShell {

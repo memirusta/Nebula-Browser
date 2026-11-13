@@ -20,15 +20,16 @@ import { IT_LOCALE_MESSAGES, JA_LOCALE_MESSAGES } from '../../core/localeMessage
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { showAppConfirmation } from '../../core/appDialog'
-import type { NebulaSettings } from '../../core/nebulaSettings'
+import { DEFAULT_NEBULA_SETTINGS, applyNebulaCssVars, type NebulaSettings } from '../../core/nebulaSettings'
 import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { WallpaperSettingsSection } from './WallpaperSettingsSection'
 import { SettingsNavIcon } from './SettingsNavIcon'
 import { requestPasswordsTab } from './accountTabRequest'
+import { PALETTES, paletteMatches, paletteValues } from '../../core/palettes'
+import { neutralSet } from '../../core/accentPalette'
 import { AppearanceHero } from './AppearanceHero'
 import { SETTINGS_GROUP_COPY } from './settingsGroupCopy'
 import {
-  SettingColorRow,
   SettingDangerRow,
   SettingRangeRow,
   SettingResetRow,
@@ -804,6 +805,13 @@ function ShortcutReference({
   )
 }
 
+/** What each theme brings of its own: the accent and the background, for the tile of the default palette. */
+const THEME_OWN: Record<'dark' | 'light' | 'forest', { accent: string; neutral: string }> = {
+  dark: { accent: '#8b8ffb', neutral: '#0c0e19' },
+  light: { accent: '#4f46e5', neutral: '#f2f3fb' },
+  forest: { accent: '#7ec8e3', neutral: '#07110c' },
+}
+
 interface SettingsPanelProps {
   /** A slider of the Semi-Lunar settings is held (true) or let go (false). */
   onLunarPeekChange?: (active: boolean) => void
@@ -1015,17 +1023,62 @@ function CategoryContent({
     return `${(bytes / 1024 ** exponent).toLocaleString(locale, { maximumFractionDigits: 1 })} ${units[exponent - 1]}`
   }
 
+  // A colour dragged in a picker is shown on the page at once and saved when the drag ends: saving it on every frame would
+  // redraw the whole browser shell and write to storage that often.
+  const previewAppearance = (patch: Partial<typeof appearance>) =>
+    applyNebulaCssVars({ ...settings, appearance: { ...appearance, ...patch } })
+
+  // A colour that is chosen (a swatch, a palette, the end of a drag) is shown on the page first, then saved: saving
+  // redraws the browser shell, and the colour would only appear when that is done.
+  const chooseColours = (patch: Pick<Partial<typeof appearance>, 'accentColor' | 'goldColor' | 'neutralHue' | 'neutralSat'>) => {
+    previewAppearance(patch)
+    if (patch.accentColor !== undefined) onUpdate('appearance', 'accentColor', patch.accentColor)
+    if (patch.goldColor !== undefined) onUpdate('appearance', 'goldColor', patch.goldColor)
+    if (patch.neutralHue !== undefined) onUpdate('appearance', 'neutralHue', patch.neutralHue)
+    if (patch.neutralSat !== undefined) onUpdate('appearance', 'neutralSat', patch.neutralSat)
+  }
+
   switch (categoryId) {
     case 'appearance':
       return (
         <>
           <SettingGroup>
             <AppearanceHero
-              title={{ theme: t('theme'), wallpaper: groupCopy.wallpaper, accent: t('accentColor') }}
+              palettes={PALETTES.map((def) => {
+                const values = paletteValues(def, appearance.theme)
+                const own = THEME_OWN[appearance.theme]
+                const tint = def.hue >= 0 ? neutralSet(def.hue, def.sat, appearance.theme) : null
+                const names = {
+                  indigo: groupCopy.paletteIndigo, ocean: groupCopy.paletteOcean, emerald: groupCopy.paletteEmerald,
+                  rose: groupCopy.paletteRose, amber: groupCopy.paletteAmber, graphite: groupCopy.paletteGraphite,
+                }
+                return {
+                  id: def.id,
+                  label: names[def.id],
+                  accent: values.accent ?? own.accent,
+                  detail: values.gold ?? DEFAULT_NEBULA_SETTINGS.appearance.goldColor,
+                  neutral: tint?.void ?? own.neutral,
+                  selected: paletteMatches(def, appearance, DEFAULT_NEBULA_SETTINGS.appearance),
+                }
+              })}
+              onPalette={(id) => {
+                const def = PALETTES.find((item) => item.id === id)
+                if (!def) return
+                const values = paletteValues(def, appearance.theme)
+                chooseColours({
+                  accentColor: values.accent ?? DEFAULT_NEBULA_SETTINGS.appearance.accentColor,
+                  goldColor: values.gold ?? DEFAULT_NEBULA_SETTINGS.appearance.goldColor,
+                  neutralHue: values.hue,
+                  neutralSat: values.sat,
+                })
+              }}
+              title={{ theme: t('theme'), wallpaper: groupCopy.wallpaper, palette: groupCopy.palette, accent: t('accentColor'), detail: groupCopy.detailColor, detailHint: groupCopy.detailColorHint, tone: groupCopy.surfaceTone }}
               themeLabels={{ forest: t('themeForest'), dark: t('themeDark'), light: t('themeLight') }}
               ownImage={groupCopy.ownImage}
               ownVideo={groupCopy.ownVideo}
               accentDefault={groupCopy.accentDefault}
+              customColor={groupCopy.customColor}
+              spectrumLabels={{ shade: groupCopy.colorShade, hue: groupCopy.colorHue, hex: groupCopy.colorHex }}
               theme={appearance.theme}
               onTheme={(v) => onUpdate('appearance', 'theme', v)}
               wallpaper={wallpaperConfig}
@@ -1033,7 +1086,17 @@ function CategoryContent({
               onPickImage={onPickWallpaper}
               onPickVideo={onPickVideoWallpaper}
               accentColor={appearance.accentColor}
-              onAccent={(v) => onUpdate('appearance', 'accentColor', v)}
+              onAccent={(v) => chooseColours({ accentColor: v })}
+              detailColor={appearance.goldColor}
+              onDetail={(v) => chooseColours({ goldColor: v })}
+              onPreview={{
+                accent: (color) => previewAppearance({ accentColor: color }),
+                detail: (color) => previewAppearance({ goldColor: color }),
+                tone: (hue, sat) => previewAppearance({ neutralHue: hue, neutralSat: sat }),
+              }}
+              toneHue={appearance.neutralHue}
+              toneSat={appearance.neutralSat}
+              onTone={(hue, sat) => chooseColours({ neutralHue: hue, neutralSat: sat })}
             />
           </SettingGroup>
           <SettingGroup title={groupCopy.general}>
@@ -1122,20 +1185,6 @@ function CategoryContent({
                 step={2}
                 unit="%"
                 onChange={(v) => onUpdate('appearance', 'glassContrast', v / 100)}
-              />
-            </SettingGroup>
-            <SettingGroup title={groupCopy.colors}>
-              <SettingColorRow
-                label={t('accentColor')}
-                hint={t('accentColorHint')}
-                value={appearance.accentColor}
-                onChange={(v) => onUpdate('appearance', 'accentColor', v)}
-              />
-              <SettingColorRow
-                label={t('goldColor')}
-                hint={t('goldColorHint')}
-                value={appearance.goldColor}
-                onChange={(v) => onUpdate('appearance', 'goldColor', v)}
               />
             </SettingGroup>
             <SettingGroup title={groupCopy.lunar}>
@@ -2085,7 +2134,9 @@ export function SettingsPanel({
         ref={panelRef}
         className={`${styles.panel} ${panelAnimClass} ${peeking ? styles.panelPeek : ''}`}
         onPointerDown={(event) => {
-          if ((event.target as HTMLElement).closest?.('input[type="range"]')) setPeeking(true)
+          // A slider, and the shade square of the colour picker (marked data-peek), step the panel aside.
+          const target = event.target as HTMLElement
+          if (target.closest?.('input[type="range"]') || target.closest?.('[data-peek]')) setPeeking(true)
         }}
         role="dialog"
         aria-modal="true"

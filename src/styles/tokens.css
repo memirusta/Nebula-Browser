@@ -35,6 +35,14 @@
   --nebula-accent: #7ec8e3;
   --nebula-accent-dim: rgba(126, 200, 227, 0.35);
   --nebula-accent-glow: rgba(126, 200, 227, 0.55);
+  /* Everything that follows the accent. For a colour the person picks these are worked out in core/accentPalette.ts and
+     written to the page (core/nebulaSettings.ts); these are the same for the built-in accent of each theme. */
+  --nebula-accent-rgb: 126, 200, 227;
+  --nebula-accent-strong: #44afd6;
+  --nebula-accent-ink: #7ec8e3;
+  --nebula-on-accent: #0b0f1a;
+  --nebula-secondary: #7e81e3;
+  --nebula-gradient: linear-gradient(135deg, var(--nebula-accent-strong), var(--nebula-accent));
   --nebula-gold: #d4c48a;
   --nebula-gold-glow: rgba(212, 196, 138, 0.45);
   /* The gold as text or an icon: the gold itself on dark surfaces, darkened on the light theme (see global.css). */

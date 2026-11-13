@@ -1,3 +1,4 @@
+import { deriveAccentSet, neutralSet, readableInk } from './accentPalette'
 import { LEGACY_PREVIEW_ON_HOVER_KEY, SEMI_LUNAR_SETTINGS_KEY } from './semiLunarSettings'
 import { SEMI_LUNAR_HIT_ZONE_HEIGHT } from './windowChrome'
 import { DEFAULT_USER_DISPLAY_NAME } from './userProfile'
@@ -19,6 +20,9 @@ export interface AppearanceSettings {
   glassOpacity: number
   accentColor: string
   goldColor: string
+  /** Hue of the tint of the neutrals (backgrounds, cards), in degrees; -1 is the theme's own neutrals. */
+  neutralHue: number
+  neutralSat: number
   lunarGlassRgb: string
   lunarGlassOpacity: number
   lunarGlassBlurPx: number
@@ -128,6 +132,8 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     glassOpacity: 14,
     accentColor: '#7ec8e3',
     goldColor: '#d4c48a',
+    neutralHue: -1,
+    neutralSat: 0.35,
     lunarGlassRgb: '235, 242, 250',
     lunarGlassOpacity: 38,
     lunarGlassBlurPx: 160,
@@ -306,6 +312,8 @@ export function normalizeNebulaSettings(
       glassOpacity: clampNum(a?.glassOpacity, 0, 40, d.appearance.glassOpacity),
       accentColor: hexColor(a?.accentColor, d.appearance.accentColor),
       goldColor: hexColor(a?.goldColor, d.appearance.goldColor),
+      neutralHue: clampNum(a?.neutralHue, -1, 360, d.appearance.neutralHue),
+      neutralSat: clampFloat(a?.neutralSat, 0, 0.6, d.appearance.neutralSat),
       lunarGlassRgb,
       lunarGlassOpacity: migrateLunarGlassOpacity(
         a?.lunarGlassOpacity,
@@ -511,30 +519,55 @@ export function applyNebulaCssVars(settings: NebulaSettings): void {
   const openMs = motion ? 0 : s.openDurationMs
   const closeMs = motion ? 0 : s.closeDurationMs
   
-  const [accentR, accentG, accentB] = hexToRgb(a.accentColor)
   const [goldR, goldG, goldB] = hexToRgb(a.goldColor)
 root.style.setProperty('--merge-anim-duration', `${mergeMs}ms`)
 root.style.setProperty('--merge-folder-delay', `${mergeFolderDelayMs}ms`)
 root.style.setProperty('--merge-folder-duration', `${mergeFolderDurationMs}ms`)
   // The default accent means "the theme's own": the light and dark themes bring a colour of their own (styles/global.css),
-  // so nothing is written here. Only a colour the person chose is put on the page.
+  // so nothing is written here. Only a colour the person chose is put on the page, with everything that follows it
+  // (the strong end, the text on it, its readable ink, the secondary colour) worked out from it.
+  const accentVars = [
+    '--nebula-accent',
+    '--nebula-accent-dim',
+    '--nebula-accent-glow',
+    '--nebula-accent-rgb',
+    '--nebula-accent-strong',
+    '--nebula-accent-ink',
+    '--nebula-on-accent',
+    '--nebula-secondary',
+  ] as const
   if (usesThemeAccent(a.accentColor)) {
-    root.style.removeProperty('--nebula-accent')
-    root.style.removeProperty('--nebula-accent-dim')
-    root.style.removeProperty('--nebula-accent-glow')
+    for (const name of accentVars) root.style.removeProperty(name)
   } else {
-    root.style.setProperty('--nebula-accent', a.accentColor)
-    root.style.setProperty(
-      '--nebula-accent-dim',
-      `rgba(${accentR}, ${accentG}, ${accentB}, 0.35)`,
-    )
-    root.style.setProperty(
-      '--nebula-accent-glow',
-      `rgba(${accentR}, ${accentG}, ${accentB}, 0.55)`,
-    )
+    const set = deriveAccentSet(a.accentColor, a.theme)
+    root.style.setProperty('--nebula-accent', set.accent)
+    root.style.setProperty('--nebula-accent-dim', set.dim)
+    root.style.setProperty('--nebula-accent-glow', set.glow)
+    root.style.setProperty('--nebula-accent-rgb', set.rgb)
+    root.style.setProperty('--nebula-accent-strong', set.strong)
+    root.style.setProperty('--nebula-accent-ink', set.ink)
+    root.style.setProperty('--nebula-on-accent', set.on)
+    root.style.setProperty('--nebula-secondary', set.secondary)
+  }
+
+  // Neutrals with a tint (a palette): written for the dark and the light theme only; -1 leaves the theme's own.
+  const neutralVars = ['--nebula-void', '--nebula-shell-bg', '--nebula-pop', '--nebula-glass-tint-rgb', '--nebula-deep', '--nebula-surface-2', '--nebula-text-muted'] as const
+  const neutrals = a.neutralHue >= 0 ? neutralSet(a.neutralHue, a.neutralSat, a.theme) : null
+  if (neutrals) {
+    root.style.setProperty('--nebula-void', neutrals.void)
+    root.style.setProperty('--nebula-shell-bg', neutrals.shellBg)
+    root.style.setProperty('--nebula-pop', neutrals.pop)
+    root.style.setProperty('--nebula-glass-tint-rgb', neutrals.glassTintRgb)
+    root.style.setProperty('--nebula-deep', neutrals.deep)
+    root.style.setProperty('--nebula-surface-2', neutrals.surface2)
+    root.style.setProperty('--nebula-text-muted', neutrals.textMuted)
+  } else {
+    for (const name of neutralVars) root.style.removeProperty(name)
   }
 
 root.style.setProperty('--nebula-gold', a.goldColor)
+// The gold as text or an icon: moved until it reads on a card of the theme (lighter on dark, darker on light).
+root.style.setProperty('--nebula-gold-ink', readableInk(a.goldColor, a.theme))
 root.style.setProperty(
   '--nebula-gold-glow',
   `rgba(${goldR}, ${goldG}, ${goldB}, 0.45)`,

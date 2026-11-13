@@ -50,7 +50,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--nebula-accent);
+  /* The ink, not the fill: a deep accent would make this small dot vanish on the dark. */
+  background: var(--nebula-accent-ink);
   flex-shrink: 0;
   transition:
     background var(--duration-fast),
@@ -58,7 +59,7 @@
 }
 
 .tabDot[data-active='true'] {
-  background: var(--nebula-accent);
+  background: var(--nebula-accent-ink);
   box-shadow: 0 0 8px var(--nebula-accent-glow);
 }
 

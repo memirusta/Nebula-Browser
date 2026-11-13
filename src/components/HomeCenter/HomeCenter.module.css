@@ -105,7 +105,7 @@
 .avatarRing {
   padding: 3px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--nebula-accent), color-mix(in srgb, var(--nebula-accent) 55%, white));
+  background: var(--nebula-accent);
   box-shadow: 0 0 24px var(--nebula-accent-glow);
 }
 
@@ -113,7 +113,7 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: var(--nebula-avatar, linear-gradient(180deg, #5ba3d9 0%, #2d6a9f 100%));
+  background: var(--nebula-avatar, var(--nebula-gradient));
   display: flex;
   align-items: center;
   justify-content: center;

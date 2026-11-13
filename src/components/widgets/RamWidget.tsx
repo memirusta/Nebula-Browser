@@ -16,7 +16,7 @@ export function RamWidget({ stats }: RamWidgetProps) {
         </span>
       </div>
       <div className={styles.chart}>
-        <Sparkline data={stats.ramHistory} width={200} height={40} />
+        <Sparkline data={stats.ramHistory} width={200} height={40} color="var(--nebula-accent-ink)" />
       </div>
     </div>
   )
