@@ -89,6 +89,10 @@ export interface SiteInfoStatePayload {
   darkenWebpagesOverride: 'default' | 'off' | 'always'
   permissionPromptsAllowed: boolean
   notificationPermission: 'allow' | 'block' | null
+  /** Nebula's shield is on for this site (on, and not switched off for the site). */
+  shieldOn?: boolean
+  /** What the shield stopped for the page so far; absent until it has been asked. */
+  shieldBlocked?: number
   permissions: {
     camera: SitePermissionState
     microphone: SitePermissionState

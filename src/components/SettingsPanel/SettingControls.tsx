@@ -153,6 +153,45 @@ export function SettingTextRow({
   )
 }
 
+/** A box for several lines of text, under its label. What is typed is handed over when the box is left, not on every key. */
+export function SettingTextAreaRow({
+  label,
+  hint,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  hint: string
+  value: string
+  placeholder?: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className={`${styles.row} ${styles.rowStacked}`}>
+      <div className={styles.rowText}>
+        <div className={styles.rowLabel}>{label}</div>
+        <div className={styles.rowHint}>{hint}</div>
+      </div>
+      {/* Uncontrolled, and remade when the saved value changes from elsewhere (a restore, a reset). */}
+      <textarea
+        key={value}
+        className={styles.textArea}
+        defaultValue={value}
+        placeholder={placeholder}
+        rows={5}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        onBlur={(event) => {
+          if (event.target.value !== value) onChange(event.target.value)
+        }}
+        aria-label={label}
+      />
+    </div>
+  )
+}
+
 export function SettingResetRow({
   label,
   hint,

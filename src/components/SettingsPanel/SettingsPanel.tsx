@@ -34,6 +34,7 @@ import {
   SettingRangeRow,
   SettingResetRow,
   SettingSelectRow,
+  SettingTextAreaRow,
   SettingTextRow,
   SettingToggleRow,
   SettingGroup,
@@ -410,16 +411,16 @@ const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   },
   {
     categoryId: 'privacy',
-    tr: 'uBlock Origin Lite',
-    en: 'uBlock Origin Lite',
-    es: 'uBlock Origin Lite',
-    de: 'uBlock Origin Lite',
-    fr: 'uBlock Origin Lite',
-    id: 'uBlock Origin Lite',
-    ru: 'uBlock Origin Lite',
-    it: 'uBlock Origin Lite',
-    ja: 'uBlock Origin Lite',
-    keywords: 'reklam ad anuncio werbung blocker bloqueador engelleme blockierung tracker rastreador izleyici',
+    tr: 'Nebula Shield',
+    en: 'Nebula Shield',
+    es: 'Nebula Shield',
+    de: 'Nebula Shield',
+    fr: 'Nebula Shield',
+    id: 'Nebula Shield',
+    ru: 'Nebula Shield',
+    it: 'Nebula Shield',
+    ja: 'Nebula Shield',
+    keywords: 'reklam ad anuncio werbung blocker bloqueador engelleme blockierung tracker rastreador izleyici shield kalkan filtre filter ublock easylist',
   },
   {
     categoryId: 'about',
@@ -848,8 +849,6 @@ interface SettingsPanelProps {
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
-  ublockVersion?: string | null
-  ublockEnabled?: boolean
   account: NebulaAccount | null
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
@@ -888,8 +887,6 @@ function CategoryContent({
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
-  ublockVersion,
-  ublockEnabled,
   account,
   onAccountChange,
   onAccountSignOut,
@@ -924,8 +921,6 @@ function CategoryContent({
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
-  ublockVersion?: string | null
-  ublockEnabled?: boolean
   account: NebulaAccount | null
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
@@ -1655,15 +1650,6 @@ function CategoryContent({
       return (
         <>
           <SettingGroup title={groupCopy.protection}>
-            <div className={styles.row}>
-              <div className={styles.rowText}>
-                <div className={styles.rowLabel}>uBlock Origin Lite</div>
-                <div className={styles.rowHint}>{ublockVersion ? `${ublockEnabled ? t('ublockActive') : t('ublockReady')} · v${ublockVersion}` : t('ublockUnavailable')}</div>
-              </div>
-              <span className={ublockEnabled ? styles.statusActive : styles.statusInactive}>
-                {ublockEnabled ? t('active') : ublockVersion ? t('ready') : t('unavailable')}
-              </span>
-            </div>
             <SettingSelectRow
               label={t('trackingLevel')}
               hint={t('trackingLevelHint')}
@@ -1704,6 +1690,49 @@ function CategoryContent({
               hint={t('cookieBannerBlockingHint')}
               checked={privacy.cookieBannerBlocking}
               onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
+            />
+          </SettingGroup>
+          <SettingGroup title="Nebula Shield">
+            <SettingToggleRow
+              label="Nebula Shield"
+              hint={t('shieldHint')}
+              checked={privacy.shield}
+              onChange={() => onUpdate('privacy', 'shield', !privacy.shield)}
+            />
+            <SettingToggleRow
+              label={t('shieldAds')}
+              hint={t('shieldAdsHint')}
+              checked={privacy.shieldAds}
+              disabled={!privacy.shield}
+              onChange={() => onUpdate('privacy', 'shieldAds', !privacy.shieldAds)}
+            />
+            <SettingToggleRow
+              label={t('shieldTrackers')}
+              hint={t('shieldTrackersHint')}
+              checked={privacy.shieldTrackers}
+              disabled={!privacy.shield}
+              onChange={() => onUpdate('privacy', 'shieldTrackers', !privacy.shieldTrackers)}
+            />
+            <SettingToggleRow
+              label={t('shieldMalware')}
+              hint={t('shieldMalwareHint')}
+              checked={privacy.shieldMalware}
+              disabled={!privacy.shield}
+              onChange={() => onUpdate('privacy', 'shieldMalware', !privacy.shieldMalware)}
+            />
+            <SettingToggleRow
+              label={t('shieldMalwareUpdates')}
+              hint={t('shieldMalwareUpdatesHint')}
+              checked={privacy.shieldMalwareUpdates}
+              disabled={!privacy.shield || !privacy.shieldMalware}
+              onChange={() => onUpdate('privacy', 'shieldMalwareUpdates', !privacy.shieldMalwareUpdates)}
+            />
+            <SettingTextAreaRow
+              label={t('shieldCustomRules')}
+              hint={t('shieldCustomRulesHint')}
+              value={privacy.shieldCustomRules}
+              placeholder={'||ads.example^\nexample.com##.banner'}
+              onChange={(value) => onUpdate('privacy', 'shieldCustomRules', value)}
             />
           </SettingGroup>
           <SettingGroup title={groupCopy.permissions}>
@@ -1965,8 +1994,6 @@ export function SettingsPanel({
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
-  ublockVersion,
-  ublockEnabled,
   account,
   onAccountChange,
   onAccountSignOut,
@@ -2257,8 +2284,6 @@ export function SettingsPanel({
               onClearBrowsingData={onClearBrowsingData}
               onGetProfileStorageUsage={onGetProfileStorageUsage}
               activeUrl={activeUrl}
-              ublockVersion={ublockVersion}
-              ublockEnabled={ublockEnabled}
               account={account}
               onAccountChange={onAccountChange}
               onAccountSignOut={onAccountSignOut}

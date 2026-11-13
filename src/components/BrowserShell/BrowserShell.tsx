@@ -134,14 +134,13 @@ import {
   setBrowseTabZoom,
   zoomBrowseTab,
   setBrowseForceDarkOptions,
+  readShieldBlockedCount,
   setBrowsePrivacyOptions,
   clearSitePermissions,
   listenSiteCompatibilityRequests,
   navigateBrowseTab,
   clearBrowseData,
   getBrowserProfileStorageUsage,
-  getUblockExtensionInfo,
-  getUblockRuntimeStatus,
   type BrowsingDataKind,
   adoptReparentedBrowseTab,
   registerBrowseTabPrivateMode,
@@ -899,91 +898,10 @@ export function BrowserShell() {
     }
   }, [])
 
-  const [
-    ublockVersion,
-    setUblockVersion,
-  ] = useState<string | null>(
-    null,
-  )
-
-  const [
-    ublockEnabled,
-    setUblockEnabled,
-  ] = useState(false)
-
   const observedDownloadIdsRef =
     useRef<Set<string>>(
       new Set(),
     )
-
-  useEffect(() => {
-    if (!isTauri) return
-
-    void getUblockExtensionInfo()
-      .then((info) => {
-        setUblockVersion(
-          info.version,
-        )
-      })
-      .catch(() => {
-        setUblockVersion(
-          null,
-        )
-      })
-  }, [])
-
-  useEffect(() => {
-    setUblockEnabled(
-      false,
-    )
-
-    if (
-      !isTauri ||
-      !activeTabId
-    ) {
-      return
-    }
-
-    let cancelled =
-      false
-
-    const timer =
-      setTimeout(() => {
-        void getUblockRuntimeStatus(
-          activeTabId,
-        )
-          .then(
-            (status) => {
-              if (
-                !cancelled
-              ) {
-                setUblockEnabled(
-                  status.installed &&
-                    status.enabled,
-                )
-              }
-            },
-          )
-          .catch(() => {
-            if (
-              !cancelled
-            ) {
-              setUblockEnabled(
-                false,
-              )
-            }
-          })
-      }, 1200)
-
-    return () => {
-      cancelled =
-        true
-
-      clearTimeout(
-        timer,
-      )
-    }
-  }, [activeTabId])
 
   useEffect(() => {
     let hasNewDownload =
@@ -6022,6 +5940,12 @@ export function BrowserShell() {
         target.hostname,
         settings.privacy.siteExceptions,
       ),
+      shieldOn:
+        settings.privacy.shield &&
+        !hostHasSiteException(
+          target.hostname,
+          settings.privacy.siteExceptions,
+        ),
       darkenWebpagesOverride:
         settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
@@ -6038,6 +5962,7 @@ export function BrowserShell() {
     notificationCenter.sitePermissions,
     settings.privacy.permissionExceptions,
     settings.privacy.permissionPolicy,
+    settings.privacy.shield,
     settings.privacy.siteExceptions,
     settings.appearance.darkenWebpagesSiteOverrides,
   ])
@@ -6051,7 +5976,12 @@ export function BrowserShell() {
     if (!snapshot.shortcutId || !snapshot.origin) return
 
     try {
-      const permissions = await readSitePermissionStates(snapshot.shortcutId)
+      const [permissions, shieldBlocked] = await Promise.all([
+        readSitePermissionStates(snapshot.shortcutId),
+        snapshot.shieldOn
+          ? readShieldBlockedCount(snapshot.shortcutId).catch(() => undefined)
+          : undefined,
+      ])
       const current = activeSiteInfoStateRef.current
       if (
         current.shortcutId !== snapshot.shortcutId ||
@@ -6059,7 +5989,11 @@ export function BrowserShell() {
       ) {
         return
       }
-      await emitSiteInfoState({ ...current, permissions })
+      await emitSiteInfoState({
+        ...current,
+        permissions,
+        ...(shieldBlocked === undefined ? {} : { shieldBlocked }),
+      })
     } catch (error) {
       if (import.meta.env.DEV) {
         console.warn('[nebula] site permission state query failed', error)
@@ -8137,12 +8071,6 @@ export function BrowserShell() {
             }
             activeUrl={
               activeUrl
-            }
-            ublockVersion={
-              ublockVersion
-            }
-            ublockEnabled={
-              ublockEnabled
             }
             account={
               account

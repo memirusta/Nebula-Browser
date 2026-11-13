@@ -63,6 +63,7 @@ const COPY = {
     resetPermissions: 'İzinleri sıfırla',
     clearDataConfirm: 'Tekrar tıkla: verileri temizle',
     clearSiteData: 'Site verilerini temizle',
+    shieldBlocked: 'Bu sayfada engellenen',
   },
   en: {
     inUse: 'In use now',
@@ -95,6 +96,7 @@ const COPY = {
     resetPermissions: 'Reset permissions',
     clearDataConfirm: 'Click again to clear data',
     clearSiteData: 'Clear site data',
+    shieldBlocked: 'Blocked on this page',
   },
   es: {
     inUse: 'En uso ahora',
@@ -127,6 +129,7 @@ const COPY = {
     resetPermissions: 'Restablecer permisos',
     clearDataConfirm: 'Haz clic de nuevo para borrar los datos',
     clearSiteData: 'Borrar datos del sitio',
+    shieldBlocked: 'Bloqueado en esta página',
   },
   de: {
     inUse: 'Wird gerade verwendet',
@@ -159,6 +162,7 @@ const COPY = {
     resetPermissions: 'Berechtigungen zurücksetzen',
     clearDataConfirm: 'Zum Löschen der Daten erneut klicken',
     clearSiteData: 'Websitedaten löschen',
+    shieldBlocked: 'Auf dieser Seite blockiert',
   },
   fr: {
     inUse: 'Utilisé actuellement',
@@ -191,6 +195,7 @@ const COPY = {
     resetPermissions: 'Réinitialiser les autorisations',
     clearDataConfirm: 'Cliquez à nouveau pour effacer les données',
     clearSiteData: 'Effacer les données du site',
+    shieldBlocked: 'Bloqué sur cette page',
   },
   id: {
     inUse: 'Sedang digunakan',
@@ -223,6 +228,7 @@ const COPY = {
     resetPermissions: 'Atur ulang izin',
     clearDataConfirm: 'Klik lagi untuk menghapus data',
     clearSiteData: 'Hapus data situs',
+    shieldBlocked: 'Diblokir di halaman ini',
   },
   ru: {
     inUse: 'Используется сейчас',
@@ -255,6 +261,7 @@ const COPY = {
     resetPermissions: 'Сбросить разрешения',
     clearDataConfirm: 'Нажмите ещё раз, чтобы удалить данные',
     clearSiteData: 'Удалить данные сайта',
+    shieldBlocked: 'Заблокировано на этой странице',
   },
   it: {
     inUse: 'In uso ora',
@@ -287,6 +294,7 @@ const COPY = {
     resetPermissions: 'Reimposta autorizzazioni',
     clearDataConfirm: 'Fai di nuovo clic per cancellare i dati',
     clearSiteData: 'Cancella dati del sito',
+    shieldBlocked: 'Bloccati in questa pagina',
   },
   ja: {
     inUse: '現在使用中',
@@ -319,6 +327,7 @@ const COPY = {
     resetPermissions: '権限をリセット',
     clearDataConfirm: 'もう一度クリックしてデータを消去',
     clearSiteData: 'サイトデータを消去',
+    shieldBlocked: 'このページでブロックした数',
   },
 } as const
 
@@ -467,6 +476,13 @@ export function SiteInfoPanel({
           </small>
         </span>
       </button>
+
+      {state.shieldOn && typeof state.shieldBlocked === 'number' && (
+        <div className={styles.notificationRow}>
+          <span>{copy.shieldBlocked}</span>
+          <strong>{state.shieldBlocked}</strong>
+        </div>
+      )}
 
       <div className={styles.notificationRow}>
         <span>{copy.darkening}</span>

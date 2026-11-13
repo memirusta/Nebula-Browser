@@ -68,9 +68,7 @@ test('a legacy install is moved from recorded metadata, never by copying profile
   assert.match(flat(read('docs/EXTENSION_OPT_IN_SPLIT.md')), /Profile files are never copied/)
 })
 
-test('the built-in uBO Lite is not a third-party activation', () => {
-  const ublock = production(read('src-tauri/src/ublock_extension.rs'))
-  assert.doesNotMatch(ublock, /require_split|split_committed|extension_activation/)
+test('no content blocker is built in any more, so none of it is an activation either', () => {
   assert.doesNotMatch(read('src-tauri/src/shell_isolation.rs'), /ublock/i)
 })
 

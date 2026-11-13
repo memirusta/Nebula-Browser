@@ -418,6 +418,7 @@ export function ChromeApp() {
       origin,
       hostname: target.hostname,
       protectionDisabled: hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
+      shieldOn: settings.privacy.shield && !hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
       darkenWebpagesOverride:
         settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
@@ -428,7 +429,7 @@ export function ChromeApp() {
         location: fallbackPermission,
       },
     }
-  }, [activeUrl, catalog.activeTabId, settings.appearance.darkenWebpagesSiteOverrides, settings.privacy.permissionPolicy, settings.privacy.permissionExceptions, settings.privacy.siteExceptions, siteInfoState, tabById])
+  }, [activeUrl, catalog.activeTabId, settings.appearance.darkenWebpagesSiteOverrides, settings.privacy.permissionPolicy, settings.privacy.permissionExceptions, settings.privacy.shield, settings.privacy.siteExceptions, siteInfoState, tabById])
 
   useEffect(() => {
     const floatingPanelHeight = chromeOverlayMinimumHeight({

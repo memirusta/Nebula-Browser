@@ -31,6 +31,7 @@ mod google_oauth;
 mod google_sync;
 mod http_response;
 mod layout_audit;
+mod legacy_blocker;
 mod local_document;
 mod main_webview_layout;
 mod media_session;
@@ -55,6 +56,11 @@ mod secure_password_vault;
 mod shell_isolation;
 mod shell_split;
 mod shell_state_store;
+mod shield;
+#[cfg(target_os = "windows")]
+mod shield_block_page;
+#[cfg(target_os = "windows")]
+mod shield_updates;
 mod site_fullscreen_window;
 mod site_ui;
 #[cfg(all(target_os = "windows", feature = "split-driver"))]
@@ -66,7 +72,6 @@ mod tab_error_page;
 mod tab_fullscreen;
 mod tab_metadata;
 mod tab_shortcuts;
-mod ublock_extension;
 mod ui_watchdog;
 mod wallpaper_media;
 mod weather_location;
@@ -823,6 +828,12 @@ async fn webview_profile_storage_usage(
     tauri::async_runtime::spawn_blocking(move || webview_privacy::profile_storage_usage(&app))
         .await
         .map_err(|error| error.to_string())?
+}
+
+/// How many requests Nebula's shield stopped for the page of a tab, for the counter of the site panel.
+#[tauri::command]
+fn shield_blocked_count(label: String) -> u32 {
+    shield::blocked_count(&label)
 }
 
 /// `label` is only kept so callers need no change: site permissions are always the
@@ -2065,8 +2076,9 @@ pub fn run() {
             webview_clear_browsing_data,
             webview_profile_storage_usage,
             webview_clear_site_permissions,
+            shield_blocked_count,
             webview_factory_reset_profiles,
-            ublock_extension::ublock_extension_info,
+            legacy_blocker::legacy_blocker_retire,
             extension_download::extension_download_checked,
             extension_install::extension_package_manage,
             extension_host::extension_host_list,
@@ -2076,9 +2088,6 @@ pub fn run() {
             extension_host::extension_host_click,
             extension_host::extension_host_browse,
             extension_runtime::extension_runtime_version,
-            ublock_extension::ublock_extension_install,
-            ublock_extension::ublock_extension_status,
-            ublock_extension::ublock_extension_ready,
             webview_setup_branding,
             webview_apply_browser_identity,
             webview_execute_script,

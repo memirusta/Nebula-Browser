@@ -27,10 +27,10 @@ mod imp {
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
     };
     use webview2_com::{
-        ExecuteScriptCompletedHandler, NavigationCompletedEventHandler,
-        NavigationStartingEventHandler, NotificationReceivedEventHandler,
-        PermissionRequestedEventHandler, SetPermissionStateCompletedHandler,
-        WebResourceRequestedEventHandler,
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler, ExecuteScriptCompletedHandler,
+        NavigationCompletedEventHandler, NavigationStartingEventHandler,
+        NotificationReceivedEventHandler, PermissionRequestedEventHandler,
+        SetPermissionStateCompletedHandler, WebResourceRequestedEventHandler,
     };
     use windows::core::PCWSTR;
     use windows::Win32::System::Com::IStream;
@@ -58,6 +58,21 @@ mod imp {
         pub permission_exceptions: Vec<String>,
         #[serde(default)]
         pub cookie_banner_blocking: bool,
+        /// Nebula's own shield: the engine and the lists that ship with the app (see `shield.rs`).
+        #[serde(default)]
+        pub shield: bool,
+        /// Which kinds of lists the shield uses, and the person's own rules (see `shield::Config`).
+        #[serde(default = "default_true")]
+        pub shield_ads: bool,
+        #[serde(default = "default_true")]
+        pub shield_trackers: bool,
+        #[serde(default = "default_true")]
+        pub shield_malware: bool,
+        #[serde(default)]
+        pub shield_custom_rules: String,
+        /// The person let Nebula download the list of live malware addresses (see `shield_updates.rs`).
+        #[serde(default)]
+        pub shield_malware_updates: bool,
         /// Passkeys are listed in Nebula's own list (see `passkeys.rs`). A tab whose options are not known yet
         /// counts as on, see `passkey_list_enabled`.
         #[serde(default = "default_true")]
@@ -163,6 +178,52 @@ mod imp {
         "criteo.com",
         "criteo.net",
     ];
+
+    /// The script the shield put in the page that is loading in a tab (its id, to take it away again): the scriptlets and the hiding
+    /// rules the lists have for that address. It is made for each page, when the navigation starts, and taken away at the next one.
+    static PAGE_SCRIPTS: LazyLock<Mutex<HashMap<String, String>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    /// Puts the shield's script for the page at `uri` in the tab, to run before the page's own scripts, and takes away the one of the
+    /// page before. Called at the start of a navigation, on the thread of the window.
+    unsafe fn put_page_script(
+        core: &ICoreWebView2,
+        label: &str,
+        uri: &str,
+        current: &PrivacyOptions,
+    ) {
+        let previous = PAGE_SCRIPTS
+            .lock()
+            .ok()
+            .and_then(|mut scripts| scripts.remove(label));
+        if let Some(id) = previous {
+            let _ = core.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(id));
+        }
+        if !(uri.starts_with("http://") || uri.starts_with("https://"))
+            || is_excepted(uri, &current.site_exceptions)
+        {
+            return;
+        }
+        let Some(engine) = crate::shield::engine() else {
+            return;
+        };
+        let Some(script) = engine.page_script(uri) else {
+            return;
+        };
+        let owner = label.to_string();
+        let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(
+            move |_result, id| {
+                if !id.is_empty() {
+                    if let Ok(mut scripts) = PAGE_SCRIPTS.lock() {
+                        scripts.insert(owner.clone(), id);
+                    }
+                }
+                Ok(())
+            },
+        ));
+        let script = HSTRING::from(script);
+        let _ = core.AddScriptToExecuteOnDocumentCreated(PCWSTR(script.as_ptr()), &handler);
+    }
 
     fn options(label: &str) -> PrivacyOptions {
         OPTIONS
@@ -913,6 +974,24 @@ mod imp {
         if next.private_mode {
             crate::notification_history::remember_private_tab(label)?;
         }
+        // The shield's engine is built in the background the first time a tab asks for the shield, and again when the lists or
+        // the person's rules change.
+        let keeps_malware_list = next.shield && next.shield_malware && next.shield_malware_updates;
+        // Before the configuration is made: what was downloaded earlier is part of it, and turning the setting off takes it away.
+        crate::shield_updates::set_enabled(app, keeps_malware_list);
+        if next.shield {
+            crate::shield::configure(&crate::shield::Config {
+                ads: next.shield_ads,
+                trackers: next.shield_trackers,
+                malware: next.shield_malware,
+                custom_rules: next.shield_custom_rules.clone(),
+                urlhaus: if keeps_malware_list {
+                    crate::shield_updates::current()
+                } else {
+                    None
+                },
+            });
+        }
         let previous = OPTIONS
             .lock()
             .map_err(|error| error.to_string())?
@@ -1005,6 +1084,7 @@ mod imp {
         let store_label = label.to_string();
         let notification_app = app.clone();
         let permission_app = app.clone();
+        let navigation_app = app.clone();
         let setup_error = Arc::new(Mutex::new(None::<String>));
         let inner_setup_error = Arc::clone(&setup_error);
 
@@ -1049,7 +1129,52 @@ mod imp {
                         let Some(args) = args else { return Ok(()) };
                         let uri = take_string(|value| args.Uri(value));
                         remember_top_level_uri(&navigation_label, &uri);
-                        if !options(&navigation_label).https_only {
+                        crate::shield::start_page(&navigation_label);
+                        // The error page's "try with protections off" button: the address it goes to is not opened; the window
+                        // is asked for the trial.
+                        if crate::tab_error_page::handle_compat_navigation(
+                            &navigation_app,
+                            &navigation_label,
+                            &uri,
+                        ) {
+                            args.SetCancel(true)?;
+                            return Ok(());
+                        }
+                        // "Continue anyway" on the page of a stopped site: the address it goes to is not opened; the choice is
+                        // remembered for the site in this tab and the site is opened instead.
+                        if let Some(site) = crate::shield_block_page::continue_target(&uri) {
+                            args.SetCancel(true)?;
+                            crate::shield::allow_site(&navigation_label, &site);
+                            if let Some(sender) = sender.as_ref() {
+                                sender.Navigate(&HSTRING::from(site))?;
+                            }
+                            return Ok(());
+                        }
+                        let current = options(&navigation_label);
+                        // A site the malware lists name is not opened: its place is taken by a page that says why, with a way
+                        // to go on for the day a list is wrong.
+                        if current.shield
+                            && current.shield_malware
+                            && (uri.starts_with("http://") || uri.starts_with("https://"))
+                            && !is_excepted(&uri, &current.site_exceptions)
+                            && !crate::shield::site_is_allowed(&navigation_label, &uri)
+                        {
+                            if let (Some(sender), Some(engine)) =
+                                (sender.as_ref(), crate::shield::engine())
+                            {
+                                if engine.guard_document(&uri).is_some() {
+                                    args.SetCancel(true)?;
+                                    crate::tab_error_page::show_blocked_site(sender, &uri);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        if current.shield {
+                            if let Some(sender) = sender.as_ref() {
+                                put_page_script(sender, &navigation_label, &uri, &current);
+                            }
+                        }
+                        if !current.https_only {
                             return Ok(());
                         }
                         let Some(upgraded) = https_upgrade(&uri) else {
@@ -1075,7 +1200,7 @@ mod imp {
                         let Some(args) = args else { return Ok(()) };
                         let current = options(&resource_label);
                         let needs_resource_policy =
-                            current.block_trackers || current.strict_cookies;
+                            current.block_trackers || current.strict_cookies || current.shield;
                         let mut resource_context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
                         let is_document = args.ResourceContext(&mut resource_context).is_ok()
                             && resource_context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT;
@@ -1103,6 +1228,57 @@ mod imp {
                         }
 
                         let excepted = is_excepted(&uri, &current.site_exceptions);
+
+                        // Nebula's own shield: the lists that ship with the app, asked about every request but the page itself.
+                        // Until the engine is ready, requests go through.
+                        if current.shield && !excepted && !is_document {
+                            if let Some(engine) = crate::shield::engine() {
+                                let top_uri = remembered_top_level_uri(&resource_label)
+                                    .or_else(|| {
+                                        sender.as_ref().map(|core| take_string(|value| core.Source(value)))
+                                    })
+                                    .unwrap_or_default();
+                                let kind = crate::shield::request_type_for_context(resource_context.0);
+                                let decision = engine.decide(&uri, &top_uri, kind);
+                                if !matches!(decision, crate::shield::Decision::Allow) {
+                                    // A rule that names a stand-in (`$redirect=noop.js`) is answered with it, so that a page that
+                                    // waits for the script finds one; anything else gets the answer its kind can live with.
+                                    let stand_in = match &decision {
+                                        crate::shield::Decision::Redirect { resource } => {
+                                            crate::shield::stand_in_body(resource)
+                                        }
+                                        _ => None,
+                                    };
+                                    let response = match stand_in {
+                                        Some((mime, body)) => {
+                                            let stream = windows::Win32::UI::Shell::SHCreateMemStream(Some(&body));
+                                            environment.CreateWebResourceResponse(
+                                                stream.as_ref(),
+                                                200,
+                                                &HSTRING::from("Redirected by Nebula Shield"),
+                                                &HSTRING::from(format!(
+                                                    "Content-Type: {mime}\r\nCache-Control: no-store\r\nX-Nebula-Shield: blocked"
+                                                )),
+                                            )?
+                                        }
+                                        None => {
+                                            let (status, reason, headers) =
+                                                crate::shield::stand_in_for(kind);
+                                            environment.CreateWebResourceResponse(
+                                                None::<&IStream>,
+                                                status,
+                                                &HSTRING::from(reason),
+                                                &HSTRING::from(headers),
+                                            )?
+                                        }
+                                    };
+                                    args.SetResponse(&response)?;
+                                    crate::shield::note_blocked(&resource_label);
+                                    return Ok(());
+                                }
+                            }
+                        }
+
                         if current.block_trackers
                             && !excepted
                             && is_tracker(&uri, &current.custom_block_list)
@@ -1358,6 +1534,7 @@ mod imp {
     }
 
     pub fn teardown(app: &AppHandle, label: &str) {
+        crate::shield::forget(label);
         let tokens = TOKENS
             .lock()
             .ok()
@@ -1961,6 +2138,12 @@ pub struct PrivacyOptions {
     pub permission_policy: String,
     pub permission_exceptions: Vec<String>,
     pub cookie_banner_blocking: bool,
+    pub shield: bool,
+    pub shield_ads: bool,
+    pub shield_trackers: bool,
+    pub shield_malware: bool,
+    pub shield_custom_rules: String,
+    pub shield_malware_updates: bool,
     pub site_notifications: bool,
     pub show_notification_content: bool,
     pub notification_allowed_sites: Vec<String>,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import test from 'node:test'
 
 // Native code that works on the browsing profile (extensions, site permissions,
@@ -60,13 +60,13 @@ test('no module outside browser_profile names the main webview', () => {
 
 test('profile-level WebView2 calls only go through the owner', () => {
   const profileCalls = /AddBrowserExtension|GetBrowserExtensions|ClearBrowsingData|GetNonDefaultPermissionSettings|SetPermissionState/
-  const allowed = new Set(['ublock_extension.rs', 'webview_privacy.rs', 'extension_install.rs'])
+  const allowed = new Set(['legacy_blocker.rs', 'webview_privacy.rs', 'extension_install.rs'])
   for (const file of files) {
     if (!profileCalls.test(production(file.text))) continue
     assert.ok(allowed.has(file.name), `${file.name} makes profile calls`)
   }
   // The two that are not extension-install plumbing must obtain their webview from the owner.
-  for (const name of ['ublock_extension.rs', 'webview_privacy.rs']) {
+  for (const name of ['legacy_blocker.rs', 'webview_privacy.rs']) {
     const text = production(source(name))
     assert.match(text, /browser_profile::owner\(/, name)
     assert.doesNotMatch(text, /shell_split::profile_webview|profile_webview\(/, name)
@@ -77,9 +77,8 @@ test('profile commands ignore the label callers still send', () => {
   const lib = source('lib.rs')
   assert.match(lib, /async fn webview_clear_browsing_data\(\s*app: tauri::AppHandle,\s*_label: String/)
   assert.match(lib, /async fn webview_clear_site_permissions\(\s*app: tauri::AppHandle,\s*_label: String/)
-  const ublock = source('ublock_extension.rs')
-  assert.match(ublock, /pub async fn ublock_extension_install\(\s*app: AppHandle,\s*_label: String/)
-  assert.match(ublock, /pub async fn ublock_extension_status\(\s*app: AppHandle,\s*_label: String/)
+  // The one command that edits the profile's extensions takes no label at all: it always goes to the owner.
+  assert.match(source('legacy_blocker.rs'), /pub async fn legacy_blocker_retire\(app: AppHandle\)/)
   assert.doesNotMatch(production(source('webview_privacy.rs')), /async fn (clear_profile_data_and_wait|non_default_permission_settings|set_permission_default_and_wait|clear_non_default_permissions_and_wait)\([^)]*label/)
 })
 
@@ -108,16 +107,19 @@ test('per-webview privacy settings stay strict about their webview', () => {
   assert.match(privacy, /if !label\.starts_with\("nebula-tab-"\) && !label\.starts_with\("nebula-popup-content-"\)/)
 })
 
-test('uBO Lite readiness is read by the host from the profile, not signalled by a shell page', () => {
-  const ublock = production(source('ublock_extension.rs'))
-  assert.match(ublock, /pub async fn ublock_extension_ready\(app: AppHandle\)/)
-  assert.match(ublock, /browser_profile::owner\(&app\)/)
-  assert.match(ublock, /extension_worker::wait_for_condition/)
-  const manifest = JSON.parse(readFileSync('src-tauri/resources/extensions/ubol/manifest.json', 'utf8'))
-  assert.equal(manifest.content_scripts, undefined)
+test('the blocker that earlier versions installed is taken away by the identity written down at install, through the owner', () => {
+  const retire = production(source('legacy_blocker.rs'))
+  assert.match(retire, /browser_profile::owner\(app\)/)
+  // Only the extension whose identity the install marker names is removed: not every extension called uBlock.
+  assert.match(retire, /extension_id == wanted_id/)
+  assert.doesNotMatch(retire, /contains\("uBlock/)
+  // Nothing is deleted when the removal from the profile failed, so the next start tries again.
+  assert.match(retire, /remove_from_profile\(&app, &id\)\?;[\s\S]*remove_dir_all/)
+  assert.ok(!existsSync('src-tauri/src/ublock_extension.rs'), 'the old module is gone')
+  assert.ok(!existsSync('src-tauri/resources/extensions'), 'and so is the bundled extension')
   const shell = readFileSync('src/platform/tauriBrowser.ts', 'utf8')
-  assert.doesNotMatch(shell, /nebulaUblockReady|data-nebula-ublock-ready|MutationObserver/)
-  assert.match(shell, /invoke<boolean>\('ublock_extension_ready'\)/)
-  assert.match(readFileSync('src-tauri/src/lib.rs', 'utf8'), /ublock_extension::ublock_extension_ready,/)
-  assert.match(readFileSync('src-tauri/permissions/webview-commands.toml', 'utf8'), /"ublock_extension_ready"/)
+  assert.match(shell, /invoke<boolean>\('legacy_blocker_retire'\)/)
+  assert.doesNotMatch(shell, /ensureUblockProfile|ublock_extension/)
+  assert.match(readFileSync('src-tauri/src/lib.rs', 'utf8'), /legacy_blocker::legacy_blocker_retire,/)
+  assert.match(readFileSync('src-tauri/permissions/webview-commands.toml', 'utf8'), /"legacy_blocker_retire"/)
 })

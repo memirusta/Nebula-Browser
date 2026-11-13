@@ -980,10 +980,8 @@ fn phase_hostcost(app: &tauri::AppHandle) -> Result<Value, String> {
     std::thread::sleep(Duration::from_secs(75));
     let gone = app.get_webview(label).is_none();
     let without_owner = sample_memory(6);
-    let again = tauri::async_runtime::block_on(crate::ublock_extension::ublock_extension_status(
-        app.clone(),
-        "main".into(),
-    ));
+    // Any profile-level operation will do: it has to find the browsing profile again, and bring its owner back.
+    let again = crate::webview_privacy::profile_storage_usage(app).map(|_| "ok");
     let back = app.get_webview(label).is_some();
     Ok(json!({
         "ownerExistedWhileInUse": existed,
@@ -998,10 +996,6 @@ fn phase_hostcost(app: &tauri::AppHandle) -> Result<Value, String> {
 /// command still takes one) and checked to land on the browsing profile.
 fn phase_profileops(app: &tauri::AppHandle) -> Result<Value, String> {
     let folder = crate::browser_profile::user_data_folder(app);
-    let ublock = tauri::async_runtime::block_on(crate::ublock_extension::ublock_extension_status(
-        app.clone(),
-        "main".into(),
-    ));
     let usage = crate::webview_privacy::profile_storage_usage(app)
         .map(|u| serde_json::to_value(u).unwrap_or(Value::Null));
     let permissions = tauri::async_runtime::block_on(
@@ -1025,7 +1019,6 @@ fn phase_profileops(app: &tauri::AppHandle) -> Result<Value, String> {
     });
     Ok(json!({
         "browserProfileFolder": folder.as_ref().map(|p| p.display().to_string()).map_err(|e| e.clone()),
-        "ublockStatusWithShellLabel": ublock.as_ref().map(|s| serde_json::to_value(s).unwrap_or(Value::Null)).map_err(|e| e.clone()),
         "storageUsage": usage,
         "clearSitePermissions": permissions.as_ref().map(|_| "ok").map_err(|e| e.clone()),
         "enumerateExtensions": enumerated.as_ref().map(|m| m.len()).map_err(|e| e.clone()),
@@ -1059,161 +1052,7 @@ fn phase_oauth(app: &tauri::AppHandle, base: &str) -> Result<Value, String> {
     )
 }
 
-/// uBO Lite readiness from the host, timed: after a fresh install, again right away and
-/// once more after the worker has been left idle. Install first if the profile has none.
-fn phase_ready(app: &tauri::AppHandle) -> Result<Value, String> {
-    use crate::ublock_extension as ub;
-    let before = ub::ublock_extension_status_blocking(app.clone())?;
-    let mut installed_now = false;
-    if !before.installed || !before.enabled {
-        ub::ublock_extension_install_blocking(app.clone())?;
-        installed_now = true;
-    }
-    let mut samples = Vec::new();
-    for gap in [0u64, 0, 20] {
-        std::thread::sleep(Duration::from_secs(gap));
-        let started = Instant::now();
-        let ready = ub::ublock_extension_ready_blocking(app.clone());
-        samples.push(json!({
-            "afterIdleSeconds": gap,
-            "ready": ready.as_ref().ok(),
-            "error": ready.as_ref().err(),
-            "millis": started.elapsed().as_millis(),
-        }));
-    }
-    Ok(
-        json!({ "installedNow": installed_now, "statusBefore": serde_json::to_value(&before).unwrap_or(Value::Null), "samples": samples }),
-    )
-}
-
-/// Service-worker lifecycle around the uBO readiness wait. Every scenario reports
-/// whether it behaved and how long it took.
-fn phase_readylife(app: &tauri::AppHandle) -> Result<Value, String> {
-    use crate::extension_worker as worker;
-    use crate::ublock_extension as ub;
-    note("readylife: start");
-    let before = ub::ublock_extension_status_blocking(app.clone())?;
-    note("readylife: status read");
-    let installed_now = !before.installed || !before.enabled;
-    if installed_now {
-        ub::ublock_extension_install_blocking(app.clone())?;
-    }
-    let id = ub::ublock_extension_id(app).ok_or("no uBO install marker after install")?;
-    let _lease = crate::browser_profile::owner(app)?;
-    let label = crate::browser_profile::OWNER_LABEL;
-    let flag = "globalThis.nebulaInitialized === true";
-    let mut scenarios = Vec::new();
-    note("readylife: installed, owner leased");
-    let mut record = |name: &str, ok: bool, millis: u128, detail: Value| {
-        note(&format!("readylife: {name}: ok={ok} {millis} ms"));
-        scenarios.push(json!({ "name": name, "ok": ok, "millis": millis, "detail": detail }));
-    };
-    let timed = |f: &dyn Fn() -> Result<bool, String>| {
-        let started = Instant::now();
-        let result = f();
-        (result, started.elapsed().as_millis())
-    };
-    let host_ready = || ub::ublock_extension_ready_blocking(app.clone());
-    let stop_all = || {
-        let _ = worker::cdp(app, label, None, "ServiceWorker.enable", &json!({}));
-        worker::cdp(app, label, None, "ServiceWorker.stopAllWorkers", &json!({}))
-    };
-    let worker_count = || -> usize {
-        worker::cdp(app, label, None, "Target.getTargets", &json!({}))
-            .ok()
-            .and_then(|v| {
-                v["targetInfos"]
-                    .as_array()
-                    .map(|l| l.iter().filter(|t| t["type"] == "service_worker").count())
-            })
-            .unwrap_or(usize::MAX)
-    };
-
-    // 1. First answer after the install (fresh profile: the worker has never run).
-    let (r, ms) = timed(&host_ready);
-    record(
-        "first answer after install",
-        matches!(r, Ok(true)),
-        ms,
-        json!({ "installedNow": installed_now, "result": format!("{r:?}") }),
-    );
-    // 2. Worker running and initialised.
-    let (r, ms) = timed(&host_ready);
-    record(
-        "worker already running",
-        matches!(r, Ok(true)) && ms < 1500,
-        ms,
-        json!({ "result": format!("{r:?}") }),
-    );
-    // 3. Worker stopped (idle shutdown): the check starts it again.
-    let stopped = stop_all();
-    std::thread::sleep(Duration::from_millis(800));
-    let gone = worker_count();
-    let (r, ms) = timed(&host_ready);
-    record(
-        "worker stopped, then asked",
-        matches!(r, Ok(true)),
-        ms,
-        json!({ "stopCall": stopped.is_ok(), "workersAfterStop": gone, "result": format!("{r:?}") }),
-    );
-    // 4. Worker stopped again while the wait is polling: it must re-attach to the next one.
-    let _ = stop_all();
-    std::thread::sleep(Duration::from_millis(500));
-    let killer = {
-        let app = app.clone();
-        std::thread::spawn(move || {
-            for delay in [350u64, 900] {
-                std::thread::sleep(Duration::from_millis(delay));
-                let _ = crate::extension_worker::cdp(
-                    &app,
-                    crate::browser_profile::OWNER_LABEL,
-                    None,
-                    "ServiceWorker.stopAllWorkers",
-                    &json!({}),
-                );
-            }
-        })
-    };
-    let (r, ms) = timed(&host_ready);
-    let _ = killer.join();
-    record(
-        "worker stopped twice during the wait",
-        matches!(r, Ok(true)),
-        ms,
-        json!({ "result": format!("{r:?}") }),
-    );
-    // 5. A condition that never becomes true ends at its deadline, not later, not never.
-    let (r, ms) =
-        timed(&|| worker::wait_for_condition(app, label, &id, "false", Duration::from_secs(2)));
-    record(
-        "never-true condition ends at the deadline",
-        matches!(r, Ok(false)) && (1900..6000).contains(&ms),
-        ms,
-        json!({ "result": format!("{r:?}") }),
-    );
-    // 6. An extension that is not there: no hang, no error, "not ready".
-    let bogus = "a".repeat(32);
-    let (r, ms) =
-        timed(&|| worker::wait_for_condition(app, label, &bogus, flag, Duration::from_secs(2)));
-    record(
-        "unknown extension id ends at the deadline",
-        matches!(r, Ok(false)) && ms < 15000,
-        ms,
-        json!({ "result": format!("{r:?}") }),
-    );
-    // 7. And the real one still works afterwards.
-    let (r, ms) = timed(&host_ready);
-    record(
-        "ready again after the failures",
-        matches!(r, Ok(true)),
-        ms,
-        json!({ "result": format!("{r:?}") }),
-    );
-    let all_ok = scenarios.iter().all(|s| s["ok"] == true);
-    Ok(json!({ "allOk": all_ok, "installedNow": installed_now, "scenarios": scenarios }))
-}
-
-/// Owner churn: one real profile operation (the uBO status check) every `gap` seconds,
+/// Owner churn: one real profile operation (the storage-usage query) every `gap` seconds,
 /// `cycles` times. NEBULA_SPIKE_CHURN="gap:cycles,gap:cycles". Each cycle records the
 /// latency of the operation, whether the owner had to be created, the counters, and the
 /// process count and tree memory at the end.
@@ -1236,7 +1075,7 @@ fn phase_churn(app: &tauri::AppHandle) -> Result<Value, String> {
         for cycle in 0..cycles {
             let existed = app.get_webview(label).is_some();
             let started = Instant::now();
-            let status = crate::ublock_extension::ublock_extension_status_blocking(app.clone());
+            let status = crate::webview_privacy::profile_storage_usage(app);
             rows.push(json!({
                 "cycle": cycle,
                 "ownerExistedBefore": existed,
@@ -1326,8 +1165,6 @@ pub fn start(app: tauri::AppHandle) {
                 "hostcheck" => phase_hostcheck(&app, &server),
                 "hostcost" => phase_hostcost(&app),
                 "profileops" => phase_profileops(&app),
-                "ready" => phase_ready(&app),
-                "readylife" => phase_readylife(&app),
                 "churn" => phase_churn(&app),
                 "eval" => phase_eval(&app),
                 "open3" => {

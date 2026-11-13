@@ -1,24 +1,22 @@
 # Third-party notices
 
-## uBlock Origin Lite
+## Nebula Shield: filter lists and scriptlets
 
-Nebula bundles the official Microsoft Edge build of uBlock Origin Lite.
+Nebula's own blocker (the shield, `src-tauri/src/shield.rs`) is built from third-party work that ships inside the app. Nothing
+is downloaded at run time.
 
-- Project: https://github.com/uBlockOrigin/uBOL-home
-- Version: `2026.804.1652`
-- Release asset: `uBOLite_2026.804.1652.edge.zip`
-- Source archive SHA-256: `4cbfae11caf3a3a8d2e98d9c0844229d0ef7d1334785232d4fc667117a526193`
-- License: GNU General Public License v3.0
+- **Engine:** `adblock` (adblock-rust) by Brave Software, MPL-2.0. https://github.com/brave/adblock-rust
+- **Filter lists** (`src-tauri/resources/shield/lists/`):
+  - EasyList and EasyPrivacy, https://easylist.to/. Dual licensed under GPL-3.0-or-later and CC BY-SA 3.0 (https://easylist.to/pages/licence.html).
+  - uBlock filters, Privacy, Unbreak and Badware (uBlockOrigin/uAssets), https://github.com/uBlockOrigin/uAssets. Licensed as set out in
+    https://github.com/uBlockOrigin/uAssets/blob/master/LICENSE.
+  - Peter Lowe's ad server list, https://pgl.yoyo.org/adservers/. Offered for anyone to use and redistribute.
+- **Scriptlets and stand-in resources** (`src-tauri/resources/shield/ubo-scriptlets.json`): the scriptlets and web-accessible
+  resources of uBlock Origin by Raymond Hill, https://github.com/gorhill/uBlock, GPL-3.0. The file is generated from that
+  source by `scripts/build-shield-resources.mjs`; run it again when the lists are updated.
 
-Nebula applies a small integration patch that exempts its internal WebView2
-application origins from network and cosmetic filtering. This prevents the
-extension from treating the browser's own user interface as page content.
-Nebula also enables uBO Lite's bundled experimental ruleset and registers its
-generated YouTube scriptlets at document start to compensate for WebView2's
-headless extension-UI integration timing.
-
-The complete upstream license is included at
-`src-tauri/resources/extensions/ubol/LICENSE.txt`.
+Earlier versions of Nebula bundled uBlock Origin Lite (also GPL-3.0, https://github.com/uBlockOrigin/uBOL-home) as a browser
+extension. It is no longer part of the app, and the copy those versions installed is removed from the profile at start.
 
 ## Crab Nebula image (first-run screens)
 
