@@ -154,9 +154,11 @@ export interface NebulaSettings {
   notifications: NotificationSettings
 }
 
+import { deviceTheme } from './deviceTheme'
+
 export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
   appearance: {
-    theme: 'forest',
+    theme: deviceTheme(),
     fontFamily: 'nebula',
     darkenWebpages: 'off',
     darkenWebpagesSiteOverrides: {},

@@ -102,3 +102,16 @@ test('an interrupted guided tutorial resumes until it is completed or skipped', 
     else Reflect.deleteProperty(globalThis, 'localStorage')
   }
 })
+
+test('a new profile starts with the theme the device is set to, and a stored theme is kept', async () => {
+  const { deviceTheme } = await import('../src/core/deviceTheme.ts')
+  assert.equal(deviceTheme(() => ({ matches: true })), 'light', 'the device is set to light')
+  assert.equal(deviceTheme(() => ({ matches: false })), 'dark', 'the device is set to dark')
+  assert.equal(deviceTheme(undefined), 'dark', 'no answer: dark')
+  assert.equal(deviceTheme(() => { throw new Error('no media queries') }), 'dark')
+  // The default is no longer Forest (it is still a choice), and a stored theme is not replaced: the default only fills in.
+  const source = readFileSync(new URL('../src/core/nebulaSettings.ts', import.meta.url), 'utf8')
+  assert.match(source, /appearance: \{\s+theme: deviceTheme\(\),/)
+  assert.doesNotMatch(source, /theme: 'forest',/)
+  assert.match(source, /a\?\.theme === 'dark' \|\| a\?\.theme === 'light' \|\| a\?\.theme === 'forest'\s+\? a\.theme\s+: d\.appearance\.theme/)
+})
