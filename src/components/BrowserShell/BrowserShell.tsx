@@ -71,6 +71,7 @@ import {
   stackBrowsingChromeAboveBrowser,
 } from '../../platform/tauriWebviewStack'
 import { setChromeWebviewSuppressed } from '../../platform/tauriChromeWebview'
+import { emitSettingsLunarPeek } from '../../core/nebulaBridge'
 import {
   closeSitePopupForContent,
   isPopupContentLabel,
@@ -1555,11 +1556,15 @@ export function BrowserShell() {
     void emitGuidedTutorialState(state)
   }, [guidedTutorialOpen, guidedTutorialStep])
 
+  // A slider of the Semi-Lunar settings is being held (see SettingsPanel): the menu may show over Settings.
+  const [settingsLunarPeek, setSettingsLunarPeek] = useState(false)
+
   useEffect(() => {
     if (!isTauri) return
 
     void setChromeWebviewSuppressed(
-      settingsOpen ||
+      // While a Semi-Lunar slider is held, Settings let the menu show so the change can be seen on it.
+      (settingsOpen && !settingsLunarPeek) ||
         onboardingOpen ||
         developerToolsOpen ||
         crashRecoveryOpen ||
@@ -1591,11 +1596,16 @@ export function BrowserShell() {
     notificationPanelOpen,
     onboardingOpen,
     passwordPromptOffer,
+    settingsLunarPeek,
     settingsOpen,
     siteContextMenu,
     siteUiQueue.length,
     viewMode,
   ])
+
+  useEffect(() => {
+    void emitSettingsLunarPeek(settingsOpen && settingsLunarPeek)
+  }, [settingsOpen, settingsLunarPeek])
 
   const [
     homeEditMode,
@@ -7979,6 +7989,7 @@ export function BrowserShell() {
           }
         >
           <SettingsPanel
+            onLunarPeekChange={setSettingsLunarPeek}
             passwordSettingsRequest={passwordSettingsRequest}
             extensionsSettingsRequest={extensionsSettingsRequest}
             open={

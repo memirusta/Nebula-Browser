@@ -73,6 +73,10 @@
 
 .preview {
   position: relative;
+  /* A preview, not a banner: it keeps a sensible shape however wide the window is. */
+  justify-self: start;
+  width: 100%;
+  max-width: 640px;
   height: 190px;
   overflow: hidden;
   border: 1px solid var(--nebula-glass-border);

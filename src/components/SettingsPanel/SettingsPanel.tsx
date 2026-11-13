@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -22,6 +23,10 @@ import { showAppConfirmation } from '../../core/appDialog'
 import type { NebulaSettings } from '../../core/nebulaSettings'
 import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { WallpaperSettingsSection } from './WallpaperSettingsSection'
+import { SettingsNavIcon } from './SettingsNavIcon'
+import { requestPasswordsTab } from './accountTabRequest'
+import { AppearanceHero } from './AppearanceHero'
+import { SETTINGS_GROUP_COPY } from './settingsGroupCopy'
 import {
   SettingColorRow,
   SettingDangerRow,
@@ -30,6 +35,8 @@ import {
   SettingSelectRow,
   SettingTextRow,
   SettingToggleRow,
+  SettingGroup,
+  SettingAdvanced,
 } from './SettingControls'
 import { AboutUpdateSection } from './AboutUpdateSection'
 import { AccountSettingsSection } from './AccountSettingsSection'
@@ -798,6 +805,8 @@ function ShortcutReference({
 }
 
 interface SettingsPanelProps {
+  /** A slider of the Semi-Lunar settings is held (true) or let go (false). */
+  onLunarPeekChange?: (active: boolean) => void
   passwordSettingsRequest?: number
   extensionsSettingsRequest?: number
   open: boolean
@@ -914,6 +923,7 @@ function CategoryContent({
   onSetNotificationSitePermission: SettingsPanelProps['onSetNotificationSitePermission']
 }) {
   const { t, locale, setLocale } = useLocale()
+  const groupCopy = getLocaleCopy(SETTINGS_GROUP_COPY, locale)
   const clearingBrowsingDataRef = useRef(false)
   const [clearingBrowsingDataKind, setClearingBrowsingDataKind] =
     useState<BrowsingDataKind | null>(null)
@@ -1009,506 +1019,546 @@ function CategoryContent({
     case 'appearance':
       return (
         <>
-          <SettingSelectRow
-            label={t('settingsLanguage')}
-            hint={t('settingsLanguageHint')}
-            value={locale}
-            options={[
-              { value: 'tr', label: t('languageTurkish') },
-              { value: 'en', label: t('languageEnglish') },
-              { value: 'es', label: t('languageSpanish') },
-              { value: 'de', label: t('languageGerman') },
-              { value: 'fr', label: t('languageFrench') },
-              { value: 'id', label: t('languageIndonesian') },
-              { value: 'ru', label: t('languageRussian') },
-              { value: 'it', label: t('languageItalian') },
-              { value: 'ja', label: t('languageJapanese') },
-            ]}
-            onChange={(value) => setLocale(value as NebulaLocale)}
-          />
-          <WallpaperSettingsSection
-            config={wallpaperConfig}
-            onChange={onUpdateWallpaper}
-            onPickImage={onPickWallpaper}
-            onPickVideo={onPickVideoWallpaper}
-            onReset={onResetWallpaper}
-          />
-          <SettingSelectRow
-            label={t('theme')}
-            hint={t('themeHint')}
-            value={appearance.theme}
-            options={[
-              { value: 'forest', label: t('themeForest') },
-              { value: 'dark', label: t('themeDark') },
-              { value: 'light', label: t('themeLight') },
-            ]}
-            onChange={(v) =>
-              onUpdate('appearance', 'theme', v as NebulaSettings['appearance']['theme'])
-            }
-          />
-          <SettingSelectRow
-            label={t('darkenWebpages')}
-            hint={t('darkenWebpagesHint')}
-            value={appearance.darkenWebpages}
-            options={[
-              { value: 'off', label: t('darkenWebpagesOff') },
-              { value: 'auto', label: t('darkenWebpagesAuto') },
-              { value: 'always', label: t('darkenWebpagesAlways') },
-            ]}
-            onChange={(value) =>
-              onUpdate(
-                'appearance',
-                'darkenWebpages',
-                value as NebulaSettings['appearance']['darkenWebpages'],
-              )
-            }
-          />
-          <SettingRangeRow
-            label={t('glassBlur')}
-            hint={t('glassBlurHint')}
-            value={appearance.glassBlurPx}
-            min={0}
-            max={80}
-            step={1}
-            unit=" px"
-            onChange={(v) => onUpdate('appearance', 'glassBlurPx', v)}
-          />
-          <SettingRangeRow
-            label={t('glassOpacity')}
-            hint={t('glassOpacityHint')}
-            value={appearance.glassOpacity}
-            min={0}
-            max={40}
-            step={1}
-            unit="%"
-            onChange={(v) => onUpdate('appearance', 'glassOpacity', v)}
-          />
-          <SettingRangeRow
-            label={t('glassSaturate')}
-            hint={t('glassSaturateHint')}
-            value={Math.round(appearance.glassSaturate * 100)}
-            min={50}
-            max={200}
-            step={5}
-            unit="%"
-            onChange={(v) => onUpdate('appearance', 'glassSaturate', v / 100)}
-          />
-          <SettingRangeRow
-            label={t('glassContrast')}
-            hint={t('glassContrastHint')}
-            value={Math.round(appearance.glassContrast * 100)}
-            min={60}
-            max={120}
-            step={2}
-            unit="%"
-            onChange={(v) => onUpdate('appearance', 'glassContrast', v / 100)}
-          />
-          <SettingColorRow
-            label={t('accentColor')}
-            hint={t('accentColorHint')}
-            value={appearance.accentColor}
-            onChange={(v) => onUpdate('appearance', 'accentColor', v)}
-          />
-          <SettingColorRow
-            label={t('goldColor')}
-            hint={t('goldColorHint')}
-            value={appearance.goldColor}
-            onChange={(v) => onUpdate('appearance', 'goldColor', v)}
-          />
-          <SettingRangeRow
-            label={t('lunarGlassBlur')}
-            hint={t('lunarGlassBlurHint')}
-            value={appearance.lunarGlassBlurPx}
-            min={0}
-            max={160}
-            step={1}
-            unit=" px"
-            onChange={(v) => onUpdate('appearance', 'lunarGlassBlurPx', v)}
-          />
-          <SettingRangeRow
-            label={t('lunarGlassOpacity')}
-            hint={t('lunarGlassOpacityHint')}
-            value={appearance.lunarGlassOpacity}
-            min={20}
-            max={100}
-            step={1}
-            unit="%"
-            onChange={(v) => onUpdate('appearance', 'lunarGlassOpacity', v)}
-          />
-          <SettingResetRow
-            label={t('appearanceReset')}
-            hint={t('appearanceResetHint')}
-            onReset={() => onResetCategory('appearance')}
-          />
+          <SettingGroup>
+            <AppearanceHero
+              title={{ theme: t('theme'), wallpaper: groupCopy.wallpaper, accent: t('accentColor') }}
+              themeLabels={{ forest: t('themeForest'), dark: t('themeDark'), light: t('themeLight') }}
+              ownImage={groupCopy.ownImage}
+              ownVideo={groupCopy.ownVideo}
+              accentDefault={groupCopy.accentDefault}
+              theme={appearance.theme}
+              onTheme={(v) => onUpdate('appearance', 'theme', v)}
+              wallpaper={wallpaperConfig}
+              onWallpaper={onUpdateWallpaper}
+              onPickImage={onPickWallpaper}
+              onPickVideo={onPickVideoWallpaper}
+              accentColor={appearance.accentColor}
+              onAccent={(v) => onUpdate('appearance', 'accentColor', v)}
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.general}>
+            <SettingSelectRow
+              label={t('settingsLanguage')}
+              hint={t('settingsLanguageHint')}
+              value={locale}
+              options={[
+                { value: 'tr', label: t('languageTurkish') },
+                { value: 'en', label: t('languageEnglish') },
+                { value: 'es', label: t('languageSpanish') },
+                { value: 'de', label: t('languageGerman') },
+                { value: 'fr', label: t('languageFrench') },
+                { value: 'id', label: t('languageIndonesian') },
+                { value: 'ru', label: t('languageRussian') },
+                { value: 'it', label: t('languageItalian') },
+                { value: 'ja', label: t('languageJapanese') },
+              ]}
+              onChange={(value) => setLocale(value as NebulaLocale)}
+            />
+            <SettingSelectRow
+              label={t('darkenWebpages')}
+              hint={t('darkenWebpagesHint')}
+              value={appearance.darkenWebpages}
+              options={[
+                { value: 'off', label: t('darkenWebpagesOff') },
+                { value: 'auto', label: t('darkenWebpagesAuto') },
+                { value: 'always', label: t('darkenWebpagesAlways') },
+              ]}
+              onChange={(value) =>
+                onUpdate(
+                  'appearance',
+                  'darkenWebpages',
+                  value as NebulaSettings['appearance']['darkenWebpages'],
+                )
+              }
+            />
+          </SettingGroup>
+          <SettingAdvanced title={groupCopy.advanced}>
+            <SettingGroup title={groupCopy.wallpaper}>
+              <WallpaperSettingsSection
+                config={wallpaperConfig}
+                onChange={onUpdateWallpaper}
+                onPickImage={onPickWallpaper}
+                onPickVideo={onPickVideoWallpaper}
+                onReset={onResetWallpaper}
+              />
+            </SettingGroup>
+            <SettingGroup title={groupCopy.glass}>
+              <SettingRangeRow
+                label={t('glassBlur')}
+                hint={t('glassBlurHint')}
+                value={appearance.glassBlurPx}
+                min={0}
+                max={80}
+                step={1}
+                unit=" px"
+                onChange={(v) => onUpdate('appearance', 'glassBlurPx', v)}
+              />
+              <SettingRangeRow
+                label={t('glassOpacity')}
+                hint={t('glassOpacityHint')}
+                value={appearance.glassOpacity}
+                min={0}
+                max={40}
+                step={1}
+                unit="%"
+                onChange={(v) => onUpdate('appearance', 'glassOpacity', v)}
+              />
+              <SettingRangeRow
+                label={t('glassSaturate')}
+                hint={t('glassSaturateHint')}
+                value={Math.round(appearance.glassSaturate * 100)}
+                min={50}
+                max={200}
+                step={5}
+                unit="%"
+                onChange={(v) => onUpdate('appearance', 'glassSaturate', v / 100)}
+              />
+              <SettingRangeRow
+                label={t('glassContrast')}
+                hint={t('glassContrastHint')}
+                value={Math.round(appearance.glassContrast * 100)}
+                min={60}
+                max={120}
+                step={2}
+                unit="%"
+                onChange={(v) => onUpdate('appearance', 'glassContrast', v / 100)}
+              />
+            </SettingGroup>
+            <SettingGroup title={groupCopy.colors}>
+              <SettingColorRow
+                label={t('accentColor')}
+                hint={t('accentColorHint')}
+                value={appearance.accentColor}
+                onChange={(v) => onUpdate('appearance', 'accentColor', v)}
+              />
+              <SettingColorRow
+                label={t('goldColor')}
+                hint={t('goldColorHint')}
+                value={appearance.goldColor}
+                onChange={(v) => onUpdate('appearance', 'goldColor', v)}
+              />
+            </SettingGroup>
+            <SettingGroup title={groupCopy.lunar}>
+              <SettingRangeRow
+                label={t('lunarGlassBlur')}
+                hint={t('lunarGlassBlurHint')}
+                value={appearance.lunarGlassBlurPx}
+                min={0}
+                max={160}
+                step={1}
+                unit=" px"
+                onChange={(v) => onUpdate('appearance', 'lunarGlassBlurPx', v)}
+              />
+              <SettingRangeRow
+                label={t('lunarGlassOpacity')}
+                hint={t('lunarGlassOpacityHint')}
+                value={appearance.lunarGlassOpacity}
+                min={20}
+                max={100}
+                step={1}
+                unit="%"
+                onChange={(v) => onUpdate('appearance', 'lunarGlassOpacity', v)}
+              />
+            </SettingGroup>
+          </SettingAdvanced>
+          <SettingGroup>
+            <SettingResetRow
+              label={t('appearanceReset')}
+              hint={t('appearanceResetHint')}
+              onReset={() => onResetCategory('appearance')}
+            />
+          </SettingGroup>
         </>
       )
     case 'home':
       return (
         <>
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('editUi')}</div>
-              <div className={styles.rowHint}>{t('editUiHint')}</div>
-            </div>
-            <button type="button" className={styles.actionBtn} onClick={onEnterHomeEdit}>
-              {t('editBtn')}
-            </button>
-          </div>
-          <SettingToggleRow
-            label={t('toolbar')}
-            hint={t('toolbarHint')}
-            checked={home.showToolbar}
-            onChange={() => onUpdate('home', 'showToolbar', !home.showToolbar)}
-          />
-          <SettingToggleRow
-            label={t('systemWidgets')}
-            hint={t('systemWidgetsHint')}
-            checked={home.showSystemWidgets}
-            onChange={() => onUpdate('home', 'showSystemWidgets', !home.showSystemWidgets)}
-          />
-          <SettingToggleRow
-            label={t('ramWidget')}
-            hint={t('ramWidgetHint')}
-            checked={home.showRamWidget}
-            onChange={() => onUpdate('home', 'showRamWidget', !home.showRamWidget)}
-          />
-          <SettingToggleRow
-            label={t('cpuWidget')}
-            hint={t('cpuWidgetHint')}
-            checked={home.showCpuWidget}
-            onChange={() => onUpdate('home', 'showCpuWidget', !home.showCpuWidget)}
-          />
-          <SettingToggleRow
-            label={t('clock')}
-            hint={t('clockHint')}
-            checked={home.showClock}
-            onChange={() => onUpdate('home', 'showClock', !home.showClock)}
-          />
-          {home.showClock && (
-            <>
-              <SettingRangeRow
-                label={t('clockFontSize')}
-                hint={t('clockFontSizeHint')}
-                value={home.clockFontSize}
-                min={24}
-                max={72}
-                step={2}
-                unit=" px"
-                onChange={(v) => onUpdate('home', 'clockFontSize', v)}
-              />
-              <SettingSelectRow
-                label={t('clockFontWeight')}
-                hint={t('clockFontWeightHint')}
-                value={String(home.clockFontWeight)}
-                options={[
-                  { value: '300', label: t('clockFontWeight300') },
-                  { value: '400', label: t('clockFontWeight400') },
-                  { value: '500', label: t('clockFontWeight500') },
-                  { value: '600', label: t('clockFontWeight600') },
-                ]}
-                onChange={(v) => onUpdate('home', 'clockFontWeight', Number(v))}
-              />
-              <SettingSelectRow
-                label={t('clockFontFamily')}
-                hint={t('clockFontFamilyHint')}
-                value={home.clockFontFamily}
-                options={[
-                  { value: 'system', label: t('clockFontSystem') },
-                  { value: 'light', label: t('clockFontLight') },
-                  { value: 'serif', label: t('clockFontSerif') },
-                  { value: 'mono', label: t('clockFontMono') },
-                ]}
-                onChange={(v) =>
-                  onUpdate('home', 'clockFontFamily', v as NebulaSettings['home']['clockFontFamily'])
-                }
-              />
-              <SettingToggleRow
-                label={t('clockShowDate')}
-                hint={t('clockShowDateHint')}
-                checked={home.clockShowDate}
-                onChange={() => onUpdate('home', 'clockShowDate', !home.clockShowDate)}
-              />
-            </>
-          )}
-          <SettingToggleRow
-            label={t('pinnedSites')}
-            hint={t('pinnedSitesHint')}
-            checked={home.showPinnedStrip}
-            onChange={() => onUpdate('home', 'showPinnedStrip', !home.showPinnedStrip)}
-          />
-          <SettingToggleRow
-            label={t('greeting')}
-            hint={t('greetingHint')}
-            checked={home.showGreeting}
-            onChange={() => onUpdate('home', 'showGreeting', !home.showGreeting)}
-          />
-          <SettingToggleRow
-            label={t('profileAvatar')}
-            hint={t('profileAvatarHint')}
-            checked={home.showProfile}
-            onChange={() => onUpdate('home', 'showProfile', !home.showProfile)}
-          />
-          <SettingTextRow
-            label={t('username')}
-            hint={t('usernameHint')}
-            value={home.userDisplayName}
-            onChange={(v) => onUpdate('home', 'userDisplayName', v)}
-          />
-          <SettingSelectRow
-            label={t('searchEngine')}
-            hint={t('searchEngineHint')}
-            value={home.searchEngine}
-            options={[
-              { value: 'google', label: 'Google' },
-              { value: 'duckduckgo', label: 'DuckDuckGo' },
-              { value: 'bing', label: 'Bing' },
-            ]}
-            onChange={(v) =>
-              onUpdate('home', 'searchEngine', v as NebulaSettings['home']['searchEngine'])
-            }
-          />
-          <SettingToggleRow
-            label={t('settingsRestoreSession')}
-            hint={t('settingsRestoreSessionHint')}
-            checked={browsing.restoreTabsOnStartup}
-            onChange={() =>
-              onUpdate('browsing', 'restoreTabsOnStartup', !browsing.restoreTabsOnStartup)
-            }
-          />
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>
-                {t('settingsClearSession')}
+          <SettingGroup title={groupCopy.layout}>
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>{t('editUi')}</div>
+                <div className={styles.rowHint}>{t('editUiHint')}</div>
               </div>
-              <div className={styles.rowHint}>{t('settingsClearSessionHint')}</div>
+              <button type="button" className={styles.actionBtn} onClick={onEnterHomeEdit}>
+                {t('editBtn')}
+              </button>
             </div>
-            <button type="button" className={styles.actionBtn} onClick={onClearSavedSession}>
-              {t('settingsClear')}
-            </button>
-          </div>
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('resetShortcuts')}</div>
-              <div className={styles.rowHint}>{t('resetShortcutsHint')}</div>
+            <SettingToggleRow
+              label={t('toolbar')}
+              hint={t('toolbarHint')}
+              checked={home.showToolbar}
+              onChange={() => onUpdate('home', 'showToolbar', !home.showToolbar)}
+            />
+            <SettingToggleRow
+              label={t('pinnedSites')}
+              hint={t('pinnedSitesHint')}
+              checked={home.showPinnedStrip}
+              onChange={() => onUpdate('home', 'showPinnedStrip', !home.showPinnedStrip)}
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.widgets}>
+            <SettingToggleRow
+              label={t('systemWidgets')}
+              hint={t('systemWidgetsHint')}
+              checked={home.showSystemWidgets}
+              onChange={() => onUpdate('home', 'showSystemWidgets', !home.showSystemWidgets)}
+            />
+            <SettingToggleRow
+              label={t('ramWidget')}
+              hint={t('ramWidgetHint')}
+              checked={home.showRamWidget}
+              onChange={() => onUpdate('home', 'showRamWidget', !home.showRamWidget)}
+            />
+            <SettingToggleRow
+              label={t('cpuWidget')}
+              hint={t('cpuWidgetHint')}
+              checked={home.showCpuWidget}
+              onChange={() => onUpdate('home', 'showCpuWidget', !home.showCpuWidget)}
+            />
+            <SettingToggleRow
+              label={t('clock')}
+              hint={t('clockHint')}
+              checked={home.showClock}
+              onChange={() => onUpdate('home', 'showClock', !home.showClock)}
+            />
+            {home.showClock && (
+              <>
+                <SettingRangeRow
+                  label={t('clockFontSize')}
+                  hint={t('clockFontSizeHint')}
+                  value={home.clockFontSize}
+                  min={24}
+                  max={72}
+                  step={2}
+                  unit=" px"
+                  onChange={(v) => onUpdate('home', 'clockFontSize', v)}
+                />
+                <SettingSelectRow
+                  label={t('clockFontWeight')}
+                  hint={t('clockFontWeightHint')}
+                  value={String(home.clockFontWeight)}
+                  options={[
+                    { value: '300', label: t('clockFontWeight300') },
+                    { value: '400', label: t('clockFontWeight400') },
+                    { value: '500', label: t('clockFontWeight500') },
+                    { value: '600', label: t('clockFontWeight600') },
+                  ]}
+                  onChange={(v) => onUpdate('home', 'clockFontWeight', Number(v))}
+                />
+                <SettingSelectRow
+                  label={t('clockFontFamily')}
+                  hint={t('clockFontFamilyHint')}
+                  value={home.clockFontFamily}
+                  options={[
+                    { value: 'system', label: t('clockFontSystem') },
+                    { value: 'light', label: t('clockFontLight') },
+                    { value: 'serif', label: t('clockFontSerif') },
+                    { value: 'mono', label: t('clockFontMono') },
+                  ]}
+                  onChange={(v) =>
+                    onUpdate('home', 'clockFontFamily', v as NebulaSettings['home']['clockFontFamily'])
+                  }
+                />
+                <SettingToggleRow
+                  label={t('clockShowDate')}
+                  hint={t('clockShowDateHint')}
+                  checked={home.clockShowDate}
+                  onChange={() => onUpdate('home', 'clockShowDate', !home.clockShowDate)}
+                />
+              </>
+            )}
+          </SettingGroup>
+          <SettingGroup title={groupCopy.profile}>
+            <SettingToggleRow
+              label={t('greeting')}
+              hint={t('greetingHint')}
+              checked={home.showGreeting}
+              onChange={() => onUpdate('home', 'showGreeting', !home.showGreeting)}
+            />
+            <SettingToggleRow
+              label={t('profileAvatar')}
+              hint={t('profileAvatarHint')}
+              checked={home.showProfile}
+              onChange={() => onUpdate('home', 'showProfile', !home.showProfile)}
+            />
+            <SettingTextRow
+              label={t('username')}
+              hint={t('usernameHint')}
+              value={home.userDisplayName}
+              onChange={(v) => onUpdate('home', 'userDisplayName', v)}
+            />
+            <SettingSelectRow
+              label={t('searchEngine')}
+              hint={t('searchEngineHint')}
+              value={home.searchEngine}
+              options={[
+                { value: 'google', label: 'Google' },
+                { value: 'duckduckgo', label: 'DuckDuckGo' },
+                { value: 'bing', label: 'Bing' },
+              ]}
+              onChange={(v) =>
+                onUpdate('home', 'searchEngine', v as NebulaSettings['home']['searchEngine'])
+              }
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.session}>
+            <SettingToggleRow
+              label={t('settingsRestoreSession')}
+              hint={t('settingsRestoreSessionHint')}
+              checked={browsing.restoreTabsOnStartup}
+              onChange={() =>
+                onUpdate('browsing', 'restoreTabsOnStartup', !browsing.restoreTabsOnStartup)
+              }
+            />
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>
+                  {t('settingsClearSession')}
+                </div>
+                <div className={styles.rowHint}>{t('settingsClearSessionHint')}</div>
+              </div>
+              <button type="button" className={styles.actionBtn} onClick={onClearSavedSession}>
+                {t('settingsClear')}
+              </button>
             </div>
-            <button type="button" className={styles.actionBtn} onClick={onResetShortcuts}>
-              {t('reset')}
-            </button>
-          </div>
-          <SettingResetRow
-            label={t('homeReset')}
-            hint={t('homeResetHint')}
-            onReset={() => onResetCategory('home')}
-          />
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>{t('resetShortcuts')}</div>
+                <div className={styles.rowHint}>{t('resetShortcutsHint')}</div>
+              </div>
+              <button type="button" className={styles.actionBtn} onClick={onResetShortcuts}>
+                {t('reset')}
+              </button>
+            </div>
+          </SettingGroup>
+          <SettingGroup>
+            <SettingResetRow
+              label={t('homeReset')}
+              hint={t('homeResetHint')}
+              onReset={() => onResetCategory('home')}
+            />
+          </SettingGroup>
         </>
       )
     case 'semi-lunar':
       return (
         <>
-          <SettingToggleRow
-            label={t('slHomeAlwaysOpen')}
-            hint={t('slHomeAlwaysOpenHint')}
-            checked={semiLunar.homeAlwaysOpen}
-            onChange={() => onUpdate('semiLunar', 'homeAlwaysOpen', !semiLunar.homeAlwaysOpen)}
-          />
-          <SettingToggleRow
-            label={t('slBrowsingHover')}
-            hint={t('slBrowsingHoverHint')}
-            checked={semiLunar.browsingHoverOpen}
-            onChange={() =>
-              onUpdate('semiLunar', 'browsingHoverOpen', !semiLunar.browsingHoverOpen)
-            }
-          />
-          <SettingRangeRow
-            label={t('slBrowsingDelay')}
-            hint={t('slBrowsingDelayHint')}
-            value={semiLunar.browsingOpenDelayMs}
-            min={0}
-            max={5000}
-            step={100}
-            unit=" ms"
-            disabled={!semiLunar.browsingHoverOpen}
-            onChange={(v) => onUpdate('semiLunar', 'browsingOpenDelayMs', v)}
-          />
-          <SettingToggleRow
-            label={t('slPreviewHover')}
-            hint={t('slPreviewHoverHint')}
-            checked={semiLunar.previewOnHover}
-            onChange={onTogglePreviewOnHover}
-          />
-          <SettingToggleRow
-            label={t('slReducedMotion')}
-            hint={t('slReducedMotionHint')}
-            checked={semiLunar.reducedMotion}
-            onChange={() => onUpdate('semiLunar', 'reducedMotion', !semiLunar.reducedMotion)}
-          />
-          <SettingRangeRow
-            label={t('slPreviewDelay')}
-            hint={t('slPreviewDelayHint')}
-            value={semiLunar.previewDelayMs}
-            min={200}
-            max={3000}
-            step={100}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'previewDelayMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slCloseDelay')}
-            hint={t('slCloseDelayHint')}
-            value={semiLunar.closeDelayMs}
-            min={0}
-            max={800}
-            step={50}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'closeDelayMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slOpenDuration')}
-            hint={t('slOpenDurationHint')}
-            value={semiLunar.openDurationMs}
-            min={0}
-            max={600}
-            step={20}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'openDurationMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slCloseDuration')}
-            hint={t('slCloseDurationHint')}
-            value={semiLunar.closeDurationMs}
-            min={0}
-            max={400}
-            step={10}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'closeDurationMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slScaleX')}
-            hint={t('slScaleXHint')}
-            value={Math.round(semiLunar.scaleX * 100)}
-            min={5}
-            max={50}
-            step={1}
-            unit="%"
-            onChange={(v) => onUpdate('semiLunar', 'scaleX', v / 100)}
-          />
-          <SettingRangeRow
-            label={t('slScaleY')}
-            hint={t('slScaleYHint')}
-            value={Math.round(semiLunar.scaleY * 100)}
-            min={5}
-            max={50}
-            step={1}
-            unit="%"
-            onChange={(v) => onUpdate('semiLunar', 'scaleY', v / 100)}
-          />
-          <SettingRangeRow
-            label={t('slCloseBtnDelay')}
-            hint={t('slCloseBtnDelayHint')}
-            value={semiLunar.closeBtnDelayMs}
-            min={0}
-            max={1200}
-            step={50}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'closeBtnDelayMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slFolderMerge')}
-            hint={t('slFolderMergeHint')}
-            value={semiLunar.folderMergeHoldMs}
-            min={200}
-            max={2000}
-            step={50}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'folderMergeHoldMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slMergeAnim')}
-            hint={t('slMergeAnimHint')}
-            value={semiLunar.mergeAnimMs}
-            min={100}
-            max={1200}
-            step={20}
-            unit=" ms"
-            onChange={(v) => onUpdate('semiLunar', 'mergeAnimMs', v)}
-          />
-          <SettingRangeRow
-            label={t('slIconSize')}
-            hint={t('slIconSizeHint')}
-            value={semiLunar.iconSizePx}
-            min={32}
-            max={64}
-            step={2}
-            unit=" px"
-            onChange={(v) => onUpdate('semiLunar', 'iconSizePx', v)}
-          />
-          <SettingRangeRow
-            label={t('slLunarWidth')}
-            hint={t('slLunarWidthHint')}
-            value={semiLunar.lunarWidthPx}
-            min={600}
-            max={lunarWidthMaxPx}
-            step={20}
-            unit=" px"
-            onChange={(v) => onUpdate('semiLunar', 'lunarWidthPx', v)}
-          />
-          <SettingRangeRow
-            label={t('slLunarHeight')}
-            hint={t('slLunarHeightHint')}
-            value={semiLunar.lunarHeightPx}
-            min={100}
-            max={220}
-            step={4}
-            unit=" px"
-            onChange={(v) => onUpdate('semiLunar', 'lunarHeightPx', v)}
-          />
-          <SettingRangeRow
-            label={t('overlayBlur')}
-            hint={t('overlayBlurHint')}
-            value={browsing.overlayBlurPx}
-            min={0}
-            max={40}
-            step={1}
-            unit=" px"
-            onChange={(v) => onUpdate('browsing', 'overlayBlurPx', v)}
-          />
-          <SettingRangeRow
-            label={t('overlayBrightness')}
-            hint={t('overlayBrightnessHint')}
-            value={browsing.overlayBrightnessPercent}
-            min={20}
-            max={100}
-            step={5}
-            unit="%"
-            onChange={(v) => onUpdate('browsing', 'overlayBrightnessPercent', v)}
-          />
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>
-                {t('settingsResetLunarLayout')}
+          <SettingGroup title={groupCopy.behavior}>
+            <SettingToggleRow
+              label={t('slHomeAlwaysOpen')}
+              hint={t('slHomeAlwaysOpenHint')}
+              checked={semiLunar.homeAlwaysOpen}
+              onChange={() => onUpdate('semiLunar', 'homeAlwaysOpen', !semiLunar.homeAlwaysOpen)}
+            />
+            <SettingToggleRow
+              label={t('slBrowsingHover')}
+              hint={t('slBrowsingHoverHint')}
+              checked={semiLunar.browsingHoverOpen}
+              onChange={() =>
+                onUpdate('semiLunar', 'browsingHoverOpen', !semiLunar.browsingHoverOpen)
+              }
+            />
+            <SettingRangeRow
+              label={t('slBrowsingDelay')}
+              hint={t('slBrowsingDelayHint')}
+              value={semiLunar.browsingOpenDelayMs}
+              min={0}
+              max={5000}
+              step={100}
+              unit=" ms"
+              disabled={!semiLunar.browsingHoverOpen}
+              onChange={(v) => onUpdate('semiLunar', 'browsingOpenDelayMs', v)}
+            />
+            <SettingToggleRow
+              label={t('slPreviewHover')}
+              hint={t('slPreviewHoverHint')}
+              checked={semiLunar.previewOnHover}
+              onChange={onTogglePreviewOnHover}
+            />
+            <SettingToggleRow
+              label={t('slReducedMotion')}
+              hint={t('slReducedMotionHint')}
+              checked={semiLunar.reducedMotion}
+              onChange={() => onUpdate('semiLunar', 'reducedMotion', !semiLunar.reducedMotion)}
+            />
+            <SettingRangeRow
+              label={t('slPreviewDelay')}
+              hint={t('slPreviewDelayHint')}
+              value={semiLunar.previewDelayMs}
+              min={200}
+              max={3000}
+              step={100}
+              unit=" ms"
+              onChange={(v) => onUpdate('semiLunar', 'previewDelayMs', v)}
+            />
+            <SettingRangeRow
+              label={t('slCloseDelay')}
+              hint={t('slCloseDelayHint')}
+              value={semiLunar.closeDelayMs}
+              min={0}
+              max={800}
+              step={50}
+              unit=" ms"
+              onChange={(v) => onUpdate('semiLunar', 'closeDelayMs', v)}
+            />
+          </SettingGroup>
+          <SettingAdvanced title={groupCopy.advanced}>
+            <SettingGroup title={groupCopy.animation}>
+              <SettingRangeRow
+                label={t('slOpenDuration')}
+                hint={t('slOpenDurationHint')}
+                value={semiLunar.openDurationMs}
+                min={0}
+                max={600}
+                step={20}
+                unit=" ms"
+                onChange={(v) => onUpdate('semiLunar', 'openDurationMs', v)}
+              />
+              <SettingRangeRow
+                label={t('slCloseDuration')}
+                hint={t('slCloseDurationHint')}
+                value={semiLunar.closeDurationMs}
+                min={0}
+                max={400}
+                step={10}
+                unit=" ms"
+                onChange={(v) => onUpdate('semiLunar', 'closeDurationMs', v)}
+              />
+              <SettingRangeRow
+                label={t('slScaleX')}
+                hint={t('slScaleXHint')}
+                value={Math.round(semiLunar.scaleX * 100)}
+                min={5}
+                max={50}
+                step={1}
+                unit="%"
+                onChange={(v) => onUpdate('semiLunar', 'scaleX', v / 100)}
+              />
+              <SettingRangeRow
+                label={t('slScaleY')}
+                hint={t('slScaleYHint')}
+                value={Math.round(semiLunar.scaleY * 100)}
+                min={5}
+                max={50}
+                step={1}
+                unit="%"
+                onChange={(v) => onUpdate('semiLunar', 'scaleY', v / 100)}
+              />
+              <SettingRangeRow
+                label={t('slCloseBtnDelay')}
+                hint={t('slCloseBtnDelayHint')}
+                value={semiLunar.closeBtnDelayMs}
+                min={0}
+                max={1200}
+                step={50}
+                unit=" ms"
+                onChange={(v) => onUpdate('semiLunar', 'closeBtnDelayMs', v)}
+              />
+              <SettingRangeRow
+                label={t('slFolderMerge')}
+                hint={t('slFolderMergeHint')}
+                value={semiLunar.folderMergeHoldMs}
+                min={200}
+                max={2000}
+                step={50}
+                unit=" ms"
+                onChange={(v) => onUpdate('semiLunar', 'folderMergeHoldMs', v)}
+              />
+              <SettingRangeRow
+                label={t('slMergeAnim')}
+                hint={t('slMergeAnimHint')}
+                value={semiLunar.mergeAnimMs}
+                min={100}
+                max={1200}
+                step={20}
+                unit=" ms"
+                onChange={(v) => onUpdate('semiLunar', 'mergeAnimMs', v)}
+              />
+            </SettingGroup>
+            <SettingGroup title={groupCopy.size}>
+              <SettingRangeRow
+                label={t('slIconSize')}
+                hint={t('slIconSizeHint')}
+                value={semiLunar.iconSizePx}
+                min={32}
+                max={64}
+                step={2}
+                unit=" px"
+                onChange={(v) => onUpdate('semiLunar', 'iconSizePx', v)}
+              />
+              <SettingRangeRow
+                label={t('slLunarWidth')}
+                hint={t('slLunarWidthHint')}
+                value={semiLunar.lunarWidthPx}
+                min={600}
+                max={lunarWidthMaxPx}
+                step={20}
+                unit=" px"
+                onChange={(v) => onUpdate('semiLunar', 'lunarWidthPx', v)}
+              />
+              <SettingRangeRow
+                label={t('slLunarHeight')}
+                hint={t('slLunarHeightHint')}
+                value={semiLunar.lunarHeightPx}
+                min={100}
+                max={220}
+                step={4}
+                unit=" px"
+                onChange={(v) => onUpdate('semiLunar', 'lunarHeightPx', v)}
+              />
+            </SettingGroup>
+            <SettingGroup title={groupCopy.overlay}>
+              <SettingRangeRow
+                label={t('overlayBlur')}
+                hint={t('overlayBlurHint')}
+                value={browsing.overlayBlurPx}
+                min={0}
+                max={40}
+                step={1}
+                unit=" px"
+                onChange={(v) => onUpdate('browsing', 'overlayBlurPx', v)}
+              />
+              <SettingRangeRow
+                label={t('overlayBrightness')}
+                hint={t('overlayBrightnessHint')}
+                value={browsing.overlayBrightnessPercent}
+                min={20}
+                max={100}
+                step={5}
+                unit="%"
+                onChange={(v) => onUpdate('browsing', 'overlayBrightnessPercent', v)}
+              />
+            </SettingGroup>
+          </SettingAdvanced>
+          <SettingGroup>
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>
+                  {t('settingsResetLunarLayout')}
+                </div>
+                <div className={styles.rowHint}>{t('settingsResetLunarLayoutHint')}</div>
               </div>
-              <div className={styles.rowHint}>{t('settingsResetLunarLayoutHint')}</div>
+              <button type="button" className={styles.actionBtn} onClick={onResetSemiLunarLayout}>
+                {t('reset')}
+              </button>
             </div>
-            <button type="button" className={styles.actionBtn} onClick={onResetSemiLunarLayout}>
-              {t('reset')}
-            </button>
-          </div>
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>
-                {t('settingsResetFolders')}
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>
+                  {t('settingsResetFolders')}
+                </div>
+                <div className={styles.rowHint}>{t('settingsResetFoldersHint')}</div>
               </div>
-              <div className={styles.rowHint}>{t('settingsResetFoldersHint')}</div>
+              <button type="button" className={styles.actionBtn} onClick={onResetFolders}>
+                {t('reset')}
+              </button>
             </div>
-            <button type="button" className={styles.actionBtn} onClick={onResetFolders}>
-              {t('reset')}
-            </button>
-          </div>
-          <SettingResetRow
-            label={t('slReset')}
-            hint={t('slResetHint')}
-            onReset={() => onResetCategory('semiLunar')}
-          />
+            <SettingResetRow
+              label={t('slReset')}
+              hint={t('slResetHint')}
+              onReset={() => onResetCategory('semiLunar')}
+            />
+          </SettingGroup>
         </>
       )
     case 'shortcuts':
@@ -1538,251 +1588,267 @@ function CategoryContent({
     case 'privacy':
       return (
         <>
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>uBlock Origin Lite</div>
-              <div className={styles.rowHint}>{ublockVersion ? `${ublockEnabled ? t('ublockActive') : t('ublockReady')} · v${ublockVersion}` : t('ublockUnavailable')}</div>
-            </div>
-            <span className={ublockEnabled ? styles.statusActive : styles.statusInactive}>
-              {ublockEnabled ? t('active') : ublockVersion ? t('ready') : t('unavailable')}
-            </span>
-          </div>
-          <SettingSelectRow
-            label={t('trackingLevel')}
-            hint={t('trackingLevelHint')}
-            value={privacy.trackingLevel}
-            options={[
-              { value: 'none', label: t('trackingNone') },
-              { value: 'balanced', label: t('trackingBalanced') },
-              { value: 'strict', label: t('trackingStrict') },
-            ]}
-            onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
-          />
-          <SettingToggleRow
-            label={t('blockTrackers')}
-            hint={t('blockTrackersHint')}
-            checked={privacy.blockTrackers}
-            onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
-          />
-          <SettingToggleRow
-            label={t('strictCookies')}
-            hint={t('strictCookiesHint')}
-            checked={privacy.strictCookies}
-            onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
-          />
-          <SettingToggleRow
-            label={t('httpsOnly')}
-            hint={t('httpsOnlyHint')}
-            checked={privacy.httpsOnly}
-            onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
-          />
-          <SettingToggleRow
-            label={t('globalPrivacyControl')}
-            hint={t('globalPrivacyControlHint')}
-            checked={privacy.globalPrivacyControl}
-            onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
-          />
-          <SettingSelectRow
-            label={t('permissionPolicy')}
-            hint={t('permissionPolicyHint')}
-            value={privacy.permissionPolicy}
-            options={[
-              { value: 'ask', label: t('permissionAsk') },
-              { value: 'block', label: t('permissionBlock') },
-            ]}
-            onChange={(value) => onUpdate('privacy', 'permissionPolicy', value as NebulaSettings['privacy']['permissionPolicy'])}
-          />
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('currentSitePermissions')}</div>
-              <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSitePermissionAllowed ? t('permissionSiteAsk') : t('permissionSiteDefault')}` : t('siteShieldUnavailable')}</div>
-            </div>
-            <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSitePermission}>
-              {activeSitePermissionAllowed ? t('removePermissionException') : t('allowPermissionPrompts')}
-            </button>
-          </div>
-          <SettingToggleRow
-            label={t('cookieBannerBlocking')}
-            hint={t('cookieBannerBlockingHint')}
-            checked={privacy.cookieBannerBlocking}
-            onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
-          />
-          <SettingToggleRow
-            label={t('passkeyList')}
-            hint={t('passkeyListHint')}
-            checked={privacy.passkeyList}
-            onChange={() => onUpdate('privacy', 'passkeyList', !privacy.passkeyList)}
-          />
-          <SettingTextRow
-            label={t('permissionExceptions')}
-            hint={t('permissionExceptionsHint')}
-            value={privacy.permissionExceptions}
-            onChange={(value) => onUpdate('privacy', 'permissionExceptions', value)}
-          />
-          <SettingToggleRow
-            label={t('privateMode')}
-            hint={t('privateModeHint')}
-            checked={privacy.privateMode}
-            onChange={() => onUpdate('privacy', 'privateMode', !privacy.privateMode)}
-          />
-          <SettingTextRow
-            label={t('privacyExceptions')}
-            hint={t('privacyExceptionsHint')}
-            value={privacy.siteExceptions}
-            onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
-          />
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('siteShield')}</div>
-              <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
-            </div>
-            <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
-              {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
-            </button>
-          </div>
-          <SettingTextRow
-            label={t('customBlockList')}
-            hint={t('customBlockListHint')}
-            value={privacy.customBlockList}
-            onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
-          />
-          <div className={styles.row}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('nebulaStorage')}</div>
-              <div className={styles.rowHint}>
-                {profileStorageUsage
-                  ? t('nebulaStorageUsage')
-                    .replace('{total}', formatBytes(profileStorageUsage.totalBytes))
-                    .replace('{cache}', formatBytes(profileStorageUsage.cacheBytes))
-                  : profileStorageUsage === undefined
-                    ? t('nebulaStorageLoading')
-                    : t('nebulaStorageUnavailable')}
+          <SettingGroup title={groupCopy.protection}>
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>uBlock Origin Lite</div>
+                <div className={styles.rowHint}>{ublockVersion ? `${ublockEnabled ? t('ublockActive') : t('ublockReady')} · v${ublockVersion}` : t('ublockUnavailable')}</div>
               </div>
-              <div className={styles.rowHint}>{t('nebulaStorageHint')}</div>
+              <span className={ublockEnabled ? styles.statusActive : styles.statusInactive}>
+                {ublockEnabled ? t('active') : ublockVersion ? t('ready') : t('unavailable')}
+              </span>
             </div>
-            <button type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('cache')}>
-              {clearingBrowsingDataKind === 'cache' ? t('clearBrowsingDataWorking') : t('clear_cache')}
-            </button>
-          </div>
-          <div className={styles.row}>
-            <div className={styles.rowText}><div className={styles.rowLabel}>{t('clearBrowsingData')}</div><div className={styles.rowHint}>{t('clearBrowsingDataHint')}</div></div>
-            <div className={styles.privacyActionGrid}>
-              {(['cookies', 'history', 'permissions'] as const).map((kind) => (
-                <button key={kind} type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData(kind)}>{clearingBrowsingDataKind === kind ? t('clearBrowsingDataWorking') : t(`clear_${kind}`)}</button>
-              ))}
-              <button type="button" className={styles.dangerBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('all')}>{clearingBrowsingDataKind === 'all' ? t('clearBrowsingDataWorking') : t('clearAll')}</button>
-            </div>
-            {clearBrowsingDataStatus !== 'idle' && (
-              <div className={styles.rowHint} role="status" aria-live="polite">
-                {t(clearBrowsingDataStatus === 'cleared' ? 'clearBrowsingDataSuccess' : 'clearBrowsingDataFailed')}
+            <SettingSelectRow
+              label={t('trackingLevel')}
+              hint={t('trackingLevelHint')}
+              value={privacy.trackingLevel}
+              options={[
+                { value: 'none', label: t('trackingNone') },
+                { value: 'balanced', label: t('trackingBalanced') },
+                { value: 'strict', label: t('trackingStrict') },
+              ]}
+              onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
+            />
+            <SettingToggleRow
+              label={t('blockTrackers')}
+              hint={t('blockTrackersHint')}
+              checked={privacy.blockTrackers}
+              onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
+            />
+            <SettingToggleRow
+              label={t('strictCookies')}
+              hint={t('strictCookiesHint')}
+              checked={privacy.strictCookies}
+              onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
+            />
+            <SettingToggleRow
+              label={t('httpsOnly')}
+              hint={t('httpsOnlyHint')}
+              checked={privacy.httpsOnly}
+              onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
+            />
+            <SettingToggleRow
+              label={t('globalPrivacyControl')}
+              hint={t('globalPrivacyControlHint')}
+              checked={privacy.globalPrivacyControl}
+              onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
+            />
+            <SettingToggleRow
+              label={t('cookieBannerBlocking')}
+              hint={t('cookieBannerBlockingHint')}
+              checked={privacy.cookieBannerBlocking}
+              onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.permissions}>
+            <SettingSelectRow
+              label={t('permissionPolicy')}
+              hint={t('permissionPolicyHint')}
+              value={privacy.permissionPolicy}
+              options={[
+                { value: 'ask', label: t('permissionAsk') },
+                { value: 'block', label: t('permissionBlock') },
+              ]}
+              onChange={(value) => onUpdate('privacy', 'permissionPolicy', value as NebulaSettings['privacy']['permissionPolicy'])}
+            />
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>{t('currentSitePermissions')}</div>
+                <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSitePermissionAllowed ? t('permissionSiteAsk') : t('permissionSiteDefault')}` : t('siteShieldUnavailable')}</div>
               </div>
-            )}
-          </div>
-          <SettingResetRow
-            label={t('privacyReset')}
-            hint={t('privacyResetHint')}
-            onReset={() => onResetCategory('privacy')}
-          />
+              <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSitePermission}>
+                {activeSitePermissionAllowed ? t('removePermissionException') : t('allowPermissionPrompts')}
+              </button>
+            </div>
+            <SettingTextRow
+              label={t('permissionExceptions')}
+              hint={t('permissionExceptionsHint')}
+              value={privacy.permissionExceptions}
+              onChange={(value) => onUpdate('privacy', 'permissionExceptions', value)}
+            />
+            <SettingTextRow
+              label={t('privacyExceptions')}
+              hint={t('privacyExceptionsHint')}
+              value={privacy.siteExceptions}
+              onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
+            />
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>{t('siteShield')}</div>
+                <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
+              </div>
+              <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
+                {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
+              </button>
+            </div>
+            <SettingTextRow
+              label={t('customBlockList')}
+              hint={t('customBlockListHint')}
+              value={privacy.customBlockList}
+              onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.privateMode}>
+            <SettingToggleRow
+              label={t('privateMode')}
+              hint={t('privateModeHint')}
+              checked={privacy.privateMode}
+              onChange={() => onUpdate('privacy', 'privateMode', !privacy.privateMode)}
+            />
+            <SettingToggleRow
+              label={t('passkeyList')}
+              hint={t('passkeyListHint')}
+              checked={privacy.passkeyList}
+              onChange={() => onUpdate('privacy', 'passkeyList', !privacy.passkeyList)}
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.data}>
+            <div className={styles.row}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>{t('nebulaStorage')}</div>
+                <div className={styles.rowHint}>
+                  {profileStorageUsage
+                    ? t('nebulaStorageUsage')
+                      .replace('{total}', formatBytes(profileStorageUsage.totalBytes))
+                      .replace('{cache}', formatBytes(profileStorageUsage.cacheBytes))
+                    : profileStorageUsage === undefined
+                      ? t('nebulaStorageLoading')
+                      : t('nebulaStorageUnavailable')}
+                </div>
+                <div className={styles.rowHint}>{t('nebulaStorageHint')}</div>
+              </div>
+              <button type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('cache')}>
+                {clearingBrowsingDataKind === 'cache' ? t('clearBrowsingDataWorking') : t('clear_cache')}
+              </button>
+            </div>
+            <div className={styles.row}>
+              <div className={styles.rowText}><div className={styles.rowLabel}>{t('clearBrowsingData')}</div><div className={styles.rowHint}>{t('clearBrowsingDataHint')}</div></div>
+              <div className={styles.privacyActionGrid}>
+                {(['cookies', 'history', 'permissions'] as const).map((kind) => (
+                  <button key={kind} type="button" className={styles.actionBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData(kind)}>{clearingBrowsingDataKind === kind ? t('clearBrowsingDataWorking') : t(`clear_${kind}`)}</button>
+                ))}
+                <button type="button" className={styles.dangerBtn} disabled={clearingBrowsingDataKind !== null} onClick={() => void requestClearBrowsingData('all')}>{clearingBrowsingDataKind === 'all' ? t('clearBrowsingDataWorking') : t('clearAll')}</button>
+              </div>
+              {clearBrowsingDataStatus !== 'idle' && (
+                <div className={styles.rowHint} role="status" aria-live="polite">
+                  {t(clearBrowsingDataStatus === 'cleared' ? 'clearBrowsingDataSuccess' : 'clearBrowsingDataFailed')}
+                </div>
+              )}
+            </div>
+          </SettingGroup>
+          <SettingGroup>
+            <SettingResetRow
+              label={t('privacyReset')}
+              hint={t('privacyResetHint')}
+              onReset={() => onResetCategory('privacy')}
+            />
+          </SettingGroup>
         </>
       )
     case 'notifications':
       return (
         <>
-          <SettingToggleRow
-            label={t('downloadNotifications')}
-            hint={t('downloadNotificationsHint')}
-            checked={notifications.downloadNotifications}
-            onChange={() =>
-              onUpdate(
-                'notifications',
-                'downloadNotifications',
-                !notifications.downloadNotifications,
-              )
-            }
-          />
-          <SettingToggleRow
-            label={t('siteNotifications')}
-            hint={t('siteNotificationsHint')}
-            checked={notifications.siteNotifications}
-            onChange={() =>
-              onUpdate('notifications', 'siteNotifications', !notifications.siteNotifications)
-            }
-          />
-          <SettingToggleRow
-            label={t('showNotificationContent')}
-            hint={t('showNotificationContentHint')}
-            checked={notifications.showNotificationContent}
-            disabled={!notifications.siteNotifications}
-            onChange={() =>
-              onUpdate(
-                'notifications',
-                'showNotificationContent',
-                !notifications.showNotificationContent,
-              )
-            }
-          />
-          <SettingToggleRow
-            label={t('toolbarBadge')}
-            hint={t('toolbarBadgeHint')}
-            checked={notifications.showToolbarBadge}
-            onChange={() =>
-              onUpdate('notifications', 'showToolbarBadge', !notifications.showToolbarBadge)
-            }
-          />
-          <div className={styles.notificationPermissions}>
-            <div className={styles.rowText}>
-              <div className={styles.rowLabel}>{t('notificationSitePermissions')}</div>
-              <div className={styles.rowHint}>
-                {notifications.siteNotifications
-                  ? t('notificationSitePermissionsHint')
-                  : t('notificationSitesDisabled')}
+          <SettingGroup title={groupCopy.alerts}>
+            <SettingToggleRow
+              label={t('downloadNotifications')}
+              hint={t('downloadNotificationsHint')}
+              checked={notifications.downloadNotifications}
+              onChange={() =>
+                onUpdate(
+                  'notifications',
+                  'downloadNotifications',
+                  !notifications.downloadNotifications,
+                )
+              }
+            />
+            <SettingToggleRow
+              label={t('siteNotifications')}
+              hint={t('siteNotificationsHint')}
+              checked={notifications.siteNotifications}
+              onChange={() =>
+                onUpdate('notifications', 'siteNotifications', !notifications.siteNotifications)
+              }
+            />
+            <SettingToggleRow
+              label={t('showNotificationContent')}
+              hint={t('showNotificationContentHint')}
+              checked={notifications.showNotificationContent}
+              disabled={!notifications.siteNotifications}
+              onChange={() =>
+                onUpdate(
+                  'notifications',
+                  'showNotificationContent',
+                  !notifications.showNotificationContent,
+                )
+              }
+            />
+            <SettingToggleRow
+              label={t('toolbarBadge')}
+              hint={t('toolbarBadgeHint')}
+              checked={notifications.showToolbarBadge}
+              onChange={() =>
+                onUpdate('notifications', 'showToolbarBadge', !notifications.showToolbarBadge)
+              }
+            />
+          </SettingGroup>
+          <SettingGroup title={groupCopy.siteAlerts}>
+            <div className={styles.notificationPermissions}>
+              <div className={styles.rowText}>
+                <div className={styles.rowLabel}>{t('notificationSitePermissions')}</div>
+                <div className={styles.rowHint}>
+                  {notifications.siteNotifications
+                    ? t('notificationSitePermissionsHint')
+                    : t('notificationSitesDisabled')}
+                </div>
               </div>
-            </div>
-            {notificationSites.length === 0 ? (
-              <p className={styles.notificationNoSites}>{t('notificationNoSites')}</p>
-            ) : (
-              <div className={styles.notificationSiteList}>
-                {notificationSites.map((origin) => {
-                  const permission = notificationSitePermissions[origin]
-                  return (
-                    <div key={origin} className={styles.notificationSiteRow}>
-                      <span title={origin}>{notificationHost(origin)}</span>
-                      <div className={styles.notificationPermissionButtons}>
-                        <button
-                          type="button"
-                          className={permission === 'allow' ? styles.notificationAllowActive : ''}
-                          disabled={!notifications.siteNotifications}
-                          onClick={() => onSetNotificationSitePermission(origin, 'allow')}
-                        >
-                          {t('notificationAllow')}
-                        </button>
-                        <button
-                          type="button"
-                          className={permission === 'block' ? styles.notificationBlockActive : ''}
-                          disabled={!notifications.siteNotifications}
-                          onClick={() => onSetNotificationSitePermission(origin, 'block')}
-                        >
-                          {t('notificationBlock')}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!permission || !notifications.siteNotifications}
-                          onClick={() => onSetNotificationSitePermission(origin, null)}
-                        >
-                          {t('notificationDefault')}
-                        </button>
+              {notificationSites.length === 0 ? (
+                <p className={styles.notificationNoSites}>{t('notificationNoSites')}</p>
+              ) : (
+                <div className={styles.notificationSiteList}>
+                  {notificationSites.map((origin) => {
+                    const permission = notificationSitePermissions[origin]
+                    return (
+                      <div key={origin} className={styles.notificationSiteRow}>
+                        <span title={origin}>{notificationHost(origin)}</span>
+                        <div className={styles.notificationPermissionButtons}>
+                          <button
+                            type="button"
+                            className={permission === 'allow' ? styles.notificationAllowActive : ''}
+                            disabled={!notifications.siteNotifications}
+                            onClick={() => onSetNotificationSitePermission(origin, 'allow')}
+                          >
+                            {t('notificationAllow')}
+                          </button>
+                          <button
+                            type="button"
+                            className={permission === 'block' ? styles.notificationBlockActive : ''}
+                            disabled={!notifications.siteNotifications}
+                            onClick={() => onSetNotificationSitePermission(origin, 'block')}
+                          >
+                            {t('notificationBlock')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!permission || !notifications.siteNotifications}
+                            onClick={() => onSetNotificationSitePermission(origin, null)}
+                          >
+                            {t('notificationDefault')}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-          <SettingResetRow
-            label={t('notificationsReset')}
-            hint={t('notificationsResetHint')}
-            onReset={() => onResetCategory('notifications')}
-          />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </SettingGroup>
+          <SettingGroup>
+            <SettingResetRow
+              label={t('notificationsReset')}
+              hint={t('notificationsResetHint')}
+              onReset={() => onResetCategory('notifications')}
+            />
+          </SettingGroup>
         </>
       )
     case 'about':
@@ -1809,6 +1875,7 @@ export function SettingsPanel({
   open,
   anchor: _anchor,
   onClose,
+  onLunarPeekChange,
   wallpaperConfig,
   onUpdateWallpaper,
   onPickWallpaper,
@@ -1853,6 +1920,7 @@ export function SettingsPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const activeNavRef = useRef<HTMLButtonElement>(null)
   const appliedPasswordRequest = useRef(0)
+  const requestedPasswordsTab = useRef(new Set<number>())
   const appliedExtensionsRequest = useRef(0)
   useEffect(() => {
     if (!open || !extensionsSettingsRequest || appliedExtensionsRequest.current === extensionsSettingsRequest) return
@@ -1865,6 +1933,11 @@ export function SettingsPanel({
     if (!open || !passwordSettingsRequest || appliedPasswordRequest.current === passwordSettingsRequest) return
     setActiveId('account')
     setSearchQuery('')
+    // The password settings are a tab of the Account page: ask for it (the page may not be open yet).
+    if (!requestedPasswordsTab.current.has(passwordSettingsRequest)) {
+      requestedPasswordsTab.current.add(passwordSettingsRequest)
+      requestPasswordsTab()
+    }
     if (!visible || activeId !== 'account' || entering) return
     const target = panelRef.current?.querySelector<HTMLElement>('[data-password-settings]')
     if (!target) return
@@ -1965,6 +2038,28 @@ export function SettingsPanel({
     }
   }, [])
 
+  // Holding a slider steps the panel aside (see .panelPeek in the CSS) so the change can be seen on the screen.
+  const [peeking, setPeeking] = useState(false)
+  useEffect(() => {
+    if (!peeking) return undefined
+    const stop = () => setPeeking(false)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+    window.addEventListener('blur', stop)
+    return () => {
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+      window.removeEventListener('blur', stop)
+    }
+  }, [peeking])
+
+  // Only the Semi-Lunar page cares: its menu is the thing to look at, and it is hidden while Settings is open.
+  const lunarPeek = peeking && activeId === 'semi-lunar'
+  useEffect(() => {
+    onLunarPeekChange?.(lunarPeek)
+    return () => onLunarPeekChange?.(false)
+  }, [lunarPeek, onLunarPeekChange])
+
   if (!visible) return null
 
   const panelAnimClass = closing
@@ -1988,7 +2083,10 @@ export function SettingsPanel({
       />
       <div
         ref={panelRef}
-        className={`${styles.panel} ${panelAnimClass}`}
+        className={`${styles.panel} ${panelAnimClass} ${peeking ? styles.panelPeek : ''}`}
+        onPointerDown={(event) => {
+          if ((event.target as HTMLElement).closest?.('input[type="range"]')) setPeeking(true)
+        }}
         role="dialog"
         aria-modal="true"
         aria-label={t('settingsTitle')}
@@ -2004,7 +2102,10 @@ export function SettingsPanel({
         </button>
 
         <nav className={styles.nav} aria-label={t('settingsNavAria')}>
-          <p className={styles.navTitle}>{t('settingsTitle')}</p>
+          <div className={styles.navBrand}>
+            <img src="/nebula-app-logo.png" alt="" width="40" height="40" />
+            <p className={styles.navTitle}>{t('settingsTitle')}</p>
+          </div>
           <label className={styles.settingsSearch}>
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="10.5" cy="10.5" r="6.5" />
@@ -2038,17 +2139,18 @@ export function SettingsPanel({
                 )
               })}
             </div>
-          ) : settingsCategories.map((cat) => (
+          ) : settingsCategories.map((cat, index) => (
             <button
               key={cat.id}
               ref={activeId === cat.id ? activeNavRef : undefined}
               type="button"
+              style={{ '--i': index } as CSSProperties}
               className={`${styles.navItem} ${activeId === cat.id ? styles.navItemActive : ''}`}
               onClick={() => setActiveId(cat.id)}
               aria-current={activeId === cat.id ? 'page' : undefined}
             >
               <span className={styles.navIcon} aria-hidden="true">
-                {cat.icon}
+                <SettingsNavIcon id={cat.id} />
               </span>
               {cat.label}
             </button>

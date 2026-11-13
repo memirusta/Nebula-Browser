@@ -212,7 +212,8 @@ test('the first-run screens cover the whole window: Semi-Lunar and the right-edg
     shell.indexOf('const [\n    homeEditMode,'),
   )
 
-  assert.match(suppress, /settingsOpen \|\|\s*onboardingOpen \|\|/)
+  // Settings hide the menu too, except while a Semi-Lunar slider is held (so the change can be seen on the menu).
+  assert.match(suppress, /\(settingsOpen && !settingsLunarPeek\) \|\|\s*onboardingOpen \|\|/)
   assert.match(suppress, /\n\s*onboardingOpen,\n/)
   // The state is declared before the effect that reads it.
   assert.ok(shell.indexOf('onboardingOpen,\n    setOnboardingOpen,') < shell.indexOf('void setChromeWebviewSuppressed('))

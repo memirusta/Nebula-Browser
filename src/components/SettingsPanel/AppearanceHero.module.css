@@ -1,0 +1,289 @@
+.hero {
+  display: grid;
+  gap: 22px;
+  padding: 20px 18px 22px;
+}
+
+.section {
+  display: grid;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--nebula-text);
+}
+
+.tileName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nebula-text);
+}
+
+/* ---- themes: a small picture of each ---- */
+.themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.themeTile {
+  display: grid;
+  gap: 8px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 14px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.themeShot {
+  position: relative;
+  display: block;
+  height: 72px;
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 150, 0.25);
+}
+
+.themeCard {
+  position: absolute;
+  inset: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 7px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.themeCard i {
+  display: block;
+  width: 34%;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.themeCard b {
+  display: block;
+  width: 62%;
+  height: 6px;
+  border-radius: 3px;
+  opacity: 0.35;
+}
+
+/* ---- wallpapers: the tiles move, like the real backgrounds ---- */
+.wallpapers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wallpaperTile {
+  --base: linear-gradient(145deg, #090b18, #14174a);
+  --b1: #6b3dff;
+  --b2: #49c9ff;
+  --b3: #bd4cff;
+  --blend: screen;
+  position: relative;
+  height: 78px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 14px;
+  background: var(--base);
+  cursor: pointer;
+  isolation: isolate;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.wallpaperTile .tileName {
+  position: absolute;
+  left: 11px;
+  bottom: 9px;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.wallpaperTile[data-preset='aurora'] {
+  --base: linear-gradient(150deg, #04120e, #071b1e);
+  --b1: #1ee7a8;
+  --b2: #3bc5ff;
+  --b3: #93ff78;
+}
+
+.wallpaperTile[data-preset='midnight'] {
+  --base: linear-gradient(145deg, #03050b, #081328);
+  --b1: #1e4ba4;
+  --b2: #392178;
+  --b3: #126a81;
+}
+
+.wallpaperTile[data-preset='liquid'] {
+  --base: linear-gradient(145deg, #0e0b10, #1a121c);
+  --b1: #f0a85f;
+  --b2: #7ec8e3;
+  --b3: #9368ff;
+}
+
+:global([data-theme='light']) .wallpaperTile {
+  --base: linear-gradient(145deg, #f6f6ff, #e9ebff);
+  --b1: #a9acff;
+  --b2: #8fd8ff;
+  --b3: #d9a8ff;
+  --blend: multiply;
+}
+
+:global([data-theme='light']) .wallpaperTile[data-preset='aurora'] {
+  --base: linear-gradient(150deg, #f1fbf7, #e7f6fb);
+  --b1: #8cf0cf;
+  --b2: #9bd9ff;
+  --b3: #cdf59a;
+}
+
+:global([data-theme='light']) .wallpaperTile[data-preset='midnight'] {
+  --base: linear-gradient(145deg, #f0f3fc, #e4e9f8);
+  --b1: #9db9f6;
+  --b2: #b9a8f1;
+  --b3: #90d1e2;
+}
+
+:global([data-theme='light']) .wallpaperTile[data-preset='liquid'] {
+  --base: linear-gradient(145deg, #fcf6f1, #eef3f8);
+  --b1: #ffd3a2;
+  --b2: #aaddf1;
+  --b3: #cfbaff;
+}
+
+:global([data-theme='light']) .wallpaperTile .tileName {
+  color: var(--nebula-text);
+  text-shadow: none;
+}
+
+.blobs {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.blobs span {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  filter: blur(15px);
+  opacity: 0.8;
+  mix-blend-mode: var(--blend);
+  animation: heroDrift 7s ease-in-out infinite alternate;
+}
+
+.blobs span:nth-child(1) {
+  left: -14px;
+  top: -18px;
+  background: var(--b1);
+}
+
+.blobs span:nth-child(2) {
+  right: -16px;
+  top: 6px;
+  background: var(--b2);
+  animation-delay: -2.4s;
+}
+
+.blobs span:nth-child(3) {
+  left: 28px;
+  bottom: -28px;
+  background: var(--b3);
+  animation-delay: -4.6s;
+}
+
+@keyframes heroDrift {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(14px, 10px) scale(1.18);
+  }
+}
+
+/* The person's own picture or video: two plain buttons in the same grid. */
+.ownTile {
+  grid-column: span 2;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--nebula-glass-border);
+  border-radius: 12px;
+  background: var(--nebula-surface-2);
+  color: var(--nebula-text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+/* ---- accent colours ---- */
+.accents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--nebula-glass-border);
+  transition:
+    transform var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.swatch:hover {
+  transform: scale(1.1);
+}
+
+.swatch[data-selected='true'] {
+  box-shadow:
+    0 0 0 2px var(--nebula-pop),
+    0 0 0 4px var(--nebula-text);
+}
+
+/* ---- the selected state, the same for every kind of tile ---- */
+.themeTile:hover,
+.wallpaperTile:hover,
+.ownTile:hover {
+  border-color: color-mix(in srgb, var(--nebula-accent) 55%, transparent);
+}
+
+.themeTile[data-selected='true'],
+.wallpaperTile[data-selected='true'],
+.ownTile[data-selected='true'] {
+  border-color: var(--nebula-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nebula-accent) 28%, transparent);
+}
+
+@media (max-width: 900px) {
+  .wallpapers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blobs span {
+    animation: none;
+  }
+}

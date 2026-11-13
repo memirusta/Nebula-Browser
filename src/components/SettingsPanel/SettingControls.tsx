@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
@@ -239,5 +239,30 @@ export function SettingDangerRow({
         {resolvedButtonLabel}
       </button>
     </div>
+  )
+}
+
+/** A card of settings with a small heading above it. */
+export function SettingGroup({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <section className={styles.group}>
+      {title && <h3 className={styles.groupTitle}>{title}</h3>}
+      <div className={styles.groupBody}>{children}</div>
+    </section>
+  )
+}
+
+/** Settings most people never touch: closed until opened, so the page shows what matters first. */
+export function SettingAdvanced({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className={styles.advanced}>
+      <summary className={styles.advancedSummary}>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+        {title}
+      </summary>
+      <div className={styles.advancedBody}>{children}</div>
+    </details>
   )
 }

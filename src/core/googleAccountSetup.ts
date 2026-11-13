@@ -22,7 +22,7 @@ export interface BrowserPasswordsRead {
   failures: BrowserReadFailure[]
 }
 
-function needsCsvFor(error: unknown): boolean {
+export function needsCsvFor(error: unknown): boolean {
   const nativeMessage =
     error instanceof Error ? error.message : typeof error === 'string' ? error : ''
   return (
