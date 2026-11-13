@@ -1,5 +1,5 @@
 /* eslint-disable react/only-export-components -- isolated smoke entry, no Fast Refresh */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { LocaleProvider, useLocale } from '../../src/hooks/useLocale'
@@ -13,6 +13,7 @@ import { SiteInfoPanel } from '../../src/components/SiteInfoPanel/SiteInfoPanel'
 import { PrivateBrowsingPanel } from '../../src/components/PrivateBrowsingPanel/PrivateBrowsingPanel'
 import { AppDialogHost } from '../../src/components/AppDialog/AppDialogHost'
 import { GuidedTutorial } from '../../src/components/GuidedTutorial/GuidedTutorial'
+import { tutorialSurfaces } from '../../src/core/tutorialMode'
 import { SemiLunarMenu } from '../../src/components/SemiLunarMenu/SemiLunarMenu'
 import { RightToolbar } from '../../src/components/RightToolbar/RightToolbar'
 import type { DownloadItem } from '../../src/core/download'
@@ -80,21 +81,41 @@ function ModalFixture() {
 function TutorialFixture({ close }: { close: () => void }) {
   const { locale } = useLocale()
   const [step, setStep] = useState(0)
+  // ?intro=1 plays the opening scene of the first tour; its button opens the menu.
+  const [intro, setIntro] = useState<'waiting' | 'opening' | null>(
+    new URLSearchParams(location.search).get('intro') ? 'waiting' : null,
+  )
+  useEffect(() => {
+    if (intro !== 'opening') return
+    const timer = window.setTimeout(() => { setIntro(null); setStep(1) }, 1900)
+    return () => window.clearTimeout(timer)
+  }, [intro])
+  // ?late=1 starts the tour a moment after the menu is on screen, open by the default of the home page, as after the wizard.
+  const [on, setOn] = useState(!new URLSearchParams(location.search).get('late'))
+  useEffect(() => {
+    if (on) return
+    const timer = window.setTimeout(() => setOn(true), 800)
+    return () => window.clearTimeout(timer)
+  }, [on])
   const lunarWidth = 1100
   const lunarHeight = 152
+  const ui = tutorialSurfaces({ open: on, step, intro: on ? intro : null })
   return <>
     <div style={{ position: 'fixed', inset: 0, background: 'radial-gradient(ellipse at 20% 20%, #414161, transparent 65%), linear-gradient(140deg, #122b31, #10161f)' }} />
     <SemiLunarMenu shortcuts={[]} dockItemIds={[]} folders={[]} onCreateFolder={() => null} onAddToFolder={() => false}
-      onRenameFolder={noop} onNavigate={noop} mode="home" shellViewMode="home" homeAlwaysOpen={false}
-      tutorialExpansion={step === 1 ? true : null} tutorialHoverOpen={step === 0} tutorialDemoTab={step === 1}
-      tutorialHighlight={step === 0 ? 'edge' : step === 1 ? 'content' : null}
+      onRenameFolder={noop} onNavigate={noop} mode="home" shellViewMode="home" homeAlwaysOpen={ui.semiLunar.homeAlwaysOpen ?? true}
+      tutorialExpansion={ui.semiLunar.expansion} tutorialHoverOpen={ui.semiLunar.hoverOpen} tutorialDemoTab={ui.semiLunar.demoTab}
+      tutorialHighlight={ui.semiLunar.highlight} tutorialDimmed={ui.semiLunar.dimmed} tutorialSlowOpen={ui.semiLunar.slowOpen} tutorialSweep={ui.semiLunar.sweep}
+      onTutorialMenuOpened={() => setIntro((current) => current === 'waiting' ? 'opening' : current)}
       lunarWidthPx={lunarWidth} lunarHeightPx={lunarHeight} />
-    <label data-nebula-tutorial="home-search" style={{ position: 'fixed', top: '55%', left: '50%', transform: 'translateX(-50%)', width: 'min(540px, 70vw)' }}>
+    <label data-nebula-tutorial="home-search" style={{ position: 'fixed', top: '41%', left: '50%', transform: 'translateX(-50%)', width: 'min(540px, 70vw)' }}>
       <input aria-label="Search" placeholder="Search or type URL…" style={{ width: '100%', padding: 18, borderRadius: 24, background: '#131b24', border: '1px solid #ffffff30', color: '#ccc' }} />
     </label>
-    {step === 3 && <RightToolbar onSettings={noop} onNotifications={noop} onDownloads={noop} onHistory={noop} />}
-    <GuidedTutorial open locale={locale} step={step} lunarWidthPx={lunarWidth} lunarHeightPx={lunarHeight}
-      onStepChange={setStep} onSkip={close} onComplete={close} />
+    <div data-nebula-tutorial="home-widgets" style={{ position: 'fixed', left: 24, top: 218, width: 210, height: 280, borderRadius: 14, background: '#131b24', border: '1px solid #ffffff22' }} />
+    {ui.toolbarVisible && <RightToolbar onSettings={noop} onNotifications={noop} onDownloads={noop} onHistory={noop} />}
+    <GuidedTutorial open={on} locale={locale} step={step} lunarWidthPx={lunarWidth} lunarHeightPx={lunarHeight}
+      intro={ui.intro} onToggleMenu={() => setIntro((current) => current === 'waiting' ? 'opening' : current)}
+      onStepChange={(next) => { setIntro(null); setStep(next) }} onSkip={close} onComplete={close} />
   </>
 }
 
