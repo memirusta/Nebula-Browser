@@ -176,10 +176,11 @@ test('native site toasts use a cached site favicon with a safe Nebula fallback',
   const native = read('src-tauri/src/native_notification.rs')
   const lib = read('src-tauri/src/lib.rs')
 
-  assert.match(broker, /favicon_url[\s\S]*?https:\/\/www\.google\.com\/s2\/favicons/)
-  assert.match(broker, /native_notification::show\([\s\S]*?favicon_url\(&event\.origin\)/)
+  // No favicon service is asked: without an icon from the site the toast looks for the site's own logo.
+  assert.doesNotMatch(broker, /google\.com\/s2\/favicons|gstatic\.com|fn favicon_url/)
+  assert.doesNotMatch(native.split('#[cfg(test)]')[0], /www\.google\.com|gstatic\.com/)
   assert.match(lib, /show_native_notification\([\s\S]*?icon_url: Option<String>[\s\S]*?native_notification::show[\s\S]*?\.await/)
-  assert.match(native, /validated_site_icon_url[\s\S]*?www\.google\.com[\s\S]*?\/s2\/favicons/)
+  assert.match(native, /validated_site_icon_url[\s\S]*?trusted_instagram_profile/)
   assert.match(native, /read_bounded_response\(\s*response,\s*MAX_SITE_ICON_BYTES as usize/)
   assert.match(native, /cached_site_icon_uri[\s\S]*?fallback_notification_icon_uri/)
   assert.match(native, /placement=\\"appLogoOverride\\"[\s\S]*?hint-crop=\\"circle\\"/)

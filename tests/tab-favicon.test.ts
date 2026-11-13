@@ -7,6 +7,7 @@ import {
   initialBrowserTabsState,
 } from '../src/core/browserTabsReducer.ts'
 import { faviconForUrl } from '../src/core/browserTab.ts'
+import { isPlaceholderFavicon, placeholderFavicon } from '../src/core/faviconPlaceholder.ts'
 import { shortcutFromUrl } from '../src/core/shortcutFromUrl.ts'
 import { shortcutsFromImportedBookmarks } from '../src/core/bookmarkImport.ts'
 import {
@@ -69,20 +70,21 @@ test('a native page favicon replaces the hostname fallback and survives title-on
     title: 'Example',
     favicon: null,
   })
-  assert.match(
-    state.tabs[0]?.favicon ?? '',
-    /domain_url=https%3A%2F%2Fexample\.com%2F/,
-  )
+  assert.equal(state.tabs[0]?.favicon, placeholderFavicon('example.com'))
 })
 
-test('hostname fallback sends only the public origin to the favicon service', () => {
-  const favicon = new URL(faviconForUrl(
+test('the fallback icon is drawn here: no request to anyone, and nothing of the address but the first letter of the host', () => {
+  const favicon = faviconForUrl(
     'https://username:password@example.com:8443/account/reset?token=secret#private-fragment',
-  ))
+  )
 
-  assert.equal(favicon.searchParams.get('domain_url'), 'https://example.com:8443/')
-  assert.equal(favicon.searchParams.get('sz'), '128')
-  assert.doesNotMatch(favicon.href, /username|password|account|token|secret|private-fragment/)
+  assert.ok(favicon.startsWith('data:image/svg+xml'))
+  assert.ok(isPlaceholderFavicon(favicon))
+  assert.equal(favicon, placeholderFavicon('example.com'))
+  assert.doesNotMatch(decodeURIComponent(favicon), /username|password|account|token|secret|private-fragment|8443/)
+  // The same site always gets the same colour and letter.
+  assert.equal(faviconForUrl('https://www.example.com/other'), favicon)
+  assert.notEqual(faviconForUrl('https://another.example.org/'), favicon)
 })
 
 test('local and unsupported favicon fallbacks use the bundled icon without a network request', () => {
@@ -144,17 +146,17 @@ test('public shortcut icons preserve hostname and search-engine aliases without 
   const imported = shortcutsFromImportedBookmarks([{ title: 'Synthetic', url }])[0]
   for (const shortcut of [visited, imported]) {
     assert.ok(shortcut?.favicon)
-    assert.equal(new URL(shortcut.favicon).searchParams.get('domain_url'), 'https://example.com/')
-    assert.doesNotMatch(shortcut.favicon, /user|secret|reset|token|private|fragment/)
+    assert.equal(shortcut.favicon, placeholderFavicon('example.com'))
+    assert.doesNotMatch(decodeURIComponent(shortcut.favicon), /user|secret|reset|token|private|fragment/)
   }
-  for (const [searchUrl, expectedOrigin] of [
-    ['https://www.google.co.uk/search?q=private', 'https://google.com/'],
-    ['https://www.bing.com/search?q=private', 'https://bing.com/'],
-    ['https://duckduckgo.com/?q=private', 'https://duckduckgo.com/'],
+  for (const [searchUrl, expectedHost] of [
+    ['https://www.google.co.uk/search?q=private', 'google.com'],
+    ['https://www.bing.com/search?q=private', 'bing.com'],
+    ['https://duckduckgo.com/?q=private', 'duckduckgo.com'],
   ]) {
     const shortcut = shortcutFromUrl(searchUrl)
     assert.ok(shortcut?.favicon)
-    assert.equal(new URL(shortcut.favicon).searchParams.get('domain_url'), expectedOrigin)
+    assert.equal(shortcut.favicon, placeholderFavicon(expectedHost))
   }
 })
 

@@ -6,9 +6,10 @@
  * reports is scaled down and remembered by host, and the address field's suggestions show it.
  *
  * A site in the history that has no icon yet (visited before this existed, or never reported one) is
- * asked for once (`ensure`): the native side tries the site's own icon first and a favicon service
- * only if the site has none. The answer is kept, so a site is asked for at most once; a site with no
- * icon anywhere is not asked again for a few days. Until an icon is there a letter stands in.
+ * asked for once (`ensure`): the native side asks the site itself for its `/favicon.ico` and nobody
+ * else, so no favicon service learns which sites are visited. The answer is kept, so a site is asked
+ * for at most once; a site with no icon is not asked again for a few days. Until an icon is there a
+ * letter stands in (see faviconPlaceholder).
  *
  * Private tabs are never remembered. The data is derived, so it is kept out of the shell state
  * mirror (the `__nebula_` prefix) and may be lost at a switch of environment without harm.

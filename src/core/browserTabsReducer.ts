@@ -6,6 +6,7 @@ import {
 } from './browserTab.ts'
 import type { Shortcut } from './types.ts'
 import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
+import { usableStoredFavicon } from './faviconPlaceholder.ts'
 import {
   applyTabHistoryTarget,
   recordTabNavigation,
@@ -67,14 +68,14 @@ export function browserTabsReducer(
                 url: action.shortcut.url,
                 initialUrl: action.shortcut.url,
                 title: action.shortcut.label,
-                favicon: action.shortcut.favicon ?? tab.favicon,
+                favicon: usableStoredFavicon(action.shortcut.favicon) ?? usableStoredFavicon(tab.favicon) ?? faviconForUrl(action.shortcut.url),
                 navigation:
                   action.navigation ??
                   recordTabNavigation(
                     tab.navigation,
                     action.shortcut.url,
                     action.shortcut.label,
-                    action.shortcut.favicon ?? tab.favicon,
+                    usableStoredFavicon(action.shortcut.favicon) ?? usableStoredFavicon(tab.favicon) ?? faviconForUrl(action.shortcut.url),
                   ),
                 isLoading: true,
               }
@@ -117,10 +118,11 @@ export function browserTabsReducer(
       const nextTitle = action.title?.trim() || titleFromUrl(action.url)
       const current = state.tabs.find((tab) => tab.shortcutId === action.shortcutId)
       if (!current) return state
-      const observedFavicon = action.favicon?.trim()
+      const observedFavicon = usableStoredFavicon(action.favicon)
       const nextFavicon = observedFavicon || (
         current.url === action.url &&
-        !isLowResolutionInlineFavicon(current.favicon)
+        !isLowResolutionInlineFavicon(current.favicon) &&
+        usableStoredFavicon(current.favicon)
           ? current.favicon
           : faviconForUrl(action.url)
       )
@@ -167,7 +169,7 @@ export function browserTabsReducer(
                 ...tab,
                 url: entry.url,
                 title: entry.title,
-                favicon: entry.favicon ?? faviconForUrl(entry.url),
+                favicon: usableStoredFavicon(entry.favicon) ?? faviconForUrl(entry.url),
                 navigation,
                 isLoading: true,
               }

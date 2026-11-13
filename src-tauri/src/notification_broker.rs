@@ -1195,18 +1195,6 @@ fn notification_presentation(
     }
 }
 
-fn favicon_url(origin: &str) -> Option<String> {
-    let host = notification_host(origin);
-    if host.is_empty() {
-        return None;
-    }
-    let mut url = url::Url::parse("https://www.google.com/s2/favicons").ok()?;
-    url.query_pairs_mut()
-        .append_pair("domain", &host)
-        .append_pair("sz", "64");
-    Some(url.to_string())
-}
-
 fn push_replay(state: &mut BrokerState, event: BrokerNotification) {
     state.replay.push_back(event);
     while state.replay.len() > MAX_REPLAY_EVENTS {
@@ -1498,9 +1486,8 @@ fn process_candidate(
             Some(event.tab_label.clone()),
             Some(event.origin.clone()),
             None,
-            (!event.icon_url.is_empty())
-                .then(|| event.icon_url.clone())
-                .or_else(|| favicon_url(&event.origin)),
+            // No icon from the site: the toast looks for the site's own logo, never a favicon service.
+            (!event.icon_url.is_empty()).then(|| event.icon_url.clone()),
             toast_tag,
             toast_generation,
             additional_message_count,
