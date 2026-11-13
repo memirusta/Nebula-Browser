@@ -14,6 +14,9 @@ interface GuidedTutorialProps {
   lunarWidthPx: number
   lunarHeightPx: number
   onStepChange: (step: number) => void
+  /** The first step's menu is open because its button was pressed (an alternative to hovering the top edge). */
+  menuShown?: boolean
+  onToggleMenu?: () => void
   onSkip: () => void
   onComplete: () => void
 }
@@ -50,7 +53,7 @@ function targetRect(target: TutorialTargetId, lunarWidth: number, lunarHeight: n
   }, width, height)
 }
 
-export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx, onStepChange, onSkip, onComplete }: GuidedTutorialProps) {
+export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx, onStepChange, menuShown = false, onToggleMenu, onSkip, onComplete }: GuidedTutorialProps) {
   const copy = getTutorialCopy(locale)
   const safeStep = tutorialStepIndex(step, copy.steps.length)
   const current = copy.steps[safeStep]
@@ -133,6 +136,9 @@ export function GuidedTutorial({ open, locale, step, lunarWidthPx, lunarHeightPx
               : <StepIcon target={current.target} />}
             <span>{current.action}</span>
             {current.target === 'home-search' && <kbd>Ctrl + L</kbd>}
+            {current.target === 'top-edge' && onToggleMenu && (
+              <button type="button" className={styles.showButton} aria-pressed={menuShown} onClick={onToggleMenu}>{copy.showMenu}</button>
+            )}
           </div>
         </div>
         <footer className={styles.footer}>

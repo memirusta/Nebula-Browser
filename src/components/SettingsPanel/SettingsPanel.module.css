@@ -398,7 +398,7 @@
 .settingsSearchResult:hover { background: rgba(255,255,255,.07); }
 .settingsSearchResult span, .settingsSearchResult small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settingsSearchResult span { font-size: 12px; font-weight: 600; }
-.settingsSearchResult small { margin-top: 3px; color: var(--nebula-text-muted); font-size: 10px; }
+.settingsSearchResult small { margin-top: 3px; color: var(--nebula-text-muted); font-size: 10.5px; }
 .settingsSearchEmpty { margin: 12px 8px; color: var(--nebula-text-muted); font-size: 11px; line-height: 1.45; }
 
 .notificationPermissions {
@@ -1054,7 +1054,7 @@
 
 .shortcutOr {
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .shortcutKey {
@@ -1192,7 +1192,7 @@
 
 .tutorialStepButton small {
   margin-bottom: 3px;
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
@@ -1317,7 +1317,7 @@
 .tutorialProgress,
 .tutorialStepCopy > small {
   color: var(--nebula-accent);
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1349,7 +1349,7 @@
   background: rgba(255, 255, 255, 0.06);
   color: var(--nebula-text);
   font-family: inherit;
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .tutorialFooter {
@@ -1485,7 +1485,7 @@
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }

@@ -67,6 +67,8 @@ export interface ToolbarUiStatePayload {
 export interface GuidedTutorialStatePayload {
   open: boolean
   step: number
+  /** The first step's menu was opened with its button, not the pointer (for someone who cannot use the pointer there). */
+  menuShown?: boolean
 }
 
 export type SitePermissionState =

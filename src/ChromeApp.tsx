@@ -907,7 +907,7 @@ export function ChromeApp() {
       downloadPanelOpen={browsingDownloadPanelOpen}
       forceOpen={browsingDownloadPanelOpen || privateInfoOpen || extensionsOpen || settingsLunarPeek}
       tutorialExpansion={
-        guidedTutorial.open && guidedTutorial.step === 1
+        guidedTutorial.open && (guidedTutorial.step === 1 || (guidedTutorial.step === 0 && guidedTutorial.menuShown === true))
           ? true
           : null
       }

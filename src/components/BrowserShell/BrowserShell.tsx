@@ -1542,19 +1542,28 @@ export function BrowserShell() {
     )
   })
 
-  const guidedTutorialStateRef = useRef({
+  // The first step opens the menu by hovering the top edge; its button opens it without the pointer.
+  const [guidedTutorialMenuShown, setGuidedTutorialMenuShown] = useState(false)
+
+  const guidedTutorialStateRef = useRef<{ open: boolean; step: number; menuShown: boolean }>({
     open: guidedTutorialOpen,
     step: guidedTutorialStep,
+    menuShown: false,
   })
+
+  useEffect(() => {
+    setGuidedTutorialMenuShown(false)
+  }, [guidedTutorialOpen, guidedTutorialStep])
 
   useEffect(() => {
     const state = {
       open: guidedTutorialOpen,
       step: guidedTutorialStep,
+      menuShown: guidedTutorialMenuShown,
     }
     guidedTutorialStateRef.current = state
     void emitGuidedTutorialState(state)
-  }, [guidedTutorialOpen, guidedTutorialStep])
+  }, [guidedTutorialOpen, guidedTutorialStep, guidedTutorialMenuShown])
 
   // A slider of the Semi-Lunar settings is being held (see SettingsPanel): the menu may show over Settings.
   const [settingsLunarPeek, setSettingsLunarPeek] = useState(false)
@@ -7016,7 +7025,7 @@ export function BrowserShell() {
 
     tutorialExpansion:
       guidedTutorialOpen &&
-      guidedTutorialStep === 1
+      (guidedTutorialStep === 1 || (guidedTutorialStep === 0 && guidedTutorialMenuShown))
         ? true
         : null,
 
@@ -7951,6 +7960,8 @@ export function BrowserShell() {
         lunarWidthPx={browsingAdaptiveLunar.width}
         lunarHeightPx={browsingAdaptiveLunar.height}
         onStepChange={setGuidedTutorialStep}
+        menuShown={guidedTutorialMenuShown}
+        onToggleMenu={() => setGuidedTutorialMenuShown((shown) => !shown)}
         onSkip={handleFinishGuidedTutorial}
         onComplete={handleFinishGuidedTutorial}
       />

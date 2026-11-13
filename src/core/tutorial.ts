@@ -28,6 +28,8 @@ export interface TutorialCopy {
   next: string
   finish: string
   restart: string
+  /** The button of the first step that opens the menu without the pointer. */
+  showMenu: string
   completeTitle: string
   completeBody: string
   steps: readonly TutorialStepCopy[]
@@ -44,7 +46,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
     previous: 'Geri',
     next: 'İleri',
     finish: 'Bitir',
-    restart: 'Baştan başla',
+    restart: 'Baştan başla', showMenu: 'Menüyü göster',
     completeTitle: 'Nebula’yı kullanmaya hazırsın',
     completeBody: 'Tutorial tamamlandı. İstediğin zaman bu menüden yeniden açabilirsin.',
     steps: [
@@ -88,7 +90,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
     previous: 'Back',
     next: 'Next',
     finish: 'Finish',
-    restart: 'Start again',
+    restart: 'Start again', showMenu: 'Show the menu',
     completeTitle: 'You’re ready to use Nebula',
     completeBody: 'Tutorial complete. You can reopen it from this menu at any time.',
     steps: [
@@ -124,7 +126,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   es: {
     categoryLabel: "Guía rápida", categoryDescription: 'Aprende los controles esenciales de Nebula en pocos pasos',
-    intro: 'Reinicia cuando quieras la breve guía en pantalla de los controles esenciales de Nebula.', start: 'Iniciar guía en pantalla', skipAll: 'Omitir todo', progress: 'Paso', previous: 'Atrás', next: 'Siguiente', finish: 'Finalizar', restart: 'Empezar de nuevo', completeTitle: 'Ya puedes usar Nebula', completeBody: 'Tutorial completado. Puedes abrirlo de nuevo desde este menú.',
+    intro: 'Reinicia cuando quieras la breve guía en pantalla de los controles esenciales de Nebula.', start: 'Iniciar guía en pantalla', skipAll: 'Omitir todo', progress: 'Paso', previous: 'Atrás', next: 'Siguiente', finish: 'Finalizar', restart: 'Empezar de nuevo', showMenu: 'Mostrar el menú', completeTitle: 'Ya puedes usar Nebula', completeBody: 'Tutorial completado. Puedes abrirlo de nuevo desde este menú.',
     steps: [
       {
         "target": "top-edge",
@@ -158,7 +160,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   de: {
     categoryLabel: "Kurze Tour", categoryDescription: 'Lerne Nebulas wichtigste Bedienelemente in wenigen Schritten kennen',
-    intro: 'Starte die kurze Bildschirmführung zu Nebulas wichtigsten Bedienelementen jederzeit neu.', start: 'Bildschirmführung starten', skipAll: 'Alles überspringen', progress: 'Schritt', previous: 'Zurück', next: 'Weiter', finish: 'Fertig', restart: 'Neu starten', completeTitle: 'Du kannst Nebula jetzt verwenden', completeBody: 'Tutorial abgeschlossen. Du kannst es jederzeit über dieses Menü erneut öffnen.',
+    intro: 'Starte die kurze Bildschirmführung zu Nebulas wichtigsten Bedienelementen jederzeit neu.', start: 'Bildschirmführung starten', skipAll: 'Alles überspringen', progress: 'Schritt', previous: 'Zurück', next: 'Weiter', finish: 'Fertig', restart: 'Neu starten', showMenu: 'Menü anzeigen', completeTitle: 'Du kannst Nebula jetzt verwenden', completeBody: 'Tutorial abgeschlossen. Du kannst es jederzeit über dieses Menü erneut öffnen.',
     steps: [
       {
         "target": "top-edge",
@@ -192,7 +194,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   fr: {
     categoryLabel: "Visite rapide", categoryDescription: 'Découvrir les commandes essentielles de Nebula en quelques étapes',
-    intro: 'Relancez à tout moment le guide à l’écran des commandes essentielles de Nebula.', start: 'Lancer le guide à l’écran', skipAll: 'Tout passer', progress: 'Étape', previous: 'Retour', next: 'Suivant', finish: 'Terminer', restart: 'Recommencer', completeTitle: 'Vous êtes prêt à utiliser Nebula', completeBody: 'Tutoriel terminé. Vous pouvez le rouvrir depuis ce menu à tout moment.',
+    intro: 'Relancez à tout moment le guide à l’écran des commandes essentielles de Nebula.', start: 'Lancer le guide à l’écran', skipAll: 'Tout passer', progress: 'Étape', previous: 'Retour', next: 'Suivant', finish: 'Terminer', restart: 'Recommencer', showMenu: 'Afficher le menu', completeTitle: 'Vous êtes prêt à utiliser Nebula', completeBody: 'Tutoriel terminé. Vous pouvez le rouvrir depuis ce menu à tout moment.',
     steps: [
       {
         "target": "top-edge",
@@ -226,7 +228,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   id: {
     categoryLabel: "Panduan singkat", categoryDescription: 'Pelajari kontrol utama Nebula dalam beberapa langkah singkat',
-    intro: 'Mulai ulang panduan singkat di layar untuk kontrol utama Nebula kapan saja.', start: 'Mulai panduan layar', skipAll: 'Lewati semua', progress: 'Langkah', previous: 'Kembali', next: 'Berikutnya', finish: 'Selesai', restart: 'Mulai lagi', completeTitle: 'Anda siap menggunakan Nebula', completeBody: 'Tutorial selesai. Anda dapat membukanya lagi dari menu ini kapan saja.',
+    intro: 'Mulai ulang panduan singkat di layar untuk kontrol utama Nebula kapan saja.', start: 'Mulai panduan layar', skipAll: 'Lewati semua', progress: 'Langkah', previous: 'Kembali', next: 'Berikutnya', finish: 'Selesai', restart: 'Mulai lagi', showMenu: 'Tampilkan menu', completeTitle: 'Anda siap menggunakan Nebula', completeBody: 'Tutorial selesai. Anda dapat membukanya lagi dari menu ini kapan saja.',
     steps: [
       {
         "target": "top-edge",
@@ -260,7 +262,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   ru: {
     categoryLabel: "Краткий обзор", categoryDescription: 'Освойте основные элементы Nebula за несколько коротких шагов',
-    intro: 'Короткое экранное руководство по основным элементам Nebula можно запустить снова в любое время.', start: 'Запустить руководство', skipAll: 'Пропустить всё', progress: 'Шаг', previous: 'Назад', next: 'Далее', finish: 'Готово', restart: 'Начать заново', completeTitle: 'Nebula готова к работе', completeBody: 'Обучение завершено. Его можно снова открыть из этого меню.',
+    intro: 'Короткое экранное руководство по основным элементам Nebula можно запустить снова в любое время.', start: 'Запустить руководство', skipAll: 'Пропустить всё', progress: 'Шаг', previous: 'Назад', next: 'Далее', finish: 'Готово', restart: 'Начать заново', showMenu: 'Показать меню', completeTitle: 'Nebula готова к работе', completeBody: 'Обучение завершено. Его можно снова открыть из этого меню.',
     steps: [
       {
         "target": "top-edge",
@@ -294,7 +296,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   it: {
     categoryLabel: "Tour rapido", categoryDescription: 'Impara i controlli essenziali di Nebula in pochi passaggi',
-    intro: 'Riavvia in qualsiasi momento la breve guida su schermo ai controlli essenziali di Nebula.', start: 'Avvia guida su schermo', skipAll: 'Salta tutto', progress: 'Passaggio', previous: 'Indietro', next: 'Avanti', finish: 'Fine', restart: 'Ricomincia', completeTitle: 'Sei pronto a usare Nebula', completeBody: 'Tutorial completato. Puoi riaprirlo da questo menu in qualsiasi momento.',
+    intro: 'Riavvia in qualsiasi momento la breve guida su schermo ai controlli essenziali di Nebula.', start: 'Avvia guida su schermo', skipAll: 'Salta tutto', progress: 'Passaggio', previous: 'Indietro', next: 'Avanti', finish: 'Fine', restart: 'Ricomincia', showMenu: 'Mostra il menu', completeTitle: 'Sei pronto a usare Nebula', completeBody: 'Tutorial completato. Puoi riaprirlo da questo menu in qualsiasi momento.',
     steps: [
       {
         "target": "top-edge",
@@ -328,7 +330,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
   },
   ja: {
     categoryLabel: "クイックガイド", categoryDescription: 'Nebula の基本操作を短い手順で確認します',
-    intro: 'Nebula の基本操作を示す短い画面ガイドは、いつでも再開できます。', start: '画面ガイドを開始', skipAll: 'すべてスキップ', progress: 'ステップ', previous: '戻る', next: '次へ', finish: '完了', restart: '最初から', completeTitle: 'Nebula を使う準備ができました', completeBody: 'チュートリアルは完了です。このメニューからいつでも開き直せます。',
+    intro: 'Nebula の基本操作を示す短い画面ガイドは、いつでも再開できます。', start: '画面ガイドを開始', skipAll: 'すべてスキップ', progress: 'ステップ', previous: '戻る', next: '次へ', finish: '完了', restart: '最初から', showMenu: 'メニューを表示', completeTitle: 'Nebula を使う準備ができました', completeBody: 'チュートリアルは完了です。このメニューからいつでも開き直せます。',
     steps: [
       {
         "target": "top-edge",

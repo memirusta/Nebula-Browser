@@ -70,3 +70,15 @@ test('the tutorial is a bubble with a ring, dots and a plain skip, in the colour
   assert.match(tsx, /<nav className=\{styles\.dots\}/)
   assert.doesNotMatch(tsx, /styles\.scrim/)
 })
+
+test('the first step of the tour has a button that opens the menu, for someone who cannot hover the top edge', () => {
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').split(String.fromCharCode(13, 10)).join(String.fromCharCode(10))
+  const tour = read('src/components/GuidedTutorial/GuidedTutorial.tsx')
+  assert.match(tour, /current\.target === 'top-edge' && onToggleMenu && \(\s+<button type="button" className=\{styles\.showButton\} aria-pressed=\{menuShown\} onClick=\{onToggleMenu\}>\{copy\.showMenu\}<\/button>/)
+  // The two windows share it: the shell keeps it (and forgets it when the step changes), the chrome overlay opens the menu for it.
+  assert.match(read('src/core/nebulaBridge.ts'), /menuShown\?: boolean/)
+  assert.match(read('src/components/BrowserShell/BrowserShell.tsx'), /guidedTutorialStep === 1 \|\| \(guidedTutorialStep === 0 && guidedTutorialMenuShown\)/)
+  assert.match(read('src/ChromeApp.tsx'), /guidedTutorial\.step === 1 \|\| \(guidedTutorial\.step === 0 && guidedTutorial\.menuShown === true\)/)
+  const copy = read('src/core/tutorial.ts')
+  assert.equal(copy.split('showMenu: ').length - 1, 10, 'the type and the nine languages')
+})

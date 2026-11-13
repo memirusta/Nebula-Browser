@@ -59,6 +59,10 @@
 .actionHint > span { flex: 1 1 auto; }
 .actionHint kbd { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--nebula-field-border); border-bottom-width: 2px; border-radius: 5px; background: var(--nebula-surface-2); font-size: 11px; }
 
+/* The way to open the menu without the pointer: a button inside the hint of the first step. */
+.showButton { flex: 0 0 auto; padding: 5px 10px; border: 1px solid var(--nebula-soft-border); border-radius: 8px; background: var(--nebula-surface-2); color: var(--nebula-accent-ink); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.showButton:hover { background: var(--nebula-soft); }
+.showButton[aria-pressed='true'] { background: var(--nebula-soft); }
 .footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--nebula-glass-border); flex: 0 0 auto; }
 .dots { display: flex; align-items: center; }
 /* The button is 20 x 24 px so a finger or a pointer can hit it; the dot drawn in it is small. */

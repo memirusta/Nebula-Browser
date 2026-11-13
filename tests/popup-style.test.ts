@@ -173,3 +173,13 @@ test('the address bar of the Semi-Lunar overlay is a card of the theme, not a fi
   assert.match(body, /border-color: var\(--nebula-glass-border\);/)
   assert.doesNotMatch(body, /rgba\(16, 22, 30/)
 })
+
+test('the extensions page of Settings is in the theme\'s colours with no text below 10.5 px, and the rest of Settings has none either', () => {
+  const css = read('src/components/SettingsPanel/ExtensionsSettingsSection.module.css')
+  assert.deepEqual(colourLiterals(css), [])
+  for (const path of ['src/components/SettingsPanel/ExtensionsSettingsSection.module.css', 'src/components/SettingsPanel/SettingsPanel.module.css', 'src/components/SettingsPanel/WallpaperSettingsSection.module.css']) {
+    for (const match of read(path).matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)) {
+      assert.ok(Number(match[1]) >= 10.5, `${path} has text of ${match[1]} px`)
+    }
+  }
+})
