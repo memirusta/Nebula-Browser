@@ -25,8 +25,9 @@ test('a picture from a version before the wallpaper settings is migrated as an i
 
 test('the home screen step offers the four moving backgrounds and a picture or video of one\'s own, in every language', () => {
   const picker = read('src/components/Onboarding/OnboardingWallpaperPicker.tsx')
+  const choices = read('src/components/Onboarding/wallpaperChoice.ts')
   for (const preset of ['nebula', 'aurora', 'midnight', 'liquid']) {
-    assert.ok(picker.includes(`id: '${preset}'`), preset)
+    assert.ok(choices.includes(`id: '${preset}'`), preset)
   }
   assert.match(picker, /onChange\(\{ mode: 'ambient', ambientPreset: preset\.id \}\)/)
   assert.match(picker, /onClick=\{onPickImage\}/)
@@ -48,11 +49,12 @@ test('the summary at the end of the first run names the chosen background', () =
   const done = read('src/components/Onboarding/OnboardingDoneStep.tsx')
   assert.match(done, /\[copy\.wallpaperLabel, wallpaperChoiceLabel\(wallpaper, copy\)\]/)
 
-  const picker = read('src/components/Onboarding/OnboardingWallpaperPicker.tsx')
-  assert.match(picker, /export function wallpaperChoiceLabel/)
+  // The label lives beside the picker, not in it (a file that exports a component exports nothing else).
+  const choice = read('src/components/Onboarding/wallpaperChoice.ts')
+  assert.match(choice, /export function wallpaperChoiceLabel/)
   // Own picture and video are named as such; a moving background by its own name.
-  assert.match(picker, /config\.mode === 'image' && config\.imageUrl\) return text\.wallpaperOwnImage/)
-  assert.match(picker, /config\.mode === 'video' && config\.videoPath\) return text\.wallpaperOwnVideo/)
+  assert.match(choice, /config\.mode === 'image' && config\.imageUrl\) return text\.wallpaperOwnImage/)
+  assert.match(choice, /config\.mode === 'video' && config\.videoPath\) return text\.wallpaperOwnVideo/)
 
   const wizard = read('src/components/Onboarding/OnboardingWizard.tsx')
   assert.match(wizard, /weatherLabel=\{\s+weatherLabel\s+\}\s+wallpaper=\{wallpaper\}/)

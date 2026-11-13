@@ -2,7 +2,7 @@ import { getLocaleCopy, tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
 import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { OnboardingActions } from './OnboardingActions'
-import { wallpaperChoiceLabel } from './OnboardingWallpaperPicker'
+import { wallpaperChoiceLabel } from './wallpaperChoice'
 import { ONBOARDING_COPY } from './onboardingCopy'
 import styles from './OnboardingWizard.module.css'
 
