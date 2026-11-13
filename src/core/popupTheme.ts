@@ -6,6 +6,8 @@
 export interface PopupTheme {
   /** The dark themes (the scrollbar of the list follows it). */
   dark: boolean
+  /** The colour of the page behind everything (the error page is drawn on it). */
+  base: string
   card: string
   text: string
   muted: string
@@ -21,6 +23,7 @@ export interface PopupTheme {
 }
 
 const VARIABLES: Record<Exclude<keyof PopupTheme, 'dark'>, string> = {
+  base: '--nebula-void',
   card: '--nebula-pop',
   text: '--nebula-text',
   muted: '--nebula-text-muted',

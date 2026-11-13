@@ -1,3 +1,70 @@
+/// The colours of the interface (the theme and the palette) for the page a failed navigation shows. The window sends them whenever
+/// they change; a colour is only taken if it is a short value made of the characters a colour is written with.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorPageTheme {
+    pub dark: bool,
+    pub base: String,
+    pub text: String,
+    pub muted: String,
+    pub border: String,
+    pub surface: String,
+    pub accent: String,
+    pub strong: String,
+    pub on: String,
+}
+
+impl Default for ErrorPageTheme {
+    /// The dark theme with its cyan accent, until the window has said otherwise.
+    fn default() -> Self {
+        Self {
+            dark: true,
+            base: "#09090b".into(),
+            text: "#f4f4f5".into(),
+            muted: "#a1a1aa".into(),
+            border: "rgba(255, 255, 255, 0.13)".into(),
+            surface: "rgba(255, 255, 255, 0.07)".into(),
+            accent: "#7ec8e3".into(),
+            strong: "#4fa6c4".into(),
+            on: "#0b0f1a".into(),
+        }
+    }
+}
+
+impl ErrorPageTheme {
+    fn is_colour(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= 120
+            && value.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || matches!(c, '#' | '(' | ')' | ',' | '.' | '%' | ' ' | '/' | '-')
+            })
+    }
+
+    /// The same theme with every colour that is not a plain colour replaced by the default one.
+    pub fn sanitized(&self) -> Self {
+        let fallback = Self::default();
+        let pick = |value: &String, default: &String| {
+            if Self::is_colour(value) {
+                value.clone()
+            } else {
+                default.clone()
+            }
+        };
+        Self {
+            dark: self.dark,
+            base: pick(&self.base, &fallback.base),
+            text: pick(&self.text, &fallback.text),
+            muted: pick(&self.muted, &fallback.muted),
+            border: pick(&self.border, &fallback.border),
+            surface: pick(&self.surface, &fallback.surface),
+            accent: pick(&self.accent, &fallback.accent),
+            strong: pick(&self.strong, &fallback.strong),
+            on: pick(&self.on, &fallback.on),
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod imp {
     use std::cell::RefCell;
@@ -40,6 +107,8 @@ mod imp {
     static EXTERNAL_URI_NAVIGATIONS: LazyLock<Mutex<HashMap<String, ExternalUriNavigationState>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static UI_LOCALE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("en".to_string()));
+    static THEME: LazyLock<Mutex<super::ErrorPageTheme>> =
+        LazyLock::new(|| Mutex::new(super::ErrorPageTheme::default()));
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, ICoreWebView2NavigationCompletedEventHandler>> =
             RefCell::new(HashMap::new());
@@ -95,6 +164,16 @@ mod imp {
         if let Ok(mut current) = UI_LOCALE.lock() {
             *current = normalized.to_string();
         }
+    }
+
+    pub fn set_theme(theme: &super::ErrorPageTheme) {
+        if let Ok(mut current) = THEME.lock() {
+            *current = theme.sanitized();
+        }
+    }
+
+    fn current_theme() -> super::ErrorPageTheme {
+        THEME.lock().map(|theme| theme.clone()).unwrap_or_default()
     }
 
     pub fn current_ui_locale() -> String {
@@ -598,6 +677,18 @@ mod imp {
         let kind = error_kind(error_status);
         let (lang, retry_label, try_http_label) = error_page_labels(locale);
         let (title, description) = error_page_copy(locale, kind);
+        let theme = current_theme();
+        let scheme = if theme.dark { "dark" } else { "light" };
+        let (base, text, muted, border, surface, accent, strong, on) = (
+            theme.base,
+            theme.text,
+            theme.muted,
+            theme.border,
+            theme.surface,
+            theme.accent,
+            theme.strong,
+            theme.on,
+        );
         let http_fallback = local_http_fallback_url(retry_url, error_status);
         let http_fallback_js = js_string_literal(http_fallback.as_deref().unwrap_or_default());
         let http_fallback_button = http_fallback
@@ -617,6 +708,17 @@ mod imp {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nebula</title>
 <style>
+  :root {{
+    color-scheme: {scheme};
+    --base: {base};
+    --text: {text};
+    --muted: {muted};
+    --border: {border};
+    --surface: {surface};
+    --accent: {accent};
+    --strong: {strong};
+    --on: {on};
+  }}
   * {{ box-sizing: border-box; margin: 0; }}
   body {{
     min-height: 100vh;
@@ -624,8 +726,8 @@ mod imp {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: #0a0812;
-    color: #ede6ff;
+    background: var(--base);
+    color: var(--text);
     font: 16px/1.5 "Segoe UI", system-ui, sans-serif;
     padding: 24px;
     text-align: center;
@@ -641,29 +743,32 @@ mod imp {
     overflow: hidden;
   }}
   .glyph img {{ width: 100%; height: 100%; display: block; }}
-  h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 8px; }}
-  p {{ color: #a89bc4; max-width: 420px; margin-bottom: 24px; }}
+  h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.01em; }}
+  p {{ color: var(--muted); max-width: 420px; margin-bottom: 24px; }}
   .url {{
     max-width: min(620px, 88vw);
     margin: -12px 0 22px;
-    color: #c9bddf;
+    color: var(--text);
     font-size: 13px;
     overflow-wrap: anywhere;
   }}
-  .status {{ color: #675a80; font-size: 12px; margin: -14px 0 20px; }}
+  .status {{ color: var(--muted); opacity: 0.75; font-size: 12px; margin: -14px 0 20px; }}
   .actions {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }}
   button {{
-    background: #863bff;
-    color: #fff;
+    background: linear-gradient(135deg, var(--strong), var(--accent));
+    color: var(--on);
     border: none;
     padding: 12px 24px;
     border-radius: 10px;
+    font: inherit;
     font-size: 15px;
+    font-weight: 600;
     cursor: pointer;
   }}
-  button:hover {{ filter: brightness(1.08); }}
-  button.secondary {{ background: #241a38; color: #d8c9f4; }}
-  .brand {{ position: fixed; bottom: 16px; color: #5c4d7a; font-size: 13px; letter-spacing: 0.08em; }}
+  button:hover {{ filter: brightness(1.07); }}
+  button:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 3px; }}
+  button.secondary {{ background: var(--surface); color: var(--text); border: 1px solid var(--border); }}
+  .brand {{ position: fixed; bottom: 16px; color: var(--muted); opacity: 0.6; font-size: 13px; letter-spacing: 0.08em; }}
 </style>
 </head>
 <body>
@@ -964,7 +1069,7 @@ mod imp {
         use super::{
             build_error_page_url, claim_external_uri_navigation, compatibility_request_url,
             compatibility_retry_applies, js_string_literal, local_http_fallback_url,
-            note_external_uri_navigation, retry_target_is_current,
+            note_external_uri_navigation, retry_target_is_current, set_theme,
             should_offer_compatibility_retry, suppress_error_page, web_error_status_name,
         };
 
@@ -1237,6 +1342,49 @@ mod imp {
         }
 
         #[test]
+        fn the_error_page_takes_the_colours_of_the_interface_and_only_colours() {
+            let theme = super::super::ErrorPageTheme {
+                dark: false,
+                base: "rgb(255, 255, 255)".into(),
+                text: "rgb(15, 19, 48)".into(),
+                muted: "red; } body { display: none".into(),
+                border: "rgba(15, 19, 60, 0.12)".into(),
+                surface: "#f3f4fb".into(),
+                accent: "rgb(251, 191, 36)".into(),
+                strong: "rgb(225, 164, 4)".into(),
+                on: "rgb(11, 15, 26)".into(),
+            };
+            set_theme(&theme);
+            let url = build_error_page_url(
+                "https://example.test/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+                "en",
+            );
+            // The page is a percent-encoded data URL.
+            let encoded = url.trim_start_matches("data:text/html;charset=utf-8,");
+            let mut bytes = Vec::new();
+            let raw = encoded.as_bytes();
+            let mut index = 0;
+            while index < raw.len() {
+                if raw[index] == b'%' {
+                    bytes.push(u8::from_str_radix(&encoded[index + 1..index + 3], 16).unwrap());
+                    index += 3;
+                } else {
+                    bytes.push(raw[index]);
+                    index += 1;
+                }
+            }
+            let html = String::from_utf8(bytes).unwrap();
+            assert!(html.contains("color-scheme: light;"));
+            assert!(html.contains("--base: rgb(255, 255, 255);"));
+            assert!(html.contains("--accent: rgb(251, 191, 36);"));
+            // A value that is not a plain colour is replaced by the default one, not written into the style sheet.
+            assert!(!html.contains("display: none"));
+            assert!(html.contains("--muted: #a1a1aa;"));
+            set_theme(&super::super::ErrorPageTheme::default());
+        }
+
+        #[test]
         fn delayed_verification_retry_cannot_replace_a_newer_navigation() {
             assert!(retry_target_is_current(
                 "https://challenge.example/",
@@ -1252,7 +1400,7 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::{
-    current_ui_locale, notification_activity_body, set_ui_locale, setup_tab_error_page,
+    current_ui_locale, notification_activity_body, set_theme, set_ui_locale, setup_tab_error_page,
     teardown_tab_error_page,
 };
 
@@ -1261,6 +1409,9 @@ pub(crate) use imp::{note_browser_verification_request, note_external_uri_naviga
 
 #[cfg(not(target_os = "windows"))]
 pub fn set_ui_locale(_locale: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_theme(_theme: &ErrorPageTheme) {}
 
 #[cfg(not(target_os = "windows"))]
 pub fn current_ui_locale() -> String {

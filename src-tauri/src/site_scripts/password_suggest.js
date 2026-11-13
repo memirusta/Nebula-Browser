@@ -263,9 +263,28 @@
 
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     if (typeof module === 'object' && module && module.exports) {
-      module.exports = { suggestionRows: suggestionRows, nextView: nextView, VISIBLE_ROWS: VISIBLE_ROWS };
+      module.exports = { suggestionRows: suggestionRows, nextView: nextView, VISIBLE_ROWS: VISIBLE_ROWS, siteNameFrom: siteNameFrom };
     }
     return;
+  }
+
+  // The name of a site for the heading of the list: what the site calls itself (og:site_name, application-name), or else its
+  // domain name without "www." and the suffix, with a capital ("lichess.org" gives "Lichess", "www.bbc.co.uk" gives "Bbc").
+  function siteNameFrom(declared, hostname) {
+    var SECOND_LEVEL = { co: 1, com: 1, org: 1, net: 1, gov: 1, edu: 1, ac: 1, or: 1, ne: 1, go: 1, gen: 1, av: 1, k12: 1, web: 1, bel: 1, mil: 1, biz: 1, info: 1 };
+    var name = typeof declared === 'string' ? declared.replace(/\s+/g, ' ').trim() : '';
+    if (name && name.length <= 40) return name;
+    var host = String(hostname || '').toLowerCase().replace(/^www\./, '');
+    // An address, not a name.
+    if (!host || /^[0-9.]+$/.test(host) || host.indexOf(':') >= 0) return host;
+    var labels = host.split('.').filter(Boolean);
+    if (labels.length === 0) return '';
+    var index = labels.length - 2;
+    if (labels.length >= 3 && labels[labels.length - 1].length === 2 && SECOND_LEVEL[labels[labels.length - 2]]) {
+      index = labels.length - 3;
+    }
+    var label = index >= 0 ? labels[index] : labels[0];
+    return label.charAt(0).toUpperCase() + label.slice(1);
   }
 
   // ---- The page ----
@@ -362,6 +381,15 @@
     pageTheme = next;
     applyTheme(ui && ui.host);
     applyTheme(bubble && bubble.host);
+  }
+
+  // What the page calls itself, if it says.
+  function pageSiteName() {
+    var meta = null;
+    try {
+      meta = document.querySelector('meta[property="og:site_name"], meta[name="application-name"]');
+    } catch (_) {}
+    return siteNameFrom(meta && meta.getAttribute('content'), window.location.hostname);
   }
 
   function ensureUi() {
@@ -477,7 +505,7 @@
     var template = filtered ? labels.filtered : labels.all;
     parts.head.textContent = '';
     var brand = document.createElement('b');
-    brand.textContent = 'Nebula';
+    brand.textContent = pageSiteName() || 'Nebula';
     parts.head.appendChild(brand);
     parts.head.appendChild(
       document.createTextNode(' · ' + template.replace('{count}', String(filtered ? view.rows.length : accounts.length + passkeys.length)))

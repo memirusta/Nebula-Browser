@@ -536,6 +536,13 @@ fn webview_set_ui_locale(locale: String) -> Result<(), String> {
     Ok(())
 }
 
+/// The colours of the interface for the page a failed navigation shows (see `tab_error_page::ErrorPageTheme`).
+#[tauri::command]
+fn webview_set_error_page_theme(theme: tab_error_page::ErrorPageTheme) -> Result<(), String> {
+    tab_error_page::set_theme(&theme);
+    Ok(())
+}
+
 #[tauri::command]
 async fn browser_create_window(
     app: tauri::AppHandle,
@@ -2038,6 +2045,7 @@ pub fn run() {
             layout_audit::webview_resync_scale,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,
+            webview_set_error_page_theme,
             webview_setup_main_site_permissions,
             weather_search_cities,
             weather_search_subdivisions,

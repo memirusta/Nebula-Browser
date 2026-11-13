@@ -28,6 +28,8 @@ import { PasswordFillPrompt } from '../PasswordFillPrompt/PasswordFillPrompt'
 import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
 import { isTauri } from '../../platform/runtime'
+import { readPopupTheme } from '../../core/popupTheme'
+import { syncNativeErrorPageTheme } from '../../platform/tauriErrorPage'
 import {
   listenChromeActions,
   emitActiveUrl,
@@ -6519,6 +6521,12 @@ export function BrowserShell() {
     notifications,
     privacy,
   } = settings
+
+  // The page a failed navigation shows is built natively: it gets the interface's colours whenever they change.
+  useEffect(() => {
+    if (!isTauri) return
+    void syncNativeErrorPageTheme(readPopupTheme())
+  }, [appearance.theme, appearance.accentColor, appearance.neutralHue, appearance.neutralSat])
 
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches,

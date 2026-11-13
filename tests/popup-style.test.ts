@@ -183,3 +183,19 @@ test('the extensions page of Settings is in the theme\'s colours with no text be
     }
   }
 })
+
+test('the page of a failed navigation is drawn in the colours of the interface, which the window sends natively when they change', () => {
+  const rust = read('src-tauri/src/tab_error_page.rs')
+  assert.match(rust, /pub struct ErrorPageTheme \{/)
+  // A colour is only taken if it is a short value made of the characters a colour is written with.
+  assert.match(rust, /fn is_colour\(value: &str\) -> bool/)
+  for (const variable of ['--base', '--text', '--muted', '--border', '--surface', '--accent', '--strong', '--on']) {
+    assert.ok(rust.includes(`${variable}: {`), variable)
+  }
+  assert.doesNotMatch(rust, /background: #0a0812|background: #863bff|#241a38/)
+  // The command is registered and permitted (Tauri rejects one that is only written).
+  assert.match(read('src-tauri/src/lib.rs'), /webview_set_error_page_theme,/)
+  assert.match(read('src-tauri/permissions/webview-commands.toml'), /"webview_set_error_page_theme",/)
+  assert.match(read('src/platform/tauriErrorPage.ts'), /invoke\('webview_set_error_page_theme'/)
+  assert.match(read('src/components/BrowserShell/BrowserShell.tsx'), /void syncNativeErrorPageTheme\(readPopupTheme\(\)\)\s+\}, \[appearance\.theme, appearance\.accentColor, appearance\.neutralHue, appearance\.neutralSat\]\)/)
+})
