@@ -9,6 +9,7 @@ import { SHORTCUT_POSITIONS_KEY } from './shortcutLayout'
 import { SHORTCUT_PREFERENCES_KEY } from './shortcutPreferences'
 import { persistLocalStorage, removeLocalStorage } from './storageSync'
 import { WIDGET_LAYOUT_KEY } from './widgets'
+import { WALLPAPER_SYNC_KEY, wallpaperForBackup, wallpaperToRestore } from './wallpaperSync'
 import {
   parsePasswordVault,
   serializePasswordVault,
@@ -46,12 +47,15 @@ const BOOKMARK_KEYS = [
 export interface GoogleSyncPreferences {
   settings: boolean
   bookmarks: boolean
+  /** The wallpaper: the moving background or the picture (never a video, see wallpaperSync). */
+  wallpaper: boolean
   passwords: boolean
 }
 
 export const DEFAULT_GOOGLE_SYNC_PREFERENCES: GoogleSyncPreferences = {
   settings: true,
   bookmarks: true,
+  wallpaper: true,
   passwords: false,
 }
 
@@ -76,6 +80,8 @@ export function loadGoogleSyncPreferences(): GoogleSyncPreferences {
     return {
       settings: parsed.settings !== false,
       bookmarks: parsed.bookmarks !== false,
+      // Preferences saved before wallpapers were synced do not start sending a picture without being asked.
+      wallpaper: parsed.wallpaper === true,
       passwords: parsed.passwords === true,
     }
   } catch {
@@ -137,6 +143,11 @@ export async function buildGoogleSyncBundle(
     const value = localStorage.getItem(key)
     if (value !== null) storage[key] = value
   }
+  // A video is left out (see wallpaperSync).
+  if (preferences.wallpaper) {
+    const wallpaper = wallpaperForBackup(localStorage.getItem(WALLPAPER_SYNC_KEY))
+    if (wallpaper !== null) storage[WALLPAPER_SYNC_KEY] = wallpaper
+  }
 
   const bundle: NebulaSyncBundleV1 = {
     schemaVersion: 1,
@@ -173,6 +184,7 @@ export function parseGoogleSyncBundle(raw: string): NebulaSyncBundleV1 {
   const categories: GoogleSyncPreferences = {
     settings: parsed.categories.settings === true,
     bookmarks: parsed.categories.bookmarks === true,
+    wallpaper: parsed.categories.wallpaper === true,
     passwords: parsed.categories.passwords === true,
   }
 
@@ -227,6 +239,10 @@ export function mergeGoogleSyncBackupBundle(
   if (local.categories.settings) {
     copyCategoryStorage(storage, local.storage, SETTINGS_KEYS)
   }
+  // A device without wallpaper settings does not wipe the wallpaper of the backup.
+  if (local.categories.wallpaper && typeof local.storage[WALLPAPER_SYNC_KEY] === 'string') {
+    storage[WALLPAPER_SYNC_KEY] = local.storage[WALLPAPER_SYNC_KEY]
+  }
   if (local.categories.bookmarks) {
     copyCategoryStorage(storage, local.storage, BOOKMARK_KEYS)
   }
@@ -234,6 +250,7 @@ export function mergeGoogleSyncBackupBundle(
   const categories: GoogleSyncPreferences = {
     settings: local.categories.settings || remote.categories.settings,
     bookmarks: local.categories.bookmarks || remote.categories.bookmarks,
+    wallpaper: local.categories.wallpaper || remote.categories.wallpaper,
     passwords: local.categories.passwords || remote.categories.passwords,
   }
 
@@ -261,6 +278,14 @@ export function applyGoogleSyncStorage(
 ): void {
   if (preferences.settings && bundle.categories.settings) {
     replaceStorageKeys(SETTINGS_KEYS, bundle.storage)
+  }
+  if (preferences.wallpaper && bundle.categories.wallpaper) {
+    // A backup without a wallpaper entry leaves this device's own wallpaper alone.
+    const wallpaper = bundle.storage[WALLPAPER_SYNC_KEY]
+    if (typeof wallpaper === 'string') {
+      const restored = wallpaperToRestore(wallpaper, localStorage.getItem(WALLPAPER_SYNC_KEY))
+      if (restored !== null) persistLocalStorage(WALLPAPER_SYNC_KEY, restored)
+    }
   }
   if (preferences.bookmarks && bundle.categories.bookmarks) {
     replaceStorageKeys(BOOKMARK_KEYS, bundle.storage)

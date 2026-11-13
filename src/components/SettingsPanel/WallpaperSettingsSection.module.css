@@ -43,7 +43,7 @@
   border-radius: 9px;
   padding: 7px 10px;
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .modeTabs {
@@ -233,7 +233,7 @@
 .videoText span,
 .positionHint span {
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
   line-height: 1.4;
 }
 
@@ -256,7 +256,7 @@
   border-radius: 8px;
   padding: 7px 9px;
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .fitButtonActive,

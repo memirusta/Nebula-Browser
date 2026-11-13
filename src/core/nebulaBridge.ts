@@ -9,6 +9,7 @@ import { scopedBrowserEvent } from '../platform/browserWindowScope'
 export type ChromeShellAction =
   | { type: 'request-state' }
   | { type: 'request-site-info' }
+  | { type: 'tutorial-menu-opened' }
   | { type: 'raise-chrome-overlay' }
   | { type: 'open-tab'; shortcutId: string; url: string }
   | { type: 'close-tab'; shortcutId: string }
@@ -67,6 +68,10 @@ export interface ToolbarUiStatePayload {
 export interface GuidedTutorialStatePayload {
   open: boolean
   step: number
+  /** The first step's menu was opened with its button, not the pointer (for someone who cannot use the pointer there). */
+  menuShown?: boolean
+  /** The opening scene of the first tour (see tutorialMode.ts). */
+  intro?: 'waiting' | 'opening' | null
 }
 
 export type SitePermissionState =

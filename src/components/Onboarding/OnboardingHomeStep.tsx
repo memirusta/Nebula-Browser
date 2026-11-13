@@ -19,7 +19,9 @@ import {
   type WeatherSubdivision,
 } from '../../platform/weatherLocationSearch'
 import { ensureMainPermissionUi } from '../../platform/mainPermissionUi'
+import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { OnboardingActions } from './OnboardingActions'
+import { OnboardingWallpaperPicker } from './OnboardingWallpaperPicker'
 import { ONBOARDING_COPY } from './onboardingCopy'
 import styles from './OnboardingWizard.module.css'
 
@@ -27,6 +29,10 @@ interface Props {
   locale: NebulaLocale
   /** The footer of the wizard, where this screen puts its buttons. */
   footer: HTMLElement | null
+  wallpaper: WallpaperConfig
+  onUpdateWallpaper: (patch: Partial<WallpaperConfig>) => void
+  onPickWallpaper: () => void
+  onPickVideoWallpaper: () => void
   onBack: () => void
   onContinue: () => void
 }
@@ -503,6 +509,10 @@ function normalize(value: string): string {
 export function OnboardingHomeStep({
   locale,
   footer,
+  wallpaper,
+  onUpdateWallpaper,
+  onPickWallpaper,
+  onPickVideoWallpaper,
   onBack,
   onContinue,
 }: Props) {
@@ -812,6 +822,14 @@ export function OnboardingHomeStep({
         {text.homeTitle}
       </h1>
       <p className={styles.lead}>{text.homeLead}</p>
+
+      <OnboardingWallpaperPicker
+        config={wallpaper}
+        text={text}
+        onChange={onUpdateWallpaper}
+        onPickImage={onPickWallpaper}
+        onPickVideo={onPickVideoWallpaper}
+      />
 
       <label className={styles.setupField}>
         <span>{copy.region}</span>

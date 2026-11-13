@@ -8,9 +8,15 @@ interface ChromeOverlayState {
   hasSensitiveUsage: boolean
 }
 
+/** More than any of these panels needs; the native side keeps the overlay inside the window. */
+export const TALL_PANEL_OVERLAY_HEIGHT = 1100
+
 /** Reserve native WebView height for floating panels without resizing the page. */
 export function chromeOverlayMinimumHeight(state: ChromeOverlayState): number {
-  if (state.siteInfoOpen || state.privateInfoOpen || state.extensionsOpen || state.tabSearchOpen) return 650
+  // The site information and the private browsing panels are as tall as their content; the overlay is cut to the window
+  // anyway, so this is only "as much as the window gives", and they scroll only in a window too short for them.
+  if (state.siteInfoOpen || state.privateInfoOpen) return TALL_PANEL_OVERLAY_HEIGHT
+  if (state.extensionsOpen || state.tabSearchOpen) return 650
   if (!state.isBrowsing) return 0
   // The bubble keeps this room in its small form too: it grows back to full size on hover, and an
   // overlay that shrank with it cut the bubble off while it animated. The clip region (not the height)

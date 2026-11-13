@@ -35,6 +35,7 @@ import { OnboardingSyncRestoreStep } from './OnboardingSyncRestoreStep'
 import { OnboardingDefaultBrowserStep } from './OnboardingDefaultBrowserStep'
 import { OnboardingDoneStep } from './OnboardingDoneStep'
 import { OnboardingHomeStep } from './OnboardingHomeStep'
+import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { OnboardingProfileStep } from './OnboardingProfileStep'
 import { OnboardingWelcomeStep } from './OnboardingWelcomeStep'
 import { ONBOARDING_COPY } from './onboardingCopy'
@@ -54,6 +55,11 @@ interface OnboardingWizardProps {
   theme: NebulaTheme
   /** The person chose light or dark here; it becomes the app's theme. */
   onThemeChange: (theme: 'light' | 'dark') => void
+  /** The background of the home screen, and what the person picks for it on the home screen step. */
+  wallpaper: WallpaperConfig
+  onUpdateWallpaper: (patch: Partial<WallpaperConfig>) => void
+  onPickWallpaper: () => void
+  onPickVideoWallpaper: () => void
   onApplyImportedShortcuts?: (
     shortcuts: Shortcut[],
   ) => void
@@ -119,6 +125,10 @@ export function OnboardingWizard({
   initialStep,
   theme,
   onThemeChange,
+  wallpaper,
+  onUpdateWallpaper,
+  onPickWallpaper,
+  onPickVideoWallpaper,
   onApplyImportedShortcuts,
   onComplete,
 }: OnboardingWizardProps) {
@@ -1149,6 +1159,10 @@ export function OnboardingWizard({
               footer={
                 footer
               }
+              wallpaper={wallpaper}
+              onUpdateWallpaper={onUpdateWallpaper}
+              onPickWallpaper={onPickWallpaper}
+              onPickVideoWallpaper={onPickVideoWallpaper}
               onBack={
                 goBack
               }
@@ -1194,6 +1208,7 @@ export function OnboardingWizard({
               weatherLabel={
                 weatherLabel
               }
+              wallpaper={wallpaper}
               onFinish={
                 finish
               }

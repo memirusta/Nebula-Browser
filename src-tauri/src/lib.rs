@@ -60,6 +60,8 @@ mod site_ui;
 #[cfg(all(target_os = "windows", feature = "split-driver"))]
 mod spike_driver;
 mod system_stats;
+#[cfg(target_os = "windows")]
+mod tab_error_copy;
 mod tab_error_page;
 mod tab_fullscreen;
 mod tab_metadata;
@@ -533,6 +535,13 @@ async fn webview_execute_script(
 #[tauri::command]
 fn webview_set_ui_locale(locale: String) -> Result<(), String> {
     tab_error_page::set_ui_locale(&locale);
+    Ok(())
+}
+
+/// The colours of the interface for the page a failed navigation shows (see `tab_error_page::ErrorPageTheme`).
+#[tauri::command]
+fn webview_set_error_page_theme(theme: tab_error_page::ErrorPageTheme) -> Result<(), String> {
+    tab_error_page::set_theme(&theme);
     Ok(())
 }
 
@@ -2038,6 +2047,7 @@ pub fn run() {
             layout_audit::webview_resync_scale,
             webview_setup_tab_error_pages,
             webview_set_ui_locale,
+            webview_set_error_page_theme,
             webview_setup_main_site_permissions,
             weather_search_cities,
             weather_search_subdivisions,

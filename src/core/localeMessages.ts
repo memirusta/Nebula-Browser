@@ -714,6 +714,15 @@ catShortcutsDesc: {
     tr: 'Görünüm, gizlilik, dil, widget düzeni ve tarayıcı kısayolları.',
     en: 'Appearance, privacy, language, widget layout, and browser shortcuts.',
   },
+  syncWallpaper: { tr: 'Duvar kâğıdı', en: 'Wallpaper' },
+  syncWallpaperHint: {
+    tr: 'Hareketli arka plan veya seçtiğin resim. Resim, Google Drive’daki gizli Nebula klasörüne gider.',
+    en: 'The moving background or the picture you chose. A picture goes to the hidden Nebula folder in your Google Drive.',
+  },
+  syncWallpaperVideoNote: {
+    tr: 'Video duvar kâğıdın yedeklenmez; yedekte bunun yerine varsayılan Indigo arka plan olur.',
+    en: 'Your video wallpaper is not backed up. The backup holds the default Indigo background instead.',
+  },
   syncPasswords: { tr: 'Şifreler', en: 'Passwords' },
   syncPasswordsHint: {
     tr: 'Şifreler Google’a gitmeden önce cihazda uçtan uca şifrelenir.',

@@ -88,7 +88,7 @@ try {
     await delay(220)
   }
   if (tutorialOnly) {
-    checks += await verifyTutorial({ cdp, load, size, evaluate, key, wait, root })
+    checks += await verifyTutorial({ cdp, load, size, evaluate, key, wait, root, base })
   } else {
   for (const panel of ['history', 'notifications', 'downloads', 'site', 'private']) {
     for (const variant of panel === 'site' || panel === 'private' ? ['home'] : ['home', 'browsing']) {

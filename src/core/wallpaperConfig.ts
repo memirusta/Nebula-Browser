@@ -38,7 +38,8 @@ export const WALLPAPER_CONFIG_KEY =
 export const DEFAULT_WALLPAPER_CONFIG:
   WallpaperConfig = {
     version: 2,
-    mode: 'image',
+    // New people start with the moving Nebula background; a picture or video is their own choice.
+    mode: 'ambient',
     fit: 'cover',
     position: {
       x: 50,
@@ -116,7 +117,9 @@ export function normalizeWallpaperConfig(
         input?.mode,
       )
         ? input.mode
-        : base.mode,
+        : input?.imageUrl
+          ? 'image'
+          : base.mode,
 
     fit:
       isWallpaperFit(
@@ -207,8 +210,10 @@ export function loadWallpaperConfig():
   const legacyImage =
     loadWallpaper()
 
+  // A picture chosen with an older version stays the background; only without one the default applies.
   return {
     ...DEFAULT_WALLPAPER_CONFIG,
+    ...(legacyImage ? { mode: 'image' as const } : {}),
     imageUrl:
       legacyImage,
   }

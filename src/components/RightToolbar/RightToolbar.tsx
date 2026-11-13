@@ -125,6 +125,7 @@ export function RightToolbar({
           <button
             key={id}
             ref={id === 'settings' ? settingsRef : undefined}
+            data-nebula-tutorial={id === 'settings' && variant === 'default' ? 'home-settings' : undefined}
             type="button"
             className={[
               styles.actionBtn,

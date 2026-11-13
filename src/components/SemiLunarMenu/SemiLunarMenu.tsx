@@ -31,7 +31,8 @@ import type { RemoveMemberResult } from '../../hooks/useShortcutFolders'
 import { useShortcutPositions } from '../../hooks/useShortcutPositions'
 import { siteIconSource } from '../../core/siteIcon'
 import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
-import { faviconForUrl, shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
+import { shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
+import { TUTORIAL_DEMO_ICONS } from '../../core/tutorialDemoIcons'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
 import { computeViewportLunarSize, isUsableLunarViewport } from '../../core/lunarSizing'
 import { confirmCursorOutsideLunar } from '../../core/lunarDrop'
@@ -74,14 +75,14 @@ const TUTORIAL_DEMO_SHORTCUT: Shortcut = {
   id: 'nebula-tutorial-youtube',
   label: 'YouTube',
   url: 'https://www.youtube.com/',
-  favicon: faviconForUrl('https://www.youtube.com/'),
+  favicon: TUTORIAL_DEMO_ICONS.youtube,
 }
 
 const TUTORIAL_DEMO_TABS: Array<Shortcut & { left: string; top: string }> = [
   { ...TUTORIAL_DEMO_SHORTCUT, left: '27%', top: '56%' },
-  { id: 'nebula-tutorial-wikipedia', label: 'Wikipedia', url: 'https://www.wikipedia.org/', favicon: faviconForUrl('https://www.wikipedia.org/'), left: '43%', top: '49%' },
-  { id: 'nebula-tutorial-netflix', label: 'Netflix', url: 'https://www.netflix.com/', favicon: faviconForUrl('https://www.netflix.com/'), left: '60%', top: '49%' },
-  { id: 'nebula-tutorial-github', label: 'GitHub', url: 'https://github.com/', favicon: faviconForUrl('https://github.com/'), left: '76%', top: '56%' },
+  { id: 'nebula-tutorial-wikipedia', label: 'Wikipedia', url: 'https://www.wikipedia.org/', favicon: TUTORIAL_DEMO_ICONS.wikipedia, left: '43%', top: '49%' },
+  { id: 'nebula-tutorial-netflix', label: 'Netflix', url: 'https://www.netflix.com/', favicon: TUTORIAL_DEMO_ICONS.netflix, left: '60%', top: '49%' },
+  { id: 'nebula-tutorial-github', label: 'GitHub', url: 'https://github.com/', favicon: TUTORIAL_DEMO_ICONS.github, left: '76%', top: '56%' },
 ]
 
 import { extensionHostCopy } from '../../core/extensionHostCopy'
@@ -147,6 +148,13 @@ interface SemiLunarMenuProps {
   tutorialHoverOpen?: boolean
   tutorialDemoTab?: boolean
   tutorialHighlight?: 'edge' | 'content' | null
+  /** The opening scene of the first tour: the menu opens slowly, and a light runs once along its rim. */
+  tutorialSlowOpen?: boolean
+  tutorialSweep?: boolean
+  /** The tour is about something else for now: the menu stays open but dimmed (the window's dimming cannot reach this webview). */
+  tutorialDimmed?: boolean
+  /** The menu has opened by the pointer resting at the top edge, while the tour asked for it. */
+  onTutorialMenuOpened?: () => void
   onShortcutInteractionChange?: (active: boolean) => void
   activeUrl?: string | null
   getSession?: (url: string) => BrowseSession | null
@@ -209,6 +217,10 @@ export function SemiLunarMenu({
   tutorialHoverOpen = false,
   tutorialDemoTab = false,
   tutorialHighlight = null,
+  tutorialSlowOpen = false,
+  tutorialSweep = false,
+  tutorialDimmed = false,
+  onTutorialMenuOpened,
   onShortcutInteractionChange,
   activeUrl = null,
   getSession,
@@ -341,6 +353,25 @@ export function SemiLunarMenu({
     stage === 'expanded' ||
     (isHome && homeAlwaysOpen)
   )
+  // The sample tabs of the tour can be dragged about inside the menu, so the person can try it (they are not kept, and they
+  // do not make folders: the text says how that is done).
+  const [demoOffsets, setDemoOffsets] = useState<Record<string, { x: number; y: number }>>({})
+  const demoDragRef = useRef<{ id: string; startX: number; startY: number; baseX: number; baseY: number } | null>(null)
+  // The tour waits for the menu to open by the pointer; it is told once the menu is open.
+  const onTutorialMenuOpenedRef = useRef(onTutorialMenuOpened)
+  useEffect(() => {
+    onTutorialMenuOpenedRef.current = onTutorialMenuOpened
+  }, [onTutorialMenuOpened])
+  // While the tour waits for the pointer, the menu starts closed even if it was open (the home page keeps it open by default):
+  // this is a change made while rendering, so the open state of before is never seen by the check below.
+  const [tourWaitsForMenu, setTourWaitsForMenu] = useState(false)
+  if (tutorialHoverOpen !== tourWaitsForMenu) {
+    setTourWaitsForMenu(tutorialHoverOpen)
+    if (tutorialHoverOpen) setStage('closed')
+  }
+  useEffect(() => {
+    if (tutorialHoverOpen && stage === 'expanded') onTutorialMenuOpenedRef.current?.()
+  }, [tutorialHoverOpen, stage])
   const [browserFullscreenActive, setBrowserFullscreenActive] = useState(false)
   const [semiLunarRenderEpoch, setSemiLunarRenderEpoch] = useState(0)
   const [nativeHoverRecoveryArmed, setNativeHoverRecoveryArmed] = useState(false)
@@ -1837,6 +1868,9 @@ const handleFolderMemberClose = useCallback(
     isExpanded ? styles.rootExpanded : '',
     tutorialHighlight === 'edge' ? styles.tutorialEdgeHighlight : '',
     tutorialHighlight === 'content' ? styles.tutorialContentHighlight : '',
+    tutorialSlowOpen ? styles.tutorialSlow : '',
+    tutorialSweep ? styles.tutorialSwell : '',
+    tutorialDimmed ? styles.tutorialDimmed : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -1941,6 +1975,21 @@ const handleFolderMemberClose = useCallback(
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
             />
+            {tutorialSweep && (
+              <ellipse
+                className={styles.tutorialSweep}
+                cx={lunarMetrics.cx}
+                cy={lunarMetrics.cy}
+                rx={lunarMetrics.rx}
+                ry={lunarMetrics.ry}
+                pathLength={1}
+                fill="none"
+                stroke="var(--nebula-accent)"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                clipPath="url(#lunarRimBand)"
+              />
+            )}
           </svg>
 
           {isExpanded && onHomeClick && (
@@ -2157,11 +2206,48 @@ const handleFolderMemberClose = useCallback(
                   type="button"
                   className={[styles.tutorialDemoTab, styles.shortcut].join(' ')}
                   aria-label={demo.label}
-                  style={{ left: demo.left, top: demo.top }}
+                  style={{
+                    left: demo.left,
+                    top: demo.top,
+                    transform: `translate(calc(-50% + ${demoOffsets[demo.id]?.x ?? 0}px), calc(-50% + ${demoOffsets[demo.id]?.y ?? 0}px))`,
+                    touchAction: 'none',
+                    cursor: demoDragRef.current?.id === demo.id ? 'grabbing' : 'grab',
+                  }}
                   onMouseEnter={() => showTutorialDemoPreview(demo)}
                   onMouseLeave={hideTutorialDemoPreview}
                   onFocus={() => showTutorialDemoPreview(demo)}
                   onBlur={hideTutorialDemoPreview}
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    const current = demoOffsets[demo.id] ?? { x: 0, y: 0 }
+                    demoDragRef.current = { id: demo.id, startX: event.clientX, startY: event.clientY, baseX: current.x, baseY: current.y }
+                    hideTutorialDemoPreview()
+                  }}
+                  onPointerMove={(event) => {
+                    const drag = demoDragRef.current
+                    if (!drag || drag.id !== demo.id) return
+                    const area = event.currentTarget.offsetParent?.getBoundingClientRect()
+                    // Anywhere inside the menu: the offset is measured from where the tab starts, so the limit is how far
+                    // that is from each edge of the menu.
+                    const startX = ((parseFloat(demo.left) || 50) / 100) * (area?.width ?? 0)
+                    const startY = ((parseFloat(demo.top) || 50) / 100) * (area?.height ?? 0)
+                    const x = drag.baseX + event.clientX - drag.startX
+                    const y = drag.baseY + event.clientY - drag.startY
+                    const limitX = area ? [24 - startX, area.width - 24 - startX] : [x, x]
+                    const limitY = area ? [24 - startY, area.height - 24 - startY] : [y, y]
+                    setDemoOffsets((offsets) => ({
+                      ...offsets,
+                      [demo.id]: {
+                        x: Math.min(Math.max(x, limitX[0]), limitX[1]),
+                        y: Math.min(Math.max(y, limitY[0]), limitY[1]),
+                      },
+                    }))
+                  }}
+                  onPointerUp={(event) => {
+                    event.currentTarget.releasePointerCapture(event.pointerId)
+                    demoDragRef.current = null
+                  }}
+                  onPointerCancel={() => { demoDragRef.current = null }}
                 >
                   <span className={styles.faviconShell}>
                     <img src={siteIconSource(demo.favicon, demo.url)} alt="" className={styles.favicon} draggable={false} />

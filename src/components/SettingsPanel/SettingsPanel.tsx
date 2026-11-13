@@ -20,7 +20,7 @@ import { IT_LOCALE_MESSAGES, JA_LOCALE_MESSAGES } from '../../core/localeMessage
 import { useLocale, type NebulaLocale } from '../../hooks/useLocale'
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap'
 import { showAppConfirmation } from '../../core/appDialog'
-import { DEFAULT_NEBULA_SETTINGS, applyNebulaCssVars, type NebulaSettings } from '../../core/nebulaSettings'
+import { DEFAULT_NEBULA_SETTINGS, INTERFACE_FONTS, INTERFACE_FONT_IDS, applyNebulaCssVars, type NebulaSettings } from '../../core/nebulaSettings'
 import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { WallpaperSettingsSection } from './WallpaperSettingsSection'
 import { SettingsNavIcon } from './SettingsNavIcon'
@@ -807,7 +807,7 @@ function ShortcutReference({
 
 /** What each theme brings of its own: the accent and the background, for the tile of the default palette. */
 const THEME_OWN: Record<'dark' | 'light' | 'forest', { accent: string; neutral: string }> = {
-  dark: { accent: '#8b8ffb', neutral: '#0c0e19' },
+  dark: { accent: '#7ec8e3', neutral: '#09090b' },
   light: { accent: '#4f46e5', neutral: '#f2f3fb' },
   forest: { accent: '#7ec8e3', neutral: '#07110c' },
 }
@@ -843,6 +843,8 @@ interface SettingsPanelProps {
   onTogglePreviewOnHover: () => void
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
+  /** Starts the guided tour again (from About). */
+  onStartTutorial: () => void
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
@@ -882,6 +884,7 @@ function CategoryContent({
   onTogglePreviewOnHover,
   onEnterHomeEdit,
   onFactoryReset,
+  onStartTutorial,
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
@@ -916,6 +919,8 @@ function CategoryContent({
   onTogglePreviewOnHover: () => void
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
+  /** Starts the guided tour again (from About). */
+  onStartTutorial: () => void
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
@@ -1049,7 +1054,7 @@ function CategoryContent({
                 const own = THEME_OWN[appearance.theme]
                 const tint = def.hue >= 0 ? neutralSet(def.hue, def.sat, appearance.theme) : null
                 const names = {
-                  indigo: groupCopy.paletteIndigo, ocean: groupCopy.paletteOcean, emerald: groupCopy.paletteEmerald,
+                  default: groupCopy.paletteDefault, indigo: groupCopy.paletteIndigo, ocean: groupCopy.paletteOcean, emerald: groupCopy.paletteEmerald,
                   rose: groupCopy.paletteRose, amber: groupCopy.paletteAmber, graphite: groupCopy.paletteGraphite,
                 }
                 return {
@@ -1116,6 +1121,18 @@ function CategoryContent({
                 { value: 'ja', label: t('languageJapanese') },
               ]}
               onChange={(value) => setLocale(value as NebulaLocale)}
+            />
+            <SettingSelectRow
+              label={groupCopy.fontFamily}
+              hint={groupCopy.fontFamilyHint}
+              value={appearance.fontFamily}
+              options={INTERFACE_FONT_IDS.map((id) => ({
+                value: id,
+                label: id === 'system' ? groupCopy.fontSystem : INTERFACE_FONTS[id].label,
+              }))}
+              onChange={(value) =>
+                onUpdate('appearance', 'fontFamily', value as NebulaSettings['appearance']['fontFamily'])
+              }
             />
             <SettingSelectRow
               label={t('darkenWebpages')}
@@ -1299,10 +1316,10 @@ function CategoryContent({
                   hint={t('clockFontFamilyHint')}
                   value={home.clockFontFamily}
                   options={[
-                    { value: 'system', label: t('clockFontSystem') },
+                    { value: 'interface', label: groupCopy.clockFontInterface },
+                    ...INTERFACE_FONT_IDS.filter((id) => id !== 'system').map((id) => ({ value: id, label: INTERFACE_FONTS[id].label })),
                     { value: 'light', label: t('clockFontLight') },
                     { value: 'serif', label: t('clockFontSerif') },
-                    { value: 'mono', label: t('clockFontMono') },
                   ]}
                   onChange={(v) =>
                     onUpdate('home', 'clockFontFamily', v as NebulaSettings['home']['clockFontFamily'])
@@ -1903,7 +1920,7 @@ function CategoryContent({
     case 'about':
       return (
         <>
-          <AboutUpdateSection />
+          <AboutUpdateSection onStartTutorial={onStartTutorial} />
           <SettingDangerRow
             label={t('factoryReset')}
             hint={t('factoryResetHint')}
@@ -1944,6 +1961,7 @@ export function SettingsPanel({
   onTogglePreviewOnHover,
   onEnterHomeEdit,
   onFactoryReset,
+  onStartTutorial,
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
@@ -2235,6 +2253,7 @@ export function SettingsPanel({
               onTogglePreviewOnHover={onTogglePreviewOnHover}
               onEnterHomeEdit={onEnterHomeEdit}
               onFactoryReset={onFactoryReset}
+              onStartTutorial={onStartTutorial}
               onClearBrowsingData={onClearBrowsingData}
               onGetProfileStorageUsage={onGetProfileStorageUsage}
               activeUrl={activeUrl}

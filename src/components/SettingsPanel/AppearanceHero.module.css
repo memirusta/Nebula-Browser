@@ -291,7 +291,7 @@
 /* ---- palettes: the neutral, the accent and the detail colour of each, side by side ---- */
 .palettes {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -343,7 +343,7 @@
 
 @media (max-width: 900px) {
   .palettes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .wallpapers {

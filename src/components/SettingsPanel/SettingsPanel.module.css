@@ -149,11 +149,13 @@
   color: var(--nebula-text);
 }
 
-.navItemActive {
-  background: var(--nebula-surface);
+.navItemActive,
+.navItemActive:hover {
+  /* The chosen page carries the accent; pointing at another one only lightens it, so the two never look alike. */
+  background: color-mix(in srgb, var(--nebula-accent) 14%, var(--nebula-surface));
   color: var(--nebula-text);
   font-weight: 600;
-  box-shadow: 0 0 0 1px var(--nebula-glass-border);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--nebula-accent) 32%, transparent);
 }
 
 .navIcon {
@@ -396,7 +398,7 @@
 .settingsSearchResult:hover { background: rgba(255,255,255,.07); }
 .settingsSearchResult span, .settingsSearchResult small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settingsSearchResult span { font-size: 12px; font-weight: 600; }
-.settingsSearchResult small { margin-top: 3px; color: var(--nebula-text-muted); font-size: 10px; }
+.settingsSearchResult small { margin-top: 3px; color: var(--nebula-text-muted); font-size: 10.5px; }
 .settingsSearchEmpty { margin: 12px 8px; color: var(--nebula-text-muted); font-size: 11px; line-height: 1.45; }
 
 .notificationPermissions {
@@ -497,15 +499,32 @@
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
+/* A button like the others (it also stands alone), red only in its text and when it is pointed at. */
 .dangerBtn {
-  border-color: rgba(255, 96, 96, 0.45);
-  background: rgba(255, 72, 72, 0.14);
-  color: #ffb4b4;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: var(--ui-radius-sm);
+  border: 1px solid var(--nebula-field-border);
+  background: var(--nebula-surface-2);
+  color: #ff9a9a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
 }
 
-.dangerBtn:hover {
-  background: rgba(255, 72, 72, 0.24);
-  border-color: rgba(255, 120, 120, 0.6);
+:global([data-theme='light']) .dangerBtn {
+  color: #c0322f;
+}
+
+.dangerBtn:hover:not(:disabled) {
+  background: rgba(255, 72, 72, 0.14);
+  border-color: rgba(255, 96, 96, 0.4);
+}
+
+.dangerBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .placeholder {
@@ -1035,7 +1054,7 @@
 
 .shortcutOr {
   color: var(--nebula-text-muted);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .shortcutKey {
@@ -1173,7 +1192,7 @@
 
 .tutorialStepButton small {
   margin-bottom: 3px;
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
@@ -1298,7 +1317,7 @@
 .tutorialProgress,
 .tutorialStepCopy > small {
   color: var(--nebula-accent);
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1330,7 +1349,7 @@
   background: rgba(255, 255, 255, 0.06);
   color: var(--nebula-text);
   font-family: inherit;
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .tutorialFooter {
@@ -1466,7 +1485,7 @@
   flex-shrink: 0;
   padding: 4px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }

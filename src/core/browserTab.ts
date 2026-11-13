@@ -9,6 +9,7 @@ import {
 } from './browserWorkspace.ts'
 import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
 import { isLocalNetworkHostname } from './addressNavigation.ts'
+import { placeholderFavicon, usableStoredFavicon } from './faviconPlaceholder.ts'
 
 export const TAB_WEBVIEW_PREFIX = 'nebula-tab-'
 
@@ -76,7 +77,8 @@ export function faviconForUrl(url: string): string {
     ) {
       return '/nebula-app-logo.png'
     }
-    return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(`${pageUrl.origin}/`)}&sz=128`
+    // Drawn here: opening a site must not tell a favicon service which site it was.
+    return placeholderFavicon(hostname)
   } catch {
     return '/nebula-app-logo.png'
   }
@@ -99,7 +101,7 @@ export function createBrowserTab(
     isPrivate?: boolean
   },
 ): BrowserTab {
-  const shortcutFavicon = shortcut.favicon?.trim()
+  const shortcutFavicon = usableStoredFavicon(shortcut.favicon)
   const favicon = shortcutFavicon && !isLowResolutionInlineFavicon(shortcutFavicon)
     ? shortcutFavicon
     : faviconForUrl(shortcut.url)

@@ -1,3 +1,4 @@
+import { loadWallpaperConfig } from '../../core/wallpaperConfig'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   buildGoogleSyncBundle,
@@ -41,6 +42,8 @@ type WorkingAction = 'enable' | 'backup' | 'restore' | 'disable' | null
 
 export function GoogleSyncSettings({ email }: GoogleSyncSettingsProps) {
   const { locale, t } = useLocale()
+  // A video wallpaper is never backed up (see wallpaperSync); say so while one is chosen.
+  const wallpaperIsVideo = loadWallpaperConfig().mode === 'video'
   const [status, setStatus] = useState<GoogleSyncStatus>({ enabled: false, email: null })
   const [preferences, setPreferences] = useState<GoogleSyncPreferences>(loadGoogleSyncPreferences)
   const [syncPassword, setSyncPassword] = useState('')
@@ -267,6 +270,18 @@ const now =
             <label className={styles.syncOption}>
               <input
                 type="checkbox"
+                checked={preferences.wallpaper}
+                onChange={(event) => updatePreference('wallpaper', event.target.checked)}
+              />
+              <span>
+                <strong>{t('syncWallpaper')}</strong>
+                <small>{t('syncWallpaperHint')}</small>
+                {wallpaperIsVideo && <small data-sync-video-note="true">{t('syncWallpaperVideoNote')}</small>}
+              </span>
+            </label>
+            <label className={styles.syncOption}>
+              <input
+                type="checkbox"
                 checked={preferences.passwords}
                 onChange={(event) => updatePreference('passwords', event.target.checked)}
               />
@@ -297,7 +312,7 @@ const now =
               type="button"
               className={styles.actionBtn}
               onClick={() => void handleBackup()}
-              disabled={working !== null || (!preferences.settings && !preferences.bookmarks && !preferences.passwords)}
+              disabled={working !== null || (!preferences.settings && !preferences.bookmarks && !preferences.wallpaper && !preferences.passwords)}
             >
               {working === 'backup' ? t('syncBackingUp') : t('syncBackupNow')}
             </button>

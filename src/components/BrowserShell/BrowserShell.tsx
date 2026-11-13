@@ -28,6 +28,10 @@ import { PasswordFillPrompt } from '../PasswordFillPrompt/PasswordFillPrompt'
 import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
 import { isTauri } from '../../platform/runtime'
+import { runCompatibilityTrial } from '../../core/compatibilityTrial'
+import { siteCompatibilityCopy } from '../../core/siteCompatibilityCopy'
+import { readPopupTheme } from '../../core/popupTheme'
+import { syncNativeErrorPageTheme } from '../../platform/tauriErrorPage'
 import {
   listenChromeActions,
   emitActiveUrl,
@@ -124,6 +128,7 @@ import {
   reloadBrowseTab,
   listenTabWebviewSnapshots,
   listenTabWebviewLoadingStates,
+  waitForTabLoadToFinish,
   printBrowseWebview,
   setBrowseTabMuted,
   setBrowseTabZoom,
@@ -268,6 +273,7 @@ import { NotificationPanel } from '../NotificationPanel/NotificationPanel'
 import { HistoryPanel } from '../HistoryPanel/HistoryPanel'
 import { CrashRecoveryPrompt } from '../CrashRecoveryPrompt/CrashRecoveryPrompt'
 import { GuidedTutorial } from '../GuidedTutorial/GuidedTutorial'
+import { tutorialSurfaces } from '../../core/tutorialMode'
 import {
   completeGuidedTutorial,
   shouldResumeGuidedTutorial,
@@ -370,6 +376,10 @@ export function BrowserShell() {
     guidedTutorialStep,
     setGuidedTutorialStep,
   ] = useState(0)
+
+  // The opening scene of the first tour only (see tutorialMode.ts): it starts when the first-run wizard ends.
+  const [guidedTutorialIntro, setGuidedTutorialIntro] =
+    useState<'waiting' | 'opening' | null>(null)
 
   const isHome =
     viewMode ===
@@ -1299,6 +1309,7 @@ export function BrowserShell() {
 
         startGuidedTutorial()
         setGuidedTutorialStep(0)
+        setGuidedTutorialIntro('waiting')
         setGuidedTutorialOpen(true)
       },
       [
@@ -1495,8 +1506,6 @@ export function BrowserShell() {
   const compatibilityPromptActiveRef =
     useRef(false)
 
-  const compatibilityPromptedHostsRef =
-    useRef(new Map<string, number>())
 
   const siteSurfaceActive =
     siteUiQueue.length > 0 ||
@@ -1542,19 +1551,40 @@ export function BrowserShell() {
     )
   })
 
-  const guidedTutorialStateRef = useRef({
+  // The first step opens the menu by hovering the top edge; its button opens it without the pointer. The step it was
+  // pressed on is kept, so it is forgotten when the step changes.
+  const [guidedTutorialMenuStep, setGuidedTutorialMenuStep] = useState<number | null>(null)
+  const guidedTutorialMenuShown = guidedTutorialOpen && guidedTutorialMenuStep === guidedTutorialStep
+  // What the menu and the page do for the current step (see tutorialMode.ts).
+  const tutorialUi = tutorialSurfaces({ open: guidedTutorialOpen, step: guidedTutorialStep, menuShown: guidedTutorialMenuShown, intro: guidedTutorialIntro })
+
+  const guidedTutorialStateRef = useRef<{ open: boolean; step: number; menuShown: boolean; intro: 'waiting' | 'opening' | null }>({
     open: guidedTutorialOpen,
     step: guidedTutorialStep,
+    menuShown: false,
+    intro: null,
   })
+
+  // Once the menu has opened, the scene takes its time; then the tour goes on with the tabs.
+  useEffect(() => {
+    if (guidedTutorialIntro !== 'opening') return
+    const timer = window.setTimeout(() => {
+      setGuidedTutorialIntro(null)
+      setGuidedTutorialStep(1)
+    }, 1900)
+    return () => window.clearTimeout(timer)
+  }, [guidedTutorialIntro, setGuidedTutorialStep])
 
   useEffect(() => {
     const state = {
       open: guidedTutorialOpen,
       step: guidedTutorialStep,
+      menuShown: guidedTutorialMenuShown,
+      intro: guidedTutorialIntro,
     }
     guidedTutorialStateRef.current = state
     void emitGuidedTutorialState(state)
-  }, [guidedTutorialOpen, guidedTutorialStep])
+  }, [guidedTutorialOpen, guidedTutorialStep, guidedTutorialMenuShown, guidedTutorialIntro])
 
   // A slider of the Semi-Lunar settings is being held (see SettingsPanel): the menu may show over Settings.
   const [settingsLunarPeek, setSettingsLunarPeek] = useState(false)
@@ -1573,10 +1603,6 @@ export function BrowserShell() {
         passwordPromptOffer !== null ||
         compatibilityPromptActive ||
         (
-          guidedTutorialOpen &&
-          guidedTutorialStep >= 2
-        ) ||
-        (
           viewMode !== 'browsing' &&
           (
             downloadPanelOpen ||
@@ -1590,8 +1616,6 @@ export function BrowserShell() {
     compatibilityPromptActive,
     developerToolsOpen,
     downloadPanelOpen,
-    guidedTutorialOpen,
-    guidedTutorialStep,
     historyPanelOpen,
     notificationPanelOpen,
     onboardingOpen,
@@ -2513,6 +2537,7 @@ export function BrowserShell() {
       completeGuidedTutorial()
       setGuidedTutorialOpen(false)
       setGuidedTutorialStep(0)
+      setGuidedTutorialIntro(null)
     }, [])
 
   const handleClearBrowsingData =
@@ -4005,6 +4030,18 @@ export function BrowserShell() {
         )
       })()
     }, [])
+
+  // From Settings > About: the tour again, from the home page, without the opening scene of the first time.
+  const handleStartGuidedTutorial =
+    useCallback(() => {
+      closeSettings()
+      goHome()
+      startGuidedTutorial()
+      setGuidedTutorialStep(0)
+      setGuidedTutorialIntro(null)
+      setGuidedTutorialMenuStep(null)
+      setGuidedTutorialOpen(true)
+    }, [closeSettings, goHome])
 
   const openNewBlankTab =
     useCallback(() => {
@@ -6093,6 +6130,11 @@ export function BrowserShell() {
             void emitFreshSiteInfoState()
             break
 
+          // The menu opened under the pointer while the tour waited for it (the opening scene).
+          case 'tutorial-menu-opened':
+            setGuidedTutorialIntro((current) => current === 'waiting' ? 'opening' : current)
+            break
+
           case 'raise-chrome-overlay':
             void stackBrowsingChromeAboveBrowser(activeTabIdRef.current)
             break
@@ -6501,7 +6543,7 @@ export function BrowserShell() {
     !homeEditMode &&
     !guidedTutorialOpen
 
-  const tutorialToolbarVisible = guidedTutorialOpen && guidedTutorialStep === 3
+  const tutorialToolbarVisible = tutorialUi.toolbarVisible
 
   const {
     appearance,
@@ -6510,6 +6552,12 @@ export function BrowserShell() {
     notifications,
     privacy,
   } = settings
+
+  // The page a failed navigation shows is built natively: it gets the interface's colours whenever they change.
+  useEffect(() => {
+    if (!isTauri) return
+    void syncNativeErrorPageTheme(readPopupTheme())
+  }, [appearance.theme, appearance.accentColor, appearance.neutralHue, appearance.neutralSat])
 
   const [systemPrefersDark, setSystemPrefersDark] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches,
@@ -6555,6 +6603,7 @@ export function BrowserShell() {
     let unlisten: (() => void) | undefined
 
     void listenSiteCompatibilityRequests((request) => {
+      // The person pressed "try with protections off" on the error page of a cut connection (see tab_error_page.rs).
       if (
         disposed ||
         compatibilityPromptActiveRef.current
@@ -6583,65 +6632,63 @@ export function BrowserShell() {
         return
       }
 
-      const now = Date.now()
-      const promptedAt =
-        compatibilityPromptedHostsRef.current.get(
-          target.hostname,
-        ) ?? 0
-      if (now - promptedAt < 5 * 60_000) {
-        return
-      }
+      const copy = siteCompatibilityCopy(locale, target.hostname)
+      const title = t('siteCompatibilityTitle')
 
-      compatibilityPromptedHostsRef.current.set(
-        target.hostname,
-        now,
-      )
-      compatibilityPromptActiveRef.current = true
-      setCompatibilityPromptActive(true)
-
-      void showAppConfirmation(
-        `${target.hostname} ${t('siteCompatibilityMessage')}`,
-        t('siteCompatibilityTitle'),
-        {
-          acceptLabel: t('siteCompatibilityRetry'),
-          cancelLabel: t('siteCompatibilityNotNow'),
-        },
-      )
-        .then(async (accepted) => {
-          if (!accepted || !getTab(shortcutId)) return
-
-          const latest = compatibilityContextRef.current
-          const siteExceptions = addSiteException(
-            latest.privacy.siteExceptions,
-            target.hostname,
-          )
-          const nextPrivacy = {
+      /** The exceptions of the privacy settings, applied natively and saved. */
+      const setExceptions = async (change: (exceptions: string) => string) => {
+        const latest = compatibilityContextRef.current
+        const siteExceptions = change(latest.privacy.siteExceptions)
+        await setBrowsePrivacyOptions(
+          {
             ...latest.privacy,
             siteExceptions,
-          }
+            siteNotifications:
+              latest.siteNotifications,
+            showNotificationContent:
+              latest.showNotificationContent,
+            notificationAllowedSites:
+              latest.notificationAllowedSites,
+            notificationBlockedSites:
+              latest.notificationBlockedSites,
+          },
+          latest.openTabIds,
+        )
+        updateCategory('privacy', 'siteExceptions', siteExceptions)
+      }
 
-          await setBrowsePrivacyOptions(
-            {
-              ...nextPrivacy,
-              siteNotifications:
-                latest.siteNotifications,
-              showNotificationContent:
-                latest.showNotificationContent,
-              notificationAllowedSites:
-                latest.notificationAllowedSites,
-              notificationBlockedSites:
-                latest.notificationBlockedSites,
-            },
-            latest.openTabIds,
-          )
+      /** A question in the app's own dialog: the page webviews step aside while it is shown. */
+      const inDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
+        compatibilityPromptActiveRef.current = true
+        setCompatibilityPromptActive(true)
+        try {
+          return await show()
+        } finally {
+          compatibilityPromptActiveRef.current = false
+          setCompatibilityPromptActive(false)
+        }
+      }
 
-          updateCategory(
-            'privacy',
-            'siteExceptions',
-            siteExceptions,
-          )
+      compatibilityPromptActiveRef.current = true
+      void runCompatibilityTrial({
+        addException: () => setExceptions((exceptions) => addSiteException(exceptions, target.hostname)),
+        removeException: () => setExceptions((exceptions) => removeSiteException(exceptions, target.hostname)),
+        navigate: async () => {
           await navigateBrowseTab(shortcutId, target.url)
-        })
+        },
+        showsTheSite: async () => {
+          await waitForTabLoadToFinish(shortcutId)
+          try {
+            // The error page is not a pinnable address: only the site itself answers with an http(s) one.
+            await readBrowseTabCurrentUrl(shortcutId)
+            return true
+          } catch {
+            return false
+          }
+        },
+        askToKeep: () => inDialog(() => showAppConfirmation(copy.worked, title, { acceptLabel: copy.keepOff, cancelLabel: copy.backOn })),
+        tellItDidNotHelp: () => inDialog(() => showAppAlert(copy.didNotHelp, title)),
+      })
         .catch((error: unknown) => {
           console.error(
             `[nebula compatibility] Failed to retry ${target.hostname} (${request.errorStatus}).`,
@@ -6669,7 +6716,7 @@ export function BrowserShell() {
       disposed = true
       unlisten?.()
     }
-  }, [getTab, t, updateCategory])
+  }, [getTab, locale, t, updateCategory])
 
   useEffect(() => {
     if (!isTauri) return
@@ -6965,10 +7012,8 @@ export function BrowserShell() {
       browsingAdaptiveLunar.height,
 
     homeAlwaysOpen:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 0
-        ? false
-        : semiLunar.homeAlwaysOpen,
+      tutorialUi.semiLunar.homeAlwaysOpen ??
+      semiLunar.homeAlwaysOpen,
 
     onHomeClick:
       isHome
@@ -7014,29 +7059,22 @@ export function BrowserShell() {
         downloadPanelOpen
       ),
 
-    tutorialExpansion:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 1
-        ? true
-        : null,
+    tutorialExpansion: tutorialUi.semiLunar.expansion,
 
-    tutorialHoverOpen:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 0,
+    tutorialHoverOpen: tutorialUi.semiLunar.hoverOpen,
 
-    tutorialDemoTab:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 1,
+    tutorialDemoTab: tutorialUi.semiLunar.demoTab,
 
-    tutorialHighlight: (
-      guidedTutorialOpen
-        ? guidedTutorialStep === 0
-          ? 'edge'
-          : guidedTutorialStep === 1
-            ? 'content'
-            : null
-        : null
-    ) as 'edge' | 'content' | null,
+    tutorialHighlight: tutorialUi.semiLunar.highlight,
+
+    tutorialDimmed: tutorialUi.semiLunar.dimmed,
+
+    tutorialSlowOpen: tutorialUi.semiLunar.slowOpen,
+
+    tutorialSweep: tutorialUi.semiLunar.sweep,
+
+    onTutorialMenuOpened: () =>
+      setGuidedTutorialIntro((current) => current === 'waiting' ? 'opening' : current),
 
   }
 
@@ -7950,7 +7988,17 @@ export function BrowserShell() {
         step={guidedTutorialStep}
         lunarWidthPx={browsingAdaptiveLunar.width}
         lunarHeightPx={browsingAdaptiveLunar.height}
-        onStepChange={setGuidedTutorialStep}
+        onStepChange={(step) => {
+          setGuidedTutorialIntro(null)
+          setGuidedTutorialStep(step)
+        }}
+        menuShown={guidedTutorialMenuShown}
+        intro={tutorialUi.intro}
+        onToggleMenu={() => {
+          // In the opening scene the button opens the menu for good; on the step itself it shows and hides it.
+          if (guidedTutorialIntro === 'waiting') setGuidedTutorialIntro('opening')
+          else setGuidedTutorialMenuStep((step) => (step === guidedTutorialStep ? null : guidedTutorialStep))
+        }}
         onSkip={handleFinishGuidedTutorial}
         onComplete={handleFinishGuidedTutorial}
       />
@@ -7979,6 +8027,10 @@ export function BrowserShell() {
                 theme,
               )
             }
+            wallpaper={wallpaper}
+            onUpdateWallpaper={updateWallpaper}
+            onPickWallpaper={pickWallpaper}
+            onPickVideoWallpaper={pickVideoWallpaper}
             onApplyImportedShortcuts={
               handleApplyImportedShortcuts
             }
@@ -8073,6 +8125,9 @@ export function BrowserShell() {
             }
             onFactoryReset={
               handleFactoryReset
+            }
+            onStartTutorial={
+              handleStartGuidedTutorial
             }
             onClearBrowsingData={
               handleClearBrowsingData

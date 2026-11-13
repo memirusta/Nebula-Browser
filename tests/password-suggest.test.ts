@@ -308,3 +308,25 @@ test('the passkey list can be switched off: the setting reaches the native side,
   const panel = read('../src/components/SettingsPanel/SettingsPanel.tsx')
   assert.match(panel, /onUpdate\('privacy', 'passkeyList', !privacy\.passkeyList\)/)
 })
+
+test('the heading of the list names the site as the site calls itself, or by its domain name with a capital', () => {
+  // What the site says wins (og:site_name, application-name), unless it is long or empty.
+  assert.equal(engine.siteNameFrom('Lichess', 'lichess.org'), 'Lichess')
+  assert.equal(engine.siteNameFrom('  The   Guardian ', 'www.theguardian.com'), 'The Guardian')
+  assert.equal(engine.siteNameFrom('x'.repeat(41), 'chess.com'), 'Chess')
+  assert.equal(engine.siteNameFrom('', 'chess.com'), 'Chess')
+  assert.equal(engine.siteNameFrom(null, 'lichess.org'), 'Lichess')
+  // Otherwise the name of the domain: without "www." and the suffix, also a two-part one.
+  assert.equal(engine.siteNameFrom(null, 'www.lichess.org'), 'Lichess')
+  assert.equal(engine.siteNameFrom(null, 'accounts.google.com'), 'Google')
+  assert.equal(engine.siteNameFrom(null, 'www.bbc.co.uk'), 'Bbc')
+  assert.equal(engine.siteNameFrom(null, 'sahibinden.com.tr'), 'Sahibinden')
+  assert.equal(engine.siteNameFrom(null, 'localhost'), 'Localhost')
+  // An address is not a name.
+  assert.equal(engine.siteNameFrom(null, '192.168.1.5'), '192.168.1.5')
+  assert.equal(engine.siteNameFrom(null, ''), '')
+  // The heading uses it instead of "Nebula".
+  assert.match(scriptSource, /brand\.textContent = pageSiteName\(\) \|\| 'Nebula';/)
+  // A key before the name says the list is Nebula's.
+  assert.match(scriptSource, /var mark = keyIcon\(\);\s+mark\.setAttribute\('width', '13'\);/)
+})

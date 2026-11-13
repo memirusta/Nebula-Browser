@@ -52,6 +52,7 @@ commands.allow = [
   "webview_restore_browsing_layout",
   "webview_setup_tab_error_pages",
   "webview_set_ui_locale",
+  "webview_set_error_page_theme",
   "webview_setup_main_site_permissions",
   "weather_search_cities",
   "weather_search_subdivisions",

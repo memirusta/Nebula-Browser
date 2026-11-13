@@ -8,11 +8,13 @@ import {
   type AppUpdateStatus,
 } from '../../core/appUpdater'
 import { tf } from '../../core/locale'
+import { getTutorialCopy } from '../../core/tutorial'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
 
-export function AboutUpdateSection() {
+export function AboutUpdateSection({ onStartTutorial }: { onStartTutorial: () => void }) {
   const { locale, t } = useLocale()
+  const tour = getTutorialCopy(locale)
   const [status, setStatus] = useState<AppUpdateStatus>({ phase: 'idle' })
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
   const busy = status.phase === 'checking' || status.phase === 'downloading'
@@ -55,6 +57,18 @@ export function AboutUpdateSection() {
           </div>
         </div>
         <p style={{ marginTop: 16 }}>{t('updateBlurb')}</p>
+      </div>
+
+      <div className={styles.row}>
+        <div className={styles.rowText}>
+          <div className={styles.rowLabel}>{tour.categoryLabel}</div>
+          <div className={styles.rowHint}>{tour.categoryDescription}</div>
+        </div>
+        <div className={styles.rowActions}>
+          <button type="button" className={styles.actionBtn} onClick={onStartTutorial}>
+            {tour.start}
+          </button>
+        </div>
       </div>
 
       {isAppUpdaterAvailable() && (

@@ -1,4 +1,5 @@
 import type { SavedPassword } from './passwordVault'
+import type { PopupTheme } from './popupTheme'
 
 /** The words of the list's heading, with `{count}` where the number of accounts goes. */
 export interface PasswordSuggestLabels {
@@ -11,6 +12,8 @@ export interface PasswordSuggestLabels {
 export interface PasswordSuggestPayload {
   accounts: string[]
   labels: PasswordSuggestLabels
+  /** The colours of the interface, so the list matches the theme and the palette. */
+  theme?: PopupTheme
 }
 
 /** The user names to list for a site: the most recently used first, each name once. */
@@ -63,6 +66,8 @@ export interface PasswordSaveBubble {
   site: string
   username: string
   labels: PasswordSaveLabels
+  /** The colours of the interface, so the bubble matches the theme and the palette. */
+  theme?: PopupTheme
 }
 
 /** The script that shows the save/update bubble in the page, or (with `null`) takes it away. A page without the

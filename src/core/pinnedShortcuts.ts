@@ -1,6 +1,7 @@
 import type { Shortcut } from './types'
 import { resolveNavigationInput } from './addressNavigation.ts'
 import { faviconForUrl } from './browserTab.ts'
+import { isPlaceholderFavicon, usableStoredFavicon } from './faviconPlaceholder.ts'
 import { isLowResolutionInlineFavicon } from './pageFavicon.ts'
 
 export const PINNED_SHORTCUTS_KEY = 'nebula-pinned-shortcuts-v5'
@@ -78,16 +79,23 @@ export function pinnedShortcutFromShortcut(shortcut: Shortcut): PinnedShortcut |
   if (!id || !url) return null
 
   const title = shortcut.label.trim() || fallbackTitle(url)
-  const shortcutFavicon = shortcut.favicon?.trim()
+  // Only an icon the page or the site gave is kept; the letter placeholder is drawn when there is none.
+  const shortcutFavicon = usableStoredFavicon(shortcut.favicon)
   const favicon = shortcutFavicon && !isLowResolutionInlineFavicon(shortcutFavicon)
     ? shortcutFavicon
-    : faviconForUrl(url)
+    : storedFaviconFor(url)
   return {
     id,
     url,
     title,
     ...(favicon ? { favicon } : {}),
   }
+}
+
+/** The bundled logo for an address that is not a site; the drawn letter is not stored, it is drawn again. */
+function storedFaviconFor(url: string): string | undefined {
+  const fallback = faviconForUrl(url)
+  return isPlaceholderFavicon(fallback) ? undefined : fallback
 }
 
 export function shortcutFromPinnedShortcut(pin: PinnedShortcut): Shortcut {
@@ -194,10 +202,12 @@ export function editPinnedShortcut(
   const currentOrigin = new URL(current.url).origin
   const nextOrigin = new URL(url).origin
   const favicon = currentOrigin === nextOrigin
-    ? current.favicon
-    : faviconForUrl(url)
+    ? usableStoredFavicon(current.favicon) ?? undefined
+    : storedFaviconFor(url)
+  // The old icon belongs to the old site: it is not carried over when the address moves to another one.
+  const { favicon: _previousFavicon, ...rest } = current
   const edited: PinnedShortcut = {
-    ...current,
+    ...rest,
     url,
     title,
     ...(favicon ? { favicon } : {}),

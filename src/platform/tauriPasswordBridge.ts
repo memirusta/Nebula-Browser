@@ -16,6 +16,7 @@ import {
   type PasswordSaveBubble,
   type PasswordSuggestPayload,
 } from '../core/passwordSuggest'
+import { readPopupTheme } from '../core/popupTheme'
 import { isTauri } from './runtime'
 
 const tabScriptChains = new Map<string, Promise<string | null>>()
@@ -140,7 +141,7 @@ export async function pushPasswordSuggestions(
   shortcutId: string,
   payload: PasswordSuggestPayload,
 ): Promise<'ok' | 'missing' | null> {
-  const raw = await runTabScriptExclusive(shortcutId, buildPasswordSuggestScript(payload))
+  const raw = await runTabScriptExclusive(shortcutId, buildPasswordSuggestScript({ ...payload, theme: readPopupTheme() }))
   if (!raw) return null
   if (raw.includes('missing')) return 'missing'
   return raw.includes('ok') ? 'ok' : null
@@ -152,7 +153,7 @@ export async function pushPasswordSaveBubble(
   shortcutId: string,
   bubble: PasswordSaveBubble | null,
 ): Promise<'ok' | 'missing' | null> {
-  const raw = await runTabScriptExclusive(shortcutId, buildPasswordSaveScript(bubble))
+  const raw = await runTabScriptExclusive(shortcutId, buildPasswordSaveScript(bubble ? { ...bubble, theme: readPopupTheme() } : null))
   if (!raw) return null
   if (raw.includes('missing')) return 'missing'
   return raw.includes('ok') ? 'ok' : null

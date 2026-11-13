@@ -966,6 +966,10 @@ test('supported app locales drive regional formatting and native UI copy', () =>
     new URL('../src-tauri/src/tab_error_page.rs', import.meta.url),
     'utf8',
   )
+  const nativeErrorCopy = readFileSync(
+    new URL('../src-tauri/src/tab_error_copy.rs', import.meta.url),
+    'utf8',
+  )
   const permissions = readFileSync(
     new URL('../src-tauri/permissions/webview-commands.toml', import.meta.url),
     'utf8',
@@ -1006,15 +1010,20 @@ test('supported app locales drive regional formatting and native UI copy', () =>
   assert.match(localeHook, /isNebulaLocale\(next\)/)
   assert.match(tauriLocale, /nebula-ui-locale-changed/)
   assert.match(tauriLocale, /emit\(UI_LOCALE_CHANGED_EVENT, locale\)/)
-  assert.match(nativeErrorPage, /This site can't be reached/)
-  assert.match(nativeErrorPage, /Bu siteye ulaşılamıyor/)
-  assert.match(nativeErrorPage, /No se puede acceder a este sitio/)
-  assert.match(nativeErrorPage, /Diese Website ist nicht erreichbar/)
-  assert.match(nativeErrorPage, /Ce site est inaccessible/)
-  assert.match(nativeErrorPage, /Situs ini tidak dapat dijangkau/)
-  assert.match(nativeErrorPage, /Не удаётся открыть этот сайт/)
-  assert.match(nativeErrorPage, /Questo sito non è raggiungibile/)
-  assert.match(nativeErrorPage, /このサイトにアクセスできません/)
+  assert.match(nativeErrorPage, /error_copy\(locale, error_detail\(error_status\)\)/)
+  for (const title of [
+    "The connection was reset",
+    'Bağlantı sıfırlandı',
+    'Se restableció la conexión',
+    'Die Verbindung wurde zurückgesetzt',
+    'La connexion a été réinitialisée',
+    'Koneksi direset',
+    'Соединение было сброшено',
+    'La connessione è stata reimpostata',
+    '接続がリセットされました',
+  ]) {
+    assert.match(nativeErrorCopy, new RegExp(title))
+  }
   assert.doesNotMatch(nativeErrorPage, /navigator\.language/)
   assert.match(permissions, /"webview_set_ui_locale"/)
 })
