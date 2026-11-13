@@ -64,7 +64,7 @@ export function LeftSidebar({
           +
         </button>
 
-        <div className={styles.gridSlot}>{children}</div>
+        <div className={styles.gridSlot} data-nebula-tutorial="home-widgets">{children}</div>
 
         {clockSettings.showClock && <SidebarClock settings={clockSettings} />}
 

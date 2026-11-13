@@ -273,6 +273,7 @@ import { NotificationPanel } from '../NotificationPanel/NotificationPanel'
 import { HistoryPanel } from '../HistoryPanel/HistoryPanel'
 import { CrashRecoveryPrompt } from '../CrashRecoveryPrompt/CrashRecoveryPrompt'
 import { GuidedTutorial } from '../GuidedTutorial/GuidedTutorial'
+import { tutorialSurfaces } from '../../core/tutorialMode'
 import {
   completeGuidedTutorial,
   shouldResumeGuidedTutorial,
@@ -375,6 +376,10 @@ export function BrowserShell() {
     guidedTutorialStep,
     setGuidedTutorialStep,
   ] = useState(0)
+
+  // The opening scene of the first tour only (see tutorialMode.ts): it starts when the first-run wizard ends.
+  const [guidedTutorialIntro, setGuidedTutorialIntro] =
+    useState<'waiting' | 'opening' | null>(null)
 
   const isHome =
     viewMode ===
@@ -1304,6 +1309,7 @@ export function BrowserShell() {
 
         startGuidedTutorial()
         setGuidedTutorialStep(0)
+        setGuidedTutorialIntro('waiting')
         setGuidedTutorialOpen(true)
       },
       [
@@ -1549,22 +1555,36 @@ export function BrowserShell() {
   // pressed on is kept, so it is forgotten when the step changes.
   const [guidedTutorialMenuStep, setGuidedTutorialMenuStep] = useState<number | null>(null)
   const guidedTutorialMenuShown = guidedTutorialOpen && guidedTutorialMenuStep === guidedTutorialStep
+  // What the menu and the page do for the current step (see tutorialMode.ts).
+  const tutorialUi = tutorialSurfaces({ open: guidedTutorialOpen, step: guidedTutorialStep, menuShown: guidedTutorialMenuShown, intro: guidedTutorialIntro })
 
-  const guidedTutorialStateRef = useRef<{ open: boolean; step: number; menuShown: boolean }>({
+  const guidedTutorialStateRef = useRef<{ open: boolean; step: number; menuShown: boolean; intro: 'waiting' | 'opening' | null }>({
     open: guidedTutorialOpen,
     step: guidedTutorialStep,
     menuShown: false,
+    intro: null,
   })
+
+  // Once the menu has opened, the scene takes its time; then the tour goes on with the tabs.
+  useEffect(() => {
+    if (guidedTutorialIntro !== 'opening') return
+    const timer = window.setTimeout(() => {
+      setGuidedTutorialIntro(null)
+      setGuidedTutorialStep(1)
+    }, 1900)
+    return () => window.clearTimeout(timer)
+  }, [guidedTutorialIntro, setGuidedTutorialStep])
 
   useEffect(() => {
     const state = {
       open: guidedTutorialOpen,
       step: guidedTutorialStep,
       menuShown: guidedTutorialMenuShown,
+      intro: guidedTutorialIntro,
     }
     guidedTutorialStateRef.current = state
     void emitGuidedTutorialState(state)
-  }, [guidedTutorialOpen, guidedTutorialStep, guidedTutorialMenuShown])
+  }, [guidedTutorialOpen, guidedTutorialStep, guidedTutorialMenuShown, guidedTutorialIntro])
 
   // A slider of the Semi-Lunar settings is being held (see SettingsPanel): the menu may show over Settings.
   const [settingsLunarPeek, setSettingsLunarPeek] = useState(false)
@@ -1583,10 +1603,6 @@ export function BrowserShell() {
         passwordPromptOffer !== null ||
         compatibilityPromptActive ||
         (
-          guidedTutorialOpen &&
-          guidedTutorialStep >= 2
-        ) ||
-        (
           viewMode !== 'browsing' &&
           (
             downloadPanelOpen ||
@@ -1600,8 +1616,6 @@ export function BrowserShell() {
     compatibilityPromptActive,
     developerToolsOpen,
     downloadPanelOpen,
-    guidedTutorialOpen,
-    guidedTutorialStep,
     historyPanelOpen,
     notificationPanelOpen,
     onboardingOpen,
@@ -2523,6 +2537,7 @@ export function BrowserShell() {
       completeGuidedTutorial()
       setGuidedTutorialOpen(false)
       setGuidedTutorialStep(0)
+      setGuidedTutorialIntro(null)
     }, [])
 
   const handleClearBrowsingData =
@@ -4015,6 +4030,18 @@ export function BrowserShell() {
         )
       })()
     }, [])
+
+  // From Settings > About: the tour again, from the home page, without the opening scene of the first time.
+  const handleStartGuidedTutorial =
+    useCallback(() => {
+      closeSettings()
+      goHome()
+      startGuidedTutorial()
+      setGuidedTutorialStep(0)
+      setGuidedTutorialIntro(null)
+      setGuidedTutorialMenuStep(null)
+      setGuidedTutorialOpen(true)
+    }, [closeSettings, goHome])
 
   const openNewBlankTab =
     useCallback(() => {
@@ -6103,6 +6130,11 @@ export function BrowserShell() {
             void emitFreshSiteInfoState()
             break
 
+          // The menu opened under the pointer while the tour waited for it (the opening scene).
+          case 'tutorial-menu-opened':
+            setGuidedTutorialIntro((current) => current === 'waiting' ? 'opening' : current)
+            break
+
           case 'raise-chrome-overlay':
             void stackBrowsingChromeAboveBrowser(activeTabIdRef.current)
             break
@@ -6511,7 +6543,7 @@ export function BrowserShell() {
     !homeEditMode &&
     !guidedTutorialOpen
 
-  const tutorialToolbarVisible = guidedTutorialOpen && guidedTutorialStep === 3
+  const tutorialToolbarVisible = tutorialUi.toolbarVisible
 
   const {
     appearance,
@@ -6980,10 +7012,8 @@ export function BrowserShell() {
       browsingAdaptiveLunar.height,
 
     homeAlwaysOpen:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 0
-        ? false
-        : semiLunar.homeAlwaysOpen,
+      tutorialUi.semiLunar.homeAlwaysOpen ??
+      semiLunar.homeAlwaysOpen,
 
     onHomeClick:
       isHome
@@ -7029,29 +7059,22 @@ export function BrowserShell() {
         downloadPanelOpen
       ),
 
-    tutorialExpansion:
-      guidedTutorialOpen &&
-      (guidedTutorialStep === 1 || (guidedTutorialStep === 0 && guidedTutorialMenuShown))
-        ? true
-        : null,
+    tutorialExpansion: tutorialUi.semiLunar.expansion,
 
-    tutorialHoverOpen:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 0,
+    tutorialHoverOpen: tutorialUi.semiLunar.hoverOpen,
 
-    tutorialDemoTab:
-      guidedTutorialOpen &&
-      guidedTutorialStep === 1,
+    tutorialDemoTab: tutorialUi.semiLunar.demoTab,
 
-    tutorialHighlight: (
-      guidedTutorialOpen
-        ? guidedTutorialStep === 0
-          ? 'edge'
-          : guidedTutorialStep === 1
-            ? 'content'
-            : null
-        : null
-    ) as 'edge' | 'content' | null,
+    tutorialHighlight: tutorialUi.semiLunar.highlight,
+
+    tutorialDimmed: tutorialUi.semiLunar.dimmed,
+
+    tutorialSlowOpen: tutorialUi.semiLunar.slowOpen,
+
+    tutorialSweep: tutorialUi.semiLunar.sweep,
+
+    onTutorialMenuOpened: () =>
+      setGuidedTutorialIntro((current) => current === 'waiting' ? 'opening' : current),
 
   }
 
@@ -7965,9 +7988,17 @@ export function BrowserShell() {
         step={guidedTutorialStep}
         lunarWidthPx={browsingAdaptiveLunar.width}
         lunarHeightPx={browsingAdaptiveLunar.height}
-        onStepChange={setGuidedTutorialStep}
+        onStepChange={(step) => {
+          setGuidedTutorialIntro(null)
+          setGuidedTutorialStep(step)
+        }}
         menuShown={guidedTutorialMenuShown}
-        onToggleMenu={() => setGuidedTutorialMenuStep((step) => (step === guidedTutorialStep ? null : guidedTutorialStep))}
+        intro={tutorialUi.intro}
+        onToggleMenu={() => {
+          // In the opening scene the button opens the menu for good; on the step itself it shows and hides it.
+          if (guidedTutorialIntro === 'waiting') setGuidedTutorialIntro('opening')
+          else setGuidedTutorialMenuStep((step) => (step === guidedTutorialStep ? null : guidedTutorialStep))
+        }}
         onSkip={handleFinishGuidedTutorial}
         onComplete={handleFinishGuidedTutorial}
       />
@@ -8090,6 +8121,9 @@ export function BrowserShell() {
             }
             onFactoryReset={
               handleFactoryReset
+            }
+            onStartTutorial={
+              handleStartGuidedTutorial
             }
             onClearBrowsingData={
               handleClearBrowsingData

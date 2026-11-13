@@ -44,6 +44,7 @@ import {
   type SensitiveFeatureUsage,
 } from './core/sensitiveFeatureUsage'
 import { computeAdaptiveLunarSize } from './core/lunarSizing'
+import { tutorialSurfaces } from './core/tutorialMode'
 import { chromeOverlayMinimumHeight } from './core/chromeOverlayLayout'
 import { tabCanGoForward } from './core/tabNavigation'
 import { useBrowseSessions } from './hooks/useBrowseSessions'
@@ -105,6 +106,8 @@ export function ChromeApp() {
     open: false,
     step: 0,
   })
+  // What the menu does for the current step of the tour (see tutorialMode.ts).
+  const tutorialUi = tutorialSurfaces(guidedTutorial)
   // A Semi-Lunar slider in Settings is being held: the menu is shown open so the change is seen on it.
   const [settingsLunarPeek, setSettingsLunarPeek] = useState(false)
   const [downloadUi, setDownloadUi] = useState<DownloadUiStatePayload>({
@@ -857,11 +860,7 @@ export function ChromeApp() {
       }}
       getSession={getSession}
       previewOnHover={semiLunar.previewOnHover}
-      homeAlwaysOpen={
-        guidedTutorial.open && guidedTutorial.step === 0
-          ? false
-          : semiLunar.homeAlwaysOpen
-      }
+      homeAlwaysOpen={tutorialUi.semiLunar.homeAlwaysOpen ?? semiLunar.homeAlwaysOpen}
       browsingHoverOpen={semiLunar.browsingHoverOpen}
       browsingOpenDelayMs={semiLunar.browsingOpenDelayMs}
       closeDelayMs={semiLunar.closeDelayMs}
@@ -906,22 +905,14 @@ export function ChromeApp() {
       downloadProgress={downloadUi.aggregateProgress}
       downloadPanelOpen={browsingDownloadPanelOpen}
       forceOpen={browsingDownloadPanelOpen || privateInfoOpen || extensionsOpen || settingsLunarPeek}
-      tutorialExpansion={
-        guidedTutorial.open && (guidedTutorial.step === 1 || (guidedTutorial.step === 0 && guidedTutorial.menuShown === true))
-          ? true
-          : null
-      }
-      tutorialHoverOpen={guidedTutorial.open && guidedTutorial.step === 0}
-      tutorialDemoTab={guidedTutorial.open && guidedTutorial.step === 1}
-      tutorialHighlight={
-        guidedTutorial.open
-          ? guidedTutorial.step === 0
-            ? 'edge'
-            : guidedTutorial.step === 1
-              ? 'content'
-              : null
-          : null
-      }
+      tutorialExpansion={tutorialUi.semiLunar.expansion}
+      tutorialHoverOpen={tutorialUi.semiLunar.hoverOpen}
+      tutorialDemoTab={tutorialUi.semiLunar.demoTab}
+      tutorialHighlight={tutorialUi.semiLunar.highlight}
+      tutorialDimmed={tutorialUi.semiLunar.dimmed}
+      tutorialSlowOpen={tutorialUi.semiLunar.slowOpen}
+      tutorialSweep={tutorialUi.semiLunar.sweep}
+      onTutorialMenuOpened={() => { void emitChromeAction({ type: 'tutorial-menu-opened' }) }}
       />
 
       {extensionsOpen && viewMode === 'browsing' && (

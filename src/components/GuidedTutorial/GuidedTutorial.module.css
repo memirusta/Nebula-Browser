@@ -1,20 +1,43 @@
-/* The guided tour: a bubble that points at what it is about, with a ring around the target. Its colours are the theme's and
-   the palette's (the --nebula-* tokens), like every pop-up. */
-.overlay { position: fixed; inset: 0; z-index: 12000; overflow: hidden; color: var(--nebula-text); pointer-events: none; }
+/* The guided tour: the screen is dimmed except for what the step is about, and a bubble beside it points at it. Its colours
+   are the theme's and the palette's (the --nebula-* tokens), like every pop-up. The dimming is neutral on purpose: it is there
+   to take the eye away from everything else, so it takes no colour. */
+.overlay { --tour-dim: rgba(0, 0, 0, 0.7); position: fixed; inset: 0; z-index: 12000; overflow: hidden; color: var(--nebula-text); pointer-events: none; }
 .practiceOverlay { pointer-events: none; }
+/* The opening scene is nearly black; once the menu opens the dimming eases to what the steps use. */
+.overlay[data-intro='waiting'] { --tour-dim: rgba(0, 0, 0, 0.92); }
 
+/* The target: a hole in the dimming (the spotlight casts the dimming around itself), with a ring that breathes. */
 .spotlight {
   position: fixed;
   box-sizing: border-box;
   pointer-events: none;
+  box-shadow: 0 0 0 100vmax var(--tour-dim);
+  transition: box-shadow 1600ms ease, left 320ms var(--ease-out-expo, ease), top 320ms var(--ease-out-expo, ease), width 320ms var(--ease-out-expo, ease), height 320ms var(--ease-out-expo, ease), border-radius 320ms var(--ease-out-expo, ease);
+}
+.spotlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   border: 2px solid var(--nebula-accent);
   box-shadow: 0 0 0 5px var(--nebula-soft), 0 0 28px var(--nebula-accent-glow);
-  transition: left 200ms var(--ease-out-expo, ease), top 200ms var(--ease-out-expo, ease), width 200ms var(--ease-out-expo, ease), height 200ms var(--ease-out-expo, ease);
   animation: ring 1.8s ease-in-out infinite;
 }
-.spotlight[data-target='semi-lunar'] { border-radius: 0 0 50% 50% / 0 0 100% 100% !important; }
 /* The top edge is a strip with nothing drawn on it: it is shown as a glow along the edge. */
-.spotlight[data-target='top-edge'] { border: 0; border-radius: 0 !important; background: linear-gradient(180deg, var(--nebula-accent-glow), transparent); box-shadow: none; }
+.spotlight[data-target='top-edge'] { border-radius: 0 !important; background: linear-gradient(180deg, var(--nebula-accent-glow), transparent); }
+.spotlight[data-target='top-edge']::after { display: none; }
+/* A step with nothing to point at: the whole screen is dimmed. */
+.veil { position: fixed; inset: 0; background: var(--tour-dim); pointer-events: none; animation: veil 260ms ease-out; }
+
+.intro { position: fixed; top: 15%; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 14px; width: min(560px, calc(100vw - 32px)); transform: translateX(-50%); text-align: center; color: #fff; pointer-events: none; animation: introIn 900ms var(--ease-out-expo, ease-out) both; }
+.intro p { margin: 0; font-size: clamp(18px, 2.2vw, 26px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.35; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.6); }
+.introArrow { width: 44px; height: 44px; color: var(--nebula-accent); filter: drop-shadow(0 0 12px var(--nebula-accent-glow)); animation: introBob 1.8s ease-in-out infinite; }
+.introActions { display: flex; align-items: center; gap: 14px; margin-top: 10px; pointer-events: auto; }
+.intro .skipButton { color: color-mix(in srgb, #fff 70%, transparent); }
+.intro .skipButton:hover { color: #fff; }
+.intro button:focus-visible { outline: 2px solid var(--nebula-accent); outline-offset: 2px; }
+/* The menu is opening: the sentence has done its job and fades. */
+.intro[data-state='opening'] { opacity: 0; transition: opacity 700ms ease; animation: none; pointer-events: none; }
 
 .bubble {
   position: fixed;
@@ -43,24 +66,25 @@
 }
 .bubble[data-side='below']::before { display: block; top: -7px; left: var(--pointer); border-right: 0; border-bottom: 0; transform: translateX(-50%) rotate(45deg); }
 .bubble[data-side='above']::before { display: block; bottom: -7px; left: var(--pointer); border-left: 0; border-top: 0; transform: translateX(-50%) rotate(45deg); }
+.bubble[data-side='right']::before { display: block; left: -7px; top: var(--pointer); border-right: 0; border-top: 0; transform: translateY(-50%) rotate(45deg); }
 .bubble[data-side='left']::before { display: block; right: -7px; top: var(--pointer); border-left: 0; border-bottom: 0; transform: translateY(-50%) rotate(45deg); }
 
 .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 6px; flex: 0 0 auto; }
-.progress { font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em; color: var(--nebula-accent-ink); font-variant-numeric: tabular-nums; }
-.skipButton { display: flex; align-items: center; gap: 6px; padding: 4px 0 4px 6px; border: 0; background: transparent; color: var(--nebula-text-muted); font: inherit; font-size: 11.5px; cursor: pointer; }
+.progress { font-size: 12.5px; font-weight: 700; letter-spacing: 0.02em; color: var(--nebula-accent-ink); font-variant-numeric: tabular-nums; }
+.skipButton { display: flex; align-items: center; gap: 6px; padding: 4px 0 4px 6px; border: 0; background: transparent; color: var(--nebula-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
 .skipButton > span { font-size: 19px; line-height: 1; }
 .skipButton:hover { color: var(--nebula-text); }
 
 .body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 18px 14px; scrollbar-width: thin; }
-.body h2 { margin: 0 0 6px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; line-height: 1.25; }
-.body p { margin: 0; color: var(--nebula-text-muted); font-size: 13px; line-height: 1.55; }
-.actionHint { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 9px 11px; border: 1px solid var(--nebula-soft-border); border-radius: var(--ui-radius-sm, 10px); background: var(--nebula-soft); color: var(--nebula-text); font-size: 12px; line-height: 1.5; }
+.body h2 { margin: 0 0 6px; font-size: 19.5px; font-weight: 700; letter-spacing: -.02em; line-height: 1.25; }
+.body p { margin: 0; color: var(--nebula-text-muted); font-size: 14.5px; line-height: 1.55; }
+.actionHint { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 9px 11px; border: 1px solid var(--nebula-soft-border); border-radius: var(--ui-radius-sm, 10px); background: var(--nebula-soft); color: var(--nebula-text); font-size: 13.5px; line-height: 1.5; }
 .actionHint svg { width: 18px; height: 18px; flex: 0 0 18px; color: var(--nebula-accent-ink); }
 .actionHint > span { flex: 1 1 auto; }
-.actionHint kbd { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--nebula-field-border); border-bottom-width: 2px; border-radius: 5px; background: var(--nebula-surface-2); font-size: 11px; }
+.actionHint kbd { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--nebula-field-border); border-bottom-width: 2px; border-radius: 5px; background: var(--nebula-surface-2); font-size: 12px; }
 
 /* The way to open the menu without the pointer: a button inside the hint of the first step. */
-.showButton { flex: 0 0 auto; padding: 5px 10px; border: 1px solid var(--nebula-soft-border); border-radius: 8px; background: var(--nebula-surface-2); color: var(--nebula-accent-ink); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.showButton { flex: 0 0 auto; padding: 5px 10px; border: 1px solid var(--nebula-soft-border); border-radius: 8px; background: var(--nebula-surface-2); color: var(--nebula-accent-ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .showButton:hover { background: var(--nebula-soft); }
 .showButton[aria-pressed='true'] { background: var(--nebula-soft); }
 .footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--nebula-glass-border); flex: 0 0 auto; }
@@ -79,6 +103,12 @@
 .bubble button:focus-visible { outline: 2px solid var(--nebula-accent); outline-offset: 2px; }
 .bubble:focus { outline: none; }
 
+/* The bubbles of the steps that are not the current one: on the screen, dimmed with everything else, and not to be touched. */
+.bubble { transition: opacity 360ms ease, left 320ms var(--ease-out-expo, ease), top 320ms var(--ease-out-expo, ease); }
+.bubble[data-active='false'] { opacity: 0.22; pointer-events: none; }
+.bubble[data-active='false'] .body { padding-top: 14px; }
+.eyebrow { display: block; margin-bottom: 4px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--nebula-accent-ink); }
+
 .bubble[data-compact] { overflow-y: auto; scrollbar-width: thin; }
 .bubble[data-compact] .header { padding: 8px 14px 4px; }
 .bubble[data-compact] .body { flex: 0 0 auto; overflow: visible; padding: 0 16px 10px; }
@@ -88,10 +118,20 @@
 
 @keyframes enter { from { opacity: 0; translate: 0 8px; } }
 @keyframes ring { 50% { box-shadow: 0 0 0 9px transparent, 0 0 28px var(--nebula-accent-glow); } }
+/* A finger pressing the gear of Settings: a soft dot that presses down, and rings that spread from it. */
+.tap { position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px; pointer-events: none; }
+.tap::before, .tap::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--nebula-accent); opacity: 0; animation: tapRipple 1.8s ease-out infinite; }
+.tap::after { animation-delay: 0.6s; }
+.tapDot { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--nebula-accent); opacity: 0.75; box-shadow: 0 0 14px var(--nebula-accent-glow); animation: tapPress 1.8s ease-in-out infinite; }
+@keyframes tapRipple { 0% { transform: scale(0.45); opacity: 0.9; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes tapPress { 0%, 100% { transform: scale(1); } 28% { transform: scale(0.66); } }
+@keyframes veil { from { opacity: 0; } }
+@keyframes introIn { from { opacity: 0; translate: 0 10px; } }
+@keyframes introBob { 50% { transform: translateY(-9px); } }
 @media (max-width: 480px), (max-height: 520px) {
   .header { padding: 10px 14px 4px; }
   .body { padding: 0 16px 12px; }
   .body h2 { font-size: 16px; }
   .footer { padding: 9px 12px; }
 }
-@media (prefers-reduced-motion: reduce) { .bubble { animation: none; } .spotlight { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bubble { animation: none; } .spotlight { transition: none; } .spotlight::after { animation: none; } .veil { animation: none; } .intro, .introArrow { animation: none; } .tap::before, .tap::after, .tapDot { animation: none; } .tap::before { opacity: 0.6; transform: scale(1.1); } }

@@ -843,6 +843,8 @@ interface SettingsPanelProps {
   onTogglePreviewOnHover: () => void
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
+  /** Starts the guided tour again (from About). */
+  onStartTutorial: () => void
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
@@ -882,6 +884,7 @@ function CategoryContent({
   onTogglePreviewOnHover,
   onEnterHomeEdit,
   onFactoryReset,
+  onStartTutorial,
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
@@ -916,6 +919,8 @@ function CategoryContent({
   onTogglePreviewOnHover: () => void
   onEnterHomeEdit: () => void
   onFactoryReset: () => void
+  /** Starts the guided tour again (from About). */
+  onStartTutorial: () => void
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
@@ -1915,7 +1920,7 @@ function CategoryContent({
     case 'about':
       return (
         <>
-          <AboutUpdateSection />
+          <AboutUpdateSection onStartTutorial={onStartTutorial} />
           <SettingDangerRow
             label={t('factoryReset')}
             hint={t('factoryResetHint')}
@@ -1956,6 +1961,7 @@ export function SettingsPanel({
   onTogglePreviewOnHover,
   onEnterHomeEdit,
   onFactoryReset,
+  onStartTutorial,
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
@@ -2247,6 +2253,7 @@ export function SettingsPanel({
               onTogglePreviewOnHover={onTogglePreviewOnHover}
               onEnterHomeEdit={onEnterHomeEdit}
               onFactoryReset={onFactoryReset}
+              onStartTutorial={onStartTutorial}
               onClearBrowsingData={onClearBrowsingData}
               onGetProfileStorageUsage={onGetProfileStorageUsage}
               activeUrl={activeUrl}

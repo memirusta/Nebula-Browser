@@ -21,6 +21,7 @@
     width 360ms var(--lunar-ease-open);
 }
 
+/* The top edge while the tour asks to be shown it: a soft glow along the edge, in the colour of the palette. */
 .tutorialEdgeHighlight::before {
   content: '';
   position: absolute;
@@ -29,91 +30,17 @@
   right: 3%;
   z-index: 80;
   height: 52px;
-  background: radial-gradient(ellipse at 50% -18%, rgba(218, 199, 255, 0.96), rgba(112, 202, 255, 0.38) 44%, transparent 74%);
+  background: radial-gradient(ellipse at 50% -18%, var(--nebula-accent), var(--nebula-accent-glow) 44%, transparent 74%);
   filter: blur(9px);
   pointer-events: none;
   animation: tutorialEdgeBreathe 1.8s ease-in-out infinite;
 }
 
-.tutorialEdgeHighlight::after {
-  content: '';
-  position: absolute;
-  top: 1px;
-  left: 8%;
-  right: 8%;
-  z-index: 81;
-  height: 21px;
-  background:
-    radial-gradient(circle, rgba(225, 211, 255, .72) 0 .38px, transparent .85px) 3px 2px / 43px 17px repeat,
-    radial-gradient(circle, rgba(126, 218, 255, .68) 0 .42px, transparent .9px) 17px 7px / 61px 19px repeat,
-    radial-gradient(circle, rgba(190, 166, 255, .62) 0 .35px, transparent .8px) 31px 1px / 79px 13px repeat,
-    radial-gradient(circle at 2% 26%, rgba(238, 229, 255, .95) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 7% 70%, rgba(135, 223, 255, .88) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 13% 42%, rgba(213, 191, 255, .9) 0 .6px, transparent 1.2px),
-    radial-gradient(circle at 18% 84%, rgba(151, 209, 255, .82) 0 .45px, transparent 1px),
-    radial-gradient(circle at 24% 20%, rgba(241, 232, 255, .92) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 29% 61%, rgba(181, 153, 255, .92) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 35% 35%, rgba(134, 220, 255, .9) 0 .6px, transparent 1.2px),
-    radial-gradient(circle at 40% 78%, rgba(232, 216, 255, .88) 0 .45px, transparent 1px),
-    radial-gradient(circle at 46% 17%, rgba(164, 202, 255, .86) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 51% 57%, rgba(240, 227, 255, .96) 0 .6px, transparent 1.2px),
-    radial-gradient(circle at 56% 87%, rgba(132, 220, 255, .84) 0 .45px, transparent 1px),
-    radial-gradient(circle at 62% 31%, rgba(211, 184, 255, .92) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 68% 68%, rgba(159, 211, 255, .88) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 73% 14%, rgba(241, 231, 255, .94) 0 .6px, transparent 1.2px),
-    radial-gradient(circle at 79% 51%, rgba(174, 148, 255, .9) 0 .45px, transparent 1px),
-    radial-gradient(circle at 85% 82%, rgba(131, 222, 255, .84) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 91% 29%, rgba(230, 211, 255, .92) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 97% 63%, rgba(158, 211, 255, .88) 0 .6px, transparent 1.2px),
-    radial-gradient(circle at 5% 91%, rgba(214, 190, 255, .86) 0 .45px, transparent 1px),
-    radial-gradient(circle at 10% 12%, rgba(142, 219, 255, .9) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 16% 55%, rgba(241, 226, 255, .94) 0 .45px, transparent 1px),
-    radial-gradient(circle at 21% 36%, rgba(156, 205, 255, .84) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 27% 89%, rgba(224, 201, 255, .92) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 33% 8%, rgba(132, 224, 255, .86) 0 .45px, transparent 1px),
-    radial-gradient(circle at 38% 53%, rgba(234, 218, 255, .94) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 43% 92%, rgba(151, 210, 255, .86) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 49% 34%, rgba(217, 190, 255, .92) 0 .45px, transparent 1px),
-    radial-gradient(circle at 54% 71%, rgba(132, 223, 255, .9) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 59% 11%, rgba(241, 226, 255, .94) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 65% 89%, rgba(168, 201, 255, .86) 0 .45px, transparent 1px),
-    radial-gradient(circle at 71% 47%, rgba(224, 199, 255, .92) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 76% 94%, rgba(137, 219, 255, .88) 0 .5px, transparent 1.1px),
-    radial-gradient(circle at 82% 24%, rgba(238, 218, 255, .92) 0 .45px, transparent 1px),
-    radial-gradient(circle at 88% 58%, rgba(151, 211, 255, .9) 0 .55px, transparent 1.15px),
-    radial-gradient(circle at 94% 90%, rgba(225, 202, 255, .9) 0 .5px, transparent 1.1px);
-  filter: drop-shadow(0 0 4px rgba(176, 142, 255, .94));
-  pointer-events: none;
-  animation: tutorialEdgeDust 2.4s ease-in-out infinite;
-}
-
-.tutorialContentHighlight .lunarGlass {
-  filter:
-    drop-shadow(0 7px 18px rgba(165, 119, 255, 0.38))
-    drop-shadow(0 12px 34px rgba(78, 200, 255, 0.2));
-}
-
-.tutorialContentHighlight .arcStroke {
-  filter: drop-shadow(0 2px 6px rgba(205, 179, 255, 0.62));
-}
-
+/* No filter on the glass of the menu in the tour: a filter on an element that holds a backdrop-filter shows the glass as a
+   lighter rectangle instead of a dome. */
 .tutorialContentHighlight .iconAnchor > :not(.tutorialDemoTab) {
   opacity: 0.42;
   filter: saturate(0.55);
-}
-
-.tutorialContentHighlight .iconAnchor::after {
-  content: '';
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: 10%;
-  height: 46%;
-  border: 1px solid rgba(212, 190, 255, 0.44);
-  border-radius: 999px;
-  box-shadow: 0 0 26px rgba(146, 97, 236, 0.3);
-  pointer-events: none;
-  animation: tutorialContentBreathe 2s ease-in-out infinite;
 }
 
 @keyframes tutorialEdgeBreathe {
@@ -121,15 +48,64 @@
   50% { opacity: 1; transform: scaleX(1); }
 }
 
-@keyframes tutorialEdgeDust {
-  0%, 100% { opacity: 0.38; transform: translateY(-1px) scaleX(0.94); }
-  45% { opacity: 1; transform: translateY(2px) scaleX(1.02); }
-  70% { opacity: 0.64; transform: translateY(0) scaleX(0.98); }
+/* The tour is about something else for now: the menu stays open, dimmed like the rest of the screen. The dimming is a layer in
+   the shape of the dome over it, not a filter (see above). */
+.tutorialDimmed {
+  pointer-events: none;
 }
 
-@keyframes tutorialContentBreathe {
-  0%, 100% { opacity: 0.42; transform: scale(0.98); }
-  50% { opacity: 0.9; transform: scale(1); }
+.tutorialDimmed::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--lunar-height);
+  z-index: 90;
+  border-radius: 0 0 50% 50% / 0 0 100% 100%;
+  background: rgb(0 0 0 / 0.66);
+  pointer-events: none;
+  animation: tutorialDimIn 320ms ease-out;
+}
+
+@keyframes tutorialDimIn {
+  from { opacity: 0; }
+}
+
+/* The opening scene of the first tour: the menu takes its time to open, a light runs once along its rim, and its glow swells
+   once. Nothing here loops. */
+.tutorialSlow {
+  --lunar-duration-open: 1000ms;
+  --lunar-ease-open: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tutorialSlow.rootExpanded {
+  transition:
+    height 1000ms var(--lunar-ease-open),
+    width 1000ms var(--lunar-ease-open);
+}
+
+.tutorialSweep {
+  stroke-dasharray: 0.16 1;
+  stroke-dashoffset: 0.16;
+  filter: drop-shadow(0 0 7px var(--nebula-accent));
+  animation: tutorialSweep 1300ms cubic-bezier(0.45, 0, 0.25, 1) 150ms both;
+}
+
+.tutorialSwell .lunarGlass {
+  animation: tutorialSwell 1800ms ease-out both;
+}
+
+@keyframes tutorialSweep {
+  from { stroke-dashoffset: 0.16; opacity: 1; }
+  85% { opacity: 1; }
+  to { stroke-dashoffset: -1; opacity: 0; }
+}
+
+@keyframes tutorialSwell {
+  0% { filter: drop-shadow(0 0 0 transparent); }
+  45% { filter: drop-shadow(0 10px 36px var(--nebula-accent-glow)); }
+  100% { filter: drop-shadow(0 6px 18px var(--nebula-accent-glow)); }
 }
 
 .tutorialDemoTab {
@@ -925,8 +901,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .tutorialEdgeHighlight::before,
-  .tutorialEdgeHighlight::after,
-  .tutorialContentHighlight .iconAnchor::after,
+  .tutorialSweep,
+  .tutorialSwell .lunarGlass,
+  .tutorialDimmed::after,
   .tutorialDemoTab {
     animation: none;
   }
