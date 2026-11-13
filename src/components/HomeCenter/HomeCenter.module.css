@@ -105,7 +105,7 @@
 .avatarRing {
   padding: 3px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--nebula-accent), #4a90c2);
+  background: linear-gradient(135deg, var(--nebula-accent), color-mix(in srgb, var(--nebula-accent) 55%, white));
   box-shadow: 0 0 24px var(--nebula-accent-glow);
 }
 
@@ -113,7 +113,7 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: linear-gradient(180deg, #5ba3d9 0%, #2d6a9f 100%);
+  background: var(--nebula-avatar, linear-gradient(180deg, #5ba3d9 0%, #2d6a9f 100%));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -136,8 +136,11 @@
   font-size: 15px;
   font-weight: 300;
   letter-spacing: 0.04em;
-  color: var(--nebula-gold);
-  text-shadow: 0 0 20px var(--nebula-gold-glow);
+  color: var(--nebula-gold-ink);
+  /* Readable on a picture too: a soft shade under the letters, and the glow of the gold. */
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.45),
+    0 0 20px var(--nebula-gold-glow);
 }
 
 .chromeHidden {

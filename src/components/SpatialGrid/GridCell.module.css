@@ -27,7 +27,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: rgba(8, 10, 18, 0.5);
+  background: color-mix(in srgb, var(--nebula-void) 55%, transparent);
   border-bottom: 1px solid var(--nebula-glass-border);
   flex-shrink: 0;
   cursor: grab;

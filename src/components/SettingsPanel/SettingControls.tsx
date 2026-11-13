@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { showAppConfirmation } from '../../core/appDialog'
 import { useLocale } from '../../hooks/useLocale'
 import styles from './SettingsPanel.module.css'
@@ -74,6 +75,11 @@ export function SettingRangeRow({
           disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
           aria-label={label}
+          style={
+            {
+              '--fill': `${Math.round(((value - min) / (max - min || 1)) * 100)}%`,
+            } as CSSProperties
+          }
         />
         <span className={styles.rangeValue}>
           {value}

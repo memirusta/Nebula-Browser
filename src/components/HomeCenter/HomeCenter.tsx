@@ -189,6 +189,8 @@ export function HomeCenter({
   const { t, tf } = useLocale()
 
   const [query, setQuery] = useState('')
+  // A profile picture that cannot be loaded (an expired address, no connection) shows the person icon, not a broken image.
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   // The rest of an address the field completes after the typed text. It only counts while the
   // typed text is still exactly what it was computed for.
   const [completion, setCompletion] = useState<{
@@ -1106,10 +1108,12 @@ onBlur={(event) => {
               styles.avatar
             }
           >
-            {avatarUrl ? (
+            {avatarUrl && failedAvatarUrl !== avatarUrl ? (
               <img
                 src={avatarUrl}
                 alt=""
+                referrerPolicy="no-referrer"
+                onError={() => setFailedAvatarUrl(avatarUrl)}
                 className={
                   styles.avatarImage
                 }

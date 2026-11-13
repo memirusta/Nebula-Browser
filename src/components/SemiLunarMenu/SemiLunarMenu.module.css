@@ -449,11 +449,11 @@
   height: 36px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(20, 28, 24, 0.55);
+  border: 1px solid var(--nebula-glass-border);
+  background: color-mix(in srgb, var(--nebula-void) 60%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  color: var(--nebula-gold);
+  color: var(--nebula-gold-ink);
   cursor: pointer;
   transition:
     background var(--duration-fast),

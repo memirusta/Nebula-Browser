@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Nebula UI palette prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Geist:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Design prototype for the app's own UI (home, pop-ups, settings, tour, shield). The colours are set from the toolbar by
+     the script below; nothing here is final. */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --font: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif; --r: 14px; --r-sm: 10px; --r-lg: 22px; }
+  body { font: 15px/1.5 var(--font); color: var(--text); background: var(--bg); min-height: 100vh; transition: background .25s; }
+  button, input, select { font: inherit; color: inherit; }
+  svg { display: block; flex: none; }
+
+  /* toolbar (prototype only) */
+  .toolbar { position: sticky; z-index: 50; top: 0; width: 100%; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; justify-content: center;
+    padding: 9px 14px; background: rgba(16,16,24,.94); color: #e8eaf2; font: 12px/1 system-ui, sans-serif; backdrop-filter: blur(10px); box-shadow: 0 6px 24px rgba(0,0,0,.3); }
+  .toolbar [hidden] { display: none; }
+  .toolbar button { border: 0; background: transparent; color: #c9cedb; padding: 7px 11px; border-radius: 999px; cursor: pointer; }
+  .toolbar button[aria-pressed="true"] { background: #fff; color: #111; font-weight: 600; }
+  .toolbar .sep { width: 1px; height: 16px; background: rgba(255,255,255,.2); }
+  .toolbar select { background: #2a2c38; color: #fff; border: 0; border-radius: 999px; padding: 6px 10px; font: 12px system-ui, sans-serif; }
+  .toolbar label { display: flex; gap: 6px; align-items: center; }
+  .toolbar input[type=range] { width: 110px; accent-color: #8b8dff; }
+  .swatch { width: 11px; height: 11px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+
+  /* scenes */
+  .scene { position: relative; min-height: calc(100vh - 56px); padding: 36px 32px 48px; overflow: hidden; isolation: isolate;
+    background:
+      radial-gradient(760px 440px at 50% -6%, color-mix(in srgb, var(--a) 40%, transparent), transparent 72%),
+      radial-gradient(560px 380px at 88% 58%, color-mix(in srgb, var(--b) 20%, transparent), transparent 72%),
+      radial-gradient(900px 620px at 18% 8%, var(--wall-a), transparent 62%),
+      radial-gradient(800px 560px at 92% 92%, var(--wall-b), transparent 60%),
+      var(--bg); }
+
+  /* shared pieces */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); backdrop-filter: blur(22px) saturate(1.25); }
+  .glass { background: var(--glass); border: 1px solid var(--border); backdrop-filter: blur(26px) saturate(1.4); }
+  .muted { color: var(--muted); } .faint { color: var(--faint); }
+  .badge { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: var(--soft); border: 1px solid var(--soft-border); color: var(--acc); }
+  .badge.sm { width: 34px; height: 34px; border-radius: 11px; }
+  .btn { height: 40px; padding: 0 18px; border-radius: var(--r-sm); border: 1px solid transparent; cursor: pointer; font-weight: 600; font-size: 14px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; white-space: nowrap; }
+  .btn.primary { background: linear-gradient(135deg, var(--a), var(--b)); color: #fff; box-shadow: 0 8px 22px -8px var(--glow); }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .btn.ghost:hover { background: var(--soft); color: var(--text); }
+  .btn.line { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+  .btn.danger { background: transparent; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+  .btn.sm { height: 34px; padding: 0 14px; font-size: 13px; }
+  .kbd { font: 600 11px/1 var(--font); padding: 4px 7px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--faint); }
+  .toggle { width: 42px; height: 24px; border-radius: 99px; background: color-mix(in srgb, var(--text) 18%, transparent); position: relative; flex: none; transition: background .2s; }
+  .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .2s; }
+  .toggle.on { background: linear-gradient(135deg, var(--a), var(--b)); } .toggle.on::after { transform: translateX(18px); }
+  .seg { display: inline-flex; padding: 3px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); gap: 2px; }
+  .seg span { padding: 7px 14px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .seg span.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.18), 0 0 0 1px var(--border); }
+  .field { height: 40px; padding: 0 14px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 190px; font-size: 14px; }
+  .range { width: 190px; height: 6px; border-radius: 6px; background: color-mix(in srgb, var(--text) 16%, transparent); position: relative; }
+  .range i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(90deg, var(--a), var(--b)); }
+  .range b { position: absolute; top: 50%; width: 18px; height: 18px; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); box-shadow: 0 1px 5px rgba(0,0,0,.35), 0 0 0 3px var(--soft-border); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
+
+  /* ---------- home ---------- */
+  .home .semi { position: absolute; z-index: 2; top: -2px; left: 50%; transform: translateX(-50%); width: min(60vw, 860px); height: 150px; border-radius: 0 0 50% 50% / 0 0 100% 100%;
+    display: flex; justify-content: center; align-items: flex-start; gap: 16px; padding-top: 18px; box-shadow: 0 18px 50px -18px var(--glow); }
+  .semi .win { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+  .semi .tabs { display: flex; gap: 8px; margin-top: 44px; position: absolute; }
+  .semi .tab { display: flex; gap: 8px; align-items: center; padding: 8px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13px; font-weight: 500; color: var(--muted); }
+  .semi .tab.now { color: var(--text); border-color: var(--soft-border); background: var(--soft); }
+  .home .rail { position: absolute; right: 22px; top: 34px; display: grid; gap: 14px; z-index: 2; }
+  .home .rail .round { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: var(--text); }
+  .home .widgets { position: absolute; left: 24px; top: 190px; display: grid; gap: 14px; width: 222px; }
+  .widget { padding: 14px 16px; border-radius: 18px; }
+  .widget .row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .widget svg.spark { width: 100%; height: 44px; margin-top: 8px; }
+  .home .center { position: relative; z-index: 1; display: grid; justify-items: center; gap: 22px; padding-top: 200px; }
+  .home .search { width: min(560px, 90%); height: 58px; border-radius: 999px; display: flex; align-items: center; gap: 12px; padding: 0 22px; color: var(--muted); font-size: 16px; box-shadow: 0 18px 50px -20px var(--glow); }
+  .home .search .kbd { margin-left: auto; }
+  .home .avatar { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--a), var(--b)); display: grid; place-items: center; color: #fff; box-shadow: 0 12px 34px -10px var(--glow); }
+  .home .greet { color: var(--muted); font-size: 15px; }
+  .tiles { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; max-width: 640px; }
+  .tile { width: 92px; display: grid; justify-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .tile i { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; font: 700 20px/1 var(--font); font-style: normal; color: #fff; box-shadow: 0 10px 26px -12px rgba(0,0,0,.6); }
+  .home .clock { position: absolute; left: 30px; bottom: 28px; z-index: 1; font-size: 44px; font-weight: 300; letter-spacing: -.02em; line-height: 1; }
+  .home .clock small { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-top: 6px; letter-spacing: 0; }
+
+  /* ---------- pop-ups ---------- */
+  .popups .site { position: absolute; inset: 70px 0 0; z-index: -1; padding: 40px 12vw; display: grid; gap: 18px; align-content: start; opacity: .55; filter: blur(2px); }
+  .site .ln { height: 14px; border-radius: 8px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+  .site .blk { height: 120px; border-radius: 18px; background: color-mix(in srgb, var(--text) 9%, transparent); }
+  .popups .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px; max-width: 1180px; margin: 0 auto; align-items: start; }
+  .pop { padding: 22px; width: 100%; max-width: 420px; justify-self: center; }
+  .pop h3 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; margin: 14px 0 4px; }
+  .pop p { color: var(--muted); font-size: 14px; }
+  .pop .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
+  .pop .origin { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--faint); margin-bottom: 2px; }
+  .pop .opts { display: grid; gap: 8px; margin-top: 16px; }
+  .pop .opt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); font-size: 14px; }
+  .pop .opt.on { border-color: var(--soft-border); background: var(--soft); }
+  .pop .pwd { display: grid; gap: 8px; margin-top: 14px; }
+  .pop .pwd div { display: flex; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); font-size: 14px; }
+  .toast { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; max-width: 420px; justify-self: center; width: 100%; }
+  .toast .bar { height: 4px; border-radius: 4px; background: color-mix(in srgb, var(--text) 14%, transparent); margin-top: 8px; overflow: hidden; }
+  .toast .bar i { display: block; height: 100%; width: 70%; background: linear-gradient(90deg, var(--a), var(--b)); }
+
+  /* ---------- settings (the app's real tabs, rows and defaults) ---------- */
+  .settings .swin { max-width: 1240px; margin: 0 auto; height: calc(100vh - 56px - 72px); min-height: 620px; max-height: 860px; display: grid; grid-template-columns: 272px 1fr; overflow: hidden; padding: 0; position: relative; }
+  .settings .snav { padding: 22px 14px 18px; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--soft) 55%, transparent); display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .settings .snav h2 { font-size: 20px; font-weight: 800; letter-spacing: -.02em; padding: 2px 12px 12px; }
+  .settings .ssearch { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 13px; margin: 0 0 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); color: var(--faint); font-size: 14px; }
+  .settings .snav button.item { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-weight: 500; font-size: 14.5px; text-align: left; cursor: pointer; }
+  .settings .snav button.item:hover { background: var(--soft); color: var(--text); }
+  .settings .snav button.item.on { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border); font-weight: 600; }
+  .settings .snav button.item.on svg { color: var(--acc); }
+  .settings .scontent { overflow-y: auto; padding: 0 36px 34px; }
+  .settings .shead { position: sticky; top: 0; z-index: 3; padding: 26px 0 16px; background: linear-gradient(var(--surface) 75%, transparent); }
+  .settings .shead h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .settings .shead p { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .settings .sclose { position: absolute; top: 16px; right: 18px; z-index: 6; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+  .settings .sbody { display: grid; gap: 20px; }
+  .settings .group { border: 1px solid var(--border); border-radius: 18px; background: var(--surface-2); overflow: hidden; }
+  .settings .group > h4 { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 14px 18px 2px; font-weight: 700; }
+  .srow { display: flex; justify-content: space-between; align-items: center; gap: 28px; padding: 14px 18px; }
+  .srow + .srow { border-top: 1px solid var(--border); }
+  .srow > div:first-child { min-width: 0; }
+  .srow b { display: block; font-weight: 600; font-size: 14.5px; } .srow small { display: block; color: var(--muted); font-size: 13px; line-height: 1.4; margin-top: 1px; max-width: 560px; }
+  .srow .field.wide { min-width: 260px; } .srow .field.empty { color: var(--faint); }
+  .srow .sw { width: 18px; height: 18px; border-radius: 6px; box-shadow: 0 0 0 1px var(--border); }
+  .srow .rng { display: flex; align-items: center; gap: 14px; flex: none; } .srow .rng em { font-style: normal; font-size: 13px; color: var(--muted); min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+  .srow.indent { padding-left: 34px; background: color-mix(in srgb, var(--soft) 35%, transparent); }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .note { color: var(--muted); font-size: 13px; line-height: 1.5; padding: 4px 2px; }
+  .group .note { padding: 6px 18px 14px; }
+  .status { padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 700; background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+  .status.off { background: var(--surface-2); color: var(--faint); border: 1px solid var(--border); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); }
+  .chip.on { background: var(--soft); color: var(--acc); border-color: var(--soft-border); }
+  .kbd2 { display: inline-flex; gap: 4px; align-items: center; }
+  .kbd2 kbd { font: 600 12px/1 var(--font); padding: 5px 8px; min-width: 26px; text-align: center; border-radius: 7px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 0 var(--border); color: var(--text); }
+  .kbd2 .plus { color: var(--faint); font-size: 11px; }
+  .kbd2 .or { color: var(--faint); font-size: 12px; margin: 0 4px; }
+  .sgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 14px 18px; }
+  .preset { border-radius: 14px; padding: 8px; background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; }
+  .preset i { display: block; height: 62px; border-radius: 10px; margin-bottom: 7px; }
+  .preset.on { border-color: var(--soft-border); box-shadow: 0 0 0 2px var(--soft); color: var(--text); }
+  .wpos { display: flex; gap: 18px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--border); }
+  .wpos .prev { width: 210px; height: 124px; border-radius: 12px; position: relative; flex: none; background: radial-gradient(120px 90px at 40% 35%, color-mix(in srgb, var(--a) 55%, transparent), transparent 70%), radial-gradient(160px 100px at 85% 85%, color-mix(in srgb, var(--b) 35%, transparent), transparent 70%), var(--bg); box-shadow: inset 0 0 0 1px var(--border); }
+  .wpos .prev::after { content: ""; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.4); }
+  .profile { display: flex; align-items: center; gap: 16px; padding: 18px; }
+  .profile .av { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, var(--a), var(--b)); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 22px; flex: none; }
+  .profile b { font-size: 17px; } .profile small { color: var(--muted); display: block; }
+  .syncs { display: grid; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); }
+  .syncs label { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 13px; background: var(--surface); border: 1px solid var(--border); }
+  .syncs label .cb { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, var(--a), var(--b)); color: #fff; display: grid; place-items: center; flex: none; margin-top: 1px; }
+  .syncs label.off .cb { background: var(--surface-2); border: 1px solid var(--border); color: transparent; }
+  .syncs strong { display: block; font-size: 14px; } .syncs small { color: var(--muted); font-size: 12.5px; }
+  .pwrow { display: flex; align-items: center; gap: 14px; padding: 12px 18px; }
+  .pwrow + .pwrow { border-top: 1px solid var(--border); }
+  .pwrow .fav { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px; flex: none; }
+  .pwrow div:nth-child(2) { flex: 1; min-width: 0; } .pwrow b { display: block; font-size: 14px; } .pwrow small { color: var(--muted); font-size: 12.5px; }
+  .pwrow .dots { letter-spacing: 2px; color: var(--muted); font-size: 14px; }
+  .ex { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .excard { padding: 18px; border-radius: 18px; background: var(--surface-2); border: 1px solid var(--border); display: grid; gap: 12px; }
+  .excard .top { display: flex; gap: 14px; align-items: center; }
+  .excard .mono { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 17px; flex: none; }
+  .excard b { font-size: 16px; display: block; } .excard small { color: var(--muted); font-size: 12.5px; }
+  .excard p { color: var(--muted); font-size: 13.5px; }
+  .excard .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .excard .ver { color: var(--ok); font-size: 12.5px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
+  .about { display: flex; gap: 18px; align-items: center; padding: 20px 18px; }
+  .about img { width: 64px; height: 64px; border-radius: 18px; background: linear-gradient(135deg, var(--a), var(--b)); display: block; }
+  .about b { font-size: 19px; display: block; }
+  .swatches { display: flex; gap: 10px; align-items: center; }
+  .swatches i { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px var(--border); display: block; flex: none; }
+  .swatches i.on { border-color: var(--surface); box-shadow: 0 0 0 2px var(--acc); }
+  .advhead { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 18px; cursor: pointer; }
+  .advhead:hover { background: var(--soft); }
+  .advhead > div { flex: 1; } .advhead b { display: block; font-weight: 600; font-size: 14.5px; } .advhead small { color: var(--muted); font-size: 13px; }
+  .advhead .count { color: var(--faint); font-size: 12.5px; }
+  .advhead .chev { color: var(--muted); transition: transform .2s; } .advhead .chev.open { transform: rotate(180deg); }
+  .advhead + .srow { border-top: 1px solid var(--border); }
+  .shcard { padding: 18px; display: grid; gap: 14px; background: linear-gradient(135deg, var(--soft), transparent 70%), var(--surface-2); }
+  .shcard .top { display: flex; gap: 14px; align-items: center; } .shcard .top b { font-size: 16px; display: block; } .shcard .top small { color: var(--muted); font-size: 13px; }
+  .shcard .big { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .shcard .big div { padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+  .shcard .big strong { display: block; font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; color: var(--acc); } .shcard .big span { font-size: 12.5px; color: var(--muted); }
+  .dangerzone { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+
+  /* ---------- settings, full screen (the onboarding's layout: steps at the left, content, art in the corner) ---------- */
+  .scene.settings { padding: 0; min-height: calc(100vh - 56px); }
+  .settings .under { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+  .under-wall { position: absolute; inset: 0; z-index: -1; filter: saturate(var(--w-sat, 1.1)) contrast(var(--w-con, .82));
+    background:
+      radial-gradient(900px 620px at 18% 8%, var(--wall-a), transparent 62%),
+      radial-gradient(800px 560px at 92% 92%, var(--wall-b), transparent 60%),
+      radial-gradient(circle 9px at 32px 32px, color-mix(in srgb, var(--b) 30%, transparent) 88%, transparent 100%) 0 0 / 64px 64px,
+      var(--bg); }
+  .under .semi.glass { width: calc(min(60vw, 860px) * var(--lw-r, 1)); height: calc(150px * var(--lh-r, 1)); transform-origin: 50% 0;
+    backdrop-filter: blur(var(--l-blur, 35px)) saturate(1.4); background: color-mix(in srgb, color-mix(in srgb, var(--a) 22%, var(--bg)) calc(var(--l-op, 38) * 1%), transparent); }
+  .under .glass:not(.semi) { backdrop-filter: blur(var(--g-blur, 24px)) saturate(1.4); background: color-mix(in srgb, color-mix(in srgb, var(--a) 14%, var(--bg)) calc(var(--g-tint, 46) * 1%), transparent); }
+  .under .clock { font-size: var(--clock, 44px); }
+  .under .tile i { width: calc(var(--icon, 44px) * 1.27); height: calc(var(--icon, 44px) * 1.27); }
+  .under .center, .under .widgets, .under .clock, .under .rail { transition: filter .3s ease; }
+  .under.ov .center, .under.ov .widgets, .under.ov .clock, .under.ov .rail { filter: blur(var(--o-blur, 8px)) brightness(var(--o-bright, .5)); }
+  .under.no-rail .rail, .under.no-widgets .widgets, .under.no-clockon .clock, .under.no-pins .tiles, .under.no-greet .greet, .under.no-avatar .avatar { display: none; }
+  .under.no-ram .widgets .widget:nth-child(1), .under.no-cpu .widgets .widget:nth-child(2), .under.no-date .clock small { display: none; }
+
+  .scene.settings .swin { position: absolute; inset: 0; z-index: 2; display: grid; grid-template-columns: 288px minmax(0, 1fr); width: auto; max-width: none; height: auto; min-height: 0; max-height: none; margin: 0; padding: 0;
+    border: 0; border-radius: 0; box-shadow: none; overflow: hidden; backdrop-filter: none; transition: opacity .3s ease;
+    background: radial-gradient(900px 620px at 18% 8%, var(--wall-a), transparent 62%), radial-gradient(800px 560px at 92% 92%, var(--wall-b), transparent 60%), var(--bg); }
+  .scene.settings .swin.enter { animation: sIn .55s cubic-bezier(.2, .8, .2, 1) both; }
+  @keyframes sIn { from { opacity: 0; transform: translateY(20px) scale(.992); } }
+  @keyframes sItem { from { opacity: 0; transform: translateX(-12px); } }
+  @keyframes sRise { from { opacity: 0; transform: translateY(12px); } }
+  body.peeking .scene.settings .swin { opacity: .03; }
+
+  .settings .sart { position: absolute; top: 0; right: 0; width: min(72vw, 1240px); height: 100%; z-index: 0; pointer-events: none; isolation: isolate; opacity: .6;
+    -webkit-mask-image: radial-gradient(ellipse 90% 105% at 100% 0%, #000 0%, rgba(0,0,0,.7) 24%, rgba(0,0,0,.28) 50%, transparent 78%);
+            mask-image: radial-gradient(ellipse 90% 105% at 100% 0%, #000 0%, rgba(0,0,0,.7) 24%, rgba(0,0,0,.28) 50%, transparent 78%); }
+  .settings .sart img { position: absolute; top: -34vh; right: -20vh; width: 118vh; height: 118vh; max-width: none; filter: brightness(1.05); }
+  [data-eff="light"] .settings .sart { opacity: .85; }
+  [data-eff="light"] .settings .sart img { filter: brightness(1.3) saturate(1.2); }
+  [data-eff="light"] .settings .sart::after { content: ""; position: absolute; inset: 0; mix-blend-mode: screen;
+    background: radial-gradient(130% 130% at 76% 26%, color-mix(in srgb, var(--b) 60%, transparent), color-mix(in srgb, var(--a) 40%, transparent) 55%, color-mix(in srgb, var(--b) 36%, transparent)); }
+
+  .settings .snav { position: relative; z-index: 1; padding: 30px 16px 20px; }
+  .settings .sbrand { display: flex; align-items: center; gap: 12px; padding: 0 10px 18px; }
+  .settings .sbrand img { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; box-shadow: 0 0 0 1px var(--border); }
+  .settings .sbrand b { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+  .settings .swin.enter .snav .item { animation: sItem .45s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 40ms + 160ms); }
+  .settings .shint { margin-top: auto; display: flex; gap: 8px; align-items: center; padding: 10px 12px; color: var(--faint); font-size: 12.5px; }
+
+  .scene.settings .scontent { position: relative; z-index: 1; overflow-y: auto; padding: 0; }
+  .scene.settings .shead { position: sticky; top: 0; z-index: 3; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 34px clamp(40px, 6vw, 110px) 18px;
+    background: linear-gradient(var(--bg) 72%, transparent); }
+  .scene.settings .shead h1 { font-size: 32px; font-weight: 800; letter-spacing: -.02em; }
+  .settings .sinner { padding: 0 clamp(40px, 6vw, 110px) 70px; }
+  .settings .sinner .sbody { width: min(880px, 100%); }
+  .settings .sbody > * { animation: sRise .45s cubic-bezier(.2, .8, .2, 1) both; }
+  .settings .sbody > :nth-child(1) { animation-delay: .04s; } .settings .sbody > :nth-child(2) { animation-delay: .09s; } .settings .sbody > :nth-child(3) { animation-delay: .14s; }
+  .settings .sbody > :nth-child(4) { animation-delay: .19s; } .settings .sbody > :nth-child(5) { animation-delay: .24s; } .settings .sbody > :nth-child(n+6) { animation-delay: .28s; }
+  .settings .group { background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(16px) saturate(1.2); }
+  .settings .range b { transition: transform .15s ease; } .settings .range:active b { transform: translate(-50%, -50%) scale(1.18); }
+
+  .peekbar { position: absolute; z-index: 8; left: 50%; bottom: 40px; width: min(540px, 92%); padding: 16px 20px; border-radius: 20px; opacity: 0; pointer-events: none;
+    transform: translate(-50%, 24px); transition: opacity .28s ease, transform .28s cubic-bezier(.2, .8, .2, 1);
+    background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--border); box-shadow: var(--shadow); backdrop-filter: blur(24px) saturate(1.4); }
+  body.peeking .peekbar { opacity: 1; transform: translate(-50%, 0); }
+  .peekbar .ptop { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  .peekbar .ptop b { font-size: 15px; } .peekbar .ptop em { font-style: normal; font-size: 22px; font-weight: 800; letter-spacing: -.02em; color: var(--acc); font-variant-numeric: tabular-nums; }
+  .peekbar .range { width: 100%; } .peekbar .pnote { color: var(--muted); font-size: 13px; margin-top: 12px; }
+  .peekbar .pbar { height: 6px; border-radius: 6px; background: color-mix(in srgb, var(--text) 14%, transparent); margin-top: 8px; overflow: hidden; }
+  .peekbar .pbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--a), var(--b)); animation: pfill linear forwards; }
+  @keyframes pfill { to { width: 100%; } }
+  .settings .srow .rng .range { cursor: ew-resize; touch-action: none; }
+
+  /* ---------- tour ---------- */
+  .tour .under { position: absolute; inset: 0; z-index: -1; }
+  .tour .dim { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  .tour .hole { position: absolute; z-index: 4; top: -4px; left: 50%; transform: translateX(-50%); width: min(60vw, 860px); height: 150px; border-radius: 0 0 50% 50% / 0 0 100% 100%;
+    box-shadow: 0 0 0 4000px rgba(5,6,14,.68), 0 0 0 2px var(--acc), 0 0 40px 4px var(--glow); }
+  .tour .tcard { position: absolute; z-index: 5; left: 50%; top: 190px; transform: translateX(-50%); width: min(440px, 92vw); padding: 22px; }
+  .tcard .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0 16px; }
+  .tcard .steps div { padding: 8px 10px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--border); font-size: 11px; color: var(--faint); font-weight: 600; letter-spacing: .04em; }
+  .tcard .steps div.on { background: var(--soft); border-color: var(--soft-border); color: var(--acc); }
+  .tcard .steps b { display: block; font-size: 15px; }
+  .tcard h3 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+  .tcard .hint { display: flex; gap: 10px; align-items: center; margin-top: 14px; padding: 12px 14px; border-radius: 13px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  .tcard .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; }
+
+  /* ---------- shield ---------- */
+  .shield .browser { position: relative; max-width: 1100px; margin: 0 auto; }
+  .shield .bar { display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 18px; }
+  .shield .addr { flex: 1; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  .shield .shbtn { position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); border: 1px solid var(--soft-border); color: var(--acc); }
+  .shield .shbtn em { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: linear-gradient(135deg, var(--a), var(--b)); color: #fff; font: 700 11px/20px var(--font); text-align: center; font-style: normal; }
+  .shield .panel { position: absolute; z-index: 5; right: 0; top: 66px; width: 380px; padding: 20px; }
+  .panel .top { display: flex; align-items: center; gap: 12px; }
+  .panel .top b { display: block; font-size: 16px; } .panel .top small { color: var(--muted); }
+  .panel .big { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0; }
+  .panel .big div { padding: 14px; border-radius: 15px; background: var(--surface-2); border: 1px solid var(--border); }
+  .panel .big strong { display: block; font-size: 28px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; color: var(--acc); }
+  .panel .big span { font-size: 12.5px; color: var(--muted); }
+  .panel .opt2 { display: flex; justify-content: space-between; align-items: center; padding: 11px 2px; font-size: 14px; }
+  .panel .opt2 + .opt2 { border-top: 1px solid var(--border); }
+  .panel .foot { display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .shield .page { margin-top: 16px; padding: 26px; display: grid; gap: 14px; align-content: start; min-height: 560px; }
+</style>
+</head>
+<body>
+<div class="toolbar" role="toolbar" aria-label="Prototype controls">
+  <span>Look</span>
+  <span id="looks"></span>
+  <label id="hueBox" hidden>Hue <input type="range" id="hue" min="0" max="360" value="262"></label>
+  <span class="sep"></span>
+  <span>Mode</span>
+  <button data-mode="auto">Auto</button><button data-mode="light">Light</button><button data-mode="dark">Dark</button>
+  <span class="sep"></span>
+  <span>Screen</span>
+  <span id="surfaces"></span>
+  <span class="sep"></span>
+  <select id="font" aria-label="Font"></select>
+  <select id="radius" aria-label="Corners"><option value="0">Corners: sharper</option><option value="1" selected>Corners: default</option><option value="2">Corners: rounder</option></select>
+</div>
+
+<main id="stage"></main>
+
+<script>
+(() => {
+  const ic = (d, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const I = {
+    search: ic('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'), gear: ic('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+    bell: ic('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>'), hist: ic('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>'),
+    shield: ic('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/>'), pin: ic('<path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+    key: ic('<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 9-9M16 7l3 3"/>'), dl: ic('<path d="M12 3v12m-5-5 5 5 5-5M4 21h16"/>'), x: ic('<path d="M18 6 6 18M6 6l12 12"/>', 16), min: ic('<path d="M5 12h14"/>', 15),
+    globe: ic('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'), lock: ic('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 16),
+    user: ic('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'), palette: ic('<circle cx="13.5" cy="6.5" r="1.2"/><circle cx="17.5" cy="10.5" r="1.2"/><circle cx="8.5" cy="7.5" r="1.2"/><circle cx="6.5" cy="12.5" r="1.2"/><path d="M12 22a10 10 0 1 1 10-10c0 3-2.5 3-4 3h-2a2 2 0 0 0-1.5 3.3A1.7 1.7 0 0 1 12 22z"/>'),
+    home: ic('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'), moon: ic('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'), bellS: ic('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>'),
+    puzzle: ic('<path d="M10 4a2 2 0 1 1 4 0v1h4v4h1a2 2 0 1 1 0 4h-1v4h-4v-1a2 2 0 1 0-4 0v1H6v-4H5a2 2 0 1 1 0-4h1V5h4z"/>'), info: ic('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>'),
+    chev: ic('<path d="m6 9 6 6 6-6"/>', 16), up: ic('<path d="M3 5h18M12 20V10m-4 4 4-4 4 4"/>'), check: ic('<path d="M20 6 9 17l-5-5"/>', 18), cpu: ic('<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>', 16),
+  };
+
+  /* ----- looks: every colour comes from here ----- */
+  const L = {
+    indigo: { name: 'A · Indigo', sw: '#6366f1',
+      dark:  { a: '#6366f1', b: '#8b8ffb', acc: '#9a9dfc', bg: '#0c0e19', surface: 'rgba(24,27,44,.88)', s2: 'rgba(255,255,255,.05)', glass: 'rgba(38,42,68,.5)', border: 'rgba(255,255,255,.10)', text: '#f2f4fc', muted: '#a6adc8', faint: '#7f87a6', glow: 'rgba(99,102,241,.42)', wa: 'rgba(99,102,241,.30)', wb: 'rgba(56,189,248,.13)' },
+      light: { a: '#4f46e5', b: '#6d6ff5', acc: '#4f46e5', bg: '#f2f3fb', surface: '#ffffff', s2: '#f3f4fb', glass: 'rgba(255,255,255,.66)', border: 'rgba(15,19,60,.10)', text: '#0f1330', muted: '#586081', faint: '#6b7394', glow: 'rgba(79,70,229,.28)', wa: 'rgba(99,102,241,.22)', wb: 'rgba(56,189,248,.16)' } },
+    violet: { name: 'B · Violet', sw: '#8b5cf6',
+      dark:  { a: '#7c3aed', b: '#b583fb', acc: '#c4a1fd', bg: '#0f0b1b', surface: 'rgba(30,22,50,.88)', s2: 'rgba(255,255,255,.05)', glass: 'rgba(52,38,84,.5)', border: 'rgba(255,255,255,.10)', text: '#f6f2ff', muted: '#b2a8cf', faint: '#8b82aa', glow: 'rgba(139,92,246,.45)', wa: 'rgba(139,92,246,.32)', wb: 'rgba(236,72,153,.14)' },
+      light: { a: '#7c3aed', b: '#a35cf6', acc: '#7c3aed', bg: '#f6f2fd', surface: '#ffffff', s2: '#f6f2fd', glass: 'rgba(255,255,255,.66)', border: 'rgba(40,16,80,.10)', text: '#1a1033', muted: '#625a80', faint: '#756c94', glow: 'rgba(124,58,237,.28)', wa: 'rgba(139,92,246,.22)', wb: 'rgba(236,72,153,.13)' } },
+    azure: { name: 'C · Azure', sw: '#2f80ff',
+      dark:  { a: '#2563eb', b: '#4fa8ff', acc: '#6db5ff', bg: '#0a111f', surface: 'rgba(18,28,48,.88)', s2: 'rgba(255,255,255,.05)', glass: 'rgba(28,46,78,.5)', border: 'rgba(255,255,255,.10)', text: '#eef4ff', muted: '#9fb0cc', faint: '#7889a6', glow: 'rgba(47,128,255,.42)', wa: 'rgba(37,99,235,.32)', wb: 'rgba(34,211,238,.14)' },
+      light: { a: '#1d5fe0', b: '#3b8bff', acc: '#1d5fe0', bg: '#eff4fc', surface: '#ffffff', s2: '#f0f5fd', glass: 'rgba(255,255,255,.68)', border: 'rgba(10,30,70,.10)', text: '#0b1630', muted: '#52607f', faint: '#66738f', glow: 'rgba(29,95,224,.26)', wa: 'rgba(47,128,255,.20)', wb: 'rgba(34,211,238,.16)' } },
+    emerald: { name: 'D · Emerald', sw: '#10b981',
+      dark:  { a: '#059669', b: '#34d399', acc: '#4ade9f', bg: '#08130e', surface: 'rgba(16,31,24,.88)', s2: 'rgba(255,255,255,.05)', glass: 'rgba(24,52,40,.5)', border: 'rgba(255,255,255,.10)', text: '#eefaf3', muted: '#9bbcab', faint: '#76988a', glow: 'rgba(16,185,129,.40)', wa: 'rgba(16,185,129,.28)', wb: 'rgba(56,189,248,.12)' },
+      light: { a: '#059669', b: '#10b981', acc: '#047857', bg: '#eef7f2', surface: '#ffffff', s2: '#f0f8f3', glass: 'rgba(255,255,255,.68)', border: 'rgba(5,40,26,.10)', text: '#08201a', muted: '#4c6b5d', faint: '#5f7d6f', glow: 'rgba(5,150,105,.26)', wa: 'rgba(16,185,129,.20)', wb: 'rgba(56,189,248,.14)' } },
+  };
+  function custom(hue, mode) {
+    const d = mode === 'dark';
+    const h = (x, s, l, a = 1) => `hsl(${(x + 360) % 360} ${s}% ${l}% / ${a})`;
+    return d ? { a: h(hue, 78, 52), b: h(hue + 22, 90, 70), acc: h(hue + 10, 95, 76), bg: h(hue, 38, 7), surface: h(hue, 30, 12, .88), s2: 'rgba(255,255,255,.05)', glass: h(hue, 32, 22, .5), border: 'rgba(255,255,255,.10)', text: h(hue, 60, 97), muted: h(hue, 18, 72), faint: h(hue, 14, 58), glow: h(hue, 90, 60, .42), wa: h(hue, 85, 55, .30), wb: h(hue + 60, 85, 55, .13) }
+           : { a: h(hue, 72, 46), b: h(hue + 18, 84, 58), acc: h(hue, 72, 42), bg: h(hue, 60, 96), surface: '#ffffff', s2: h(hue, 60, 97), glass: 'rgba(255,255,255,.66)', border: h(hue, 40, 20, .10), text: h(hue, 50, 12), muted: h(hue, 15, 38), faint: h(hue, 12, 46), glow: h(hue, 72, 46, .28), wa: h(hue, 85, 60, .20), wb: h(hue + 60, 85, 60, .15) };
+  }
+  const FONTS = [['Plus Jakarta Sans', "'Plus Jakarta Sans'"], ['Inter', "'Inter'"], ['Manrope', "'Manrope'"], ['Geist', "'Geist'"], ['Segoe UI (today)', "'Segoe UI'"]];
+  const RADII = [{ r: '10px', sm: '8px', lg: '16px' }, { r: '14px', sm: '10px', lg: '22px' }, { r: '18px', sm: '13px', lg: '28px' }];
+  const SURFACES = [['home', 'Home'], ['popups', 'Pop-ups'], ['settings', 'Settings'], ['tour', 'Tour'], ['shield', 'Shield']];
+
+  const state = Object.assign({ look: 'indigo', mode: 'auto', surface: 'home', hue: 262, font: 0, radius: 1, tab: 'appearance', wall: 'image', adv: '0', acc: 'profile' },
+    Object.fromEntries(new URLSearchParams(location.hash.slice(1))));
+  state.hue = Number(state.hue); state.font = Number(state.font); state.radius = Number(state.radius);
+  const dark = () => state.mode === 'dark' || (state.mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+
+  function apply() {
+    const mode = dark() ? 'dark' : 'light';
+    const t = state.look === 'custom' ? custom(state.hue, mode) : L[state.look][mode];
+    const root = document.documentElement.style;
+    const set = (k, v) => root.setProperty(k, v);
+    set('--a', t.a); set('--b', t.b); set('--acc', t.acc); set('--bg', t.bg); set('--surface', t.surface); set('--surface-2', t.s2); set('--glass', t.glass);
+    set('--border', t.border); set('--text', t.text); set('--muted', t.muted); set('--faint', t.faint); set('--glow', t.glow); set('--wall-a', t.wa); set('--wall-b', t.wb);
+    set('--soft', `color-mix(in srgb, ${t.a} 15%, transparent)`); set('--soft-border', `color-mix(in srgb, ${t.a} 42%, transparent)`);
+    set('--ok', dark() ? '#5eead4' : '#0d9488'); set('--danger', dark() ? '#fb7185' : '#e11d48');
+    set('--shadow', dark() ? '0 26px 70px -20px rgba(0,0,0,.7)' : '0 24px 60px -22px rgba(30,40,90,.28)');
+    set('--font', FONTS[state.font][1] + ", 'Segoe UI', system-ui, sans-serif");
+    const r = RADII[state.radius]; set('--r', r.r); set('--r-sm', r.sm); set('--r-lg', r.lg);
+    document.documentElement.style.colorScheme = mode;
+    location.hash = new URLSearchParams({ look: state.look, mode: state.mode, surface: state.surface, tab: state.tab, wall: state.wall, adv: state.adv, acc: state.acc, hue: state.hue, font: state.font, radius: state.radius }).toString();
+    document.getElementById('hueBox').hidden = state.look !== 'custom';
+    document.querySelectorAll('[data-look]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.look === state.look)));
+    document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+    document.querySelectorAll('[data-surface]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.surface === state.surface)));
+    ENTER = lastSurface !== state.surface;
+    document.body.dataset.eff = mode;
+    document.getElementById('stage').innerHTML = SCREENS[state.surface]();
+    lastSurface = state.surface;
+    if (state.surface === 'settings') applyLive();
+    if (FLASH) { const f = FLASH; FLASH = null; flashPeek(f.label, f.text, f.ms); }
+  }
+
+  /* ----- the screens ----- */
+  const tile = (c, l, n) => `<div class="tile"><i style="background:${c}">${l}</i>${n}</div>`;
+  const spark = (p) => `<svg class="spark" viewBox="0 0 200 44" preserveAspectRatio="none"><path d="${p}" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const homeBody = () => `
+    <div class="semi glass"><span class="win">${I.min}</span><span class="win">${I.x}</span>
+      <div class="tabs"><span class="tab now">${I.globe}Nebula</span><span class="tab">${I.globe}GitHub</span><span class="tab">${I.globe}Lichess</span></div></div>
+    <div class="rail"><span class="round glass">${I.gear}</span><span class="round glass">${I.bellS}</span><span class="round glass">${I.hist}</span></div>
+    <div class="widgets">
+      <div class="widget glass"><div class="row"><span class="muted">${I.cpu} RAM</span><b>1.1 GB · 3%</b></div>${spark('M0 30 C20 28 30 34 50 30 S90 24 110 29 150 33 200 28')}</div>
+      <div class="widget glass"><div class="row"><span class="muted">${I.cpu} CPU</span><b>1%</b></div>${spark('M0 34 L20 30 L35 36 L55 26 L75 32 L95 22 L120 34 L150 28 L175 35 L200 30')}</div></div>
+    <div class="center"><div class="avatar">${I.user.replace('width="20" height="20"', 'width="30" height="30"')}</div>
+      <div class="search glass">${I.search}<span>Search or type URL…</span><span class="kbd">Ctrl K</span></div>
+      <div class="greet">Welcome back, Mehmet</div>
+      <div class="tiles">${tile('#6e56ff', 'N', 'Nebula')}${tile('#24292f', 'G', 'GitHub')}${tile('#ff0033', 'Y', 'YouTube')}${tile('#ff4500', 'R', 'Reddit')}${tile('#0a66c2', 'in', 'LinkedIn')}${tile('#16a34a', 'L', 'Lichess')}</div></div>
+    <div class="clock">09:12 PM<small>Thursday, November 5</small></div>`;
+
+  /* ----- settings: the app's nine tabs with its real texts and default values ----- */
+  I.kbd = ic('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>');
+  const TABS = [
+    ['appearance', 'Appearance', 'Wallpaper, theme, and glass effects', I.palette],
+    ['home', 'Home', 'Widgets and start page layout', I.home],
+    ['semi-lunar', 'Semi-Lunar', 'Top menu and shortcut behavior', I.moon],
+    ['shortcuts', 'Keyboard Shortcuts', 'All keyboard controls and quick actions available in Nebula', I.kbd],
+    ['account', 'Account', 'Profile, Google sign-in, and saved passwords', I.user],
+    ['privacy', 'Privacy', 'Tracker blocking and data protection', I.shield],
+    ['extensions', 'Extensions', 'Make your browser your own.', I.puzzle],
+    ['notifications', 'Notifications', 'Alerts and focus notifications', I.bellS],
+    ['about', 'About', 'Version and roadmap', I.info],
+  ];
+
+  const grp = (title, rows) => `<div class="group">${title ? `<h4>${title}</h4>` : ''}${rows.join('')}</div>`;
+  const row = (l, h, ctl, cls = '') => `<div class="srow ${cls}"><div><b>${l}</b>${h ? `<small>${h}</small>` : ''}</div>${ctl}</div>`;
+  const sel = (l, h, v, cls) => row(l, h, `<div class="field">${v}${I.chev}</div>`, cls);
+  const tog = (l, h, on, cls) => { const k = TKEYS[l]; if (k && !(k in T)) T[k] = on; const v = k ? T[k] : on; return row(l, h, `<span class="toggle ${v ? 'on' : ''}" ${k ? `data-tkey="${k}" data-label="${l}"` : ''}></span>`, cls); };
+  const rng = (l, h, v, min, max, unit, cls) => { const k = KEYS[l] || l.toLowerCase().replace(/[^a-z0-9]+/g, '-'); if (!(k in S)) S[k] = v; const cur = S[k]; const p = Math.round(((cur - min) / (max - min)) * 100); return row(l, h, `<div class="rng" data-key="${k}" data-label="${l}" data-min="${min}" data-max="${max}" data-unit="${unit}"><div class="range"><i style="width:${p}%"></i><b style="left:${p}%"></b></div><em>${cur}${unit}</em></div>`, cls); };
+  const col = (l, h, hex) => row(l, h, `<div class="field"><span class="sw" style="background:${hex}"></span>${hex}</div>`);
+  const txt = (l, h, v, ph) => row(l, h, `<div class="field wide ${v ? '' : 'empty'}">${v || ph || ''}</div>`);
+  const btn = (l, h, label, kind = 'line', cls) => row(l, h, `<button class="btn ${kind} sm">${label}</button>`, cls);
+  const btns = (l, h, list) => row(l, h, `<div class="btnrow">${list.map(([t, k]) => `<button class="btn ${k || 'line'} sm">${t}</button>`).join('')}</div>`);
+  const note = (t) => `<p class="note">${t}</p>`;
+  const kc = (combos) => `<span class="kbd2">${combos.map((c) => c.map((k) => `<kbd>${k}</kbd>`).join('<span class="plus">+</span>')).join('<span class="or">or</span>')}</span>`;
+  const resetRow = (l, h) => btn(l, h, 'Reset');
+
+  const WALL = {
+    image: () => [
+      row('Image', 'Choose a picture from this computer.', `<button class="btn line sm">Choose image</button>`),
+      row('Fit', '', `<div class="seg"><span class="on">Fill</span><span>Fit inside</span></div>`),
+      `<div class="wpos"><div class="prev"></div><div><b style="font-size:14.5px">Position</b><small class="muted" style="font-size:13px;display:block;margin-top:2px">Drag the preview to choose which part stays centered when the window changes shape.</small></div></div>`,
+    ],
+    video: () => [
+      row('Animated', 'No video selected', `<button class="btn line sm">Choose video</button>`),
+      note('4K / 60 FPS files are accepted. Playback pauses outside Home.'),
+      row('Fit', '', `<div class="seg"><span class="on">Fill</span><span>Fit inside</span></div>`),
+    ],
+    ambient: () => [
+      `<div class="sgrid">${[['Nebula', 'radial-gradient(60px 40px at 30% 35%, #8b5cf6, transparent), radial-gradient(70px 50px at 75% 70%, #38bdf8, transparent), #10091f', true], ['Aurora', 'linear-gradient(160deg, #052e2b, #10b981 55%, #38bdf8)'], ['Midnight', 'linear-gradient(160deg, #050816, #1e2a5a)'], ['Liquid', 'radial-gradient(70px 50px at 30% 30%, #f472b6, transparent), radial-gradient(70px 60px at 80% 80%, #6366f1, transparent), #12091f']].map(([n, bg, on]) => `<div class="preset ${on ? 'on' : ''}"><i style="background:${bg}"></i>${n}</div>`).join('')}</div>`,
+      rng('Intensity', '', 72, 25, 100, '%'),
+      rng('Speed', '', 100, 25, 200, '%'),
+    ],
+  };
+
+  function tabAppearance() {
+    const mode = state.wall;
+    return [
+      grp('Language', [sel('Language', 'App, settings, and setup language', 'English')]),
+      grp('Wallpaper', [
+        row('Wallpaper', 'Image, animated video, or a lightweight ambient background.', `<div class="seg">${[['image', 'Image'], ['video', 'Animated'], ['ambient', 'Ambient']].map(([k, n]) => `<span data-wall="${k}" class="${mode === k ? 'on' : ''}" style="cursor:pointer">${n}</span>`).join('')}</div>`),
+        ...WALL[mode](),
+        btn('Reset wallpaper', '', 'Reset'),
+      ]),
+      grp('Theme', [
+        sel('Theme', 'Interface color palette', dark() ? 'Dark' : 'Light'),
+        sel('Darken webpages', 'Prefers the site\'s own dark theme, then applies Nebula darkening when needed', 'Off'),
+      ]),
+      grp('Glass', [
+        rng('Background blur', 'Softens the image behind glass surfaces', 40, 0, 80, ' px'),
+        rng('Glass tint', 'Adds a subtle theme-aware tint to glass surfaces', 14, 0, 40, '%'),
+        rng('Background saturation', 'Color saturation of the background seen through glass', 110, 50, 200, '%'),
+        rng('Background contrast', 'Reduces how strongly background details compete with text', 82, 60, 120, '%'),
+      ]),
+      grp('Colors', [
+        row('Accent color', 'Highlight and focus colors. Buttons, switches and the shield follow it.', `<div class="swatches">${[['indigo', '#6366f1'], ['violet', '#8b5cf6'], ['azure', '#2f80ff'], ['emerald', '#10b981'], ['custom', 'conic-gradient(#f43f5e,#f59e0b,#10b981,#3b82f6,#8b5cf6,#f43f5e)']].map(([k, c]) => `<i data-look-pick="${k}" class="${state.look === k ? 'on' : ''}" style="background:${c};cursor:pointer"></i>`).join('')}</div>`),
+      ]),
+      grp('Semi-Lunar glass', [
+        rng('Semi-lunar glass blur', 'Top menu glass blur', 160, 0, 160, ' px'),
+        rng('Semi-lunar opacity', 'Top menu glass density', 38, 20, 100, '%'),
+      ]),
+      grp('', [resetRow('Reset appearance defaults', 'Reset theme, webpage, and glass settings')]),
+    ];
+  }
+
+  function tabHome() {
+    return [
+      grp('Layout', [btn('Edit UI', 'Customize home modules by dragging and resizing', 'Edit…')]),
+      grp('Widgets', [
+        tog('Right toolbar', 'Settings and notification icons', true),
+        tog('System widgets', 'Show the left sidebar', true),
+        tog('RAM widget', 'Memory usage chart', true, 'indent'),
+        tog('CPU widget', 'CPU usage chart', true, 'indent'),
+        tog('Clock', 'Clock and date in the bottom left', true),
+        rng('Clock font size', 'Bottom-left clock text', 36, 24, 72, ' px', 'indent'),
+        sel('Clock font weight', 'Font weight value', 'Light (300)', 'indent'),
+        sel('Clock font family', 'Clock text font family', 'System', 'indent'),
+        tog('Show date', 'Date line below the clock', true, 'indent'),
+        tog('Pinned sites', 'Pin strip above the search bar', true),
+        tog('Greeting message', 'Welcome text on the home page', true),
+        tog('Profile avatar', 'Profile area below search', true),
+      ]),
+      grp('Search', [
+        txt('Username', 'Name shown in the greeting', 'Mehmet'),
+        sel('Search engine', 'For queries that are not URLs', 'Google'),
+      ]),
+      grp('Session', [
+        tog('Restore the last session', 'Restores open tabs, Semi-Lunar folders, and icon layout after a normal restart. When off, the next launch starts with a clean session while pins, settings, and history stay intact. Crash recovery remains independent.', false),
+        btn('Clear saved tab session', 'Deletes the currently saved previous-session snapshot. Open tabs keep running.', 'Clear'),
+      ]),
+      grp('', [resetRow('Reset home defaults', 'Reset widget and search settings')]),
+    ];
+  }
+
+  function tabSemiLunar() {
+    const advanced = [
+      rng('Preview delay', 'Time before preview starts after hover', 1000, 200, 3000, ' ms'),
+      rng('Close delay', 'Wait time after leaving the menu', 200, 0, 800, ' ms'),
+      rng('Open animation', 'Menu grow duration', 260, 0, 600, ' ms'),
+      rng('Close animation', 'Menu shrink duration', 140, 0, 400, ' ms'),
+      rng('Open scale X', 'Initial width ratio', 20, 5, 50, '%'),
+      rng('Open scale Y', 'Initial height ratio', 14, 5, 50, '%'),
+      rng('Close button delay', 'Show ✕ on shortcut after delay', 300, 0, 1200, ' ms'),
+      rng('Folder merge', 'Hold two icons on top of each other', 650, 200, 2000, ' ms'),
+      rng('Merge animation', 'Animation duration when creating a folder', 420, 100, 1200, ' ms'),
+      rng('Overlay blur', 'Quick menu background blur', 24, 0, 40, ' px'),
+      rng('Overlay brightness', 'Dim blurred background', 45, 20, 100, '%'),
+    ];
+    const open = state.adv === '1';
+    return [
+      grp('Basics', [
+        tog('Always open on home', 'Menu stays open in home mode', true),
+        tog('Open on hover while browsing', 'Menu opens when you move to the top while browsing', true),
+        rng('Browsing hover open delay', 'Menu opens after hovering the top strip for this long', 500, 0, 5000, ' ms'),
+        tog('Hover preview', 'Site preview when hovering a shortcut', true),
+        tog('Reduce animations', 'Make menu transitions nearly instant', false),
+        rng('Icon size', 'Dock shortcut diameter', 44, 32, 64, ' px'),
+        rng('Crescent width', 'Semi-lunar menu width', 1100, 600, 1600, ' px'),
+        rng('Crescent height', 'Semi-lunar menu height', 152, 100, 220, ' px'),
+      ]),
+      `<div class="group"><button class="advhead" data-adv="1"><div><b>Advanced</b><small>Timing, animation and overlay details. The defaults suit most people.</small></div><span class="count">${advanced.length} settings</span><span class="chev ${open ? 'open' : ''}">${I.chev}</span></button>${open ? advanced.join('') : ''}</div>`,
+      grp('Reset', [
+        btn('Reset Semi-Lunar layout', 'Clears saved icon positions and returns to the default layout.', 'Reset'),
+        btn('Reset folders', 'Dissolves all Semi-Lunar folders without deleting tabs or site shortcuts.', 'Reset'),
+        resetRow('Reset semi-lunar defaults', 'Reset menu and shortcut behavior'),
+      ]),
+    ];
+  }
+
+  function tabShortcuts() {
+    const r = (label, combos) => row(label, '', `<div style="display:flex;gap:12px;align-items:center">${kc(combos)}<button class="btn ghost sm">Change</button></div>`);
+    return [
+      note('Choose Change on an action, then press the new combination. Changes sync immediately across Home, Semi-Lunar, and site tabs.'),
+      grp('Tabs', [
+        r('Close the active tab', [['Ctrl', 'W']]), r('Reopen the last closed tab', [['Ctrl', 'Shift', 'T']]), r('Switch to the next tab', [['Ctrl', 'Tab']]), r('Switch to the previous tab', [['Ctrl', 'Shift', 'Tab']]),
+        r('Search open tabs', [['Ctrl', 'Shift', 'A']]), r('Switch to tab 1 to 8', [['Ctrl', '1…8']]), r('Switch to the last tab', [['Ctrl', '9']]),
+      ]),
+      grp('Navigation', [
+        r('Go to Home', [['Ctrl', 'T']]), r('Open History', [['Ctrl', 'H']]), r('Focus the address bar', [['Ctrl', 'L'], ['Alt', 'D']]), r('Go back', [['Alt', '←']]), r('Go forward', [['Alt', '→']]), r('Reload the page', [['Ctrl', 'R'], ['F5']]),
+      ]),
+      grp('View & developer', [
+        r('Zoom in', [['Ctrl', '+'], ['Ctrl', '=']]), r('Zoom out', [['Ctrl', '-']]), r('Reset zoom', [['Ctrl', '0']]), r('Print the current page', [['Ctrl', 'P']]), r('Toggle fullscreen', [['F11']]), r('Open Developer Tools', [['Ctrl', 'Shift', 'I'], ['F12']]),
+      ]),
+      grp('Keyboard navigation', [note('Esc, Tab / Shift+Tab, Enter, Space, arrow keys, Home, and End stay fixed for accessibility.')]),
+      grp('', [btn('Reset all to defaults', '', 'Reset all', 'line')]),
+    ];
+  }
+
+  function tabAccount() {
+    const sub = state.acc;
+    const subnav = `<div class="seg" style="justify-self:start">${[['profile', 'Profile'], ['sync', 'Nebula Sync'], ['passwords', 'Saved passwords']].map(([k, n]) => `<span data-acc="${k}" class="${sub === k ? 'on' : ''}" style="cursor:pointer">${n}</span>`).join('')}</div>`;
+    const pw = (n, c, u) => `<div class="pwrow"><span class="fav" style="background:${c}">${n[0].toUpperCase()}</span><div><b>${n}</b><small>${u}</small></div><span class="dots">••••••••</span><div class="btnrow"><button class="btn ghost sm">Show</button><button class="btn ghost sm">Copy</button><button class="btn ghost sm">Edit</button><button class="btn ghost sm">Delete</button></div></div>`;
+    const cb = I.check.replace('width="18" height="18"', 'width="13" height="13"');
+    const profile = `<div class="group"><div class="profile"><span class="av">M</span><div style="flex:1"><b>Mehmet</b><small>Local profile</small></div><button class="btn primary sm">Sign in with Google</button></div>
+        ${note('Google opens in a separate Nebula window. It closes automatically when sign-in finishes.')}
+        ${txt('Display name', '', 'Mehmet')}
+        ${btn('Save name', '', 'Save name', 'line')}
+        ${btn('Site session', 'Sign in on Gmail and sites that use Google login', 'Link')}
+        ${btn('Sign out of Nebula profile', 'Remove Google profile info and continue with a local name', 'Sign out')}
+        ${btn('Setup wizard', 'Reopen bookmark import and profile steps', 'Open')}</div>`;
+    const sync = `<div class="group"><h4>Nebula Sync</h4>
+        ${row('Nebula Sync', 'Store bookmarks, settings, and optionally passwords in Google Drive app data.', '<span class="status off">Off</span>')}
+        <div class="syncs">
+          <label><span class="cb">${cb}</span><div><strong>Bookmarks and layout</strong><small>Custom shortcuts, pins, folders, and their positions.</small></div></label>
+          <label><span class="cb">${cb}</span><div><strong>Settings</strong><small>Appearance, privacy, language, widget layout, and browser shortcuts.</small></div></label>
+          <label class="off"><span class="cb">${cb}</span><div><strong>Passwords</strong><small>Passwords are end-to-end encrypted on this device before being sent to Google.</small></div></label>
+        </div>
+        ${txt('Nebula Sync password', 'This password is never sent to Google. You need the same Sync password to unlock passwords on another device.', '', 'At least 8 characters')}
+        ${btns('Sync', '', [['Enable sync', 'primary'], ['Back up now'], ['Restore from cloud'], ['Turn off on this device', 'danger']])}
+        ${note('Last successful operation: Never')}</div>`;
+    const passwords = `<div class="group"><h4>Saved passwords</h4>
+        ${note('Site credentials are stored on this device. Login pages offer autofill and save prompts for new passwords. Windows Hello verification is required to show or copy passwords.')}
+        ${btns('Import and export', '', [['Import CSV'], ['Export as CSV']])}
+        <div class="srow"><div class="field wide" style="width:100%;justify-content:flex-start;gap:10px;color:var(--faint)">${I.search}Site, domain, or username</div></div>
+        ${pw('github.com', '#24292f', 'mehmet@example.com')}${pw('lichess.org', '#16a34a', 'mehmet')}${pw('accounts.example.com', '#6366f1', 'mehmet@example.com')}
+        <div class="srow"><div></div><button class="btn line sm">Add password</button></div></div>`;
+    return [subnav, sub === 'sync' ? sync : sub === 'passwords' ? passwords : profile];
+  }
+
+  function tabPrivacy() {
+    const shield = `<div class="group shcard"><div class="top"><span class="badge">${I.shield}</span><div style="flex:1"><b>Nebula Shield on github.com</b><small>Protection is enabled for this site</small></div><span class="toggle on"></span></div>
+      <div class="big"><div><strong>14</strong><span>Trackers blocked</span></div><div><strong>6</strong><span>Cookies blocked</span></div><div><strong>3</strong><span>Ads blocked</span></div><div><strong>1</strong><span>Upgraded to HTTPS</span></div></div></div>`;
+    return [
+      shield,
+      grp('Shield defaults', [
+        row('uBlock Origin Lite', 'Ad and tracker filters ready · v2026.804', '<span class="status">Active</span>'),
+        sel('Built-in tracking prevention', 'WebView2 profile network and storage protection level', 'Balanced'),
+        tog('Block trackers', 'Block known ad and analytics trackers at the WebView request layer', false),
+        tog('Strict cookie policy', 'Do not send Cookie headers with third-party requests', false),
+        tog('HTTPS only', 'Upgrade HTTP pages to HTTPS, except local addresses', false),
+        tog('GPC and Do Not Track', 'Signal that you do not want to be tracked on every request', true),
+        tog('Cookie banner shield', 'Remove known cookie and consent overlays; site exceptions also apply to this protection', true),
+        txt('Site exceptions', 'Domains separated by commas or spaces', '', 'example.com'),
+        txt('Custom block list', 'Add domains separated by commas or spaces to update your list', '', 'tracker.example'),
+      ]),
+      grp('Permissions and passkeys', [
+        sel('Sensitive site permissions', 'Behavior for camera, microphone, location, and similar WebView permissions', 'Ask every time'),
+        btn('Current site permission', 'github.com', 'Allow prompts on this site'),
+        txt('Permission exceptions', 'Domains that may request permission while global blocking is enabled', '', 'example.com, other.org'),
+        tog('Show passkeys in Nebula’s list', 'Show a site’s passkey suggestions in the account list instead of the web view’s own pop-up.', true),
+        tog('Open new tabs privately', 'New WebView tabs use an incognito profile', false),
+      ]),
+      grp('Data', [
+        btn('Nebula storage', 'Profile total: 412 MB · Cache: 96 MB. Clearing cache keeps your sign-ins, history, site data, and uBlock settings.', 'Cache'),
+        btns('Clear browsing data', 'Delete cookies, cache, history, and site permissions', [['Cookies'], ['History'], ['Permissions'], ['Clear all', 'danger']]),
+      ]),
+      grp('', [resetRow('Reset privacy defaults', 'Reset privacy preferences')]),
+    ];
+  }
+
+  function tabExtensions() {
+    const card = (n, m, c, d, cat) => `<div class="excard"><div class="top"><span class="mono" style="background:${c}">${m}</span><div><b>${n}</b><small>${cat}</small></div></div><p>${d}</p>
+      <div class="foot"><span class="ver">${I.check.replace('width="18" height="18"', 'width="15" height="15"')}Verified with Nebula</span><button class="btn primary sm">Install</button></div></div>`;
+    return [
+      `<div class="field" style="width:100%;justify-content:flex-start;gap:10px;color:var(--faint);height:46px">${I.search}Search extensions or features…</div>`,
+      `<div class="chips"><span class="chip on">All</span><span class="chip">Privacy</span><span class="chip">Appearance</span><span class="chip">Productivity</span><span class="chip">Video &amp; media</span></div>`,
+      `<div class="ex">${card('Bitwarden', 'B', '#175ddc', 'Manage passwords and autofill your sign-in details.', 'Privacy')}${card('Dark Reader', 'D', '#1f2937', 'Give websites a dark appearance.', 'Appearance')}${card('SponsorBlock', 'S', '#e11d48', 'Skip sponsored segments in YouTube videos.', 'Video &amp; media')}${card('LanguageTool', 'LT', '#7c3aed', 'Explore spelling, grammar and style suggestions.', 'Productivity')}</div>`,
+    ];
+  }
+
+  function tabNotifications() {
+    const site = (n, v) => `<div class="pwrow"><span class="fav" style="background:#475569">${n[0].toUpperCase()}</span><div><b>${n}</b></div><div class="seg"><span ${v === 'Allow' ? 'class="on"' : ''}>Allow</span><span ${v === 'Block' ? 'class="on"' : ''}>Block</span><span ${v === 'Default' ? 'class="on"' : ''}>Default</span></div></div>`;
+    return [
+      grp('Notifications', [
+        tog('Download notifications', 'Show a Windows notification when a download completes', true),
+        tog('Site notifications', 'Allow web push notifications', true),
+        tog('Show notification content', 'Show the sender and message preview on supported sites', true),
+        tog('Toolbar badge', 'Show count on notification icon', true),
+      ]),
+      grp('Site permissions', [note('Allow or block notifications for each site.'), site('github.com', 'Default'), site('discord.com', 'Allow'), site('news.example.com', 'Block')]),
+      grp('', [resetRow('Reset notification defaults', 'Reset notification preferences')]),
+    ];
+  }
+
+  function tabAbout() {
+    return [
+      `<div class="group"><div class="about"><img src="/nebula-app-logo.png" alt="" onerror="this.style.display='none'"><div><b>Nebula Browser</b><span class="muted">Version 2.0.0</span><p class="muted" style="font-size:13.5px;margin-top:8px">A distraction-free, privacy-focused browser shell. Tauri native shell + React UI.</p></div></div></div>`,
+      grp('Updates', [btn('Updates', 'You are on the latest version.', 'Check for updates')]),
+      `<div class="group dangerzone">${row('Reset app', 'Profile, setup, bookmarks, settings, and wallpaper — returns to a fresh install', '<button class="btn danger sm">Factory reset</button>')}</div>`,
+    ];
+  }
+
+  const TAB_BODY = { appearance: tabAppearance, home: tabHome, 'semi-lunar': tabSemiLunar, shortcuts: tabShortcuts, account: tabAccount, privacy: tabPrivacy, extensions: tabExtensions, notifications: tabNotifications, about: tabAbout };
+
+  /* ----- full-screen settings, with a live preview behind the panel while a slider is held ----- */
+  const KEYS = {
+    'Background blur': 'blur', 'Glass tint': 'tint', 'Background saturation': 'sat', 'Background contrast': 'con',
+    'Semi-lunar glass blur': 'lblur', 'Semi-lunar opacity': 'lop', 'Clock font size': 'clock',
+    'Icon size': 'icon', 'Crescent width': 'lw', 'Crescent height': 'lh', 'Overlay blur': 'oblur', 'Overlay brightness': 'obright',
+    'Open animation': 'dopen', 'Close animation': 'dclose', 'Open scale X': 'scx', 'Open scale Y': 'scy',
+    'Browsing hover open delay': 'hdelay', 'Preview delay': 'pdelay', 'Close delay': 'cdelay', 'Close button delay': 'cbdelay', 'Folder merge': 'fmerge', 'Merge animation': 'manim',
+  };
+  const TKEYS = { 'Right toolbar': 'rail', 'System widgets': 'widgets', 'RAM widget': 'ram', 'CPU widget': 'cpu', 'Clock': 'clockon', 'Show date': 'date', 'Pinned sites': 'pins', 'Greeting message': 'greet', 'Profile avatar': 'avatar' };
+  const LIVE = new Set(['blur', 'tint', 'sat', 'con', 'lblur', 'lop', 'clock', 'icon', 'lw', 'lh', 'oblur', 'obright']);
+  const DEMO_SEMI = new Set(['dopen', 'dclose', 'scx', 'scy']);
+  const DEMO_TIME = { hdelay: 'Menu opens after hovering for', pdelay: 'The preview starts after', cdelay: 'The menu closes after you leave, waiting', cbdelay: 'The ✕ shows on a shortcut after', fmerge: 'A folder forms after holding for', manim: 'The folder merge animation lasts' };
+  const S = {}, T = {};
+  let ENTER = true, lastSurface = null, FLASH = null, peekTimer = null, demoTimer = null;
+  const $ = (id) => document.getElementById(id);
+  const pct = (el, v) => Math.round(((v - +el.dataset.min) / (+el.dataset.max - +el.dataset.min)) * 100);
+
+  function applyLive() {
+    const u = $('under'); if (!u) return;
+    const v = (k, d) => (k in S ? S[k] : d);
+    const set = (k, val) => u.style.setProperty(k, val);
+    set('--g-blur', v('blur', 40) * 0.6 + 'px'); set('--g-tint', 25 + v('tint', 14) * 1.5);
+    set('--w-sat', v('sat', 110) / 100); set('--w-con', v('con', 82) / 100);
+    set('--l-blur', v('lblur', 160) * 0.22 + 'px'); set('--l-op', v('lop', 38));
+    set('--clock', v('clock', 36) * 1.22 + 'px'); set('--icon', v('icon', 44) + 'px');
+    set('--lw-r', v('lw', 1100) / 1100); set('--lh-r', v('lh', 152) / 152);
+    set('--o-blur', v('oblur', 24) * 0.45 + 'px'); set('--o-bright', v('obright', 45) / 100);
+    for (const k of Object.keys(T)) u.classList.toggle('no-' + k, T[k] === false);
+  }
+
+  function renderPeek(el) {
+    const bar = $('pmain'); if (!bar || !el) return;
+    const k = el.dataset.key, p = pct(el, S[k]);
+    const note = LIVE.has(k) ? 'Live preview behind. Release to go back.' : DEMO_SEMI.has(k) ? 'Replaying how the menu opens and closes.' : k in DEMO_TIME ? '' : 'Release to go back.';
+    bar.innerHTML = `<div class="ptop"><b>${el.dataset.label}</b><em>${S[k]}${el.dataset.unit}</em></div><div class="range mirror"><i style="width:${p}%"></i><b style="left:${p}%"></b></div>${note ? `<div class="pnote">${note}</div>` : ''}`;
+  }
+  function startPeek(el) {
+    clearTimeout(peekTimer);
+    const u = $('under'); if (u) u.classList.toggle('ov', el.dataset.key === 'oblur' || el.dataset.key === 'obright');
+    const demo = $('pdemo'); if (demo) demo.innerHTML = '';
+    renderPeek(el); document.body.classList.add('peeking');
+    if (DEMO_SEMI.has(el.dataset.key)) playSemi();
+  }
+  function endPeek() { clearTimeout(peekTimer); peekTimer = setTimeout(() => { document.body.classList.remove('peeking'); const u = $('under'); if (u) u.classList.remove('ov'); }, 320); }
+  function flashPeek(label, text, ms) {
+    const bar = $('pmain'); if (!bar) return; clearTimeout(peekTimer);
+    bar.innerHTML = `<div class="ptop"><b>${label}</b><em>${text}</em></div><div class="pnote">Live preview behind.</div>`;
+    const demo = $('pdemo'); if (demo) demo.innerHTML = '';
+    document.body.classList.add('peeking'); peekTimer = setTimeout(() => document.body.classList.remove('peeking'), ms);
+  }
+
+  function playSemi() {
+    const el = document.querySelector('#under .semi'); if (!el || !el.animate) return;
+    const sx = (S.scx ?? 20) / 100, sy = (S.scy ?? 14) / 100, to = S.dopen ?? 260, tc = S.dclose ?? 140;
+    el.getAnimations().forEach((a) => a.cancel());
+    const small = 'translateX(-50%) scale(' + sx + ', ' + sy + ')', full = 'translateX(-50%) scale(1, 1)';
+    const open = el.animate([{ transform: small, opacity: 0.25 }, { transform: full, opacity: 1 }], { duration: Math.max(to, 1), easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' });
+    open.onfinish = () => setTimeout(() => {
+      const close = el.animate([{ transform: full, opacity: 1 }, { transform: small, opacity: 0.25 }], { duration: Math.max(tc, 1), easing: 'ease-in', fill: 'both' });
+      close.onfinish = () => setTimeout(() => el.getAnimations().forEach((a) => a.cancel()), 350);
+    }, 650);
+  }
+  function runDemo(key, value) {
+    clearTimeout(demoTimer);
+    demoTimer = setTimeout(() => {
+      if (DEMO_SEMI.has(key)) { playSemi(); return; }
+      if (key in DEMO_TIME) { const box = $('pdemo'); if (box) box.innerHTML = `<div class="pnote">${DEMO_TIME[key]} <b>${value} ms</b></div><div class="pbar"><i style="animation-duration:${Math.max(value, 60)}ms"></i></div>`; }
+    }, 150);
+  }
+
+  function setValue(key, value) {
+    S[key] = value;
+    document.querySelectorAll('.rng[data-key="' + key + '"]').forEach((el) => {
+      const p = pct(el, value); el.querySelector('i').style.width = p + '%'; el.querySelector('b').style.left = p + '%'; el.querySelector('em').textContent = value + el.dataset.unit;
+    });
+    const el = document.querySelector('.rng[data-key="' + key + '"]'); renderPeek(el);
+    applyLive(); runDemo(key, value);
+  }
+
+  document.addEventListener('pointerdown', (e) => {
+    const track = e.target.closest('.rng[data-key] .range'); if (!track) return;
+    const el = track.parentElement, key = el.dataset.key;
+    e.preventDefault(); track.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const r = track.getBoundingClientRect(), min = +el.dataset.min, max = +el.dataset.max;
+      setValue(key, Math.round(Math.min(max, Math.max(min, min + ((ev.clientX - r.left) / r.width) * (max - min)))));
+    };
+    startPeek(el); move(e);
+    const up = () => { track.removeEventListener('pointermove', move); track.removeEventListener('pointerup', up); track.removeEventListener('pointercancel', up); endPeek(); };
+    track.addEventListener('pointermove', move); track.addEventListener('pointerup', up); track.addEventListener('pointercancel', up);
+  });
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('.toggle[data-tkey]');
+    if (t) { const k = t.dataset.tkey; T[k] = !(T[k] !== false); t.classList.toggle('on', T[k]); applyLive(); flashPeek(t.dataset.label, T[k] ? 'On' : 'Off', 1100); return; }
+    const sw = e.target.closest('[data-look-pick]');
+    if (sw) { state.look = sw.dataset.lookPick; FLASH = { label: 'Accent color', text: sw.dataset.lookPick, ms: 1400 }; apply(); }
+  });
+
+  function settingsScreen() {
+    const tab = TABS.find((t) => t[0] === state.tab) || TABS[0];
+    return `<section class="scene settings">
+      <div class="under home" id="under"><div class="under-wall"></div>${homeBody()}</div>
+      <div class="swin ${ENTER ? 'enter' : ''}">
+        <div class="sart"><img src="/crab.jpg" alt=""></div>
+        <nav class="snav"><div class="sbrand"><img src="/nebula-app-logo.png" alt=""><b>Settings</b></div><div class="ssearch">${I.search}Search settings…</div>
+          ${TABS.map(([id, name, , icon], i) => `<button class="item ${id === tab[0] ? 'on' : ''}" data-tab="${id}" style="--i:${i}">${icon}${name}</button>`).join('')}
+          <div class="shint"><span class="kbd">Esc</span> closes settings</div></nav>
+        <div class="scontent"><header class="shead"><div><h1>${tab[1]}</h1><p>${tab[2]}</p></div><button class="btn primary">Done</button></header>
+          <div class="sinner"><div class="sbody">${TAB_BODY[tab[0]]().join('')}</div></div></div></div>
+      <div class="peekbar"><div id="pmain"></div><div id="pdemo"></div></div></section>`;
+  }
+
+  const SCREENS = {
+    home: () => `<section class="scene home">${homeBody()}</section>`,
+
+    popups: () => `<section class="scene popups"><div class="site"><div class="ln" style="width:38%"></div><div class="blk"></div><div class="ln" style="width:70%"></div><div class="ln" style="width:55%"></div><div class="blk"></div></div>
+      <div class="grid">
+        <div class="card pop"><div class="origin">${I.lock} github.com</div><div class="badge">${I.pin}</div><h3>Share your location?</h3><p>This site would like to know where you are to show nearby results.</p>
+          <div class="opts"><div class="opt on"><span class="dot"></span>Allow while visiting the site</div><div class="opt">Allow this time only</div></div>
+          <div class="actions"><button class="btn ghost">Block</button><button class="btn primary">Allow</button></div></div>
+
+        <div class="card pop"><div class="origin">${I.lock} accounts.example.com</div><div class="badge">${I.key}</div><h3>Save this password?</h3><p>Nebula keeps it in its encrypted vault on this computer.</p>
+          <div class="pwd"><div><span class="muted">Username</span><b>mehmet@example.com</b></div><div><span class="muted">Password</span><b>••••••••••</b></div></div>
+          <div class="actions"><button class="btn ghost">Never</button><button class="btn primary">Save</button></div></div>
+
+        <div class="card pop"><div class="badge">${I.up.replace('width="20" height="20"', 'width="20" height="20"')}</div><h3>Nebula 2.1 is ready</h3><p>The update is downloaded. Nebula restarts in a moment and your tabs come back.</p>
+          <div class="actions"><button class="btn ghost">Later</button><button class="btn primary">Restart now</button></div></div>
+
+        <div class="card pop"><div class="badge" style="color:var(--danger);background:color-mix(in srgb,var(--danger) 14%,transparent);border-color:color-mix(in srgb,var(--danger) 40%,transparent)">${I.x.replace('width="16" height="16"', 'width="20" height="20"')}</div><h3>Close 3 tabs?</h3><p>You have 3 open tabs in this window. They will be saved so you can reopen them.</p>
+          <div class="actions"><button class="btn ghost">Cancel</button><button class="btn danger">Close tabs</button></div></div>
+
+        <div class="card toast"><div class="badge sm">${I.dl}</div><div style="flex:1"><b style="font-size:14px">nebula-setup.exe</b><div class="muted" style="font-size:12.5px">12.4 MB of 17.8 MB · 3.1 MB/s</div><div class="bar"><i></i></div></div><button class="btn ghost sm">Pause</button></div>
+      </div></section>`,
+
+    settings: () => settingsScreen(),
+
+    tour: () => `<section class="scene home tour"><div class="under">${homeBody()}</div><div class="hole"></div>
+      <div class="card tcard"><div class="muted" style="font-size:12.5px;font-weight:600">Quick tour · Step 1 of 4</div>
+        <div class="steps"><div class="on"><b>01</b>TOP EDGE</div><div><b>02</b>TABS</div><div><b>03</b>SEARCH</div><div><b>04</b>TOOLS</div></div>
+        <h3>Open the menu from the top</h3><p class="muted" style="margin-top:6px">Hold the pointer at the top edge for a moment. Semi-Lunar opens, then closes when you move away.</p>
+        <div class="hint">${I.up}Move your pointer up. No click needed.</div>
+        <div class="foot"><button class="btn ghost sm">Skip tour</button><div style="display:flex;gap:8px"><button class="btn line sm" disabled style="opacity:.5">Back</button><button class="btn primary sm">Next</button></div></div></div></section>`,
+
+    shield: () => `<section class="scene shield"><div class="browser">
+      <div class="bar glass"><span class="muted">${I.globe}</span><div class="addr">${I.lock}<span>github.com/memirusta/Nebula-Browser</span></div><div class="shbtn">${I.shield}<em>23</em></div><span class="muted">${I.gear}</span></div>
+      <div class="card panel"><div class="top"><div class="badge">${I.shield}</div><div style="flex:1"><b>Nebula Shield</b><small>github.com</small></div><span class="toggle on"></span></div>
+        <div class="big"><div><strong>14</strong><span>Trackers blocked</span></div><div><strong>6</strong><span>Cookies blocked</span></div><div><strong>3</strong><span>Ads blocked</span></div><div><strong>1</strong><span>Upgraded to HTTPS</span></div></div>
+        <div class="opt2"><span>Block trackers</span><span class="toggle on"></span></div><div class="opt2"><span>Block cross-site cookies</span><span class="toggle on"></span></div>
+        <div class="opt2"><span>Upgrade to HTTPS</span><span class="toggle on"></span></div><div class="opt2"><span>Fingerprint protection</span><span class="toggle"></span></div>
+        <div class="foot"><span>Shield is on for this site</span><span style="color:var(--acc);font-weight:600">All shield settings</span></div></div>
+      <div class="card page"><div class="ln" style="height:18px;width:30%;background:color-mix(in srgb,var(--text) 18%,transparent);border-radius:8px"></div><div class="ln" style="height:12px;width:80%;background:color-mix(in srgb,var(--text) 12%,transparent);border-radius:8px"></div><div class="ln" style="height:12px;width:64%;background:color-mix(in srgb,var(--text) 12%,transparent);border-radius:8px"></div></div></div></section>`,
+  };
+
+  /* ----- toolbar wiring ----- */
+  document.getElementById('looks').innerHTML = Object.entries(L).map(([k, v]) => `<button data-look="${k}"><span class="swatch" style="background:${v.sw}"></span>${v.name}</button>`).join('') +
+    `<button data-look="custom"><span class="swatch" style="background:conic-gradient(#f43f5e,#f59e0b,#10b981,#3b82f6,#8b5cf6,#f43f5e)"></span>E · Custom</button>`;
+  document.getElementById('surfaces').innerHTML = SURFACES.map(([k, n]) => `<button data-surface="${k}">${n}</button>`).join('');
+  document.getElementById('font').innerHTML = FONTS.map(([n], i) => `<option value="${i}">${n}</option>`).join('');
+  document.getElementById('font').value = state.font; document.getElementById('radius').value = state.radius; document.getElementById('hue').value = state.hue;
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button, [data-wall], [data-acc]'); if (!b) return;
+    if (b.dataset.look) state.look = b.dataset.look; else if (b.dataset.mode) state.mode = b.dataset.mode; else if (b.dataset.surface) state.surface = b.dataset.surface; else if (b.dataset.tab) state.tab = b.dataset.tab; else if (b.dataset.wall) state.wall = b.dataset.wall; else if (b.dataset.acc) state.acc = b.dataset.acc; else if (b.dataset.adv) state.adv = state.adv === '1' ? '0' : '1'; else return;
+    apply();
+  });
+  document.getElementById('font').addEventListener('change', (e) => { state.font = Number(e.target.value); apply(); });
+  document.getElementById('radius').addEventListener('change', (e) => { state.radius = Number(e.target.value); apply(); });
+  document.getElementById('hue').addEventListener('input', (e) => { state.hue = Number(e.target.value); apply(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', apply);
+  apply();
+})();
+</script>
+</body>
+</html>

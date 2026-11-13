@@ -1,3 +1,26 @@
+/* Plus Jakarta Sans (SIL Open Font License 1.1, see src/assets/fonts), bundled so no screen waits for the network.
+   Latin covers English and the other Western languages, Latin Extended adds Turkish; Russian and Japanese use the
+   system font. Only the light and dark themes use it (--nebula-font in global.css). */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../assets/fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../assets/fonts/plus-jakarta-sans-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /* Nebula — forest glass palette (matches mockup) */
   --nebula-void: #000000;
@@ -14,11 +37,28 @@
   --nebula-accent-glow: rgba(126, 200, 227, 0.55);
   --nebula-gold: #d4c48a;
   --nebula-gold-glow: rgba(212, 196, 138, 0.45);
+  /* The gold as text or an icon: the gold itself on dark surfaces, darkened on the light theme (see global.css). */
+  --nebula-gold-ink: var(--nebula-gold);
 
   --nebula-text: #f0f2f5;
   --nebula-text-muted: rgba(220, 225, 230, 0.55);
   --nebula-success: #4ade80;
   --nebula-danger: #ff6b8a;
+
+  /* Surfaces, fields and the main button of the redesigned screens. The light and dark themes set their own
+     values (global.css); these are what the Forest theme gets. */
+  --nebula-surface-2: rgba(255, 255, 255, 0.05);
+  --nebula-field-border: rgba(255, 255, 255, 0.13);
+  --nebula-soft: color-mix(in srgb, var(--nebula-accent) 14%, transparent);
+  --nebula-soft-border: color-mix(in srgb, var(--nebula-accent) 42%, transparent);
+  --nebula-primary: var(--nebula-accent);
+  --nebula-on-primary: #06222c;
+  --nebula-shell-bg: #1a2e22;
+  --nebula-pop: #14201a;
+  --nebula-font: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  --ui-radius-sm: 10px;
+  --ui-radius: 14px;
+  --ui-radius-lg: 22px;
 
   --glass-blur: 40px;
   --glass-saturate: 1.1;
@@ -58,7 +98,7 @@ html[data-nebula-titlebar] {
 
 html[data-nebula-browsing-tauri]:not([data-nebula-chrome]) body,
 html[data-nebula-browsing-tauri]:not([data-nebula-chrome]) #root {
-  background: #1a2e22;
+  background: var(--nebula-shell-bg);
 }
 
 html[data-nebula-overlay-tauri] body,
@@ -73,5 +113,5 @@ html[data-nebula-chrome] #root {
 
 html[data-nebula-tauri]:not([data-nebula-chrome]):not([data-nebula-browsing-tauri]):not([data-nebula-overlay-tauri]) body,
 html[data-nebula-tauri]:not([data-nebula-chrome]):not([data-nebula-browsing-tauri]):not([data-nebula-overlay-tauri]) #root {
-  background: #1a2e22;
+  background: var(--nebula-shell-bg);
 }
