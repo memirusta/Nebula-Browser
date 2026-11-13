@@ -124,3 +124,15 @@ test('runs are put side by side with one column each, and the video rows appear 
   assert.match(table, /\| ads shown \(runs of ad on screen\) \| 1 \| - \|/)
   assert.doesNotMatch(renderComparison([{ label: 'x', url: 'u', network }]), /ads shown/)
 })
+
+test('a request that Nebula\'s own shield answered is counted as blocked, and as the shield\'s', () => {
+  const recorder = createNetworkRecorder()
+  recorder.onEvent('Network.requestWillBeSent', { requestId: '1', request: { url: 'https://ads.example/a.js', method: 'GET' }, type: 'Script', timestamp: 1 })
+  recorder.onEvent('Network.responseReceived', { requestId: '1', response: { status: 200, mimeType: 'text/javascript', url: 'https://ads.example/a.js', headers: { 'X-Nebula-Shield': 'blocked' } } })
+  recorder.onEvent('Network.loadingFinished', { requestId: '1', encodedDataLength: 0 })
+  recorder.onEvent('Network.requestWillBeSent', { requestId: '2', request: { url: 'https://site.example/app.js', method: 'GET' }, type: 'Script', timestamp: 2 })
+  recorder.onEvent('Network.responseReceived', { requestId: '2', response: { status: 200, mimeType: 'text/javascript', url: 'https://site.example/app.js', headers: { 'content-type': 'text/javascript' } } })
+  const summary = summarizeRequests(recorder.requests(), 'https://site.example/')
+  assert.equal(summary.attempted.blocked, 1)
+  assert.equal(summary.byShield, 1)
+})

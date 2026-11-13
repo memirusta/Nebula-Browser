@@ -1,13 +1,19 @@
 // Loads one page in a Nebula build and records what it asks for, what is blocked, and (on YouTube) whether an ad is shown.
 //
 //   node scripts/shield-measure-run.mjs --exe <nebula app.exe> [--url <page>] [--seconds 45] [--label current] [--repeat 1]
-//                                       [--out <folder>] [--port 9333] [--keep-open] [--baseline] [--tracking none|balanced|strict]
+//                                       [--out <folder>] [--port 9333] [--keep-open] [--legacy-blocker] [--baseline] [--shield] [--tracking none|balanced|strict]
 //                                       [--browser-args "<more Chromium switches>"]
+//
+// Nebula no longer ships a content blocker of its own besides the shield, so --baseline is "no shield" and --shield is "the
+// shield". --legacy-blocker is for a build from before that change, which has uBlock Origin Lite in its profile: with it the
+// runs also switch that blocker off (and put it back), as described below.
 //
 // Three things can stand between a page and the network, and a run says which were on: the content blocker (uBlock Origin Lite),
 // WebView2's own Tracking Prevention (Microsoft's list; Nebula sets it to "balanced" unless told otherwise), and Nebula's own
 // handler (cookie-banner removal, the "block trackers" and "strict cookies" settings). --baseline switches all three off, the blocker before anything is opened (a page that has already been loaded with the blocker's
 // scripts keeps them, so switching it off afterwards does not make a clean baseline).
+// --shield is the product as it will be: the content blocker off, Nebula's own shield (the engine and lists that ship with the app)
+// on, everything else as shipped.
 //   node scripts/shield-measure-run.mjs --render <run.json> <run.json> ...        (put saved runs side by side)
 //
 // Use a build with an identity of its own (tauri.perf.conf.json): the measured app starts from its own profile, and the Nebula
@@ -36,7 +42,7 @@ const SETTINGS_KEY = 'nebula-settings-v1'
 const delay = (ms) => new Promise((done) => setTimeout(done, ms))
 
 function readArgs(argv) {
-  const args = { seconds: 45, label: 'current', repeat: 1, port: 9333, url: DEFAULT_URL, keepOpen: false, baseline: false, tracking: '', browserArgs: '', render: [] }
+  const args = { seconds: 45, label: 'current', repeat: 1, port: 9333, url: DEFAULT_URL, keepOpen: false, legacyBlocker: false, baseline: false, shield: false, tracking: '', browserArgs: '', render: [] }
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
     if (arg === '--exe') args.exe = argv[++index]
@@ -47,7 +53,9 @@ function readArgs(argv) {
     else if (arg === '--out') args.out = argv[++index]
     else if (arg === '--port') args.port = Number(argv[++index])
     else if (arg === '--keep-open') args.keepOpen = true
+    else if (arg === '--legacy-blocker') args.legacyBlocker = true
     else if (arg === '--baseline') args.baseline = true
+    else if (arg === '--shield') args.shield = true
     else if (arg === '--tracking') args.tracking = argv[++index]
     else if (arg === '--browser-args') args.browserArgs = argv[++index]
     else if (arg === '--render') args.render = argv.slice(index + 1).filter((value) => !value.startsWith('--'))
@@ -220,6 +228,36 @@ async function setBlockerMode(browser, level) {
   }
 }
 
+/**
+ * A baseline switches the blocker's rule sets off with the browser's own calls, and the browser keeps that across restarts, so a
+ * profile that went through a baseline has none on afterwards, whatever mode the blocker is in. This puts back the ones its
+ * manifest turns on by default, which is what a fresh install has.
+ */
+const RESTORE_SCRIPT = `(async () => {
+  const wanted = ((chrome.runtime.getManifest().declarative_net_request || {}).rule_resources || []).filter((set) => set.enabled).map((set) => set.id)
+  const enabled = await chrome.declarativeNetRequest.getEnabledRulesets()
+  const missing = wanted.filter((id) => !enabled.includes(id))
+  if (missing.length) await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds: missing })
+  return { wanted: wanted.length, restored: missing.length }
+})()`
+
+/** Runs `expression` once in the blocker's background worker and lets go of it. */
+async function inBlockerWorker(browser, expression, waitMs = 45_000) {
+  const worker = await waitFor("the blocker's background worker", async () => {
+    const { targetInfos } = await browser.send('Target.getTargets')
+    return targetInfos.find((t) => t.type === 'service_worker' && t.url.startsWith('chrome-extension://'))
+  }, waitMs)
+  const { sessionId } = await browser.send('Target.attachToTarget', { targetId: worker.targetId, flatten: true })
+  try {
+    await waitFor('the extension interfaces', async () => (await browser.send('Runtime.evaluate', { expression: 'typeof chrome !== "undefined" && Boolean(chrome.declarativeNetRequest)', returnByValue: true }, sessionId)).result?.value, waitMs, 1000)
+    const answer = await browser.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
+    if (answer.exceptionDetails) throw new Error(answer.exceptionDetails.exception?.description ?? answer.exceptionDetails.text)
+    return answer.result.value
+  } finally {
+    await browser.send('Target.detachFromTarget', { sessionId }).catch(() => {})
+  }
+}
+
 const isBlockerOff = (state) => state.rulesets.length === 0 && state.dynamicRules === 0 && state.sessionRulesThatBlock === 0 && state.scripts === 0
 
 async function blockerState(browser, off, waitMs = 60_000, keep = false) {
@@ -256,7 +294,9 @@ async function blockerState(browser, off, waitMs = 60_000, keep = false) {
   return { extension: worker.url.split('/')[2], before, ...after, switchedOff: isBlockerOff(after), ...(keep ? { sessionId, run } : {}) }
 }
 
-async function measureOnce({ exe, port, url, seconds, outDir, runLabel, keepOpen, browserArgs, baseline, tracking }) {
+async function measureOnce({ exe, port, url, seconds, outDir, runLabel, keepOpen, legacyBlocker, browserArgs, baseline, shield, tracking }) {
+  // The content blocker is off in a baseline and when Nebula's own shield is what is measured.
+  const blockerOff = legacyBlocker && (baseline || shield)
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const netLog = join(outDir, `netlog-${runLabel.replace(/\W+/g, '_')}-${stamp}.json`)
   if (/\s/.test(netLog)) throw new Error(`The log path must not contain spaces: ${netLog}`)
@@ -274,7 +314,7 @@ async function measureOnce({ exe, port, url, seconds, outDir, runLabel, keepOpen
     let blockerRun
     const guard = { reads: 0, reapplied: 0, failedReads: 0 }
     let guardTimer
-    if (baseline) {
+    if (blockerOff) {
       const { sessionId: _kept, run, ...off } = await blockerState(browser, true, 60_000, true)
       blockerRun = run
       blocker = off
@@ -314,6 +354,8 @@ async function measureOnce({ exe, port, url, seconds, outDir, runLabel, keepOpen
     const privacy = {}
     if (trackingLevel) privacy.trackingLevel = trackingLevel
     if (baseline) Object.assign(privacy, { cookieBannerBlocking: false, blockTrackers: false, strictCookies: false })
+    // Always written, either way: the profile keeps what an earlier run set, and a run that is not about the shield must not have it on.
+    privacy.shield = Boolean(shield)
     if (Object.keys(privacy).length > 0) {
       await browser.send('Runtime.evaluate', {
         expression: `(() => { const stored = JSON.parse(localStorage.getItem(${JSON.stringify(SETTINGS_KEY)}) || '{}'); stored.privacy = { ...(stored.privacy || {}), ...${JSON.stringify(privacy)} }; localStorage.setItem(${JSON.stringify(SETTINGS_KEY)}, JSON.stringify(stored)); return true })()`,
@@ -387,11 +429,20 @@ async function measureOnce({ exe, port, url, seconds, outDir, runLabel, keepOpen
     // among the targets then), so it is looked for now, with a page open, and switched off before the reload that is measured.
     // A baseline puts the blocker's own mode to "none" first; any other run makes sure it is at its usual "optimal" (an earlier
     // baseline that did not finish could have left it off).
-    if (!baseline) {
+    if (legacyBlocker && !blockerOff) {
       // Any other run makes sure the blocker is at its usual "optimal" mode (an earlier baseline could have left it off), and says
       // what it has on.
       await setBlockerMode(browser, 2).catch(() => undefined)
       blocker = await blockerState(browser, false, 45_000)
+      if (blocker.rulesets.length === 0) {
+        // An earlier baseline left the rule sets off: they are put back, and the blocker is made to register its scripts again
+        // by a change of mode (as it does when the mode changes).
+        const restored = await inBlockerWorker(browser, RESTORE_SCRIPT)
+        console.error(`the blocker had no rule sets on; put back ${restored.restored} of ${restored.wanted}`)
+        await setBlockerMode(browser, 1).catch(() => undefined)
+        await setBlockerMode(browser, 2).catch(() => undefined)
+        blocker = await blockerState(browser, false, 45_000)
+      }
     }
     // Not a reload: the page that was handed over is left (about:blank) and the address is then opened afresh, so nothing the
     // first page had in flight (its beacons as it unloads, its workers) is mixed into what is measured.
@@ -437,14 +488,18 @@ async function measureOnce({ exe, port, url, seconds, outDir, runLabel, keepOpen
       console.error('the page:', where.result?.value)
     }
     clearInterval(guardTimer)
-    if (baseline) await setBlockerMode(browser, 2).catch(() => undefined)
+    if (blockerOff) {
+      await setBlockerMode(browser, 2).catch(() => undefined)
+      // The rule sets a baseline switched off are put back, so the profile is left as it was found.
+      await inBlockerWorker(browser, RESTORE_SCRIPT).catch(() => undefined)
+    }
     const requests = recorder.requests()
     const network = summarizeRequests(requests, url)
     const youtube = isYoutube ? analyzeYoutubeSamples(samples) : undefined
     // Clean: it was read every two seconds through the run and never found back on. Not clean: it was found back on (it was
     // switched off again each time, but the page ran with it on in between). Unproven: it could not be read.
-    const stayedOff = !baseline ? undefined : guard.reads === 0 ? null : guard.reapplied === 0
-    return { label: runLabel, url, seconds, at: new Date().toISOString(), baseline: baseline || undefined, nebulaPrivacy: Object.keys(privacy).length ? privacy : undefined, nebulaPrivacyStored: privacyStored, blocker, guard: baseline ? guard : undefined, stayedOff, network, youtube, netLog, requests, samples }
+    const stayedOff = !blockerOff ? undefined : guard.reads === 0 ? null : guard.reapplied === 0
+    return { label: runLabel, url, seconds, at: new Date().toISOString(), baseline: baseline || undefined, shield: shield || undefined, nebulaPrivacy: Object.keys(privacy).length ? privacy : undefined, nebulaPrivacyStored: privacyStored, blocker, guard: blockerOff ? guard : undefined, stayedOff, network, youtube, netLog, requests, samples }
   } finally {
     browser?.close()
     if (!keepOpen) await closeNebula(app)
@@ -472,7 +527,7 @@ async function main() {
   for (let index = 1; index <= args.repeat; index++) {
     const runLabel = args.repeat > 1 ? `${args.label} #${index}` : args.label
     console.log(`Measuring ${args.url} (${runLabel}, ${args.seconds} s)`)
-    const run = await measureOnce({ exe: args.exe, port: args.port, url: args.url, seconds: args.seconds, outDir, runLabel, keepOpen: args.keepOpen, browserArgs: args.browserArgs, baseline: args.baseline, tracking: args.tracking })
+    const run = await measureOnce({ exe: args.exe, port: args.port, url: args.url, seconds: args.seconds, outDir, runLabel, keepOpen: args.keepOpen, legacyBlocker: args.legacyBlocker, browserArgs: args.browserArgs, baseline: args.baseline, shield: args.shield, tracking: args.tracking })
     console.log(`  saved ${saveRun(outDir, run)}`)
     runs.push(run)
   }

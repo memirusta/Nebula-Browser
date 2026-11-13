@@ -86,7 +86,7 @@ export function createNetworkRecorder() {
   function entry(id) {
     let record = byId.get(id)
     if (!record) {
-      record = { id, url: '', method: 'GET', type: 'Other', startedAt: 0, status: null, mimeType: '', bytes: 0, initiator: null, failed: false, blocked: false, refusedByPolicy: false, blockedReason: '', error: '', fromCache: false, redirectedTo: '' }
+      record = { id, url: '', method: 'GET', type: 'Other', startedAt: 0, status: null, mimeType: '', bytes: 0, initiator: null, shield: false, failed: false, blocked: false, refusedByPolicy: false, blockedReason: '', error: '', fromCache: false, redirectedTo: '' }
       byId.set(id, record)
       order.push(record)
     }
@@ -120,6 +120,13 @@ export function createNetworkRecorder() {
           record.status = params.response.status
           record.mimeType = params.response.mimeType ?? ''
           record.fromCache = Boolean(params.response.fromDiskCache || params.response.fromServiceWorker)
+          // Nebula's own shield answers a request it stops with a mark in the headers (it cannot make a request fail the way an
+          // extension does), so a request it stopped is counted as blocked, and as the shield's.
+          const headers = params.response.headers ?? {}
+          if (Object.keys(headers).some((name) => name.toLowerCase() === 'x-nebula-shield')) {
+            record.shield = true
+            record.blocked = true
+          }
           if (!record.url) record.url = params.response.url
           break
         }
@@ -177,6 +184,7 @@ export function summarizeRequests(requests, pageUrl) {
   const videoBytes = requests.filter((r) => /(^|\.)googlevideo\.com$/.test(hostOf(r.url))).reduce((sum, r) => sum + r.bytes, 0)
   return {
     attempted: tally(requests),
+    byShield: requests.filter((r) => r.shield).length,
     thirdParty: tally(thirdParty),
     adRelated: { ...tally(adRelated), passed: adRelated.filter((r) => !r.blocked).length },
     failedForOtherReasons: failedOther.length,
@@ -265,6 +273,7 @@ export function renderComparison(runs) {
   const rows = [
     ['requests attempted', (r) => r.network.attempted.count],
     ['of them blocked', (r) => r.network.attempted.blocked],
+    ['  by Nebula\'s shield', (r) => r.network.byShield ?? 0],
     ['third-party requests', (r) => r.network.thirdParty.count],
     ['third-party blocked', (r) => r.network.thirdParty.blocked],
     ['ad-related requests', (r) => r.network.adRelated.count],
@@ -302,12 +311,15 @@ export function renderReport(runs, meta = {}) {
   out.push(renderComparison(runs))
   for (const run of runs) {
     out.push('', `## ${run.label}`, '', `Page: ${run.url}`)
-    if (run.baseline) {
+    if (run.shield) out.push(run.guard ? "Nebula's own shield was on, and the content blocker (uBlock Origin Lite) was off." : "Nebula's own shield was on.")
+    if (run.baseline && !run.guard) out.push('Baseline: the shield and the other protections were off.')
+    if ((run.baseline || run.shield) && run.guard) {
+      const label = run.baseline ? 'Baseline' : 'Shield run'
       const blocked = run.network.attempted.blocked
       const guard = run.guard ?? { reads: 0, reapplied: 0 }
-      if (run.stayedOff === true) out.push(`Baseline: the blocker was switched off before anything was opened, read ${guard.reads} times during the run and never found back on; ${blocked} requests were blocked.`)
-      else if (run.stayedOff === false) out.push(`Baseline NOT clean: the blocker was switched off, but it was found back on ${guard.reapplied} times in ${guard.reads} readings (each time switched off again, but the page ran with it on in between); ${blocked} requests were blocked.`)
-      else out.push(`Baseline unproven: the blocker was switched off but could not be read during the run; ${blocked} requests were blocked${blocked === 0 ? ' (so it stayed off)' : ' (so it was NOT off)'}.`)
+      if (run.stayedOff === true) out.push(`${label}: the blocker was switched off before anything was opened, read ${guard.reads} times during the run and never found back on; ${blocked} requests were blocked.`)
+      else if (run.stayedOff === false) out.push(`${label} NOT clean: the blocker was switched off, but it was found back on ${guard.reapplied} times in ${guard.reads} readings (each time switched off again, but the page ran with it on in between); ${blocked} requests were blocked.`)
+      else out.push(`${label} unproven: the blocker was switched off but could not be read during the run; ${blocked} requests were blocked${blocked === 0 ? ' (so it stayed off)' : ' (so it was NOT off)'}.`)
     } else if (run.blocker) {
       out.push(`Blocker on: ${(run.blocker.rulesets ?? []).length} rule sets, ${run.blocker.dynamicRules ?? 0} own rules, ${run.blocker.scripts ?? 0} injected scripts.`)
     }
