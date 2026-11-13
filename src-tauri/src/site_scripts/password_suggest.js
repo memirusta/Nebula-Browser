@@ -404,6 +404,7 @@
       '  box-shadow: var(--nb-shadow, 0 12px 32px rgba(15, 18, 32, 0.22)); font: 13px/1.35 system-ui, "Segoe UI", sans-serif; }',
       '.head { display: flex; align-items: center; gap: 6px; padding: 8px 12px 6px; font-size: 11px; color: var(--nb-muted, #6b6f82); }',
       '.head b { color: var(--nb-ink, #4f46e5); font-weight: 600; }',
+      '.head svg { flex: none; color: var(--nb-ink, #4f46e5); }',
       '.list { max-height: ' + VISIBLE_ROWS * 44 + 'px; overflow-y: auto; scrollbar-width: thin; padding: 0 4px 4px; }',
       '.row { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px; border-radius: 8px; cursor: pointer; }',
       '.row.active { background: var(--nb-soft, #eef0ff); }',
@@ -504,6 +505,11 @@
     var filtered = typedText().trim() !== '';
     var template = filtered ? labels.filtered : labels.all;
     parts.head.textContent = '';
+    // The list is Nebula's: the key says so, the name is the site's.
+    var mark = keyIcon();
+    mark.setAttribute('width', '13');
+    mark.setAttribute('height', '13');
+    parts.head.appendChild(mark);
     var brand = document.createElement('b');
     brand.textContent = pageSiteName() || 'Nebula';
     parts.head.appendChild(brand);

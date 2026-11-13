@@ -327,4 +327,6 @@ test('the heading of the list names the site as the site calls itself, or by its
   assert.equal(engine.siteNameFrom(null, ''), '')
   // The heading uses it instead of "Nebula".
   assert.match(scriptSource, /brand\.textContent = pageSiteName\(\) \|\| 'Nebula';/)
+  // A key before the name says the list is Nebula's.
+  assert.match(scriptSource, /var mark = keyIcon\(\);\s+mark\.setAttribute\('width', '13'\);/)
 })
