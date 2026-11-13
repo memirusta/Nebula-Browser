@@ -138,3 +138,18 @@ test('the sample tabs of the tour can be dragged about inside the menu, and the 
   assert.match(css, /\.body p \{[^}]*font-size: 14\.5px/)
   assert.match(css, /\.actionHint \{[^}]*font-size: 13\.5px/)
 })
+
+test('the four sample tabs of the tour carry their own icons: nothing is asked of a favicon service or of the sites', async () => {
+  const { TUTORIAL_DEMO_ICONS } = await import('../src/core/tutorialDemoIcons.ts')
+  const { isPlaceholderFavicon, usableStoredFavicon } = await import('../src/core/faviconPlaceholder.ts')
+  assert.deepEqual(Object.keys(TUTORIAL_DEMO_ICONS).sort(), ['github', 'netflix', 'wikipedia', 'youtube'])
+  for (const [name, source] of Object.entries(TUTORIAL_DEMO_ICONS)) {
+    assert.ok(source.startsWith('data:image/svg+xml;charset=utf-8,'), name)
+    assert.equal(isPlaceholderFavicon(source), false, `${name} is a drawn icon, not the letter that stands in for a missing one`)
+    assert.equal(usableStoredFavicon(source), source, `${name} counts as an icon that was given`)
+    assert.ok(source.length < 4000, name)
+  }
+  const menu = read('src/components/SemiLunarMenu/SemiLunarMenu.tsx')
+  assert.doesNotMatch(menu, /faviconForUrl/)
+  assert.equal(menu.split('TUTORIAL_DEMO_ICONS.').length - 1, 4)
+})

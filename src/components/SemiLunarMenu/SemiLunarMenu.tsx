@@ -31,7 +31,8 @@ import type { RemoveMemberResult } from '../../hooks/useShortcutFolders'
 import { useShortcutPositions } from '../../hooks/useShortcutPositions'
 import { siteIconSource } from '../../core/siteIcon'
 import { useFaviconRefresh } from '../../hooks/useFaviconRefresh'
-import { faviconForUrl, shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
+import { shortcutFromTab, truncateTabTitle } from '../../core/browserTab'
+import { TUTORIAL_DEMO_ICONS } from '../../core/tutorialDemoIcons'
 import { DEFAULT_NEBULA_SETTINGS } from '../../core/nebulaSettings'
 import { computeViewportLunarSize, isUsableLunarViewport } from '../../core/lunarSizing'
 import { confirmCursorOutsideLunar } from '../../core/lunarDrop'
@@ -74,14 +75,14 @@ const TUTORIAL_DEMO_SHORTCUT: Shortcut = {
   id: 'nebula-tutorial-youtube',
   label: 'YouTube',
   url: 'https://www.youtube.com/',
-  favicon: faviconForUrl('https://www.youtube.com/'),
+  favicon: TUTORIAL_DEMO_ICONS.youtube,
 }
 
 const TUTORIAL_DEMO_TABS: Array<Shortcut & { left: string; top: string }> = [
   { ...TUTORIAL_DEMO_SHORTCUT, left: '27%', top: '56%' },
-  { id: 'nebula-tutorial-wikipedia', label: 'Wikipedia', url: 'https://www.wikipedia.org/', favicon: faviconForUrl('https://www.wikipedia.org/'), left: '43%', top: '49%' },
-  { id: 'nebula-tutorial-netflix', label: 'Netflix', url: 'https://www.netflix.com/', favicon: faviconForUrl('https://www.netflix.com/'), left: '60%', top: '49%' },
-  { id: 'nebula-tutorial-github', label: 'GitHub', url: 'https://github.com/', favicon: faviconForUrl('https://github.com/'), left: '76%', top: '56%' },
+  { id: 'nebula-tutorial-wikipedia', label: 'Wikipedia', url: 'https://www.wikipedia.org/', favicon: TUTORIAL_DEMO_ICONS.wikipedia, left: '43%', top: '49%' },
+  { id: 'nebula-tutorial-netflix', label: 'Netflix', url: 'https://www.netflix.com/', favicon: TUTORIAL_DEMO_ICONS.netflix, left: '60%', top: '49%' },
+  { id: 'nebula-tutorial-github', label: 'GitHub', url: 'https://github.com/', favicon: TUTORIAL_DEMO_ICONS.github, left: '76%', top: '56%' },
 ]
 
 import { extensionHostCopy } from '../../core/extensionHostCopy'
