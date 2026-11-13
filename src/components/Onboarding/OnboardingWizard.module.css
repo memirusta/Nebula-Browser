@@ -316,7 +316,9 @@
   justify-content: center;
   align-self: stretch;
   box-sizing: border-box;
-  min-height: 0;
+  /* A screen taller than the window makes .main scroll; with 0 it was squeezed to the window and overflowed
+     both ways, so its top could not be reached and the buttons covered its end. */
+  min-height: min-content;
   width: min(var(--col), calc(100% - 88px));
   margin-left: max(44px, calc((100% - var(--col)) * var(--cx)));
   padding: 86px 0 110px;
@@ -1111,5 +1113,208 @@
 
   .progress i {
     transition: none;
+  }
+
+  .wallpaperBlobs span {
+    animation: none;
+  }
+}
+
+/* Background of the home screen: four tiles that move the way the real backgrounds do, and two buttons for the
+   person's own picture or video. The tiles take the look of the chosen theme, as the real backgrounds do. */
+.homeSetup .wallpaperPicker {
+  align-self: stretch;
+}
+
+.wallpaperPicker {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wallpaperTiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wallpaperTile {
+  --base: linear-gradient(145deg, #f6f6ff, #e9ebff);
+  --b1: #a9acff;
+  --b2: #8fd8ff;
+  --b3: #d9a8ff;
+  --blend: multiply;
+  position: relative;
+  height: 72px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--field-border);
+  border-radius: 14px;
+  background: var(--base);
+  color: var(--text);
+  cursor: pointer;
+  isolation: isolate;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.wallpaperTile[data-preset='aurora'] {
+  --base: linear-gradient(150deg, #f1fbf7, #e7f6fb);
+  --b1: #8cf0cf;
+  --b2: #9bd9ff;
+  --b3: #cdf59a;
+}
+
+.wallpaperTile[data-preset='midnight'] {
+  --base: linear-gradient(145deg, #f0f3fc, #e4e9f8);
+  --b1: #9db9f6;
+  --b2: #b9a8f1;
+  --b3: #90d1e2;
+}
+
+.wallpaperTile[data-preset='liquid'] {
+  --base: linear-gradient(145deg, #fcf6f1, #eef3f8);
+  --b1: #ffd3a2;
+  --b2: #aaddf1;
+  --b3: #cfbaff;
+}
+
+.root[data-scheme='dark'] .wallpaperTile {
+  --base: linear-gradient(145deg, #090b18, #14174a);
+  --b1: #6b3dff;
+  --b2: #49c9ff;
+  --b3: #bd4cff;
+  --blend: screen;
+}
+
+.root[data-scheme='dark'] .wallpaperTile[data-preset='aurora'] {
+  --base: linear-gradient(150deg, #04120e, #071b1e);
+  --b1: #1ee7a8;
+  --b2: #3bc5ff;
+  --b3: #93ff78;
+}
+
+.root[data-scheme='dark'] .wallpaperTile[data-preset='midnight'] {
+  --base: linear-gradient(145deg, #03050b, #081328);
+  --b1: #1e4ba4;
+  --b2: #392178;
+  --b3: #126a81;
+}
+
+.root[data-scheme='dark'] .wallpaperTile[data-preset='liquid'] {
+  --base: linear-gradient(145deg, #0e0b10, #1a121c);
+  --b1: #f0a85f;
+  --b2: #7ec8e3;
+  --b3: #9368ff;
+}
+
+.wallpaperBlobs {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.wallpaperBlobs span {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  filter: blur(14px);
+  opacity: 0.8;
+  mix-blend-mode: var(--blend);
+  animation: wallpaperDrift 7s ease-in-out infinite alternate;
+}
+
+.wallpaperBlobs span:nth-child(1) {
+  left: -14px;
+  top: -18px;
+  background: var(--b1);
+}
+
+.wallpaperBlobs span:nth-child(2) {
+  right: -16px;
+  top: 6px;
+  background: var(--b2);
+  animation-delay: -2.4s;
+}
+
+.wallpaperBlobs span:nth-child(3) {
+  left: 24px;
+  bottom: -26px;
+  background: var(--b3);
+  animation-delay: -4.6s;
+}
+
+@keyframes wallpaperDrift {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(14px, 10px) scale(1.18);
+  }
+}
+
+.wallpaperName {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wallpaperTile:hover {
+  border-color: var(--soft-border);
+}
+
+.wallpaperTile[data-selected='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--soft);
+}
+
+.wallpaperOwn {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wallpaperOwnBtn {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.wallpaperOwnBtn:hover {
+  border-color: var(--soft-border);
+}
+
+.wallpaperOwnBtn[data-selected='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--soft);
+}
+
+.wallpaperHint {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  .wallpaperTiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

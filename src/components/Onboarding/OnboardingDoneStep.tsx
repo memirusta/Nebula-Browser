@@ -1,6 +1,8 @@
 import { getLocaleCopy, tf } from '../../core/locale'
 import { useLocale } from '../../hooks/useLocale'
+import type { WallpaperConfig } from '../../core/wallpaperConfig'
 import { OnboardingActions } from './OnboardingActions'
+import { wallpaperChoiceLabel } from './OnboardingWallpaperPicker'
 import { ONBOARDING_COPY } from './onboardingCopy'
 import styles from './OnboardingWizard.module.css'
 
@@ -12,6 +14,7 @@ interface OnboardingDoneStepProps {
   importedCount: number
   importedPasswordCount: number
   weatherLabel: string | null
+  wallpaper: WallpaperConfig
   onFinish: () => void
 }
 
@@ -31,6 +34,7 @@ export function OnboardingDoneStep({
   importedCount,
   importedPasswordCount,
   weatherLabel,
+  wallpaper,
   onFinish,
 }: OnboardingDoneStepProps) {
   const { locale, t } = useLocale()
@@ -47,6 +51,7 @@ export function OnboardingDoneStep({
     [copy.sumProfile, name || t('userFallback')],
     ...(restored ? [[copy.sumBackup, copy.sumRestored] as [string, string]] : []),
     [copy.sumImported, imported || copy.sumNothing],
+    [copy.wallpaperLabel, wallpaperChoiceLabel(wallpaper, copy)],
     [copy.sumWeather, weatherLabel || copy.sumNotSet],
   ]
 

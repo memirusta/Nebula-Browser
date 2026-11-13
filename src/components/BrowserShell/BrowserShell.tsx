@@ -8027,6 +8027,10 @@ export function BrowserShell() {
                 theme,
               )
             }
+            wallpaper={wallpaper}
+            onUpdateWallpaper={updateWallpaper}
+            onPickWallpaper={pickWallpaper}
+            onPickVideoWallpaper={pickVideoWallpaper}
             onApplyImportedShortcuts={
               handleApplyImportedShortcuts
             }
