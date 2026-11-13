@@ -164,3 +164,12 @@ test('the clock follows the interface font by default and any font of the list c
   assert.match(settings, /if \(value === 'system'\) return 'interface'\n\s+if \(value === 'mono'\) return 'jetbrains-mono'/)
   assert.match(settings, /clockFontFamily: clockFontFamily\(h\?\.clockFontFamily, d\.home\.clockFontFamily\)/)
 })
+
+test('the address bar of the Semi-Lunar overlay is a card of the theme, not a fixed blue-grey', () => {
+  const css = read('src/components/HomeCenter/HomeCenter.module.css')
+  const rule = css.slice(css.indexOf(':global(html[data-nebula-overlay-tauri]) .searchBarOverlay {'))
+  const body = rule.slice(0, rule.indexOf('}'))
+  assert.match(body, /background: var\(--nebula-pop\);/)
+  assert.match(body, /border-color: var\(--nebula-glass-border\);/)
+  assert.doesNotMatch(body, /rgba\(16, 22, 30/)
+})

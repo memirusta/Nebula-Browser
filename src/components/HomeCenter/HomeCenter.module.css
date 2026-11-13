@@ -79,16 +79,14 @@
   );
 }
 
+/* The address bar in the overlay of the native Semi-Lunar menu: a card of the theme (the overlay cannot blur the page), so it
+   is black in the dark theme and follows the palette's tone, like the other pop-ups. */
 :global(html[data-nebula-overlay-tauri]) .searchBarOverlay {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
-    rgba(16, 22, 30, 0.78);
+  background: var(--nebula-pop);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  border-color: var(--nebula-glass-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
 .searchInput::placeholder {
