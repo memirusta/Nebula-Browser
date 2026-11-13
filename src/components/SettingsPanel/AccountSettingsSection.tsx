@@ -99,7 +99,8 @@ export function AccountSettingsSection({
     const heading = document.querySelector<HTMLElement>('[data-password-settings]')
     heading?.scrollIntoView({ block: 'start' })
     heading?.focus({ preventScroll: true })
-    setFocusPasswords(false)
+    // The request is used up; clearing it after this effect keeps the effect itself from setting state.
+    queueMicrotask(() => setFocusPasswords(false))
   }, [tab, focusPasswords])
   const [googleStarting, setGoogleStarting] = useState(false)
   const [googleError, setGoogleError] = useState<string | null>(null)

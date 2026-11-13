@@ -28,6 +28,8 @@ import { PasswordFillPrompt } from '../PasswordFillPrompt/PasswordFillPrompt'
 import { PrintDialog } from '../PrintDialog/PrintDialog'
 import { SiteContextMenu } from '../SiteContextMenu/SiteContextMenu'
 import { isTauri } from '../../platform/runtime'
+import { runCompatibilityTrial } from '../../core/compatibilityTrial'
+import { siteCompatibilityCopy } from '../../core/siteCompatibilityCopy'
 import { readPopupTheme } from '../../core/popupTheme'
 import { syncNativeErrorPageTheme } from '../../platform/tauriErrorPage'
 import {
@@ -126,6 +128,7 @@ import {
   reloadBrowseTab,
   listenTabWebviewSnapshots,
   listenTabWebviewLoadingStates,
+  waitForTabLoadToFinish,
   printBrowseWebview,
   setBrowseTabMuted,
   setBrowseTabZoom,
@@ -1497,8 +1500,6 @@ export function BrowserShell() {
   const compatibilityPromptActiveRef =
     useRef(false)
 
-  const compatibilityPromptedHostsRef =
-    useRef(new Map<string, number>())
 
   const siteSurfaceActive =
     siteUiQueue.length > 0 ||
@@ -1544,18 +1545,16 @@ export function BrowserShell() {
     )
   })
 
-  // The first step opens the menu by hovering the top edge; its button opens it without the pointer.
-  const [guidedTutorialMenuShown, setGuidedTutorialMenuShown] = useState(false)
+  // The first step opens the menu by hovering the top edge; its button opens it without the pointer. The step it was
+  // pressed on is kept, so it is forgotten when the step changes.
+  const [guidedTutorialMenuStep, setGuidedTutorialMenuStep] = useState<number | null>(null)
+  const guidedTutorialMenuShown = guidedTutorialOpen && guidedTutorialMenuStep === guidedTutorialStep
 
   const guidedTutorialStateRef = useRef<{ open: boolean; step: number; menuShown: boolean }>({
     open: guidedTutorialOpen,
     step: guidedTutorialStep,
     menuShown: false,
   })
-
-  useEffect(() => {
-    setGuidedTutorialMenuShown(false)
-  }, [guidedTutorialOpen, guidedTutorialStep])
 
   useEffect(() => {
     const state = {
@@ -6572,6 +6571,7 @@ export function BrowserShell() {
     let unlisten: (() => void) | undefined
 
     void listenSiteCompatibilityRequests((request) => {
+      // The person pressed "try with protections off" on the error page of a cut connection (see tab_error_page.rs).
       if (
         disposed ||
         compatibilityPromptActiveRef.current
@@ -6600,65 +6600,63 @@ export function BrowserShell() {
         return
       }
 
-      const now = Date.now()
-      const promptedAt =
-        compatibilityPromptedHostsRef.current.get(
-          target.hostname,
-        ) ?? 0
-      if (now - promptedAt < 5 * 60_000) {
-        return
-      }
+      const copy = siteCompatibilityCopy(locale, target.hostname)
+      const title = t('siteCompatibilityTitle')
 
-      compatibilityPromptedHostsRef.current.set(
-        target.hostname,
-        now,
-      )
-      compatibilityPromptActiveRef.current = true
-      setCompatibilityPromptActive(true)
-
-      void showAppConfirmation(
-        `${target.hostname} ${t('siteCompatibilityMessage')}`,
-        t('siteCompatibilityTitle'),
-        {
-          acceptLabel: t('siteCompatibilityRetry'),
-          cancelLabel: t('siteCompatibilityNotNow'),
-        },
-      )
-        .then(async (accepted) => {
-          if (!accepted || !getTab(shortcutId)) return
-
-          const latest = compatibilityContextRef.current
-          const siteExceptions = addSiteException(
-            latest.privacy.siteExceptions,
-            target.hostname,
-          )
-          const nextPrivacy = {
+      /** The exceptions of the privacy settings, applied natively and saved. */
+      const setExceptions = async (change: (exceptions: string) => string) => {
+        const latest = compatibilityContextRef.current
+        const siteExceptions = change(latest.privacy.siteExceptions)
+        await setBrowsePrivacyOptions(
+          {
             ...latest.privacy,
             siteExceptions,
-          }
+            siteNotifications:
+              latest.siteNotifications,
+            showNotificationContent:
+              latest.showNotificationContent,
+            notificationAllowedSites:
+              latest.notificationAllowedSites,
+            notificationBlockedSites:
+              latest.notificationBlockedSites,
+          },
+          latest.openTabIds,
+        )
+        updateCategory('privacy', 'siteExceptions', siteExceptions)
+      }
 
-          await setBrowsePrivacyOptions(
-            {
-              ...nextPrivacy,
-              siteNotifications:
-                latest.siteNotifications,
-              showNotificationContent:
-                latest.showNotificationContent,
-              notificationAllowedSites:
-                latest.notificationAllowedSites,
-              notificationBlockedSites:
-                latest.notificationBlockedSites,
-            },
-            latest.openTabIds,
-          )
+      /** A question in the app's own dialog: the page webviews step aside while it is shown. */
+      const inDialog = async <T,>(show: () => Promise<T>): Promise<T> => {
+        compatibilityPromptActiveRef.current = true
+        setCompatibilityPromptActive(true)
+        try {
+          return await show()
+        } finally {
+          compatibilityPromptActiveRef.current = false
+          setCompatibilityPromptActive(false)
+        }
+      }
 
-          updateCategory(
-            'privacy',
-            'siteExceptions',
-            siteExceptions,
-          )
+      compatibilityPromptActiveRef.current = true
+      void runCompatibilityTrial({
+        addException: () => setExceptions((exceptions) => addSiteException(exceptions, target.hostname)),
+        removeException: () => setExceptions((exceptions) => removeSiteException(exceptions, target.hostname)),
+        navigate: async () => {
           await navigateBrowseTab(shortcutId, target.url)
-        })
+        },
+        showsTheSite: async () => {
+          await waitForTabLoadToFinish(shortcutId)
+          try {
+            // The error page is not a pinnable address: only the site itself answers with an http(s) one.
+            await readBrowseTabCurrentUrl(shortcutId)
+            return true
+          } catch {
+            return false
+          }
+        },
+        askToKeep: () => inDialog(() => showAppConfirmation(copy.worked, title, { acceptLabel: copy.keepOff, cancelLabel: copy.backOn })),
+        tellItDidNotHelp: () => inDialog(() => showAppAlert(copy.didNotHelp, title)),
+      })
         .catch((error: unknown) => {
           console.error(
             `[nebula compatibility] Failed to retry ${target.hostname} (${request.errorStatus}).`,
@@ -6686,7 +6684,7 @@ export function BrowserShell() {
       disposed = true
       unlisten?.()
     }
-  }, [getTab, t, updateCategory])
+  }, [getTab, locale, t, updateCategory])
 
   useEffect(() => {
     if (!isTauri) return
@@ -7969,7 +7967,7 @@ export function BrowserShell() {
         lunarHeightPx={browsingAdaptiveLunar.height}
         onStepChange={setGuidedTutorialStep}
         menuShown={guidedTutorialMenuShown}
-        onToggleMenu={() => setGuidedTutorialMenuShown((shown) => !shown)}
+        onToggleMenu={() => setGuidedTutorialMenuStep((step) => (step === guidedTutorialStep ? null : guidedTutorialStep))}
         onSkip={handleFinishGuidedTutorial}
         onComplete={handleFinishGuidedTutorial}
       />

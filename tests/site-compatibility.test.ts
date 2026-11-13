@@ -37,15 +37,14 @@ test('compatibility exceptions cover the selected host and its subdomains only',
   )
 })
 
-test('failed navigations require explicit compatibility consent before retrying', () => {
+test('failed navigations offer the retry without protections only when the person asks, and keep it only if it worked', () => {
   const shell = read('src/components/BrowserShell/BrowserShell.tsx')
   const nativeErrorPage = read('src-tauri/src/tab_error_page.rs')
 
   assert.match(nativeErrorPage, /nebula-site-compatibility-request/)
   assert.match(nativeErrorPage, /matches!\(parsed\.scheme\(\), "http" \| "https"\)/)
   assert.match(shell, /listenSiteCompatibilityRequests/)
-  assert.match(shell, /showAppConfirmation/)
-  assert.match(shell, /if \(!accepted \|\| !getTab\(shortcutId\)\) return/)
-  assert.match(shell, /await setBrowsePrivacyOptions[\s\S]*?updateCategory[\s\S]*?await navigateBrowseTab/)
-  assert.match(shell, /now - promptedAt < 5 \* 60_000/)
+  // The exception is added for the trial and the person is asked again, in the app's own dialog, once the site loaded.
+  assert.match(shell, /showAppConfirmation\(copy\.worked, title/)
+  assert.match(shell, /await setBrowsePrivacyOptions[\s\S]*?updateCategory\('privacy', 'siteExceptions', siteExceptions\)/)
 })

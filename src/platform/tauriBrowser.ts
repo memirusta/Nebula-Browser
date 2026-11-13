@@ -583,6 +583,41 @@ export async function readBrowseTabCurrentUrl(shortcutId: string): Promise<strin
   return parsed.href
 }
 
+/**
+ * Waits for the page a tab is loading to finish: after the tab was seen loading it stops loading, or, if it never starts
+ * (the page was already there), after a short wait. Gives up after `timeoutMs`. Does not say how the load went.
+ */
+export async function waitForTabLoadToFinish(shortcutId: string, timeoutMs = 25_000): Promise<void> {
+  if (!isTauri) return
+  await new Promise<void>((resolve) => {
+    let sawLoading = false
+    let unlisten: UnlistenFn | null = null
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      window.clearTimeout(giveUp)
+      window.clearTimeout(noStart)
+      unlisten?.()
+      resolve()
+    }
+    const giveUp = window.setTimeout(finish, timeoutMs)
+    const noStart = window.setTimeout(() => {
+      if (!sawLoading) finish()
+    }, 4_000)
+    void listenTabWebviewLoadingStates((state) => {
+      if (state.shortcutId !== shortcutId) return
+      if (state.isLoading) sawLoading = true
+      else if (sawLoading) finish()
+    }).then((dispose) => {
+      if (finished) dispose()
+      else unlisten = dispose
+    })
+  })
+  // The error page replaces the failed page a moment after the load ends.
+  await new Promise((resolve) => window.setTimeout(resolve, 600))
+}
+
 export function listenTabWebviewLoadingStates(
   onLoadingState: (state: TabWebviewLoadingState) => void,
 ): Promise<UnlistenFn> {

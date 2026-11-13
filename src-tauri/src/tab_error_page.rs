@@ -68,7 +68,10 @@ impl ErrorPageTheme {
 #[cfg(target_os = "windows")]
 mod imp {
     use std::cell::RefCell;
-    use std::collections::HashMap;
+    use std::collections::hash_map::RandomState;
+    use std::collections::{HashMap, VecDeque};
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, Instant};
 
@@ -76,8 +79,8 @@ mod imp {
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2NavigationCompletedEventArgs2,
-        ICoreWebView2NavigationCompletedEventHandler, COREWEBVIEW2_WEB_ERROR_STATUS,
-        COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+        ICoreWebView2NavigationCompletedEventHandler, ICoreWebView2WebMessageReceivedEventHandler,
+        COREWEBVIEW2_WEB_ERROR_STATUS, COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
         COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT,
         COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED,
         COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
@@ -94,7 +97,7 @@ mod imp {
         COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED,
         COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED,
     };
-    use webview2_com::NavigationCompletedEventHandler;
+    use webview2_com::{NavigationCompletedEventHandler, WebMessageReceivedEventHandler};
     use windows::core::PCWSTR;
     use windows::core::PWSTR;
     use windows::Win32::System::Com::CoTaskMemFree;
@@ -109,9 +112,90 @@ mod imp {
     static UI_LOCALE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("en".to_string()));
     static THEME: LazyLock<Mutex<super::ErrorPageTheme>> =
         LazyLock::new(|| Mutex::new(super::ErrorPageTheme::default()));
+    /// The error pages that offer "try with protections off": each has a code of its own that only that page knows, and what it
+    /// was for (the address that failed and why). The page's button sends the code back; the address is taken from here, never
+    /// from the message.
+    static COMPAT_PAGES: LazyLock<Mutex<VecDeque<CompatPage>>> =
+        LazyLock::new(|| Mutex::new(VecDeque::new()));
+    static COMPAT_PAGE_COUNTER: AtomicU64 = AtomicU64::new(1);
+    static MESSAGE_TOKENS: LazyLock<Mutex<HashMap<String, i64>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    const MAX_COMPAT_PAGES: usize = 32;
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, ICoreWebView2NavigationCompletedEventHandler>> =
             RefCell::new(HashMap::new());
+        static MESSAGE_HANDLERS: RefCell<HashMap<String, ICoreWebView2WebMessageReceivedEventHandler>> =
+            RefCell::new(HashMap::new());
+    }
+
+    struct CompatPage {
+        code: String,
+        url: String,
+        status: i32,
+    }
+
+    /// A code for a new error page: unpredictable (a hasher seeded at random for this process) and different every time.
+    fn new_compat_code() -> String {
+        let mut hasher = RandomState::new().build_hasher();
+        hasher.write_u64(COMPAT_PAGE_COUNTER.fetch_add(1, Ordering::Relaxed));
+        format!("{:016x}", hasher.finish())
+    }
+
+    fn register_compat_page(url: &str, status: COREWEBVIEW2_WEB_ERROR_STATUS) -> String {
+        let code = new_compat_code();
+        if let Ok(mut pages) = COMPAT_PAGES.lock() {
+            pages.push_back(CompatPage {
+                code: code.clone(),
+                url: url.to_string(),
+                status: status.0,
+            });
+            while pages.len() > MAX_COMPAT_PAGES {
+                pages.pop_front();
+            }
+        }
+        code
+    }
+
+    fn compat_page_for(code: &str) -> Option<(String, COREWEBVIEW2_WEB_ERROR_STATUS)> {
+        let pages = COMPAT_PAGES.lock().ok()?;
+        pages
+            .iter()
+            .find(|page| page.code == code)
+            .map(|page| (page.url.clone(), COREWEBVIEW2_WEB_ERROR_STATUS(page.status)))
+    }
+
+    /// What the page's button said: only a message with the code of a page Nebula built counts, and it asks for the retry of
+    /// the address that page was built for.
+    fn handle_compat_message(app: &AppHandle, label: &str, raw: &str) {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+            return;
+        };
+        if value.get("type").and_then(serde_json::Value::as_str) != Some("nebula-compat-retry") {
+            return;
+        }
+        let code = value
+            .get("code")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let Some((url, status)) = compat_page_for(code) else {
+            return;
+        };
+        emit_compatibility_request(app, label, &url, status);
+    }
+
+    fn take_string<F>(read: F) -> String
+    where
+        F: FnOnce(*mut PWSTR) -> windows_core::Result<()>,
+    {
+        let mut value = PWSTR::null();
+        if read(&mut value).is_err() || value.is_null() {
+            return String::new();
+        }
+        let text = unsafe { value.to_string().unwrap_or_default() };
+        unsafe {
+            CoTaskMemFree(Some(value.as_ptr().cast()));
+        }
+        text
     }
 
     struct VerificationState {
@@ -511,6 +595,57 @@ mod imp {
         Some(parsed.to_string())
     }
 
+    /// The sentence under the buttons of a page that offers "try with protections off", the button and its word while it runs.
+    fn compat_copy(locale: &str) -> (&'static str, &'static str, &'static str) {
+        match locale {
+            "tr" => (
+                "Bağlantı kesildi ya da kullanılabilir bir yanıt alınamadı. Bu genellikle ağdan ya da sitenin kendisinden kaynaklanır. Site başka tarayıcılarda çalışıyorsa Nebula'nın korumaları sebep olabilir.",
+                "Korumalar kapalı dene",
+                "Deneniyor…",
+            ),
+            "es" => (
+                "La conexión se cortó o no recibió una respuesta utilizable. Suele deberse a la red o al propio sitio. Si el sitio funciona en otros navegadores, las protecciones de Nebula pueden ser la causa.",
+                "Probar sin protecciones",
+                "Probando…",
+            ),
+            "de" => (
+                "Die Verbindung wurde getrennt oder lieferte keine brauchbare Antwort. Meist liegt es am Netzwerk oder an der Website selbst. Funktioniert die Website in anderen Browsern, könnten die Schutzfunktionen von Nebula die Ursache sein.",
+                "Ohne Schutz versuchen",
+                "Wird versucht …",
+            ),
+            "fr" => (
+                "La connexion a été coupée ou n'a reçu aucune réponse exploitable. Cela vient généralement du réseau ou du site lui-même. Si le site fonctionne dans d'autres navigateurs, les protections de Nebula peuvent en être la cause.",
+                "Essayer sans protections",
+                "Essai en cours…",
+            ),
+            "id" => (
+                "Koneksi terputus atau tidak mendapat jawaban yang dapat dipakai. Biasanya karena jaringan atau situsnya sendiri. Jika situs berfungsi di peramban lain, perlindungan Nebula mungkin penyebabnya.",
+                "Coba tanpa perlindungan",
+                "Mencoba…",
+            ),
+            "ru" => (
+                "Соединение было прервано или не получило пригодного ответа. Обычно причина в сети или на самом сайте. Если сайт работает в других браузерах, причиной могут быть защиты Nebula.",
+                "Попробовать без защиты",
+                "Пробуем…",
+            ),
+            "it" => (
+                "La connessione è stata interrotta o non ha ricevuto una risposta utilizzabile. Di solito dipende dalla rete o dal sito stesso. Se il sito funziona in altri browser, la causa potrebbero essere le protezioni di Nebula.",
+                "Prova senza protezioni",
+                "Provo…",
+            ),
+            "ja" => (
+                "接続が切断されたか、利用できる応答が得られませんでした。通常はネットワークかサイト自体が原因です。他のブラウザーで表示できる場合は、Nebula の保護機能が原因の可能性があります。",
+                "保護をオフにして再試行",
+                "試行中…",
+            ),
+            _ => (
+                "The connection was cut or got no usable answer. This is usually the network or the site itself. If the site works in other browsers, Nebula's protections may be the cause.",
+                "Try with protections off",
+                "Trying…",
+            ),
+        }
+    }
+
     fn error_page_labels(locale: &str) -> (&'static str, &'static str, &'static str) {
         match locale {
             "tr" => ("tr", "Tekrar dene", "HTTP ile dene"),
@@ -689,6 +824,30 @@ mod imp {
             theme.strong,
             theme.on,
         );
+        // A connection that was cut, or an answer that could not be used, is the only failure Nebula's own protections can cause,
+        // so only then does the page offer a retry without them (and never when the machine is offline).
+        let offers_compat = compatibility_retry_applies(error_status, internet_unavailable())
+            && compatibility_request_url(retry_url).is_some();
+        let (compat_hint, compat_button, compat_trying) = compat_copy(locale);
+        let compat_code = if offers_compat {
+            register_compat_page(retry_url, error_status)
+        } else {
+            String::new()
+        };
+        let compat_code_js = js_string_literal(&compat_code);
+        let compat_trying_js = js_string_literal(compat_trying);
+        let compat_button_html = if offers_compat {
+            format!(
+                r#"<button type="button" id="try-compat" class="secondary">{compat_button}</button>"#
+            )
+        } else {
+            String::new()
+        };
+        let compat_hint_html = if offers_compat {
+            format!(r#"<p class="hint">{compat_hint}</p>"#)
+        } else {
+            String::new()
+        };
         let http_fallback = local_http_fallback_url(retry_url, error_status);
         let http_fallback_js = js_string_literal(http_fallback.as_deref().unwrap_or_default());
         let http_fallback_button = http_fallback
@@ -767,6 +926,8 @@ mod imp {
   }}
   button:hover {{ filter: brightness(1.07); }}
   button:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 3px; }}
+  button:disabled {{ opacity: 0.6; cursor: default; filter: none; }}
+  .hint {{ max-width: 460px; margin: 22px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }}
   button.secondary {{ background: var(--surface); color: var(--text); border: 1px solid var(--border); }}
   .brand {{ position: fixed; bottom: 16px; color: var(--muted); opacity: 0.6; font-size: 13px; letter-spacing: 0.08em; }}
 </style>
@@ -780,7 +941,9 @@ mod imp {
   <div class="actions">
     <button type="button" id="retry">{retry_label}</button>
     {http_fallback_button}
+    {compat_button_html}
   </div>
+  {compat_hint_html}
   <div class="brand">NEBULA</div>
   <script>
     const retryUrl = {retry_js};
@@ -789,6 +952,16 @@ mod imp {
       if (retryUrl) location.replace(retryUrl);
       else location.reload();
     }};
+    const compatButton = document.getElementById('try-compat');
+    if (compatButton) {{
+      compatButton.onclick = () => {{
+        compatButton.disabled = true;
+        compatButton.textContent = {compat_trying_js};
+        try {{
+          window.chrome.webview.postMessage(JSON.stringify({{ type: 'nebula-compat-retry', code: {compat_code_js} }}));
+        }} catch (_) {{}}
+      }};
+    }}
     const httpButton = document.getElementById('try-http');
     if (httpButton && httpFallbackUrl) {{
       httpButton.onclick = () => location.replace(httpFallbackUrl);
@@ -916,6 +1089,8 @@ mod imp {
                     let _ = settings.SetIsBuiltInErrorPageEnabled(false);
                 }
 
+                let message_label = label_for_handler.clone();
+                let message_app = app_for_handler.clone();
                 let handler =
                     NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                         let Some(args) = args else {
@@ -1007,14 +1182,41 @@ mod imp {
                             error_status,
                             &locale,
                         );
-                        emit_compatibility_request(
-                            &app_for_handler,
-                            &label_for_handler,
-                            &failed_url,
-                            error_status,
-                        );
                         Ok(())
                     }));
+
+                // The page's own button (see build_error_page_url) asks for the retry without protections.
+                let message =
+                    WebMessageReceivedEventHandler::create(Box::new(move |sender, args| {
+                        let (Some(sender), Some(args)) = (sender, args) else {
+                            return Ok(());
+                        };
+                        // Only a message from the page Nebula built: its address is a data URL, and so is the tab's.
+                        let source = take_string(|value| args.Source(value));
+                        let top_level = take_string(|value| sender.Source(value));
+                        if !source.starts_with("data:text/html")
+                            || !top_level.starts_with("data:text/html")
+                        {
+                            return Ok(());
+                        }
+                        let raw = take_string(|value| args.TryGetWebMessageAsString(value));
+                        handle_compat_message(&message_app, &message_label, &raw);
+                        Ok(())
+                    }));
+                let mut message_token: i64 = 0;
+                if core
+                    .add_WebMessageReceived(&message, &mut message_token)
+                    .is_ok()
+                {
+                    if let Ok(mut tokens) = MESSAGE_TOKENS.lock() {
+                        tokens.insert(label_for_store.clone(), message_token);
+                    }
+                    MESSAGE_HANDLERS.with(|handlers| {
+                        handlers
+                            .borrow_mut()
+                            .insert(label_for_store.clone(), message);
+                    });
+                }
 
                 let mut token: i64 = 0;
                 if core.add_NavigationCompleted(&handler, &mut token).is_err() {
@@ -1042,6 +1244,10 @@ mod imp {
             .lock()
             .ok()
             .and_then(|mut tokens| tokens.remove(label));
+        let message_token = MESSAGE_TOKENS
+            .lock()
+            .ok()
+            .and_then(|mut tokens| tokens.remove(label));
         let label_for_handler = label.to_string();
 
         if let Some(webview) = app.get_webview(label) {
@@ -1050,8 +1256,14 @@ mod imp {
                     if let Some(token) = token {
                         let _ = core.remove_NavigationCompleted(token);
                     }
+                    if let Some(token) = message_token {
+                        let _ = core.remove_WebMessageReceived(token);
+                    }
                 }
                 HANDLERS.with(|handlers| {
+                    handlers.borrow_mut().remove(&label_for_handler);
+                });
+                MESSAGE_HANDLERS.with(|handlers| {
                     handlers.borrow_mut().remove(&label_for_handler);
                 });
             });
@@ -1067,11 +1279,31 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::{
-            build_error_page_url, claim_external_uri_navigation, compatibility_request_url,
-            compatibility_retry_applies, js_string_literal, local_http_fallback_url,
-            note_external_uri_navigation, retry_target_is_current, set_theme,
-            should_offer_compatibility_retry, suppress_error_page, web_error_status_name,
+            build_error_page_url, claim_external_uri_navigation, compat_copy, compat_page_for,
+            compatibility_request_url, compatibility_retry_applies, js_string_literal,
+            local_http_fallback_url, note_external_uri_navigation, register_compat_page,
+            retry_target_is_current, set_theme, should_offer_compatibility_retry,
+            suppress_error_page, web_error_status_name,
+            COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE,
         };
+
+        /// The page is a percent-encoded data URL.
+        fn decoded(url: &str) -> String {
+            let encoded = url.trim_start_matches("data:text/html;charset=utf-8,");
+            let raw = encoded.as_bytes();
+            let mut bytes = Vec::new();
+            let mut index = 0;
+            while index < raw.len() {
+                if raw[index] == b'%' {
+                    bytes.push(u8::from_str_radix(&encoded[index + 1..index + 3], 16).unwrap());
+                    index += 3;
+                } else {
+                    bytes.push(raw[index]);
+                    index += 1;
+                }
+            }
+            String::from_utf8(bytes).unwrap()
+        }
 
         #[test]
         fn compatibility_requests_are_limited_to_http_sites() {
@@ -1339,6 +1571,56 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
                 false
             ));
+        }
+
+        #[test]
+        fn only_a_page_nebula_built_can_ask_for_the_retry_and_it_asks_for_its_own_address() {
+            let first = register_compat_page(
+                "https://one.example/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+            );
+            let second = register_compat_page(
+                "https://two.example/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE,
+            );
+            assert_ne!(first, second);
+            assert_eq!(first.len(), 16);
+            let (url, status) = compat_page_for(&first).unwrap();
+            assert_eq!(url, "https://one.example/");
+            assert_eq!(status, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET);
+            assert_eq!(compat_page_for(&second).unwrap().0, "https://two.example/");
+            // A code that was never given out, or none, gets nothing.
+            assert!(compat_page_for("0000000000000000").is_none());
+            assert!(compat_page_for("").is_none());
+        }
+
+        #[test]
+        fn the_retry_without_protections_is_only_offered_for_a_cut_connection() {
+            // The page of a site that cannot be reached has no such button and sends no message.
+            for status in [
+                COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,
+                COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
+                COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
+            ] {
+                let page = decoded(&build_error_page_url("https://example.test/", status, "en"));
+                assert!(!page.contains(r#"id="try-compat""#), "{status:?}");
+                assert!(!page.contains(r#"class="hint""#), "{status:?}");
+            }
+            // A cut connection has it (when the machine is online), in every language, with its sentence.
+            if !super::internet_unavailable() {
+                for locale in ["en", "tr", "es", "de", "fr", "id", "ru", "it", "ja"] {
+                    let page = decoded(&build_error_page_url(
+                        "https://example.test/",
+                        COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+                        locale,
+                    ));
+                    assert!(page.contains(r#"id="try-compat""#), "{locale}");
+                    assert!(page.contains(r#"class="hint""#), "{locale}");
+                    let (hint, button, trying) = compat_copy(locale);
+                    assert!(!hint.is_empty() && !button.is_empty() && !trying.is_empty());
+                }
+            }
         }
 
         #[test]
