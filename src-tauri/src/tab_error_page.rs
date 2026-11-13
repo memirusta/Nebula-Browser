@@ -75,6 +75,7 @@ mod imp {
     use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, Instant};
 
+    use crate::tab_error_copy::{error_copy, ErrorDetail};
     use serde::Serialize;
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
@@ -660,138 +661,37 @@ mod imp {
         }
     }
 
-    fn error_page_copy(locale: &str, kind: ErrorKind) -> (&'static str, &'static str) {
-        match locale {
-            "tr" => match kind {
-                ErrorKind::Certificate => (
-                    "Bağlantı güvenli değil",
-                    "Bu adresin güvenlik sertifikası geçersiz veya güvenilir değil.",
-                ),
-                ErrorKind::NameNotResolved => (
-                    "Site bulunamadı",
-                    "Sunucu adresi bulunamadı. Adresi kontrol edip tekrar deneyin.",
-                ),
-                ErrorKind::TimedOut => (
-                    "Bağlantı zaman aşımına uğradı",
-                    "Sunucu zamanında yanıt vermedi. Bir süre sonra tekrar deneyin.",
-                ),
-                ErrorKind::Authentication => (
-                    "Kimlik doğrulama gerekli",
-                    "Sunucu veya proxy geçerli oturum bilgileri istiyor.",
-                ),
-                ErrorKind::ServerResponse => (
-                    "Sunucu yanıtı geçersiz",
-                    "Sunucu geçersiz bir yanıt veya yönlendirme gönderdi.",
-                ),
-                ErrorKind::Network => (
-                    "Bu siteye ulaşılamıyor",
-                    "Sunucuya bağlanılamadı. Adresi ve ağ bağlantısını kontrol edin.",
-                ),
-                ErrorKind::Unexpected => (
-                    "Sayfa yüklenemedi",
-                    "Beklenmeyen bir gezinme hatası oluştu. Tekrar deneyin.",
-                ),
-            },
-            "es" => match kind {
-                ErrorKind::Certificate => (
-                    "La conexión no es privada",
-                    "El certificado de seguridad del sitio no es válido o no es de confianza.",
-                ),
-                _ => (
-                    "No se puede acceder a este sitio",
-                    "No se pudo establecer la conexión. Comprueba la dirección y vuelve a intentarlo.",
-                ),
-            },
-            "de" => match kind {
-                ErrorKind::Certificate => (
-                    "Die Verbindung ist nicht privat",
-                    "Das Sicherheitszertifikat der Website ist ungültig oder nicht vertrauenswürdig.",
-                ),
-                _ => (
-                    "Diese Website ist nicht erreichbar",
-                    "Die Verbindung konnte nicht hergestellt werden. Prüfe die Adresse und versuche es erneut.",
-                ),
-            },
-            "fr" => match kind {
-                ErrorKind::Certificate => (
-                    "La connexion n’est pas privée",
-                    "Le certificat de sécurité du site est invalide ou non approuvé.",
-                ),
-                _ => (
-                    "Ce site est inaccessible",
-                    "La connexion n’a pas pu être établie. Vérifiez l’adresse et réessayez.",
-                ),
-            },
-            "id" => match kind {
-                ErrorKind::Certificate => (
-                    "Koneksi tidak pribadi",
-                    "Sertifikat keamanan situs tidak valid atau tidak tepercaya.",
-                ),
-                _ => (
-                    "Situs ini tidak dapat dijangkau",
-                    "Koneksi tidak dapat dibuat. Periksa alamat lalu coba lagi.",
-                ),
-            },
-            "ru" => match kind {
-                ErrorKind::Certificate => (
-                    "Подключение не защищено",
-                    "Сертификат безопасности сайта недействителен или ему нельзя доверять.",
-                ),
-                _ => (
-                    "Не удаётся открыть этот сайт",
-                    "Не удалось установить соединение. Проверьте адрес и повторите попытку.",
-                ),
-            },
-            "it" => match kind {
-                ErrorKind::Certificate => (
-                    "La connessione non è privata",
-                    "Il certificato di sicurezza del sito non è valido o non è attendibile.",
-                ),
-                _ => (
-                    "Questo sito non è raggiungibile",
-                    "Non è stato possibile stabilire la connessione. Controlla l’indirizzo e riprova.",
-                ),
-            },
-            "ja" => match kind {
-                ErrorKind::Certificate => (
-                    "この接続ではプライバシーが保護されません",
-                    "このサイトのセキュリティ証明書は無効か、信頼されていません。",
-                ),
-                _ => (
-                    "このサイトにアクセスできません",
-                    "接続できませんでした。アドレスを確認して、もう一度お試しください。",
-                ),
-            },
-            _ => match kind {
-                ErrorKind::Certificate => (
-                    "Your connection isn't private",
-                    "The site's security certificate is invalid or not trusted.",
-                ),
-                ErrorKind::NameNotResolved => (
-                    "This site can't be found",
-                    "The server address could not be found. Check the address and try again.",
-                ),
-                ErrorKind::TimedOut => (
-                    "The connection timed out",
-                    "The server did not respond in time. Try again later.",
-                ),
-                ErrorKind::Authentication => (
-                    "Authentication required",
-                    "The server or proxy requires valid sign-in credentials.",
-                ),
-                ErrorKind::ServerResponse => (
-                    "Invalid server response",
-                    "The server returned an invalid response or redirect.",
-                ),
-                ErrorKind::Network => (
-                    "This site can't be reached",
-                    "The server could not be reached. Check the address and your network connection.",
-                ),
-                ErrorKind::Unexpected => (
-                    "The page couldn't be loaded",
-                    "An unexpected navigation error occurred. Try again.",
-                ),
-            },
+    /// Which of the failures the page tells apart a WebView2 status is (see `tab_error_copy`). Finer than `ErrorKind`, which only
+    /// decides what Nebula does about a failure.
+    fn error_detail(status: COREWEBVIEW2_WEB_ERROR_STATUS) -> ErrorDetail {
+        match status {
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT => {
+                ErrorDetail::CertificateNameMismatch
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED => ErrorDetail::CertificateExpired,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED => ErrorDetail::CertificateRevoked,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID => ErrorDetail::CertificateInvalid,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CLIENT_CERTIFICATE_CONTAINS_ERRORS => {
+                ErrorDetail::ClientCertificate
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED => ErrorDetail::NameNotResolved,
+            COREWEBVIEW2_WEB_ERROR_STATUS_TIMEOUT => ErrorDetail::TimedOut,
+            COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED => {
+                ErrorDetail::AuthenticationRequired
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED => {
+                ErrorDetail::ProxyAuthenticationRequired
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE => {
+                ErrorDetail::InvalidServerResponse
+            }
+            COREWEBVIEW2_WEB_ERROR_STATUS_REDIRECT_FAILED => ErrorDetail::RedirectFailed,
+            COREWEBVIEW2_WEB_ERROR_STATUS_SERVER_UNREACHABLE => ErrorDetail::ServerUnreachable,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT => ErrorDetail::CannotConnect,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET => ErrorDetail::ConnectionReset,
+            COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED => ErrorDetail::ConnectionAborted,
+            COREWEBVIEW2_WEB_ERROR_STATUS_DISCONNECTED => ErrorDetail::Disconnected,
+            _ => ErrorDetail::Unexpected,
         }
     }
 
@@ -809,9 +709,8 @@ mod imp {
             .replace('"', "&quot;")
             .replace('\'', "&#39;");
         let status_name = web_error_status_name(error_status);
-        let kind = error_kind(error_status);
         let (lang, retry_label, try_http_label) = error_page_labels(locale);
-        let (title, description) = error_page_copy(locale, kind);
+        let (title, description) = error_copy(locale, error_detail(error_status));
         let theme = current_theme();
         let scheme = if theme.dark { "dark" } else { "light" };
         let (base, text, muted, border, surface, accent, strong, on) = (
@@ -1375,7 +1274,7 @@ mod imp {
             );
             assert!(page.contains("COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET"));
             assert!(page.contains("https%3A%2F%2Fexample.com"));
-            assert!(page.contains("This%20site%20can%27t%20be%20reached"));
+            assert!(page.contains("The%20connection%20was%20reset"));
         }
 
         #[test]
@@ -1385,7 +1284,7 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 "tr",
             );
-            assert!(page.contains("Bu%20siteye%20ula%C5%9F%C4%B1lam%C4%B1yor"));
+            assert!(page.contains("Sunucuya%20ba%C4%9Flan%C4%B1lamad%C4%B1"));
             assert!(page.contains("Tekrar%20dene"));
             assert!(page.contains("lang%3D%22tr%22"));
         }
@@ -1397,7 +1296,7 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 "es",
             );
-            assert!(page.contains("No%20se%20puede%20acceder%20a%20este%20sitio"));
+            assert!(page.contains("No%20se%20pudo%20conectar%20con%20el%20servidor"));
             assert!(page.contains("Volver%20a%20intentarlo"));
             assert!(page.contains("lang%3D%22es%22"));
         }
@@ -1409,7 +1308,7 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 "de",
             );
-            assert!(page.contains("Diese%20Website%20ist%20nicht%20erreichbar"));
+            assert!(page.contains("Verbindung%20zum%20Server%20nicht%20m%C3%B6glich"));
             assert!(page.contains("Erneut%20versuchen"));
             assert!(page.contains("lang%3D%22de%22"));
         }
@@ -1421,7 +1320,7 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 "fr",
             );
-            assert!(page.contains("Ce%20site%20est%20inaccessible"));
+            assert!(page.contains("Impossible%20de%20se%20connecter%20au%20serveur"));
             assert!(page.contains("lang%3D%22fr%22"));
         }
 
@@ -1432,7 +1331,7 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 "id",
             );
-            assert!(page.contains("Situs%20ini%20tidak%20dapat%20dijangkau"));
+            assert!(page.contains("Tidak%20dapat%20tersambung%20ke%20server"));
             assert!(page.contains("Coba%20lagi"));
             assert!(page.contains("lang%3D%22id%22"));
         }
@@ -1455,7 +1354,7 @@ mod imp {
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 "it",
             );
-            assert!(page.contains("Questo%20sito%20non%20%C3%A8%20raggiungibile"));
+            assert!(page.contains("Impossibile%20connettersi%20al%20server"));
             assert!(page.contains("Riprova"));
             assert!(page.contains("lang%3D%22it%22"));
         }
@@ -1542,7 +1441,7 @@ mod imp {
 
         #[test]
         fn a_site_that_cannot_be_reached_never_gets_the_compatibility_prompt() {
-            // "This site can't be reached": nothing the protections do could have caused it.
+            // "Couldn't connect" and its kin: nothing the protections do could have caused it.
             for status in [
                 COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
                 COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_ABORTED,

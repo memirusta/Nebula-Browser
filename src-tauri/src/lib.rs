@@ -60,6 +60,8 @@ mod site_ui;
 #[cfg(all(target_os = "windows", feature = "split-driver"))]
 mod spike_driver;
 mod system_stats;
+#[cfg(target_os = "windows")]
+mod tab_error_copy;
 mod tab_error_page;
 mod tab_fullscreen;
 mod tab_metadata;
