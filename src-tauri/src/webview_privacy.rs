@@ -1140,6 +1140,16 @@ mod imp {
                             args.SetCancel(true)?;
                             return Ok(());
                         }
+                        // "Go back" on the page of a stopped site that has no earlier page: the window closes the tab.
+                        if crate::shield_block_page::leave_requested(&uri) {
+                            args.SetCancel(true)?;
+                            let _ = tauri::Emitter::emit(
+                                &navigation_app,
+                                "nebula-shield-leave",
+                                serde_json::json!({ "tabLabel": navigation_label }),
+                            );
+                            return Ok(());
+                        }
                         // "Continue anyway" on the page of a stopped site: the address it goes to is not opened; the choice is
                         // remembered for the site in this tab and the site is opened instead.
                         if let Some(site) = crate::shield_block_page::continue_target(&uri) {

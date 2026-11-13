@@ -137,6 +137,7 @@ import {
   readShieldBlockedCount,
   setBrowsePrivacyOptions,
   clearSitePermissions,
+  listenShieldLeaveRequests,
   listenSiteCompatibilityRequests,
   navigateBrowseTab,
   clearBrowseData,
@@ -6651,6 +6652,29 @@ export function BrowserShell() {
       unlisten?.()
     }
   }, [getTab, locale, t, updateCategory])
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+
+    void listenShieldLeaveRequests((request) => {
+      // "Go back" on the page of a site the shield stopped, in a tab that has no earlier page: the tab was opened by that very
+      // address, so it is closed instead of being left blank (see shield_block_page.rs).
+      const shortcutId = shortcutIdForTabWebviewLabel(request.tabLabel)
+      if (disposed || !shortcutId || !getTab(shortcutId)) return
+      void handleCloseTab(shortcutId)
+    }).then((stop) => {
+      if (disposed) stop()
+      else unlisten = stop
+    })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [getTab, handleCloseTab])
 
   useEffect(() => {
     if (!isTauri) return

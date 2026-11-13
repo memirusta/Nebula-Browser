@@ -76,3 +76,21 @@ test('a page of a site on the malware lists is stopped before the page script an
   assert.ok(template.length > 500, 'the page template was found')
   assert.doesNotMatch(template, /postMessage|chrome\.webview/, 'the page does not try the channel it does not have')
 })
+
+test('"go back" on the page of a stopped site closes a tab that has no earlier page, through the window', () => {
+  const privacy = read('src-tauri/src/webview_privacy.rs')
+  const leave = privacy.indexOf('shield_block_page::leave_requested(&uri)')
+  assert.ok(leave > 0)
+  assert.match(privacy.slice(leave, leave + 500), /SetCancel\(true\)[\s\S]*"nebula-shield-leave"[\s\S]*"tabLabel": navigation_label/)
+  const page = read('src-tauri/src/tab_error_page.rs')
+  assert.match(page, /let can_go_back = !before\.is_empty\(\) && !before\.starts_with\("about:blank"\)/, 'decided from the page the tab showed before')
+  assert.match(read('src/platform/tauriBrowser.ts'), /listen<ShieldLeaveRequest>\('nebula-shield-leave'/)
+  const shell = read('src/components/BrowserShell/BrowserShell.tsx')
+  assert.match(shell, /listenShieldLeaveRequests\(\(request\) => \{[\s\S]*shortcutIdForTabWebviewLabel\(request\.tabLabel\)[\s\S]*void handleCloseTab\(shortcutId\)/)
+})
+
+test('the shield\'s hiding style waits for a document element, because its script runs before the page has one', () => {
+  const engine = read('src-tauri/src/shield.rs')
+  assert.match(engine, /new MutationObserver/)
+  assert.match(engine, /watch\.observe\(document, \{ childList: true \}\)/)
+})

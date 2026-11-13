@@ -241,10 +241,18 @@ impl ShieldEngine {
                 .map(String::as_str)
                 .collect();
             selectors.sort_unstable();
-            let css = format!("{} {{ display: none !important; }}", selectors.join(",\n"));
+            // One rule for each selector, never one rule for the lot: a selector the browser does not understand makes the whole
+            // rule it is in void, and one such selector among many hid nothing at all on YouTube.
+            let css = selectors
+                .iter()
+                .map(|selector| format!("{selector} {{ display: none !important; }}"))
+                .collect::<Vec<_>>()
+                .join("\n");
             let css = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".to_string());
+            // The script runs before the page has a document element, so there may be nowhere to put the style yet: it waits for
+            // the first one to appear. (Putting it at once and finding nothing to put it in hid nothing at all.)
             body.push_str(&format!(
-                "try {{ const style = document.createElement('style'); style.textContent = {css}; (document.head || document.documentElement).appendChild(style); }} catch (e) {{}}\n"
+                "try {{ const css = {css}; const put = () => {{ const root = document.head || document.documentElement; if (!root) {{ return false; }} const style = document.createElement('style'); style.textContent = css; root.appendChild(style); return true; }}; if (!put()) {{ const watch = new MutationObserver(() => {{ if (put()) {{ watch.disconnect(); }} }}); watch.observe(document, {{ childList: true }}); }} }} catch (e) {{}}\n"
             ));
         }
         if body.is_empty() {
@@ -575,7 +583,19 @@ mod tests {
             .page_script("https://news.example/story")
             .expect("hiding rules for news.example");
         assert!(script.contains(".ad-banner"));
+        // The script runs before the page has a document element: it must wait for one, not fail silently.
+        assert!(script.contains("new MutationObserver"), "{script}");
+        assert!(script.contains("watch.observe(document, { childList: true })"));
         assert!(script.contains(".sponsored"));
+        // Each selector has a rule of its own, so that one the browser cannot read does not take the others with it.
+        assert!(
+            script.contains(".ad-banner { display: none !important; }"),
+            "{script}"
+        );
+        assert!(
+            script.contains(".sponsored { display: none !important; }"),
+            "{script}"
+        );
         assert!(script.contains("display: none !important"));
         // Another site gets none of news.example's rules.
         assert!(engine

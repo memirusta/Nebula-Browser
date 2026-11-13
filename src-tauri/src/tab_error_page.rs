@@ -859,6 +859,10 @@ mod imp {
 
     /// Takes the place of the page a navigation to `url` would have opened with the page that says the shield stopped it.
     pub fn show_blocked_site(webview: &ICoreWebView2, url: &str) {
+        // The page that was open in this tab, if there was one: with none (the tab was opened by this very address, so it still
+        // shows its blank first page) "go back" has nowhere to go and closes the tab.
+        let before = read_webview_source(webview);
+        let can_go_back = !before.is_empty() && !before.starts_with("about:blank");
         let logo = include_str!("../resources/branding/nebula-app-logo-128.base64").trim();
         let code = crate::shield_block_page::register(url);
         let html = crate::shield_block_page::page_html(
@@ -867,6 +871,7 @@ mod imp {
             &current_theme(),
             &code,
             logo,
+            can_go_back,
         );
         navigate_webview(webview, &data_url_for_html(&html));
     }

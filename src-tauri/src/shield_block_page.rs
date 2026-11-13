@@ -18,6 +18,22 @@ use crate::tab_error_page::ErrorPageTheme;
 /// The address "continue anyway" goes to. `.invalid` never resolves, and the navigation is cancelled before it could be tried.
 pub const CONTINUE_URL: &str = "https://nebula-shield.invalid/continue?code=";
 
+/// The address "go back" goes to on a page that has nowhere to go back to (the tab was opened by the blocked address itself, so its
+/// only earlier page is a blank one): the tab is closed instead of left empty.
+pub const LEAVE_URL: &str = "https://nebula-shield.invalid/leave?code=";
+
+/// Whether a navigation to `uri` is a request to leave (close the tab): this address with the code of a page that was shown and not
+/// yet left or continued from. The code is used up.
+pub fn leave_requested(uri: &str) -> bool {
+    let Some(code) = uri.strip_prefix(LEAVE_URL) else {
+        return false;
+    };
+    if code.is_empty() || code.len() > 64 || !code.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return false;
+    }
+    take(code).is_some()
+}
+
 /// The address a navigation to `uri` is a request to continue to, if it is one: it must be this address with the code of a page that
 /// was shown and not yet continued from. The code is used up.
 pub fn continue_target(uri: &str) -> Option<String> {
@@ -132,12 +148,15 @@ pub fn page_html(
     theme: &ErrorPageTheme,
     code: &str,
     logo: &str,
+    can_go_back: bool,
 ) -> String {
     let text = copy(locale);
     let display_url = escape_html(url);
     // `code` is made of hex digits only; it is still quoted as a script string, never trusted as markup.
     let continue_js = serde_json::to_string(&format!("{CONTINUE_URL}{code}"))
         .unwrap_or_else(|_| "\"\"".to_string());
+    let leave_js =
+        serde_json::to_string(&format!("{LEAVE_URL}{code}")).unwrap_or_else(|_| "\"\"".to_string());
     let scheme = if theme.dark { "dark" } else { "light" };
     let (base, ink, muted, border, surface, accent, strong, on) = (
         &theme.base,
@@ -226,9 +245,10 @@ pub fn page_html(
   <p class="hint">{hint}</p>
   <div class="brand">NEBULA</div>
   <script>
+    // With an earlier page to return to, go there; without one, the tab was opened by this very address, and it is closed.
     document.getElementById('back').onclick = () => {{
-      if (history.length > 1) history.back();
-      else location.replace('about:blank');
+      if ({can_go_back}) history.back();
+      else location.href = {leave_js};
     }};
     const proceed = document.getElementById('proceed');
     proceed.onclick = () => {{
@@ -306,6 +326,7 @@ mod tests {
             &theme,
             "00ab00ab00ab00ab",
             "LOGO",
+            true,
         );
         assert!(html.contains(
             "https://bad.example/a?x=&lt;script&gt;alert(1)&lt;/script&gt;&amp;y=&quot;&#39;"
@@ -370,6 +391,51 @@ mod tests {
             Some("https://bad.example/page")
         );
         assert_eq!(continue_target(&address), None, "a code is used once");
+    }
+
+    #[test]
+    fn go_back_returns_when_there_is_a_page_to_return_to_and_leaves_the_tab_when_there_is_not() {
+        let theme = ErrorPageTheme::default();
+        let with = page_html(
+            "https://bad.example/",
+            "en",
+            &theme,
+            "00ab00ab00ab00ab",
+            "LOGO",
+            true,
+        );
+        assert!(with.contains("if (true) history.back();"));
+        let without = page_html(
+            "https://bad.example/",
+            "en",
+            &theme,
+            "00ab00ab00ab00ab",
+            "LOGO",
+            false,
+        );
+        assert!(without.contains("if (false) history.back();"));
+        assert!(without.contains("\"https://nebula-shield.invalid/leave?code=00ab00ab00ab00ab\""));
+    }
+
+    #[test]
+    fn only_the_leave_address_with_a_live_code_is_a_request_to_leave() {
+        let code = register("https://bad.example/page");
+        assert!(!leave_requested(&format!("{LEAVE_URL}zzzz")));
+        assert!(!leave_requested(LEAVE_URL));
+        assert!(
+            !leave_requested(&format!("{CONTINUE_URL}{code}")),
+            "the other address is not this one"
+        );
+        assert!(!leave_requested(&format!(
+            "http://evil.example/leave?code={code}"
+        )));
+        assert!(leave_requested(&format!("{LEAVE_URL}{code}")));
+        assert!(
+            !leave_requested(&format!("{LEAVE_URL}{code}")),
+            "a code is used once"
+        );
+        // Leaving used the code up: the page cannot also continue.
+        assert_eq!(continue_target(&format!("{CONTINUE_URL}{code}")), None);
     }
 
     #[test]

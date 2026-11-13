@@ -101,6 +101,18 @@ export function listenSiteCompatibilityRequests(
   )
 }
 
+export interface ShieldLeaveRequest {
+  tabLabel: string
+}
+
+/** The person pressed "go back" on the page of a site the shield stopped, in a tab that has no earlier page (see shield_block_page.rs). */
+export function listenShieldLeaveRequests(
+  onRequest: (request: ShieldLeaveRequest) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<ShieldLeaveRequest>('nebula-shield-leave', ({ payload }) => onRequest(payload))
+}
+
 type ExtensionWebviewOptions = WebviewOptions & {
   browserExtensionsEnabled: boolean
 }
