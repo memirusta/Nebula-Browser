@@ -37,8 +37,12 @@ uygulamanın içinde, WebView2'nin kendi olaylarıyla çalışıyor. Bu belge na
   kendi başlattığı gezintilerde (bağlantıya tıklama, yönlendirme) bu garanti yoktur: sayfa script'i host başına tutulduğundan aynı hosta dönüşlerde
   yerindedir, yeni bir host için ağ gecikmesi genellikle yeter. Her kayıt numaralıdır (`ScriptSlot`): geç gelen eski kaydın id'si gelir gelmez
   kaldırılır, böylece bir sitenin script'i (özellikle parmak izi tohumu) başka sitede kalmaz.
-- **Prosedürel kozmetik filtreler yok.** `:has-text`, `:upward`, XPath gibi sayfaya bakmayı gerektiren seçiciler çalışmaz (tarayıcı geçersiz
-  seçiciyi tek başına düşürür). Yalnızca düz seçici + `:style()` olanlar uygulanır. HTML filtreleme (`##^`) ve `$removeparam`/`$csp` gibi seçenekler yok.
+- **Prosedürel kozmetik filtreler.** `:has-text`, `:upward`, `:xpath`, `:matches-css`, `:matches-attr`, `:matches-path`, `:min-text-length` ve
+  `:remove()`, `:remove-attr()`, `:remove-class()`, `:style()` eylemleri sayfada `resources/shield/procedural.js` ile çalışır. Motor bu
+  kuralları yalnızca `css-validation` özelliği açıkken ayırır (`Cargo.toml`); kapalıyken `:has-text` gibi seçiciler düz CSS sanılıp tarayıcıca
+  atılıyordu. Kurallar veri olarak verilir (en çok 400), sayfa değiştikçe yeniden bakılır (değişim çoksa seyrek), `html`/`body`/gövdeyi
+  tutan öğeye dokunulmaz, bir kural kendi işlediği öğeyi hatırlar. Gerçek tarayıcıda her işleç ve eylem elle kurulmuş bir sayfada denendi,
+  uygulamada özel kural kutusuyla `example.com`'da denendi. HTML filtreleme (`##^`) ve `$removeparam`/`$csp` gibi seçenekler yok.
 - **Worker'lar.** Parmak izi script'i worker'lara ulaşmaz; yazı tipleri, ekran ve saat dilimi kapsam dışı.
 - **Reklam gösterildi ölçülemiyor.** YouTube reklam medyasını reklam engelleyici olmadan da 403 ile reddettiği için ölçüm araçları yalnızca vekil
   sayılar (oyuncu yanıtındaki yerleşimler, reklam istekleri, engellenenler) verir.
@@ -48,7 +52,8 @@ uygulamanın içinde, WebView2'nin kendi olaylarıyla çalışıyor. Bu belge na
 Listelerin geri kalanı İngilizce siteler için yazılmış: Türk bir sitede reklam engellenince sitenin reklama ayırdığı kutu boş bir bant olarak
 kalıyor (örnek: Hürriyet'te üstte 300 piksellik boşluk). `src-tauri/resources/shield/lists/nebula-tr.txt` bu kutuları gizleyen, elle yazılmış
 kuralları tutar. İndirilmez, `build-shield-lists.mjs` ona dokunmaz, "Reklamlar" anahtarına bağlıdır (kapatılırsa bu da kapanır). Kural, reklamın
-içinde olduğu gerçek sayfada görülüp eklenir ve seçici sayfanın izin verdiği kadar dardır. Şimdilik Hürriyet, Milliyet, Fanatik, CNN Türk, Sabah, Habertürk, Sözcü, NTV, Mynet ve Webtekno var.
+içinde olduğu gerçek sayfada görülüp eklenir ve seçici sayfanın izin verdiği kadar dardır. Şimdilik Hürriyet, Milliyet, Fanatik, CNN Türk, Sabah, Takvim, Habertürk, Sözcü, NTV, Mynet, Webtekno, Haber7, Sporx, DonanımHaber, ShiftDelete, Yeni Şafak, Maçkolik ve Transfermarkt var. Alışveriş siteleri (Trendyol, Hepsiburada, N11) yok: orada
+boş bırakılan üçüncü taraf reklam kutusu görülmedi, gördüklerimiz sitenin kendi kampanya ve ürün alanları ve onları gizlemek içeriği silmek olur.
 
 ## Arayüz
 

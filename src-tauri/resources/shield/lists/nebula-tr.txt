@@ -45,3 +45,39 @@ mynet.com##.trc_related_container
 
 ! Webtekno: the advertising columns
 webtekno.com##div.adv-col
+
+! Takvim: the white boxes made for advertisements
+takvim.com.tr##div.advert
+takvim.com.tr##.bg-advert-mobile
+
+! Haber7: the mastheads and the slots by the headlines
+haber7.com##div.masthead.reklam
+haber7.com##.subhead-ad
+haber7.com##.w620-ad
+haber7.com##.multimedia-ad
+haber7.com##.economy-ad
+
+! Sporx: the DFP slots (dfp_728x90_tepe, dfp_300x250_sag ...)
+sporx.com##div[id^="dfp_"]
+
+! DonanimHaber: the mastheads, the square boxes, the sticky column and the sponsored links
+donanimhaber.com##.reklam-masthead
+donanimhaber.com##.reklam-kare
+donanimhaber.com##.reklam-fix
+donanimhaber.com##a.oge-ad
+donanimhaber.com##a.sponsor
+
+! ShiftDelete: the advertising slots
+shiftdelete.net##.sd-ad
+
+! Yeni Safak: the masthead gap and the banners
+yenisafak.com##.banner-ad-gap-masthead
+yenisafak.com##.banner-ad-mobile-only
+yenisafak.com##.home-headline-panels-below-headline-ad
+
+! Mackolik: the DFP slots and the banner above the page
+mackolik.com##div[id^="div-gpt-ad-"]
+mackolik.com##div.top-banner
+
+! Transfermarkt (every country's site): the advertising boxes
+transfermarkt.*##div.werbung
