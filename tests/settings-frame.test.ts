@@ -82,7 +82,8 @@ test('the Home, Semi-Lunar, Privacy and Notifications settings are in titled car
   const plan: Record<string, string[]> = {
     home: ['layout', 'widgets', 'profile', 'session'],
     'semi-lunar': ['behavior', 'animation', 'size', 'overlay'],
-    privacy: ['protection', 'permissions', 'privateMode', 'data'],
+    // What protects the browser is in the shield's area, which has its own cards (see the test below).
+    privacy: ['permissions', 'privateMode', 'data'],
     notifications: ['alerts', 'siteAlerts'],
   }
   for (const [category, titles] of Object.entries(plan)) {
@@ -98,8 +99,26 @@ test('the Home, Semi-Lunar, Privacy and Notifications settings are in titled car
     // The reset rows stay together at the end in a card without a title, and every row is inside a card.
     assert.ok(body.trimEnd().endsWith('</SettingGroup>'), `${category}: ends with a card`)
     assert.match(body, /<SettingGroup>\n[\s\S]*Reset/)
-    assert.doesNotMatch(body.replace(/<SettingGroup[\s\S]*?<\/SettingGroup>/g, ''), /<Setting(Toggle|Select|Range|Color|Text)Row/, `${category}: a row outside a card`)
+    const withoutShield = category === 'privacy' ? body.replace(/ {10}<ShieldSettings[\s\S]*?\n {10}\/>\n/, '') : body
+    assert.doesNotMatch(withoutShield.replace(/<SettingGroup[\s\S]*?<\/SettingGroup>/g, ''), /<Setting(Toggle|Select|Range|Color|Text)Row/, `${category}: a row outside a card`)
   }
+})
+
+test('everything that protects is one area of the Privacy page: the shield, with the browser protections, the site exceptions and the own addresses inside it', () => {
+  const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
+  const privacy = panel.slice(panel.indexOf("case 'privacy':"), panel.indexOf("case 'notifications':"))
+  const area = privacy.slice(privacy.indexOf('<ShieldSettings'), privacy.indexOf('/>', privacy.indexOf('ownAddresses=')))
+  for (const row of ['trackingLevel', 'blockTrackers', 'strictCookies', 'httpsOnly', 'globalPrivacyControl', 'cookieBannerBlocking', 'siteExceptions', 'customBlockList', 'toggleActiveSiteException']) {
+    assert.ok(area.includes(row), `${row} is in the shield's area`)
+    assert.ok(!privacy.slice(0, privacy.indexOf('<ShieldSettings')).includes(row), `${row} is not above it`)
+    assert.ok(!privacy.slice(privacy.indexOf('ownAddresses=') + 600).includes(`'${row}'`), `${row} is not left below it`)
+  }
+  // The area comes first on the page, and the permissions (the camera and the like) are not part of it.
+  assert.ok(privacy.indexOf('<ShieldSettings') < privacy.indexOf('groupCopy.permissions'))
+  assert.ok(!area.includes('permissionPolicy'))
+  const shield = read('src/components/SettingsPanel/ShieldSettings.tsx')
+  for (const slot of ['browserProtection', 'exceptions', 'ownAddresses']) assert.match(shield, new RegExp(`\{${slot}\}`), `${slot} is placed`)
+  assert.match(shield, /<section id="nebula-shield-settings"/)
 })
 
 test('the title stays at the left, the cards are one 960px column in the middle, and the background is the wallpaper behind the panel', () => {

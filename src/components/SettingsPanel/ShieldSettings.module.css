@@ -1,0 +1,27 @@
+/* The shield's cards on the privacy page. The cards themselves (SettingGroup) are the settings' own; this is what goes in them. */
+/* The shield is an area of the privacy page, not one card among others: a frame with its own heading, and the cards inside it. */
+.area { display: grid; gap: 22px; padding: 22px; border: 1px solid var(--nebula-glass-border); border-radius: 26px; background: linear-gradient(165deg, color-mix(in srgb, var(--nebula-accent) 11%, transparent), color-mix(in srgb, var(--nebula-surface-2) 22%, transparent) 55%); }
+.areaHeader { display: flex; align-items: center; gap: 18px; padding: 2px 4px 4px; }
+.areaIcon { display: grid; place-items: center; width: 56px; height: 56px; flex: 0 0 auto; border-radius: 17px; background: var(--nebula-gradient); color: var(--nebula-on-accent); box-shadow: 0 8px 24px color-mix(in srgb, var(--nebula-accent) 30%, transparent); }
+.areaIconOff { background: var(--nebula-surface-2); color: var(--nebula-text-muted); box-shadow: none; }
+.areaIcon svg { width: 29px; height: 29px; }
+.areaText { min-width: 0; }
+.areaText h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+.areaText p { margin: 4px 0 0; color: var(--nebula-text-muted); font-size: 13px; line-height: 1.45; }
+
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-width: 0; padding-top: 18px; padding-bottom: 8px; }
+.tile { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 11px 13px; border: 1px solid var(--nebula-glass-border); border-radius: 12px; background: color-mix(in srgb, var(--nebula-surface-2) 70%, transparent); }
+.tile strong { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.tile span { overflow: hidden; color: var(--nebula-text-muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+.statsFoot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--nebula-glass-border); color: var(--nebula-text-muted); font-size: 12px; }
+
+.listsHint { padding-top: 14px; padding-bottom: 8px; color: var(--nebula-text-muted); font-size: 12px; line-height: 1.5; }
+.listRow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 11px; padding-bottom: 11px; border-top: 1px solid var(--nebula-glass-border); font-size: 13.5px; }
+.listName { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.own { padding: 2px 8px; border-radius: 999px; background: var(--nebula-soft); color: var(--nebula-accent-ink); font-size: 10.5px; font-weight: 700; }
+.listRules { color: var(--nebula-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 720px) {
+    .tiles { grid-template-columns: 1fr; }
+}

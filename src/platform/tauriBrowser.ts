@@ -9,6 +9,7 @@ import {
   shortcutIdForTabWebviewLabel,
   tabWebviewLabel,
 } from '../core/browserTab'
+import { EMPTY_SHIELD_PAGE_SUMMARY, type ShieldPageSummary } from '../core/shieldSummary'
 import { KeyedLifecycleQueue } from '../core/keyedLifecycleQueue'
 import { createCoalescedRestoreRepair, hasUsableWindowClientSize, restoreBrowsingSurfaces } from '../core/mainWebviewRestore'
 import { createLayoutAuditor, findLayoutFaults, type LayoutAudit } from '../core/layoutAudit'
@@ -344,11 +345,34 @@ export async function setBrowseForceDarkOptions(
   )
 }
 
-/** How many requests Nebula's shield stopped for the page of a tab (0 when the shield is off or the tab is unknown). */
-export async function readShieldBlockedCount(shortcutId: string): Promise<number> {
-  if (!isTauri) return 0
-  const count = await invoke<number>('shield_blocked_count', { label: tabWebviewLabel(shortcutId) })
-  return Number.isFinite(count) ? count : 0
+/** What Nebula's shield stopped for the page of a tab: how many, of which kind, and which sites most (nothing when the shield is off or the tab is unknown). */
+export async function readShieldPageSummary(shortcutId: string): Promise<ShieldPageSummary> {
+  if (!isTauri) return EMPTY_SHIELD_PAGE_SUMMARY
+  const summary = await invoke<ShieldPageSummary>('shield_page_summary', { label: tabWebviewLabel(shortcutId) })
+  return {
+    total: Number.isFinite(summary?.total) ? summary.total : 0,
+    ads: Number.isFinite(summary?.ads) ? summary.ads : 0,
+    trackers: Number.isFinite(summary?.trackers) ? summary.trackers : 0,
+    top: Array.isArray(summary?.top) ? summary.top : [],
+  }
+}
+
+export interface ShieldStats {
+  /** What the shield stopped in total on this device; `sinceMs` is when the count began. */
+  totals: { ads: number; trackers: number; malware: number; since_ms: number }
+  /** The lists the shield is made of; `own` is for the ones Nebula writes itself. */
+  lists: { name: string; rules: number; own: boolean }[]
+}
+
+export async function readShieldStats(): Promise<ShieldStats | null> {
+  if (!isTauri) return null
+  return invoke<ShieldStats>('shield_stats')
+}
+
+/** Starts the count of what the shield stopped again from nothing. */
+export async function resetShieldStats(): Promise<void> {
+  if (!isTauri) return
+  await invoke('shield_reset_stats')
 }
 
 export async function setBrowsePrivacyOptions(

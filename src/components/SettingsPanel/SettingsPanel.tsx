@@ -34,13 +34,13 @@ import {
   SettingRangeRow,
   SettingResetRow,
   SettingSelectRow,
-  SettingTextAreaRow,
   SettingTextRow,
   SettingToggleRow,
   SettingGroup,
   SettingAdvanced,
 } from './SettingControls'
 import { AboutUpdateSection } from './AboutUpdateSection'
+import { ShieldSettings } from './ShieldSettings'
 import { AccountSettingsSection } from './AccountSettingsSection'
 import { ExtensionsSettingsSection } from './ExtensionsSettingsSection'
 import { EXTENSION_COPY } from '../../core/extensionCatalog'
@@ -818,6 +818,8 @@ interface SettingsPanelProps {
   onLunarPeekChange?: (active: boolean) => void
   passwordSettingsRequest?: number
   extensionsSettingsRequest?: number
+  /** Raised each time the shield's panel asks for the shield's part of the privacy page. */
+  shieldSettingsRequest?: number
   open: boolean
   anchor: SettingsAnchor | null
   onClose: () => void
@@ -1649,99 +1651,82 @@ function CategoryContent({
     case 'privacy':
       return (
         <>
-          <SettingGroup title={groupCopy.protection}>
-            <SettingSelectRow
-              label={t('trackingLevel')}
-              hint={t('trackingLevelHint')}
-              value={privacy.trackingLevel}
-              options={[
-                { value: 'none', label: t('trackingNone') },
-                { value: 'balanced', label: t('trackingBalanced') },
-                { value: 'strict', label: t('trackingStrict') },
-              ]}
-              onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
-            />
-            <SettingToggleRow
-              label={t('blockTrackers')}
-              hint={t('blockTrackersHint')}
-              checked={privacy.blockTrackers}
-              onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
-            />
-            <SettingToggleRow
-              label={t('strictCookies')}
-              hint={t('strictCookiesHint')}
-              checked={privacy.strictCookies}
-              onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
-            />
-            <SettingToggleRow
-              label={t('httpsOnly')}
-              hint={t('httpsOnlyHint')}
-              checked={privacy.httpsOnly}
-              onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
-            />
-            <SettingToggleRow
-              label={t('globalPrivacyControl')}
-              hint={t('globalPrivacyControlHint')}
-              checked={privacy.globalPrivacyControl}
-              onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
-            />
-            <SettingToggleRow
-              label={t('cookieBannerBlocking')}
-              hint={t('cookieBannerBlockingHint')}
-              checked={privacy.cookieBannerBlocking}
-              onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
-            />
-          </SettingGroup>
-          <SettingGroup title="Nebula Shield">
-            <SettingToggleRow
-              label="Nebula Shield"
-              hint={t('shieldHint')}
-              checked={privacy.shield}
-              onChange={() => onUpdate('privacy', 'shield', !privacy.shield)}
-            />
-            <SettingToggleRow
-              label={t('shieldAds')}
-              hint={t('shieldAdsHint')}
-              checked={privacy.shieldAds}
-              disabled={!privacy.shield}
-              onChange={() => onUpdate('privacy', 'shieldAds', !privacy.shieldAds)}
-            />
-            <SettingToggleRow
-              label={t('shieldTrackers')}
-              hint={t('shieldTrackersHint')}
-              checked={privacy.shieldTrackers}
-              disabled={!privacy.shield}
-              onChange={() => onUpdate('privacy', 'shieldTrackers', !privacy.shieldTrackers)}
-            />
-            <SettingToggleRow
-              label={t('shieldMalware')}
-              hint={t('shieldMalwareHint')}
-              checked={privacy.shieldMalware}
-              disabled={!privacy.shield}
-              onChange={() => onUpdate('privacy', 'shieldMalware', !privacy.shieldMalware)}
-            />
-            <SettingToggleRow
-              label={t('shieldMalwareUpdates')}
-              hint={t('shieldMalwareUpdatesHint')}
-              checked={privacy.shieldMalwareUpdates}
-              disabled={!privacy.shield || !privacy.shieldMalware}
-              onChange={() => onUpdate('privacy', 'shieldMalwareUpdates', !privacy.shieldMalwareUpdates)}
-            />
-            <SettingToggleRow
-              label={t('shieldFingerprint')}
-              hint={t('shieldFingerprintHint')}
-              checked={privacy.shieldFingerprint}
-              disabled={!privacy.shield}
-              onChange={() => onUpdate('privacy', 'shieldFingerprint', !privacy.shieldFingerprint)}
-            />
-            <SettingTextAreaRow
-              label={t('shieldCustomRules')}
-              hint={t('shieldCustomRulesHint')}
-              value={privacy.shieldCustomRules}
-              placeholder={'||ads.example^\nexample.com##.banner'}
-              onChange={(value) => onUpdate('privacy', 'shieldCustomRules', value)}
-            />
-          </SettingGroup>
+          <ShieldSettings
+            privacy={privacy}
+            onChange={(key, value) => onUpdate('privacy', key, value)}
+            browserProtection={(
+              <SettingGroup title={t('shieldGroupBrowser')}>
+                <SettingSelectRow
+                  label={t('trackingLevel')}
+                  hint={t('trackingLevelHint')}
+                  value={privacy.trackingLevel}
+                  options={[
+                    { value: 'none', label: t('trackingNone') },
+                    { value: 'balanced', label: t('trackingBalanced') },
+                    { value: 'strict', label: t('trackingStrict') },
+                  ]}
+                  onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
+                />
+                <SettingToggleRow
+                  label={t('blockTrackers')}
+                  hint={t('blockTrackersHint')}
+                  checked={privacy.blockTrackers}
+                  onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
+                />
+                <SettingToggleRow
+                  label={t('strictCookies')}
+                  hint={t('strictCookiesHint')}
+                  checked={privacy.strictCookies}
+                  onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
+                />
+                <SettingToggleRow
+                  label={t('httpsOnly')}
+                  hint={t('httpsOnlyHint')}
+                  checked={privacy.httpsOnly}
+                  onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
+                />
+                <SettingToggleRow
+                  label={t('globalPrivacyControl')}
+                  hint={t('globalPrivacyControlHint')}
+                  checked={privacy.globalPrivacyControl}
+                  onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
+                />
+                <SettingToggleRow
+                  label={t('cookieBannerBlocking')}
+                  hint={t('cookieBannerBlockingHint')}
+                  checked={privacy.cookieBannerBlocking}
+                  onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
+                />
+              </SettingGroup>
+            )}
+            exceptions={(
+              <SettingGroup title={t('shieldGroupExceptions')}>
+                <SettingTextRow
+                  label={t('privacyExceptions')}
+                  hint={t('privacyExceptionsHint')}
+                  value={privacy.siteExceptions}
+                  onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
+                />
+                <div className={styles.row}>
+                  <div className={styles.rowText}>
+                    <div className={styles.rowLabel}>{t('siteShield')}</div>
+                    <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
+                  </div>
+                  <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
+                    {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
+                  </button>
+                </div>
+              </SettingGroup>
+            )}
+            ownAddresses={(
+                <SettingTextRow
+                  label={t('customBlockList')}
+                  hint={t('customBlockListHint')}
+                  value={privacy.customBlockList}
+                  onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
+                />
+            )}
+          />
           <SettingGroup title={groupCopy.permissions}>
             <SettingSelectRow
               label={t('permissionPolicy')}
@@ -1767,27 +1752,6 @@ function CategoryContent({
               hint={t('permissionExceptionsHint')}
               value={privacy.permissionExceptions}
               onChange={(value) => onUpdate('privacy', 'permissionExceptions', value)}
-            />
-            <SettingTextRow
-              label={t('privacyExceptions')}
-              hint={t('privacyExceptionsHint')}
-              value={privacy.siteExceptions}
-              onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
-            />
-            <div className={styles.row}>
-              <div className={styles.rowText}>
-                <div className={styles.rowLabel}>{t('siteShield')}</div>
-                <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
-              </div>
-              <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
-                {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
-              </button>
-            </div>
-            <SettingTextRow
-              label={t('customBlockList')}
-              hint={t('customBlockListHint')}
-              value={privacy.customBlockList}
-              onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
             />
           </SettingGroup>
           <SettingGroup title={groupCopy.privateMode}>
@@ -1974,6 +1938,7 @@ function CategoryContent({
 export function SettingsPanel({
   passwordSettingsRequest = 0,
   extensionsSettingsRequest = 0,
+  shieldSettingsRequest = 0,
   open,
   anchor: _anchor,
   onClose,
@@ -2029,6 +1994,19 @@ export function SettingsPanel({
     setSearchQuery('')
     appliedExtensionsRequest.current = extensionsSettingsRequest
   }, [open, extensionsSettingsRequest])
+
+  const appliedShieldRequest = useRef(0)
+  useEffect(() => {
+    if (!open || !shieldSettingsRequest || appliedShieldRequest.current === shieldSettingsRequest) return
+    appliedShieldRequest.current = shieldSettingsRequest
+    setActiveId('privacy')
+    setSearchQuery('')
+    // The page is made after this render: the cards are looked for once it is there.
+    const timer = window.setTimeout(() => {
+      document.getElementById('nebula-shield-settings')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [open, shieldSettingsRequest])
 
   useEffect(() => {
     if (!open || !passwordSettingsRequest || appliedPasswordRequest.current === passwordSettingsRequest) return

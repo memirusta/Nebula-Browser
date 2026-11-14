@@ -66,6 +66,8 @@ import { ShortcutFolderIcon } from './ShortcutFolderIcon'
 import { LunarWindowDrag } from '../WindowChrome/LunarWindowDrag'
 import { WindowControls } from '../WindowChrome/WindowControls'
 import { PRIVATE_BROWSING_COPY } from '../PrivateBrowsingPanel/privateBrowsingCopy'
+import { ShieldIcon } from '../ShieldPanel/ShieldIcon'
+import { shieldBadgeText } from '../../core/shieldSummary'
 import styles from './SemiLunarMenu.module.css'
 
 type MenuMode = 'home' | 'browsing' | 'overlay'
@@ -160,6 +162,10 @@ interface SemiLunarMenuProps {
   getSession?: (url: string) => BrowseSession | null
   siteInfoOpen?: boolean
   onSiteInfoClick?: () => void
+  /** The button of the site panel is the shield's: what it stopped on the page is on it, and the lock's warning when the connection is not secure. */
+  /** `on`: working on this page; `site-off`: switched off for this site; `off`: switched off in the settings. */
+  shieldState?: 'on' | 'site-off' | 'off'
+  shieldBlocked?: number
 }
 
 export function SemiLunarMenu({
@@ -226,6 +232,8 @@ export function SemiLunarMenu({
   getSession,
   siteInfoOpen = false,
   onSiteInfoClick,
+  shieldState = 'on',
+  shieldBlocked = 0,
 }: SemiLunarMenuProps) {
   const { locale, t, tf } = useLocale()
   const isHome = mode === 'home'
@@ -2112,28 +2120,24 @@ const handleFolderMemberClose = useCallback(
                     styles.evBtn,
                     styles.siteSecurityBtn,
                     siteInfoOpen ? styles.siteSecurityBtnActive : '',
+                    shieldState !== 'on' ? styles.shieldBtnOff : '',
                     !activeSiteSecure ? styles.siteSecurityBtnWarning : '',
                   ].filter(Boolean).join(' ')}
                   onClick={(event) => {
                     event.stopPropagation()
                     onSiteInfoClick()
                   }}
-                  title={`${t('siteInfo')} · ${activeSiteHost}`}
-                  aria-label={tf('siteInfoAria', { host: activeSiteHost })}
+                  title={`${t('shieldButton')} · ${activeSiteHost}${activeSiteSecure ? '' : ` · ${t('shieldButtonInsecure')}`}`}
+                  aria-label={`${tf('shieldButtonAria', { host: activeSiteHost, count: shieldBlocked })}${activeSiteSecure ? '' : `. ${t('shieldButtonInsecure')}`}`}
+                  aria-haspopup="dialog"
+                  aria-expanded={siteInfoOpen}
                   data-semi-lunar-safe=""
                 >
-                  {activeSiteSecure ? (
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-                    </svg>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M8 10V7a4 4 0 0 1 7.3-2.3M5 10h14v11H5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      <span className={styles.siteSecurityWarning} aria-hidden="true">!</span>
-                    </>
+                  <ShieldIcon off={shieldState !== 'on'} />
+                  {shieldState === 'on' && shieldBlocked > 0 && (
+                    <span className={styles.shieldCount} aria-hidden="true">{shieldBadgeText(shieldBlocked)}</span>
                   )}
+                  {!activeSiteSecure && <span className={styles.siteSecurityWarning} aria-hidden="true">!</span>}
                 </button>
               )}
               {isBrowsing && onExtensionsClick && (

@@ -45,6 +45,7 @@ import {
   emitViewMode,
   emitZoomIndicator,
 } from '../../core/nebulaBridge'
+import { sameShieldSummary, type ShieldPageSummary } from '../../core/shieldSummary'
 import type {
   DownloadUiStatePayload,
   ShellViewMode,
@@ -134,7 +135,7 @@ import {
   setBrowseTabZoom,
   zoomBrowseTab,
   setBrowseForceDarkOptions,
-  readShieldBlockedCount,
+  readShieldPageSummary,
   setBrowsePrivacyOptions,
   clearSitePermissions,
   listenShieldLeaveRequests,
@@ -1445,6 +1446,7 @@ export function BrowserShell() {
 
   const [passwordSettingsRequest, setPasswordSettingsRequest] = useState(0)
   const [extensionsSettingsRequest, setExtensionsSettingsRequest] = useState(0)
+  const [shieldSettingsRequest, setShieldSettingsRequest] = useState(0)
 
   const [
     settingsAnchor,
@@ -5971,16 +5973,21 @@ export function BrowserShell() {
   const activeSiteInfoStateRef = useRef(activeSiteInfoState)
   activeSiteInfoStateRef.current = activeSiteInfoState
 
+  // What the shield panel (and the count on its button) was last told, so that only a change is told again.
+  const lastShieldSummaryRef = useRef<ShieldPageSummary | undefined>(undefined)
+
   const emitFreshSiteInfoState = useCallback(async () => {
     const snapshot = activeSiteInfoStateRef.current
     await emitSiteInfoState(snapshot)
+    // What the panel last was told is gone with this state: the poll below tells it again.
+    lastShieldSummaryRef.current = undefined
     if (!snapshot.shortcutId || !snapshot.origin) return
 
     try {
-      const [permissions, shieldBlocked] = await Promise.all([
+      const [permissions, shieldSummary] = await Promise.all([
         readSitePermissionStates(snapshot.shortcutId),
         snapshot.shieldOn
-          ? readShieldBlockedCount(snapshot.shortcutId).catch(() => undefined)
+          ? readShieldPageSummary(snapshot.shortcutId).catch(() => undefined)
           : undefined,
       ])
       const current = activeSiteInfoStateRef.current
@@ -5990,10 +5997,13 @@ export function BrowserShell() {
       ) {
         return
       }
+      lastShieldSummaryRef.current = shieldSummary
       await emitSiteInfoState({
         ...current,
         permissions,
-        ...(shieldBlocked === undefined ? {} : { shieldBlocked }),
+        ...(shieldSummary === undefined
+          ? {}
+          : { shieldBlocked: shieldSummary.total, shieldSummary }),
       })
     } catch (error) {
       if (import.meta.env.DEV) {
@@ -6006,6 +6016,31 @@ export function BrowserShell() {
     if (!isTauri) return
     void emitFreshSiteInfoState()
   }, [activeSiteInfoState, emitFreshSiteInfoState])
+
+  // The count on the shield's button goes up while a page loads: ask for it now and then, and say it only when it changed.
+  const shieldPollOn = activeSiteInfoState.shieldOn === true
+  const shieldPollTab = activeSiteInfoState.shortcutId
+  const shieldPollOrigin = activeSiteInfoState.origin
+  useEffect(() => {
+    if (!isTauri || !shieldPollOn || !shieldPollTab) return
+    let stopped = false
+    const poll = async () => {
+      const snapshot = activeSiteInfoStateRef.current
+      if (!snapshot.shieldOn || !snapshot.shortcutId || !snapshot.origin) return
+      const summary = await readShieldPageSummary(snapshot.shortcutId).catch(() => undefined)
+      if (stopped || !summary) return
+      const current = activeSiteInfoStateRef.current
+      if (current.shortcutId !== snapshot.shortcutId || current.origin !== snapshot.origin) return
+      if (sameShieldSummary(lastShieldSummaryRef.current, summary)) return
+      lastShieldSummaryRef.current = summary
+      await emitSiteInfoState({ ...current, shieldBlocked: summary.total, shieldSummary: summary }).catch(() => undefined)
+    }
+    const timer = window.setInterval(() => void poll(), 1500)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [shieldPollOn, shieldPollTab, shieldPollOrigin])
 
   useEffect(() => {
     if (!isTauri) return
@@ -6250,6 +6285,13 @@ export function BrowserShell() {
             openOverlay()
             setSettingsActivated(true)
             setExtensionsSettingsRequest(value => value + 1)
+            setSettingsOpen(true)
+            break
+
+          case 'open-shield-settings':
+            openOverlay()
+            setSettingsActivated(true)
+            setShieldSettingsRequest(value => value + 1)
             setSettingsOpen(true)
             break
 
@@ -8009,6 +8051,7 @@ export function BrowserShell() {
             onLunarPeekChange={setSettingsLunarPeek}
             passwordSettingsRequest={passwordSettingsRequest}
             extensionsSettingsRequest={extensionsSettingsRequest}
+            shieldSettingsRequest={shieldSettingsRequest}
             open={
               settingsOpen
             }

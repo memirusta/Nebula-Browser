@@ -16,24 +16,27 @@ test('the shield is on by default, with every kind of list on and no rules of th
   assert.match(settings, /shieldCustomRules: typeof p\?\.shieldCustomRules === 'string' \? p\.shieldCustomRules\.slice\(0, 20000\)/, 'cut at a size the native side takes')
 })
 
-test('what the person chose reaches the native side, and the count is a registered, allowed command', () => {
+test('what the person chose reaches the native side, and the counts are registered, allowed commands', () => {
   const browser = read('src/platform/tauriBrowser.ts')
   for (const key of ['shieldAds', 'shieldTrackers', 'shieldMalware', 'shieldMalwareUpdates', 'shieldFingerprint', 'shieldCustomRules']) assert.match(browser, new RegExp(`${key}:`), key)
-  assert.match(browser, /invoke<number>\('shield_blocked_count'/)
-  assert.match(read('src-tauri/src/lib.rs'), /^\s+shield_blocked_count,$/m, 'registered with the handler')
-  assert.match(read('src-tauri/permissions/webview-commands.toml'), /"shield_blocked_count"/, 'and allowed')
+  assert.match(browser, /invoke<ShieldPageSummary>\('shield_page_summary'/)
+  for (const command of ['shield_page_summary', 'shield_stats', 'shield_reset_stats']) {
+    assert.match(read('src-tauri/src/lib.rs'), new RegExp(String.raw`^\s+${command},$`, 'm'), `${command} is registered with the handler`)
+    assert.match(read('src-tauri/permissions/webview-commands.toml'), new RegExp(`"${command}"`), `${command} is allowed`)
+  }
   const native = read('src-tauri/src/webview_privacy.rs')
   for (const field of ['shield_ads', 'shield_trackers', 'shield_malware', 'shield_malware_updates', 'shield_fingerprint', 'shield_custom_rules']) assert.match(native, new RegExp(`pub ${field}:`), field)
 })
 
 test('the site panel asks for a count only when the shield is on for the site, and shows it only then', () => {
-  assert.match(read('src/components/BrowserShell/BrowserShell.tsx'), /snapshot\.shieldOn\s*\? readShieldBlockedCount/)
+  assert.match(read('src/components/BrowserShell/BrowserShell.tsx'), /snapshot\.shieldOn\s*\? readShieldPageSummary/)
   assert.match(read('src/components/SiteInfoPanel/SiteInfoPanel.tsx'), /state\.shieldOn && typeof state\.shieldBlocked === 'number'/)
 })
 
 test('the settings page has the shield, its kinds of lists (off while the shield is) and the box for the persons own rules', () => {
-  const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
-  assert.match(panel, /onUpdate\('privacy', 'shield', !privacy\.shield\)/)
+  const panel = read('src/components/SettingsPanel/ShieldSettings.tsx')
+  assert.match(read('src/components/SettingsPanel/SettingsPanel.tsx'), /<ShieldSettings\s+privacy=\{privacy\}/, 'the privacy page uses it')
+  assert.match(panel, /onChange\('shield', !privacy\.shield\)/)
   for (const key of ['shieldAds', 'shieldTrackers', 'shieldMalware']) {
     assert.match(panel, new RegExp(String.raw`checked=\{privacy\.${key}\}\s+disabled=\{!privacy\.shield\}`), key)
   }
@@ -41,7 +44,7 @@ test('the settings page has the shield, its kinds of lists (off while the shield
 })
 
 test('the list download is off by default, is the only use of the network by the shield, and stops when its setting does', () => {
-  const panel = read('src/components/SettingsPanel/SettingsPanel.tsx')
+  const panel = read('src/components/SettingsPanel/ShieldSettings.tsx')
   assert.match(panel, /checked=\{privacy\.shieldMalwareUpdates\}\s+disabled=\{!privacy\.shield \|\| !privacy\.shieldMalware\}/)
   // The engine, the page script and the block page make no request of their own.
   for (const file of ['shield.rs', 'shield_block_page.rs']) assert.doesNotMatch(read(`src-tauri/src/${file}`), /reqwest::(Client|get)|\.send\(\)/, file)
@@ -99,7 +102,7 @@ test('the shield\'s hiding style waits for a document element, because its scrip
 test('the fingerprint protection is off by default, runs only with the shield and not on a site the person excepted, and its script compiles', () => {
   const settings = read('src/core/nebulaSettings.ts')
   assert.match(settings, /shieldFingerprint: true,/)
-  assert.match(read('src/components/SettingsPanel/SettingsPanel.tsx'), /checked=\{privacy\.shieldFingerprint\}\s+disabled=\{!privacy\.shield\}/)
+  assert.match(read('src/components/SettingsPanel/ShieldSettings.tsx'), /checked=\{privacy\.shieldFingerprint\}\s+disabled=\{!privacy\.shield\}/)
   const privacy = read('src-tauri/src/webview_privacy.rs')
   // Put in the tab at the start of a navigation, inside the shield's own condition, and only for a site that is not excepted.
   const call = privacy.lastIndexOf('put_fingerprint_script(')
