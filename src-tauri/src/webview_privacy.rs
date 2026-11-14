@@ -1343,6 +1343,7 @@ mod imp {
                                 (sender.as_ref(), crate::shield::engine())
                             {
                                 if engine.guard_document(&uri).is_some() {
+                                    crate::shield::note_malware_page();
                                     args.SetCancel(true)?;
                                     crate::tab_error_page::show_blocked_site(sender, &uri);
                                     return Ok(());
@@ -1431,7 +1432,7 @@ mod imp {
                                     // A rule that names a stand-in (`$redirect=noop.js`) is answered with it, so that a page that
                                     // waits for the script finds one; anything else gets the answer its kind can live with.
                                     let stand_in = match &decision {
-                                        crate::shield::Decision::Redirect { resource } => {
+                                        crate::shield::Decision::Redirect { resource, .. } => {
                                             crate::shield::stand_in_body(resource)
                                         }
                                         _ => None,
@@ -1460,7 +1461,12 @@ mod imp {
                                         }
                                     };
                                     args.SetResponse(&response)?;
-                                    crate::shield::note_blocked(&resource_label);
+                                    let block_kind = match &decision {
+                                        crate::shield::Decision::Block { kind, .. }
+                                        | crate::shield::Decision::Redirect { kind, .. } => *kind,
+                                        crate::shield::Decision::Allow => crate::shield::BlockKind::Ad,
+                                    };
+                                    crate::shield::note_blocked(&resource_label, block_kind, &uri);
                                     return Ok(());
                                 }
                             }

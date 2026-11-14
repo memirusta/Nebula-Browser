@@ -6,7 +6,8 @@
 //! and how a request of the browser is told to the engine. It knows nothing of WebView2, so it can be tested on its own.
 //!
 //! The lists are in `resources/shield/lists` and are compiled into the app (`include_str!`); they are not fetched at run time.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -63,10 +64,28 @@ pub enum Decision {
     /// Let it through.
     Allow,
     /// Stop it. `filter` is the rule that did it, kept so that a report can say who blocked what.
-    Block { filter: Option<String> },
+    Block {
+        filter: Option<String>,
+        kind: BlockKind,
+    },
     /// Answer it with this resource (a script or an image that does nothing) instead of letting it through, so that a page that
     /// waits for the real one is not broken by its absence.
-    Redirect { resource: String },
+    Redirect { resource: String, kind: BlockKind },
+}
+
+/// What kind of list stopped a request, for the breakdown the shield panel shows: the lists about trackers (EasyPrivacy, uBlock's
+/// privacy list) or everything else that blocks (advertising, the person's own rules).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlockKind {
+    Ad,
+    Tracker,
+}
+
+/// A rule, as it is told apart from another: its text, trimmed.
+fn rule_hash(rule: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    rule.trim().hash(&mut hasher);
+    hasher.finish()
 }
 
 /// The text of a list that was downloaded (not one that ships with the app). Kept behind an `Arc` so that comparing two
@@ -164,6 +183,9 @@ pub struct ShieldEngine {
     /// list that happens to name a document would stop a page from opening.
     guard: Option<Engine>,
     config: Config,
+    /// The rules of the tracker lists (their hashes), to tell which kind of list stopped a request. A hash is eight bytes where the
+    /// rule is a line of text: the report has no need of the text.
+    trackers: HashSet<u64>,
 }
 
 impl ShieldEngine {
@@ -202,6 +224,7 @@ impl ShieldEngine {
             engine,
             guard: None,
             config: Config::default(),
+            trackers: HashSet::new(),
         }
     }
 
@@ -213,8 +236,19 @@ impl ShieldEngine {
             permissions: PermissionMask::from_bits(1),
             ..ParseOptions::default()
         };
-        for (_, text) in LISTS.iter().filter(|(name, _)| config.wants(name)) {
+        let mut trackers = HashSet::new();
+        for (name, text) in LISTS.iter().filter(|(name, _)| config.wants(name)) {
             filters.add_filter_list(text.to_string(), trusted);
+            if matches!(*name, "easyprivacy" | "ubo-privacy") {
+                trackers.extend(
+                    text.lines()
+                        .map(str::trim)
+                        .filter(|line| {
+                            !line.is_empty() && !line.starts_with('!') && !line.starts_with('[')
+                        })
+                        .map(rule_hash),
+                );
+            }
         }
         if !config.custom_rules.trim().is_empty() {
             filters.add_filter_list(config.custom_rules.clone(), ParseOptions::default());
@@ -237,6 +271,7 @@ impl ShieldEngine {
             engine,
             guard,
             config: config.clone(),
+            trackers,
         }
     }
 
@@ -320,11 +355,20 @@ impl ShieldEngine {
         if !result.should_block() {
             return Decision::Allow;
         }
+        let kind = match result
+            .filter
+            .as_ref()
+            .and_then(|info| info.raw_line.as_deref())
+        {
+            Some(rule) if self.trackers.contains(&rule_hash(rule)) => BlockKind::Tracker,
+            _ => BlockKind::Ad,
+        };
         if let Some(resource) = result.redirect {
-            return Decision::Redirect { resource };
+            return Decision::Redirect { resource, kind };
         }
         Decision::Block {
             filter: result.filter.and_then(|info| info.raw_line),
+            kind,
         }
     }
 }
@@ -343,7 +387,181 @@ static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0
 pub fn epoch() -> u64 {
     EPOCH.load(Ordering::SeqCst)
 }
-static BLOCKED: Mutex<Option<HashMap<String, u32>>> = Mutex::new(None);
+/// What was stopped for the page of each tab.
+static BLOCKED: Mutex<Option<HashMap<String, PageStats>>> = Mutex::new(None);
+
+/// How many different addresses of one page are told apart; a page that asks for more than this still counts, it is only the list of
+/// who was stopped that stops growing.
+const PAGE_HOSTS_KEPT: usize = 256;
+
+#[derive(Clone, Default)]
+struct PageStats {
+    ads: u32,
+    trackers: u32,
+    hosts: HashMap<String, u32>,
+}
+
+/// One address among those a page had stopped, and how many of its requests were.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct HostCount {
+    pub host: String,
+    pub count: u32,
+}
+
+/// What the shield stopped for the page of a tab: the totals by kind and the addresses it stopped most.
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
+pub struct PageSummary {
+    pub total: u32,
+    pub ads: u32,
+    pub trackers: u32,
+    pub top: Vec<HostCount>,
+}
+
+/// The site an address belongs to, as a person knows it (`cdn.tracker.example` is `tracker.example`); an address that is a number
+/// stays as it is.
+fn site_of(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    match parsed.host()? {
+        url::Host::Domain(domain) => {
+            let domain = domain.to_ascii_lowercase();
+            Some(
+                psl::domain_str(&domain)
+                    .map(str::to_string)
+                    .unwrap_or(domain),
+            )
+        }
+        other => Some(other.to_string()),
+    }
+}
+
+/// What the shield has stopped since the person last cleared it, on this device only. It is kept in a file in the app's data (see
+/// `stats_file`) and goes nowhere.
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Totals {
+    pub ads: u64,
+    pub trackers: u64,
+    pub malware: u64,
+    /// When the count began (milliseconds since 1970).
+    pub since_ms: u64,
+}
+
+static TOTALS: Mutex<Totals> = Mutex::new(Totals {
+    ads: 0,
+    trackers: 0,
+    malware: 0,
+    since_ms: 0,
+});
+static TOTALS_DIRTY: AtomicBool = AtomicBool::new(false);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn stats_file(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    Some(
+        app.path()
+            .app_local_data_dir()
+            .ok()?
+            .join("shield")
+            .join("stats.json"),
+    )
+}
+
+/// What was stopped so far, in total.
+pub fn totals() -> Totals {
+    TOTALS
+        .lock()
+        .map(|totals| totals.clone())
+        .unwrap_or_default()
+}
+
+/// Starts the count again from nothing.
+pub fn reset_totals(app: &tauri::AppHandle) {
+    if let Ok(mut totals) = TOTALS.lock() {
+        *totals = Totals {
+            since_ms: now_ms(),
+            ..Totals::default()
+        };
+    }
+    TOTALS_DIRTY.store(true, Ordering::SeqCst);
+    flush_totals(app);
+}
+
+/// A page the malware check refused to open.
+pub fn note_malware_page() {
+    if let Ok(mut totals) = TOTALS.lock() {
+        totals.malware += 1;
+        TOTALS_DIRTY.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Reads the totals kept in the file, and starts a thread that writes them back (at most every twenty seconds, and only when they
+/// changed) so that a count that is going up all the time is not a write every time.
+fn start_totals(app: &tauri::AppHandle) {
+    if let Some(file) = stats_file(app) {
+        let read = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Totals>(&text).ok());
+        if let Ok(mut totals) = TOTALS.lock() {
+            *totals = read.unwrap_or_else(|| Totals {
+                since_ms: now_ms(),
+                ..Totals::default()
+            });
+        }
+    }
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        flush_totals(&app);
+    });
+}
+
+/// Writes the totals if they changed since they were last written. The file is made whole or not at all (written aside, then put
+/// in place), so that a power cut does not leave half of it.
+pub fn flush_totals(app: &tauri::AppHandle) {
+    if !TOTALS_DIRTY.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    let (Some(file), Ok(text)) = (stats_file(app), serde_json::to_string(&totals())) else {
+        return;
+    };
+    if let Some(folder) = file.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    let aside = file.with_extension("json.tmp");
+    if std::fs::write(&aside, text).is_ok() && std::fs::rename(&aside, &file).is_err() {
+        let _ = std::fs::remove_file(&aside);
+        TOTALS_DIRTY.store(true, Ordering::SeqCst);
+    }
+}
+
+/// A list that ships with the app, for the page of the settings that tells which lists the shield is made of.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct ListInfo {
+    pub name: &'static str,
+    pub rules: usize,
+    /// Written by Nebula (and not made from a list somebody else keeps).
+    pub own: bool,
+}
+
+pub fn list_info() -> Vec<ListInfo> {
+    LISTS
+        .iter()
+        .map(|(name, text)| ListInfo {
+            name,
+            rules: text
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty() && !line.starts_with('!') && !line.starts_with('['))
+                .count(),
+            own: name.starts_with("nebula-"),
+        })
+        .collect()
+}
 
 /// The engine, once it is ready. Until then (a fraction of a second after the first tab asks for the shield) requests are let
 /// through: the shield never holds a page back to wait for itself.
@@ -407,13 +625,30 @@ pub fn configure(config: &Config) {
     });
 }
 
-/// One more request of this tab was stopped.
-pub fn note_blocked(label: &str) {
+/// One more request of this tab was stopped: `url` is what it asked for, `kind` what kind of list stopped it.
+pub fn note_blocked(label: &str, kind: BlockKind, url: &str) {
+    let site = site_of(url);
     if let Ok(mut counts) = BLOCKED.lock() {
-        *counts
+        let page = counts
             .get_or_insert_with(HashMap::new)
             .entry(label.to_string())
-            .or_insert(0) += 1;
+            .or_default();
+        match kind {
+            BlockKind::Ad => page.ads += 1,
+            BlockKind::Tracker => page.trackers += 1,
+        }
+        if let Some(site) = site {
+            if page.hosts.contains_key(&site) || page.hosts.len() < PAGE_HOSTS_KEPT {
+                *page.hosts.entry(site).or_insert(0) += 1;
+            }
+        }
+    }
+    if let Ok(mut totals) = TOTALS.lock() {
+        match kind {
+            BlockKind::Ad => totals.ads += 1,
+            BlockKind::Tracker => totals.trackers += 1,
+        }
+        TOTALS_DIRTY.store(true, Ordering::SeqCst);
     }
 }
 
@@ -434,6 +669,7 @@ fn off_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 /// that starts the app would otherwise be loaded while the engine is still being made, and that page would not be protected. What
 /// is made is the usual engine; when the window then says something else is wanted (their own rules, a list off), it is made again.
 pub fn start_at_launch(app: &tauri::AppHandle) {
+    start_totals(app);
     if off_marker(app).is_some_and(|marker| marker.exists()) {
         return;
     }
@@ -518,13 +754,35 @@ pub fn site_is_allowed(label: &str, url: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(test)]
 /// How many requests of this tab were stopped since its page began loading. The interface shows it in the site panel.
 pub fn blocked_count(label: &str) -> u32 {
-    BLOCKED
+    page_summary(label).total
+}
+
+/// What the shield stopped for the page of this tab, with the five addresses it stopped most (the most first; equal counts in
+/// alphabetical order, so that the list does not shuffle between two looks at it).
+pub fn page_summary(label: &str) -> PageSummary {
+    let Some(page) = BLOCKED
         .lock()
         .ok()
-        .and_then(|counts| counts.as_ref().and_then(|map| map.get(label).copied()))
-        .unwrap_or(0)
+        .and_then(|counts| counts.as_ref().and_then(|map| map.get(label).cloned()))
+    else {
+        return PageSummary::default();
+    };
+    let mut hosts: Vec<HostCount> = page
+        .hosts
+        .into_iter()
+        .map(|(host, count)| HostCount { host, count })
+        .collect();
+    hosts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.host.cmp(&b.host)));
+    hosts.truncate(5);
+    PageSummary {
+        total: page.ads + page.trackers,
+        ads: page.ads,
+        trackers: page.trackers,
+        top: hosts,
+    }
 }
 
 /// What a stopped request is answered with, so that the page gets something it can live with: a script that does nothing, an
@@ -606,7 +864,8 @@ mod tests {
         assert_eq!(
             decision,
             Decision::Block {
-                filter: Some("||ads.example.com^".to_string())
+                filter: Some("||ads.example.com^".to_string()),
+                kind: BlockKind::Ad,
             }
         );
     }
@@ -1019,7 +1278,7 @@ mod tests {
             "https://www.youtube.com/watch?v=abc",
             "script",
         );
-        let Decision::Redirect { resource } = decision else {
+        let Decision::Redirect { resource, .. } = decision else {
             panic!("expected a redirect, got {decision:?}");
         };
         let (mime, body) = stand_in_body(&resource).expect("a data address");
@@ -1077,12 +1336,12 @@ mod tests {
 
     #[test]
     fn a_page_that_starts_loading_begins_its_count_again() {
-        note_blocked("tab-page");
-        note_blocked("tab-page");
+        note_blocked("tab-page", BlockKind::Ad, "https://a.example/x.js");
+        note_blocked("tab-page", BlockKind::Ad, "https://a.example/y.js");
         assert_eq!(blocked_count("tab-page"), 2);
         start_page("tab-page");
         assert_eq!(blocked_count("tab-page"), 0);
-        note_blocked("tab-page");
+        note_blocked("tab-page", BlockKind::Ad, "https://a.example/x.js");
         forget("tab-page");
         assert_eq!(blocked_count("tab-page"), 0);
     }
@@ -1092,7 +1351,7 @@ mod tests {
         let engine = ShieldEngine::bundled();
         let rule = "||ads.example^$script,redirect=noopjs\n";
         let engine_with_rule = ShieldEngine::with_scriptlets([rule], Some(SCRIPTLETS));
-        let Decision::Redirect { resource } = engine_with_rule.decide(
+        let Decision::Redirect { resource, .. } = engine_with_rule.decide(
             "https://ads.example/show.js",
             "https://news.example/",
             "script",
@@ -1125,12 +1384,118 @@ mod tests {
 
     #[test]
     fn what_was_stopped_is_counted_per_tab() {
-        note_blocked("tab-a");
-        note_blocked("tab-a");
-        note_blocked("tab-b");
+        note_blocked("tab-a", BlockKind::Ad, "https://a.example/x.js");
+        note_blocked("tab-a", BlockKind::Tracker, "https://a.example/y.js");
+        note_blocked("tab-b", BlockKind::Ad, "https://a.example/x.js");
         assert_eq!(blocked_count("tab-a"), 2);
         assert_eq!(blocked_count("tab-b"), 1);
         assert_eq!(blocked_count("tab-unknown"), 0);
+    }
+
+    #[test]
+    fn what_was_stopped_is_told_by_kind_and_by_the_site_that_was_stopped_most() {
+        let label = "tab-summary";
+        for url in [
+            "https://cdn.tracker.example/a.js",
+            "https://pixel.tracker.example/b.gif",
+            "https://www.tracker.example/c.js",
+        ] {
+            note_blocked(label, BlockKind::Tracker, url);
+        }
+        note_blocked(label, BlockKind::Ad, "https://ads.other.example/x.js");
+        note_blocked(label, BlockKind::Ad, "https://ads.other.example/y.js");
+        note_blocked(label, BlockKind::Ad, "https://192.0.2.7/z.js");
+        let summary = page_summary(label);
+        assert_eq!(summary.total, 6);
+        assert_eq!(summary.ads, 3);
+        assert_eq!(summary.trackers, 3);
+        assert_eq!(
+            summary.top,
+            vec![
+                HostCount {
+                    host: "tracker.example".into(),
+                    count: 3
+                },
+                HostCount {
+                    host: "other.example".into(),
+                    count: 2
+                },
+                HostCount {
+                    host: "192.0.2.7".into(),
+                    count: 1
+                },
+            ],
+            "the most first, a number address as it is"
+        );
+        start_page(label);
+        assert_eq!(page_summary(label), PageSummary::default());
+    }
+
+    #[test]
+    fn a_page_that_asks_for_a_great_many_sites_is_still_counted_but_only_so_many_are_told_apart() {
+        let label = "tab-many";
+        for n in 0..(PAGE_HOSTS_KEPT + 50) {
+            note_blocked(label, BlockKind::Ad, &format!("https://site{n}.test/x.js"));
+        }
+        // One of the sites that were kept goes on counting.
+        note_blocked(label, BlockKind::Ad, "https://site0.test/again.js");
+        let page = BLOCKED
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|map| map.get(label).cloned())
+            .unwrap();
+        assert_eq!(page.hosts.len(), PAGE_HOSTS_KEPT);
+        assert_eq!(page_summary(label).total as usize, PAGE_HOSTS_KEPT + 51);
+        forget(label);
+    }
+
+    #[test]
+    fn a_request_stopped_by_a_tracker_list_is_a_tracker_and_one_by_the_others_an_advertisement() {
+        let engine = ShieldEngine::bundled();
+        let page = "https://news.example/";
+        let first_host = |list: &str, wants: BlockKind| {
+            let (_, text) = LISTS
+                .iter()
+                .find(|(name, _)| *name == list)
+                .expect("the list ships");
+            text.lines()
+                .filter_map(|line| {
+                    line.strip_prefix("||")
+                        .and_then(|rest| rest.strip_suffix('^'))
+                })
+                .map(|host| format!("https://{host}/x.js"))
+                .find(|url| {
+                    matches!(
+                        engine.decide(url, page, "script"),
+                        Decision::Block { kind, .. } if kind == wants
+                    )
+                })
+        };
+        assert!(
+            first_host("easyprivacy", BlockKind::Tracker).is_some(),
+            "a host of the tracker list is a tracker"
+        );
+        assert!(
+            first_host("pgl", BlockKind::Ad).is_some(),
+            "a host of the server list is an advertisement"
+        );
+    }
+
+    #[test]
+    fn the_lists_that_ship_are_told_with_their_rule_counts_and_who_wrote_them() {
+        let lists = list_info();
+        assert_eq!(lists.len(), LISTS.len());
+        assert!(lists.iter().all(|list| list.rules > 0), "{lists:?}");
+        let own: Vec<_> = lists
+            .iter()
+            .filter(|list| list.own)
+            .map(|list| list.name)
+            .collect();
+        assert_eq!(own, vec!["nebula-tr", "nebula-youtube"]);
+        assert!(lists
+            .iter()
+            .any(|list| list.name == "easylist" && !list.own));
     }
 
     #[test]

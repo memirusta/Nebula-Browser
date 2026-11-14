@@ -832,10 +832,32 @@ async fn webview_profile_storage_usage(
         .map_err(|error| error.to_string())?
 }
 
-/// How many requests Nebula's shield stopped for the page of a tab, for the counter of the site panel.
+/// What Nebula's shield stopped for the page of a tab: the count, by kind, and the sites it stopped most. For the shield panel and
+/// the counter on its button.
 #[tauri::command]
-fn shield_blocked_count(label: String) -> u32 {
-    shield::blocked_count(&label)
+fn shield_page_summary(label: String) -> shield::PageSummary {
+    shield::page_summary(&label)
+}
+
+/// What the shield has stopped in total on this device, and the lists it is made of, for its page in the settings.
+#[derive(serde::Serialize)]
+struct ShieldStats {
+    totals: shield::Totals,
+    lists: Vec<shield::ListInfo>,
+}
+
+#[tauri::command]
+fn shield_stats() -> ShieldStats {
+    ShieldStats {
+        totals: shield::totals(),
+        lists: shield::list_info(),
+    }
+}
+
+/// Starts the count of what the shield stopped again from nothing.
+#[tauri::command]
+fn shield_reset_stats(app: tauri::AppHandle) {
+    shield::reset_totals(&app);
 }
 
 /// `label` is only kept so callers need no change: site permissions are always the
@@ -2086,7 +2108,9 @@ pub fn run() {
             webview_clear_browsing_data,
             webview_profile_storage_usage,
             webview_clear_site_permissions,
-            shield_blocked_count,
+            shield_page_summary,
+            shield_stats,
+            shield_reset_stats,
             webview_factory_reset_profiles,
             legacy_blocker::legacy_blocker_retire,
             extension_download::extension_download_checked,
