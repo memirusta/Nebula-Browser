@@ -40,6 +40,7 @@ import {
   SettingAdvanced,
 } from './SettingControls'
 import { AboutUpdateSection } from './AboutUpdateSection'
+import { ShieldSettings } from './ShieldSettings'
 import { AccountSettingsSection } from './AccountSettingsSection'
 import { ExtensionsSettingsSection } from './ExtensionsSettingsSection'
 import { EXTENSION_COPY } from '../../core/extensionCatalog'
@@ -410,16 +411,16 @@ const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   },
   {
     categoryId: 'privacy',
-    tr: 'uBlock Origin Lite',
-    en: 'uBlock Origin Lite',
-    es: 'uBlock Origin Lite',
-    de: 'uBlock Origin Lite',
-    fr: 'uBlock Origin Lite',
-    id: 'uBlock Origin Lite',
-    ru: 'uBlock Origin Lite',
-    it: 'uBlock Origin Lite',
-    ja: 'uBlock Origin Lite',
-    keywords: 'reklam ad anuncio werbung blocker bloqueador engelleme blockierung tracker rastreador izleyici',
+    tr: 'Nebula Shield',
+    en: 'Nebula Shield',
+    es: 'Nebula Shield',
+    de: 'Nebula Shield',
+    fr: 'Nebula Shield',
+    id: 'Nebula Shield',
+    ru: 'Nebula Shield',
+    it: 'Nebula Shield',
+    ja: 'Nebula Shield',
+    keywords: 'reklam ad anuncio werbung blocker bloqueador engelleme blockierung tracker rastreador izleyici shield kalkan filtre filter ublock easylist',
   },
   {
     categoryId: 'about',
@@ -817,6 +818,8 @@ interface SettingsPanelProps {
   onLunarPeekChange?: (active: boolean) => void
   passwordSettingsRequest?: number
   extensionsSettingsRequest?: number
+  /** Raised each time the shield's panel asks for the shield's part of the privacy page. */
+  shieldSettingsRequest?: number
   open: boolean
   anchor: SettingsAnchor | null
   onClose: () => void
@@ -848,8 +851,6 @@ interface SettingsPanelProps {
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
-  ublockVersion?: string | null
-  ublockEnabled?: boolean
   account: NebulaAccount | null
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
@@ -888,8 +889,6 @@ function CategoryContent({
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
-  ublockVersion,
-  ublockEnabled,
   account,
   onAccountChange,
   onAccountSignOut,
@@ -924,8 +923,6 @@ function CategoryContent({
   onClearBrowsingData: (kind?: BrowsingDataKind) => void | Promise<void>
   onGetProfileStorageUsage: () => Promise<BrowserProfileStorageUsage | null>
   activeUrl?: string | null
-  ublockVersion?: string | null
-  ublockEnabled?: boolean
   account: NebulaAccount | null
   onAccountChange: (account: NebulaAccount) => void
   onAccountSignOut: () => void
@@ -1654,58 +1651,82 @@ function CategoryContent({
     case 'privacy':
       return (
         <>
-          <SettingGroup title={groupCopy.protection}>
-            <div className={styles.row}>
-              <div className={styles.rowText}>
-                <div className={styles.rowLabel}>uBlock Origin Lite</div>
-                <div className={styles.rowHint}>{ublockVersion ? `${ublockEnabled ? t('ublockActive') : t('ublockReady')} · v${ublockVersion}` : t('ublockUnavailable')}</div>
-              </div>
-              <span className={ublockEnabled ? styles.statusActive : styles.statusInactive}>
-                {ublockEnabled ? t('active') : ublockVersion ? t('ready') : t('unavailable')}
-              </span>
-            </div>
-            <SettingSelectRow
-              label={t('trackingLevel')}
-              hint={t('trackingLevelHint')}
-              value={privacy.trackingLevel}
-              options={[
-                { value: 'none', label: t('trackingNone') },
-                { value: 'balanced', label: t('trackingBalanced') },
-                { value: 'strict', label: t('trackingStrict') },
-              ]}
-              onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
-            />
-            <SettingToggleRow
-              label={t('blockTrackers')}
-              hint={t('blockTrackersHint')}
-              checked={privacy.blockTrackers}
-              onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
-            />
-            <SettingToggleRow
-              label={t('strictCookies')}
-              hint={t('strictCookiesHint')}
-              checked={privacy.strictCookies}
-              onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
-            />
-            <SettingToggleRow
-              label={t('httpsOnly')}
-              hint={t('httpsOnlyHint')}
-              checked={privacy.httpsOnly}
-              onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
-            />
-            <SettingToggleRow
-              label={t('globalPrivacyControl')}
-              hint={t('globalPrivacyControlHint')}
-              checked={privacy.globalPrivacyControl}
-              onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
-            />
-            <SettingToggleRow
-              label={t('cookieBannerBlocking')}
-              hint={t('cookieBannerBlockingHint')}
-              checked={privacy.cookieBannerBlocking}
-              onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
-            />
-          </SettingGroup>
+          <ShieldSettings
+            privacy={privacy}
+            onChange={(key, value) => onUpdate('privacy', key, value)}
+            browserProtection={(
+              <SettingGroup title={t('shieldGroupBrowser')}>
+                <SettingSelectRow
+                  label={t('trackingLevel')}
+                  hint={t('trackingLevelHint')}
+                  value={privacy.trackingLevel}
+                  options={[
+                    { value: 'none', label: t('trackingNone') },
+                    { value: 'balanced', label: t('trackingBalanced') },
+                    { value: 'strict', label: t('trackingStrict') },
+                  ]}
+                  onChange={(value) => onUpdate('privacy', 'trackingLevel', value as NebulaSettings['privacy']['trackingLevel'])}
+                />
+                <SettingToggleRow
+                  label={t('blockTrackers')}
+                  hint={t('blockTrackersHint')}
+                  checked={privacy.blockTrackers}
+                  onChange={() => onUpdate('privacy', 'blockTrackers', !privacy.blockTrackers)}
+                />
+                <SettingToggleRow
+                  label={t('strictCookies')}
+                  hint={t('strictCookiesHint')}
+                  checked={privacy.strictCookies}
+                  onChange={() => onUpdate('privacy', 'strictCookies', !privacy.strictCookies)}
+                />
+                <SettingToggleRow
+                  label={t('httpsOnly')}
+                  hint={t('httpsOnlyHint')}
+                  checked={privacy.httpsOnly}
+                  onChange={() => onUpdate('privacy', 'httpsOnly', !privacy.httpsOnly)}
+                />
+                <SettingToggleRow
+                  label={t('globalPrivacyControl')}
+                  hint={t('globalPrivacyControlHint')}
+                  checked={privacy.globalPrivacyControl}
+                  onChange={() => onUpdate('privacy', 'globalPrivacyControl', !privacy.globalPrivacyControl)}
+                />
+                <SettingToggleRow
+                  label={t('cookieBannerBlocking')}
+                  hint={t('cookieBannerBlockingHint')}
+                  checked={privacy.cookieBannerBlocking}
+                  onChange={() => onUpdate('privacy', 'cookieBannerBlocking', !privacy.cookieBannerBlocking)}
+                />
+              </SettingGroup>
+            )}
+            exceptions={(
+              <SettingGroup title={t('shieldGroupExceptions')}>
+                <SettingTextRow
+                  label={t('privacyExceptions')}
+                  hint={t('privacyExceptionsHint')}
+                  value={privacy.siteExceptions}
+                  onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
+                />
+                <div className={styles.row}>
+                  <div className={styles.rowText}>
+                    <div className={styles.rowLabel}>{t('siteShield')}</div>
+                    <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
+                  </div>
+                  <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
+                    {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
+                  </button>
+                </div>
+              </SettingGroup>
+            )}
+            ownAddresses={(
+                <SettingTextRow
+                  label={t('customBlockList')}
+                  hint={t('customBlockListHint')}
+                  value={privacy.customBlockList}
+                  onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
+                />
+            )}
+          />
           <SettingGroup title={groupCopy.permissions}>
             <SettingSelectRow
               label={t('permissionPolicy')}
@@ -1731,27 +1752,6 @@ function CategoryContent({
               hint={t('permissionExceptionsHint')}
               value={privacy.permissionExceptions}
               onChange={(value) => onUpdate('privacy', 'permissionExceptions', value)}
-            />
-            <SettingTextRow
-              label={t('privacyExceptions')}
-              hint={t('privacyExceptionsHint')}
-              value={privacy.siteExceptions}
-              onChange={(value) => onUpdate('privacy', 'siteExceptions', value)}
-            />
-            <div className={styles.row}>
-              <div className={styles.rowText}>
-                <div className={styles.rowLabel}>{t('siteShield')}</div>
-                <div className={styles.rowHint}>{activeHost ? `${activeHost} · ${activeSiteExcepted ? t('siteShieldOff') : t('siteShieldOn')}` : t('siteShieldUnavailable')}</div>
-              </div>
-              <button type="button" className={styles.actionBtn} disabled={!activeHost} onClick={toggleActiveSiteException}>
-                {activeSiteExcepted ? t('enableForSite') : t('disableForSite')}
-              </button>
-            </div>
-            <SettingTextRow
-              label={t('customBlockList')}
-              hint={t('customBlockListHint')}
-              value={privacy.customBlockList}
-              onChange={(value) => onUpdate('privacy', 'customBlockList', value)}
             />
           </SettingGroup>
           <SettingGroup title={groupCopy.privateMode}>
@@ -1938,6 +1938,7 @@ function CategoryContent({
 export function SettingsPanel({
   passwordSettingsRequest = 0,
   extensionsSettingsRequest = 0,
+  shieldSettingsRequest = 0,
   open,
   anchor: _anchor,
   onClose,
@@ -1965,8 +1966,6 @@ export function SettingsPanel({
   onClearBrowsingData,
   onGetProfileStorageUsage,
   activeUrl,
-  ublockVersion,
-  ublockEnabled,
   account,
   onAccountChange,
   onAccountSignOut,
@@ -1995,6 +1994,19 @@ export function SettingsPanel({
     setSearchQuery('')
     appliedExtensionsRequest.current = extensionsSettingsRequest
   }, [open, extensionsSettingsRequest])
+
+  const appliedShieldRequest = useRef(0)
+  useEffect(() => {
+    if (!open || !shieldSettingsRequest || appliedShieldRequest.current === shieldSettingsRequest) return
+    appliedShieldRequest.current = shieldSettingsRequest
+    setActiveId('privacy')
+    setSearchQuery('')
+    // The page is made after this render: the cards are looked for once it is there.
+    const timer = window.setTimeout(() => {
+      document.getElementById('nebula-shield-settings')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [open, shieldSettingsRequest])
 
   useEffect(() => {
     if (!open || !passwordSettingsRequest || appliedPasswordRequest.current === passwordSettingsRequest) return
@@ -2257,8 +2269,6 @@ export function SettingsPanel({
               onClearBrowsingData={onClearBrowsingData}
               onGetProfileStorageUsage={onGetProfileStorageUsage}
               activeUrl={activeUrl}
-              ublockVersion={ublockVersion}
-              ublockEnabled={ublockEnabled}
               account={account}
               onAccountChange={onAccountChange}
               onAccountSignOut={onAccountSignOut}

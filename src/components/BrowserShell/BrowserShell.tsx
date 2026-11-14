@@ -45,6 +45,7 @@ import {
   emitViewMode,
   emitZoomIndicator,
 } from '../../core/nebulaBridge'
+import { sameShieldSummary, type ShieldPageSummary } from '../../core/shieldSummary'
 import type {
   DownloadUiStatePayload,
   ShellViewMode,
@@ -134,14 +135,14 @@ import {
   setBrowseTabZoom,
   zoomBrowseTab,
   setBrowseForceDarkOptions,
+  readShieldPageSummary,
   setBrowsePrivacyOptions,
   clearSitePermissions,
+  listenShieldLeaveRequests,
   listenSiteCompatibilityRequests,
   navigateBrowseTab,
   clearBrowseData,
   getBrowserProfileStorageUsage,
-  getUblockExtensionInfo,
-  getUblockRuntimeStatus,
   type BrowsingDataKind,
   adoptReparentedBrowseTab,
   registerBrowseTabPrivateMode,
@@ -899,91 +900,10 @@ export function BrowserShell() {
     }
   }, [])
 
-  const [
-    ublockVersion,
-    setUblockVersion,
-  ] = useState<string | null>(
-    null,
-  )
-
-  const [
-    ublockEnabled,
-    setUblockEnabled,
-  ] = useState(false)
-
   const observedDownloadIdsRef =
     useRef<Set<string>>(
       new Set(),
     )
-
-  useEffect(() => {
-    if (!isTauri) return
-
-    void getUblockExtensionInfo()
-      .then((info) => {
-        setUblockVersion(
-          info.version,
-        )
-      })
-      .catch(() => {
-        setUblockVersion(
-          null,
-        )
-      })
-  }, [])
-
-  useEffect(() => {
-    setUblockEnabled(
-      false,
-    )
-
-    if (
-      !isTauri ||
-      !activeTabId
-    ) {
-      return
-    }
-
-    let cancelled =
-      false
-
-    const timer =
-      setTimeout(() => {
-        void getUblockRuntimeStatus(
-          activeTabId,
-        )
-          .then(
-            (status) => {
-              if (
-                !cancelled
-              ) {
-                setUblockEnabled(
-                  status.installed &&
-                    status.enabled,
-                )
-              }
-            },
-          )
-          .catch(() => {
-            if (
-              !cancelled
-            ) {
-              setUblockEnabled(
-                false,
-              )
-            }
-          })
-      }, 1200)
-
-    return () => {
-      cancelled =
-        true
-
-      clearTimeout(
-        timer,
-      )
-    }
-  }, [activeTabId])
 
   useEffect(() => {
     let hasNewDownload =
@@ -1526,6 +1446,7 @@ export function BrowserShell() {
 
   const [passwordSettingsRequest, setPasswordSettingsRequest] = useState(0)
   const [extensionsSettingsRequest, setExtensionsSettingsRequest] = useState(0)
+  const [shieldSettingsRequest, setShieldSettingsRequest] = useState(0)
 
   const [
     settingsAnchor,
@@ -6022,6 +5943,12 @@ export function BrowserShell() {
         target.hostname,
         settings.privacy.siteExceptions,
       ),
+      shieldOn:
+        settings.privacy.shield &&
+        !hostHasSiteException(
+          target.hostname,
+          settings.privacy.siteExceptions,
+        ),
       darkenWebpagesOverride:
         settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
@@ -6038,6 +5965,7 @@ export function BrowserShell() {
     notificationCenter.sitePermissions,
     settings.privacy.permissionExceptions,
     settings.privacy.permissionPolicy,
+    settings.privacy.shield,
     settings.privacy.siteExceptions,
     settings.appearance.darkenWebpagesSiteOverrides,
   ])
@@ -6045,13 +5973,23 @@ export function BrowserShell() {
   const activeSiteInfoStateRef = useRef(activeSiteInfoState)
   activeSiteInfoStateRef.current = activeSiteInfoState
 
+  // What the shield panel (and the count on its button) was last told, so that only a change is told again.
+  const lastShieldSummaryRef = useRef<ShieldPageSummary | undefined>(undefined)
+
   const emitFreshSiteInfoState = useCallback(async () => {
     const snapshot = activeSiteInfoStateRef.current
     await emitSiteInfoState(snapshot)
+    // What the panel last was told is gone with this state: the poll below tells it again.
+    lastShieldSummaryRef.current = undefined
     if (!snapshot.shortcutId || !snapshot.origin) return
 
     try {
-      const permissions = await readSitePermissionStates(snapshot.shortcutId)
+      const [permissions, shieldSummary] = await Promise.all([
+        readSitePermissionStates(snapshot.shortcutId),
+        snapshot.shieldOn
+          ? readShieldPageSummary(snapshot.shortcutId).catch(() => undefined)
+          : undefined,
+      ])
       const current = activeSiteInfoStateRef.current
       if (
         current.shortcutId !== snapshot.shortcutId ||
@@ -6059,7 +5997,14 @@ export function BrowserShell() {
       ) {
         return
       }
-      await emitSiteInfoState({ ...current, permissions })
+      lastShieldSummaryRef.current = shieldSummary
+      await emitSiteInfoState({
+        ...current,
+        permissions,
+        ...(shieldSummary === undefined
+          ? {}
+          : { shieldBlocked: shieldSummary.total, shieldSummary }),
+      })
     } catch (error) {
       if (import.meta.env.DEV) {
         console.warn('[nebula] site permission state query failed', error)
@@ -6071,6 +6016,31 @@ export function BrowserShell() {
     if (!isTauri) return
     void emitFreshSiteInfoState()
   }, [activeSiteInfoState, emitFreshSiteInfoState])
+
+  // The count on the shield's button goes up while a page loads: ask for it now and then, and say it only when it changed.
+  const shieldPollOn = activeSiteInfoState.shieldOn === true
+  const shieldPollTab = activeSiteInfoState.shortcutId
+  const shieldPollOrigin = activeSiteInfoState.origin
+  useEffect(() => {
+    if (!isTauri || !shieldPollOn || !shieldPollTab) return
+    let stopped = false
+    const poll = async () => {
+      const snapshot = activeSiteInfoStateRef.current
+      if (!snapshot.shieldOn || !snapshot.shortcutId || !snapshot.origin) return
+      const summary = await readShieldPageSummary(snapshot.shortcutId).catch(() => undefined)
+      if (stopped || !summary) return
+      const current = activeSiteInfoStateRef.current
+      if (current.shortcutId !== snapshot.shortcutId || current.origin !== snapshot.origin) return
+      if (sameShieldSummary(lastShieldSummaryRef.current, summary)) return
+      lastShieldSummaryRef.current = summary
+      await emitSiteInfoState({ ...current, shieldBlocked: summary.total, shieldSummary: summary }).catch(() => undefined)
+    }
+    const timer = window.setInterval(() => void poll(), 1500)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [shieldPollOn, shieldPollTab, shieldPollOrigin])
 
   useEffect(() => {
     if (!isTauri) return
@@ -6315,6 +6285,13 @@ export function BrowserShell() {
             openOverlay()
             setSettingsActivated(true)
             setExtensionsSettingsRequest(value => value + 1)
+            setSettingsOpen(true)
+            break
+
+          case 'open-shield-settings':
+            openOverlay()
+            setSettingsActivated(true)
+            setShieldSettingsRequest(value => value + 1)
             setSettingsOpen(true)
             break
 
@@ -6717,6 +6694,29 @@ export function BrowserShell() {
       unlisten?.()
     }
   }, [getTab, locale, t, updateCategory])
+
+  useEffect(() => {
+    if (!isTauri) return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+
+    void listenShieldLeaveRequests((request) => {
+      // "Go back" on the page of a site the shield stopped, in a tab that has no earlier page: the tab was opened by that very
+      // address, so it is closed instead of being left blank (see shield_block_page.rs).
+      const shortcutId = shortcutIdForTabWebviewLabel(request.tabLabel)
+      if (disposed || !shortcutId || !getTab(shortcutId)) return
+      void handleCloseTab(shortcutId)
+    }).then((stop) => {
+      if (disposed) stop()
+      else unlisten = stop
+    })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [getTab, handleCloseTab])
 
   useEffect(() => {
     if (!isTauri) return
@@ -8051,6 +8051,7 @@ export function BrowserShell() {
             onLunarPeekChange={setSettingsLunarPeek}
             passwordSettingsRequest={passwordSettingsRequest}
             extensionsSettingsRequest={extensionsSettingsRequest}
+            shieldSettingsRequest={shieldSettingsRequest}
             open={
               settingsOpen
             }
@@ -8137,12 +8138,6 @@ export function BrowserShell() {
             }
             activeUrl={
               activeUrl
-            }
-            ublockVersion={
-              ublockVersion
-            }
-            ublockEnabled={
-              ublockEnabled
             }
             account={
               account

@@ -54,9 +54,9 @@ test('the tutorial exposes six complete and uniquely targeted steps in every app
     assert.ok(widgetsStep, locale)
     assert.match(widgetsStep.action, /→.*→/, locale)
 
-    // The statement about the shield is the last step, says what really does the blocking, and asks nothing of the person.
+    // The statement about the shield is the last step, names no third-party blocker (Nebula's own shield does the blocking), and asks nothing of the person.
     assert.equal(copy.steps[copy.steps.length - 1].target, 'shield', locale)
-    assert.match(copy.steps[copy.steps.length - 1].body, /uBlock Origin Lite/, locale)
+    assert.doesNotMatch(copy.steps[copy.steps.length - 1].body, /uBlock/, locale)
   }
 })
 

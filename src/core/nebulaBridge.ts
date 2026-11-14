@@ -3,6 +3,7 @@ import type { BrowserTab } from './browserTab'
 import type { BrowserShortcutId } from './browserShortcuts'
 import type { DownloadItem } from './download'
 import type { Shortcut } from './types'
+import type { ShieldPageSummary } from './shieldSummary'
 import { isTauri } from '../platform/runtime'
 import { scopedBrowserEvent } from '../platform/browserWindowScope'
 
@@ -25,6 +26,7 @@ export type ChromeShellAction =
     }
   | { type: 'open-overlay' }
   | { type: 'open-extensions' }
+  | { type: 'open-shield-settings' }
   | { type: 'open-settings'; anchor: { x: number; y: number } }
   | { type: 'toggle-notification-panel' }
   | { type: 'toggle-history-panel' }
@@ -89,6 +91,12 @@ export interface SiteInfoStatePayload {
   darkenWebpagesOverride: 'default' | 'off' | 'always'
   permissionPromptsAllowed: boolean
   notificationPermission: 'allow' | 'block' | null
+  /** Nebula's shield is on for this site (on, and not switched off for the site). */
+  shieldOn?: boolean
+  /** What the shield stopped for the page so far; absent until it has been asked. */
+  shieldBlocked?: number
+  /** The same, told by kind and by the sites stopped most; absent until it has been asked. */
+  shieldSummary?: ShieldPageSummary
   permissions: {
     camera: SitePermissionState
     microphone: SitePermissionState

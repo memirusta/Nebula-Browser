@@ -130,7 +130,7 @@ Nebula includes configurable privacy options for:
 - custom block lists
 - cookie-banner blocking
 
-Nebula also integrates **uBlock Origin** into its desktop browsing environment.
+Nebula blocks ads, trackers and harmful sites with its own built-in **Nebula Shield**, built on the adblock-rust engine and community filter lists (EasyList, EasyPrivacy, uBlock Origin's filters and scripts). The lists ship with the app; nothing is downloaded unless you turn on the optional malware-list update.
 
 ---
 

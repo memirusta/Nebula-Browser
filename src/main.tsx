@@ -12,7 +12,7 @@ import { LocaleProvider } from './hooks/useLocale'
 import { isTauri } from './platform/runtime'
 import { syncTauriViewMode } from './platform/tauriBrowsingMode'
 import {
-  prewarmUblockProfile,
+  retireLegacyBlocker,
   scheduleInitialBrowseWebviewPrewarm,
   initWindowRestoreRepair,
 } from './platform/tauriBrowser'
@@ -46,9 +46,9 @@ if (isTauri && !chromeShell) {
     })
   }
   void announceShellIsolationNotice().catch(() => undefined)
-  void prewarmUblockProfile()
-    .then(() => scheduleInitialBrowseWebviewPrewarm())
-    .catch(() => undefined)
+  scheduleInitialBrowseWebviewPrewarm()
+  // Earlier versions installed a content blocker in the profile; the shield replaced it.
+  void retireLegacyBlocker().catch(() => undefined)
 }
 
 async function renderRoot() {

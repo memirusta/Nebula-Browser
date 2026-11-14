@@ -80,8 +80,8 @@ mod imp {
     use tauri::{AppHandle, Emitter, Manager};
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2NavigationCompletedEventArgs2,
-        ICoreWebView2NavigationCompletedEventHandler, ICoreWebView2WebMessageReceivedEventHandler,
-        COREWEBVIEW2_WEB_ERROR_STATUS, COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
+        ICoreWebView2NavigationCompletedEventHandler, COREWEBVIEW2_WEB_ERROR_STATUS,
+        COREWEBVIEW2_WEB_ERROR_STATUS_CANNOT_CONNECT,
         COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT,
         COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_EXPIRED,
         COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID,
@@ -98,7 +98,7 @@ mod imp {
         COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED,
         COREWEBVIEW2_WEB_ERROR_STATUS_VALID_PROXY_AUTHENTICATION_REQUIRED,
     };
-    use webview2_com::{NavigationCompletedEventHandler, WebMessageReceivedEventHandler};
+    use webview2_com::NavigationCompletedEventHandler;
     use windows::core::PCWSTR;
     use windows::core::PWSTR;
     use windows::Win32::System::Com::CoTaskMemFree;
@@ -114,18 +114,14 @@ mod imp {
     static THEME: LazyLock<Mutex<super::ErrorPageTheme>> =
         LazyLock::new(|| Mutex::new(super::ErrorPageTheme::default()));
     /// The error pages that offer "try with protections off": each has a code of its own that only that page knows, and what it
-    /// was for (the address that failed and why). The page's button sends the code back; the address is taken from here, never
-    /// from the message.
+    /// was for (the address that failed and why). The page's button sends the code back, in the address it goes to; the failed
+    /// address is taken from here, never from what arrives.
     static COMPAT_PAGES: LazyLock<Mutex<VecDeque<CompatPage>>> =
         LazyLock::new(|| Mutex::new(VecDeque::new()));
     static COMPAT_PAGE_COUNTER: AtomicU64 = AtomicU64::new(1);
-    static MESSAGE_TOKENS: LazyLock<Mutex<HashMap<String, i64>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
     const MAX_COMPAT_PAGES: usize = 32;
     thread_local! {
         static HANDLERS: RefCell<HashMap<String, ICoreWebView2NavigationCompletedEventHandler>> =
-            RefCell::new(HashMap::new());
-        static MESSAGE_HANDLERS: RefCell<HashMap<String, ICoreWebView2WebMessageReceivedEventHandler>> =
             RefCell::new(HashMap::new());
     }
 
@@ -134,6 +130,12 @@ mod imp {
         url: String,
         status: i32,
     }
+
+    /// The address the page's "try with protections off" button goes to. A page has no channel to the app (`window.chrome.webview` is
+    /// masked from every page, this one included), so the button navigates to an address that cannot exist, carrying the code the
+    /// page was given; Nebula sees that navigation start (see `handle_compat_navigation`), cancels it and asks the window for the
+    /// trial. `.invalid` never resolves, and a site has never seen a code.
+    pub(crate) const COMPAT_RETRY_URL: &str = "https://nebula-compat.invalid/retry?code=";
 
     /// A code for a new error page: unpredictable (a hasher seeded at random for this process) and different every time.
     fn new_compat_code() -> String {
@@ -165,38 +167,16 @@ mod imp {
             .map(|page| (page.url.clone(), COREWEBVIEW2_WEB_ERROR_STATUS(page.status)))
     }
 
-    /// What the page's button said: only a message with the code of a page Nebula built counts, and it asks for the retry of
-    /// the address that page was built for.
-    fn handle_compat_message(app: &AppHandle, label: &str, raw: &str) {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
-            return;
+    /// Whether `uri` is the address of that button, and if it is, asks for the trial of the address the page with that code was built
+    /// for. Returns whether it was the address, so that the navigation to it is always cancelled: whatever its code.
+    pub(crate) fn handle_compat_navigation(app: &AppHandle, label: &str, uri: &str) -> bool {
+        let Some(code) = uri.strip_prefix(COMPAT_RETRY_URL) else {
+            return false;
         };
-        if value.get("type").and_then(serde_json::Value::as_str) != Some("nebula-compat-retry") {
-            return;
+        if let Some((url, status)) = compat_page_for(code) {
+            emit_compatibility_request(app, label, &url, status);
         }
-        let code = value
-            .get("code")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let Some((url, status)) = compat_page_for(code) else {
-            return;
-        };
-        emit_compatibility_request(app, label, &url, status);
-    }
-
-    fn take_string<F>(read: F) -> String
-    where
-        F: FnOnce(*mut PWSTR) -> windows_core::Result<()>,
-    {
-        let mut value = PWSTR::null();
-        if read(&mut value).is_err() || value.is_null() {
-            return String::new();
-        }
-        let text = unsafe { value.to_string().unwrap_or_default() };
-        unsafe {
-            CoTaskMemFree(Some(value.as_ptr().cast()));
-        }
-        text
+        true
     }
 
     struct VerificationState {
@@ -733,7 +713,11 @@ mod imp {
         } else {
             String::new()
         };
-        let compat_code_js = js_string_literal(&compat_code);
+        let compat_url_js = js_string_literal(&if compat_code.is_empty() {
+            String::new()
+        } else {
+            format!("{COMPAT_RETRY_URL}{compat_code}")
+        });
         let compat_trying_js = js_string_literal(compat_trying);
         let compat_button_html = if offers_compat {
             format!(
@@ -857,7 +841,7 @@ mod imp {
         compatButton.disabled = true;
         compatButton.textContent = {compat_trying_js};
         try {{
-          window.chrome.webview.postMessage(JSON.stringify({{ type: 'nebula-compat-retry', code: {compat_code_js} }}));
+          location.href = {compat_url_js};
         }} catch (_) {{}}
       }};
     }}
@@ -871,6 +855,25 @@ mod imp {
         );
 
         data_url_for_html(&html)
+    }
+
+    /// Takes the place of the page a navigation to `url` would have opened with the page that says the shield stopped it.
+    pub fn show_blocked_site(webview: &ICoreWebView2, url: &str) {
+        // The page that was open in this tab, if there was one: with none (the tab was opened by this very address, so it still
+        // shows its blank first page) "go back" has nowhere to go and closes the tab.
+        let before = read_webview_source(webview);
+        let can_go_back = !before.is_empty() && !before.starts_with("about:blank");
+        let logo = include_str!("../resources/branding/nebula-app-logo-128.base64").trim();
+        let code = crate::shield_block_page::register(url);
+        let html = crate::shield_block_page::page_html(
+            url,
+            &current_ui_locale(),
+            &current_theme(),
+            &code,
+            logo,
+            can_go_back,
+        );
+        navigate_webview(webview, &data_url_for_html(&html));
     }
 
     fn navigate_webview(webview: &ICoreWebView2, url: &str) {
@@ -988,8 +991,6 @@ mod imp {
                     let _ = settings.SetIsBuiltInErrorPageEnabled(false);
                 }
 
-                let message_label = label_for_handler.clone();
-                let message_app = app_for_handler.clone();
                 let handler =
                     NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                         let Some(args) = args else {
@@ -1084,39 +1085,6 @@ mod imp {
                         Ok(())
                     }));
 
-                // The page's own button (see build_error_page_url) asks for the retry without protections.
-                let message =
-                    WebMessageReceivedEventHandler::create(Box::new(move |sender, args| {
-                        let (Some(sender), Some(args)) = (sender, args) else {
-                            return Ok(());
-                        };
-                        // Only a message from the page Nebula built: its address is a data URL, and so is the tab's.
-                        let source = take_string(|value| args.Source(value));
-                        let top_level = take_string(|value| sender.Source(value));
-                        if !source.starts_with("data:text/html")
-                            || !top_level.starts_with("data:text/html")
-                        {
-                            return Ok(());
-                        }
-                        let raw = take_string(|value| args.TryGetWebMessageAsString(value));
-                        handle_compat_message(&message_app, &message_label, &raw);
-                        Ok(())
-                    }));
-                let mut message_token: i64 = 0;
-                if core
-                    .add_WebMessageReceived(&message, &mut message_token)
-                    .is_ok()
-                {
-                    if let Ok(mut tokens) = MESSAGE_TOKENS.lock() {
-                        tokens.insert(label_for_store.clone(), message_token);
-                    }
-                    MESSAGE_HANDLERS.with(|handlers| {
-                        handlers
-                            .borrow_mut()
-                            .insert(label_for_store.clone(), message);
-                    });
-                }
-
                 let mut token: i64 = 0;
                 if core.add_NavigationCompleted(&handler, &mut token).is_err() {
                     return;
@@ -1143,10 +1111,6 @@ mod imp {
             .lock()
             .ok()
             .and_then(|mut tokens| tokens.remove(label));
-        let message_token = MESSAGE_TOKENS
-            .lock()
-            .ok()
-            .and_then(|mut tokens| tokens.remove(label));
         let label_for_handler = label.to_string();
 
         if let Some(webview) = app.get_webview(label) {
@@ -1155,14 +1119,8 @@ mod imp {
                     if let Some(token) = token {
                         let _ = core.remove_NavigationCompleted(token);
                     }
-                    if let Some(token) = message_token {
-                        let _ = core.remove_WebMessageReceived(token);
-                    }
                 }
                 HANDLERS.with(|handlers| {
-                    handlers.borrow_mut().remove(&label_for_handler);
-                });
-                MESSAGE_HANDLERS.with(|handlers| {
                     handlers.borrow_mut().remove(&label_for_handler);
                 });
             });
@@ -1182,7 +1140,7 @@ mod imp {
             compatibility_request_url, compatibility_retry_applies, js_string_literal,
             local_http_fallback_url, note_external_uri_navigation, register_compat_page,
             retry_target_is_current, set_theme, should_offer_compatibility_retry,
-            suppress_error_page, web_error_status_name,
+            suppress_error_page, web_error_status_name, COMPAT_RETRY_URL,
             COREWEBVIEW2_WEB_ERROR_STATUS_ERROR_HTTP_INVALID_SERVER_RESPONSE,
         };
 
@@ -1523,6 +1481,45 @@ mod imp {
         }
 
         #[test]
+        fn the_retry_button_goes_to_an_address_with_the_code_of_its_page_and_has_no_channel_to_the_app(
+        ) {
+            if super::internet_unavailable() {
+                return;
+            }
+            let page = decoded(&build_error_page_url(
+                "https://example.test/a",
+                COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET,
+                "en",
+            ));
+            // Pages cannot reach the app (`window.chrome.webview` is masked from them), so the button navigates; the address
+            // carries a code that registers exactly this failed address.
+            assert!(!page.contains("postMessage") && !page.contains("chrome.webview"));
+            let start = page
+                .find(COMPAT_RETRY_URL)
+                .expect("the button goes to the retry address");
+            let code: String = page[start + COMPAT_RETRY_URL.len()..]
+                .chars()
+                .take_while(char::is_ascii_hexdigit)
+                .collect();
+            assert_eq!(code.len(), 16, "{code}");
+            let (url, status) =
+                compat_page_for(&code).expect("the page was registered with its code");
+            assert_eq!(url, "https://example.test/a");
+            assert_eq!(status, COREWEBVIEW2_WEB_ERROR_STATUS_CONNECTION_RESET);
+            assert!(
+                compat_page_for("0000000000000000").is_none(),
+                "a code nobody was given finds nothing"
+            );
+            // A page without the button has no address to go to.
+            let other = decoded(&build_error_page_url(
+                "https://example.test/",
+                COREWEBVIEW2_WEB_ERROR_STATUS_HOST_NAME_NOT_RESOLVED,
+                "en",
+            ));
+            assert!(!other.contains(COMPAT_RETRY_URL));
+        }
+
+        #[test]
         fn the_error_page_takes_the_colours_of_the_interface_and_only_colours() {
             let theme = super::super::ErrorPageTheme {
                 dark: false,
@@ -1582,11 +1579,13 @@ mod imp {
 #[cfg(target_os = "windows")]
 pub use imp::{
     current_ui_locale, notification_activity_body, set_theme, set_ui_locale, setup_tab_error_page,
-    teardown_tab_error_page,
+    show_blocked_site, teardown_tab_error_page,
 };
 
 #[cfg(target_os = "windows")]
-pub(crate) use imp::{note_browser_verification_request, note_external_uri_navigation};
+pub(crate) use imp::{
+    handle_compat_navigation, note_browser_verification_request, note_external_uri_navigation,
+};
 
 #[cfg(not(target_os = "windows"))]
 pub fn set_ui_locale(_locale: &str) {}

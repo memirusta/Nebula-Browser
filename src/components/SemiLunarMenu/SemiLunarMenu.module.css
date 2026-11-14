@@ -368,6 +368,9 @@
   z-index: 3;
 }
 
+/* The button of the site panel is the shield's: the count sits on its top corner, the lock's warning on its bottom one. */
+.shieldBtnOff { color: rgba(255, 255, 255, 0.5); }
+.shieldCount { position: absolute; top: -3px; right: -4px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border: 2px solid rgba(18, 21, 25, 0.95); border-radius: 999px; background: var(--nebula-accent, #8b66ff); color: var(--nebula-on-accent, #fff); font-size: 8.5px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .siteSecurityBtn { position: relative; }
 .siteSecurityBtnActive { color: #bda8ff; box-shadow: 0 0 0 2px rgba(139, 102, 255, 0.24); }
 .siteSecurityBtnWarning { color: #f4bd55; }

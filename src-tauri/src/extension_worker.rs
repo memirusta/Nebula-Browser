@@ -253,58 +253,6 @@ mod imp {
         }
     }
 
-    /// Waits until `expression` is true in the extension's background worker, starting
-    /// the worker if it is not running. Polled from outside: a worker that has just been
-    /// started is not complete yet, and an MV3 worker can stop at any moment (idle
-    /// shutdown, a crash, a restart of the extension), so a lost session is not an error:
-    /// the worker is found or started again and the wait goes on until `timeout`.
-    /// Returns `Ok(false)` if the deadline passes first.
-    pub(crate) fn wait_for_condition(
-        app: &tauri::AppHandle,
-        label: &str,
-        runtime_id: &str,
-        expression: &str,
-        timeout: Duration,
-    ) -> Result<bool, String> {
-        let deadline = Instant::now() + timeout;
-        let mut session: Option<String> = None;
-        let mut met = false;
-        while Instant::now() < deadline {
-            if session.is_none() {
-                session = attach_worker(app, label, runtime_id).ok();
-            }
-            if let Some(id) = &session {
-                let outcome = cdp(
-                    app,
-                    label,
-                    Some(id),
-                    "Runtime.evaluate",
-                    &json!({ "expression": expression, "returnByValue": true }),
-                );
-                match outcome {
-                    Ok(value) if value["result"]["value"] == true => {
-                        met = true;
-                        break;
-                    }
-                    Ok(_) => {}
-                    // The target went away under us: attach to whatever runs next.
-                    Err(_) => session = None,
-                }
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        if let Some(id) = session {
-            let _ = cdp(
-                app,
-                label,
-                None,
-                "Target.detachFromTarget",
-                &json!({ "sessionId": id }),
-            );
-        }
-        Ok(met)
-    }
-
     fn attach_worker(
         app: &tauri::AppHandle,
         label: &str,
@@ -419,7 +367,7 @@ mod imp {
 #[cfg(all(test, target_os = "windows", feature = "extension-native-smoke"))]
 pub(crate) use imp::ensure_worker;
 #[cfg(target_os = "windows")]
-pub(crate) use imp::{cdp, click_action, proxy_control, wait_for_condition};
+pub(crate) use imp::{cdp, click_action, proxy_control};
 
 #[cfg(test)]
 mod tests {

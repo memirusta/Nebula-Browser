@@ -134,6 +134,18 @@ export interface PrivacySettings {
   permissionPolicy: 'ask' | 'block'
   permissionExceptions: string
   cookieBannerBlocking: boolean
+  /** Nebula's own shield (the engine and the lists that ship with the app). */
+  shield: boolean
+  /** Which kinds of lists the shield uses. The list that undoes rules which break sites is always used. */
+  shieldAds: boolean
+  shieldTrackers: boolean
+  shieldMalware: boolean
+  /** Let Nebula download the list of live malware addresses (URLhaus) every 12 hours. The only thing the shield downloads. */
+  shieldMalwareUpdates: boolean
+  /** Make what a page can read about the machine slightly different for each site. */
+  shieldFingerprint: boolean
+  /** The person's own rules, one per line, in the filter lists' syntax. */
+  shieldCustomRules: string
   /** Show the passkeys Windows has for a site in Nebula's own list (off: the web view's own pop-up is used). */
   passkeyList: boolean
 }
@@ -232,6 +244,13 @@ export const DEFAULT_NEBULA_SETTINGS: NebulaSettings = {
     permissionPolicy: 'ask',
     permissionExceptions: '',
     cookieBannerBlocking: true,
+    shield: true,
+    shieldAds: true,
+    shieldTrackers: true,
+    shieldMalware: true,
+    shieldMalwareUpdates: false,
+    shieldFingerprint: true,
+    shieldCustomRules: '',
     passkeyList: true,
   },
   notifications: {
@@ -479,6 +498,13 @@ export function normalizeNebulaSettings(
       cookieBannerBlocking: typeof p?.cookieBannerBlocking === 'boolean'
         ? p.cookieBannerBlocking
         : d.privacy.cookieBannerBlocking,
+      shield: typeof p?.shield === 'boolean' ? p.shield : d.privacy.shield,
+      shieldAds: typeof p?.shieldAds === 'boolean' ? p.shieldAds : d.privacy.shieldAds,
+      shieldTrackers: typeof p?.shieldTrackers === 'boolean' ? p.shieldTrackers : d.privacy.shieldTrackers,
+      shieldMalware: typeof p?.shieldMalware === 'boolean' ? p.shieldMalware : d.privacy.shieldMalware,
+      shieldMalwareUpdates: typeof p?.shieldMalwareUpdates === 'boolean' ? p.shieldMalwareUpdates : d.privacy.shieldMalwareUpdates,
+      shieldFingerprint: typeof p?.shieldFingerprint === 'boolean' ? p.shieldFingerprint : d.privacy.shieldFingerprint,
+      shieldCustomRules: typeof p?.shieldCustomRules === 'string' ? p.shieldCustomRules.slice(0, 20000) : d.privacy.shieldCustomRules,
       passkeyList: typeof p?.passkeyList === 'boolean' ? p.passkeyList : d.privacy.passkeyList,
     },
     notifications: {

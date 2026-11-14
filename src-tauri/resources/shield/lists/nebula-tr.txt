@@ -1,0 +1,47 @@
+! Title: Nebula, Turkish sites
+! Description: Hiding rules written and kept by Nebula for what the other lists do not cover. The lists the shield ships are written for sites
+!   in English: when a Turkish site's advertisements are stopped, the box the site keeps open for them stays on the page as an empty band.
+! This list is not fetched or generated (scripts/build-shield-lists.mjs does not touch it); a rule goes in when it has been seen on the
+!   real page, with the advertisement in it, and a selector is as narrow as the page lets it be.
+! Part of the "Advertisements" switch: turning that off turns this off.
+
+! Hurriyet, Milliyet, Fanatik, CNN Turk: one publisher's page layout and one advertising vendor (Medyanet, a DFP renderer): the masthead above
+! the news, the full-width slots, the sidebar and card slots. These pages keep their boxes open with their own "display: ... !important"
+! rules, which a plain class selector loses to; ":not(#nebula)" adds the weight of an id so that the hiding rule wins (nothing has that id).
+hurriyet.com.tr,milliyet.com.tr,fanatik.com.tr,cnnturk.com##.medyanet-header:not(#nebula)
+hurriyet.com.tr,milliyet.com.tr,fanatik.com.tr,cnnturk.com##.medyanet-fullwidth-adv:not(#nebula)
+hurriyet.com.tr,milliyet.com.tr,fanatik.com.tr,cnnturk.com##.adRenderer.dfp:not(#nebula)
+milliyet.com.tr,fanatik.com.tr##.main-card-ads-vertical:not(#nebula)
+hurriyet.com.tr##section.adv.masthead-header
+hurriyet.com.tr##section.adv.adv-desktop:not(#nebula)
+hurriyet.com.tr##.advMasthead
+cnnturk.com##div.adv.adv-desktop:not(#nebula)
+cnnturk.com##.four-horizontal-news-card__adv
+milliyet.com.tr##.card-ads
+milliyet.com.tr##.main-card-ads:not(#nebula)
+milliyet.com.tr##.ads-new-widget
+
+! Sabah: the 300x250 slots in the columns
+sabah.com.tr##div.advert.w300
+
+! Haberturk: the masthead zone and the grey box kept open for it
+haberturk.com##.ads-zone
+haberturk.com##.masthead-top
+
+! Sozcu: the mastheads, the 300x250 boxes and the "reklam" sections
+sozcu.com.tr##div.ad.masthead
+sozcu.com.tr##div.ad.ad-box
+sozcu.com.tr##div.ad.h-100
+sozcu.com.tr##section.reklam
+sozcu.com.tr###rup-sticky-banner-container
+
+! NTV: the GPT slots and the Dygital display boxes
+ntv.com.tr##.js-gpt-ad
+ntv.com.tr##.dyg-class.dyg-display
+
+! Mynet: every advertising column (the page keeps them open while they load)
+mynet.com##div.col-adv
+mynet.com##.trc_related_container
+
+! Webtekno: the advertising columns
+webtekno.com##div.adv-col

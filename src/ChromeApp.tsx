@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DownloadManager } from './components/DownloadManager/DownloadManager'
 import { TabSearch } from './components/TabSearch/TabSearch'
-import { SiteInfoPanel } from './components/SiteInfoPanel/SiteInfoPanel'
+import { ShieldPanel } from './components/ShieldPanel/ShieldPanel'
 import { PrivateBrowsingPanel } from './components/PrivateBrowsingPanel/PrivateBrowsingPanel'
 import { ExtensionsPanel } from './components/ExtensionsPanel/ExtensionsPanel'
 import { SemiLunarMenu } from './components/SemiLunarMenu/SemiLunarMenu'
@@ -418,6 +418,7 @@ export function ChromeApp() {
       origin,
       hostname: target.hostname,
       protectionDisabled: hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
+      shieldOn: settings.privacy.shield && !hostHasSiteException(target.hostname, settings.privacy.siteExceptions),
       darkenWebpagesOverride:
         settings.appearance.darkenWebpagesSiteOverrides[target.hostname] ?? 'default',
       permissionPromptsAllowed,
@@ -428,7 +429,7 @@ export function ChromeApp() {
         location: fallbackPermission,
       },
     }
-  }, [activeUrl, catalog.activeTabId, settings.appearance.darkenWebpagesSiteOverrides, settings.privacy.permissionPolicy, settings.privacy.permissionExceptions, settings.privacy.siteExceptions, siteInfoState, tabById])
+  }, [activeUrl, catalog.activeTabId, settings.appearance.darkenWebpagesSiteOverrides, settings.privacy.permissionPolicy, settings.privacy.permissionExceptions, settings.privacy.shield, settings.privacy.siteExceptions, siteInfoState, tabById])
 
   useEffect(() => {
     const floatingPanelHeight = chromeOverlayMinimumHeight({
@@ -858,6 +859,8 @@ export function ChromeApp() {
         setSiteInfoOpen((current) => !current)
         void emitChromeAction({ type: 'request-site-info' })
       }}
+      shieldState={!settings.privacy.shield ? 'off' : effectiveSiteInfoState.protectionDisabled ? 'site-off' : 'on'}
+      shieldBlocked={effectiveSiteInfoState.shieldSummary?.total ?? effectiveSiteInfoState.shieldBlocked ?? 0}
       getSession={getSession}
       previewOnHover={semiLunar.previewOnHover}
       homeAlwaysOpen={tutorialUi.semiLunar.homeAlwaysOpen ?? semiLunar.homeAlwaysOpen}
@@ -938,18 +941,29 @@ export function ChromeApp() {
       )}
 
       {siteInfoOpen && effectiveSiteInfoState.hostname && effectiveSiteInfoState.origin && effectiveSiteInfoState.shortcutId && (
-        <SiteInfoPanel
+        <ShieldPanel
           state={effectiveSiteInfoState}
           favicon={tabById.get(effectiveSiteInfoState.shortcutId)?.favicon}
           top={adaptiveLunar.height + 12}
           usage={activeSensitiveUsage}
+          protections={{
+            shield: settings.privacy.shield,
+            ads: settings.privacy.shieldAds,
+            trackers: settings.privacy.shieldTrackers,
+            malware: settings.privacy.shieldMalware,
+            fingerprint: settings.privacy.shieldFingerprint,
+          }}
           onClose={() => setSiteInfoOpen(false)}
-          onToggleProtection={() => {
+          onToggleSite={() => {
             void emitChromeAction({
               type: 'set-site-protection',
               hostname: effectiveSiteInfoState.hostname!,
               disabled: !effectiveSiteInfoState.protectionDisabled,
             })
+          }}
+          onOpenSettings={() => {
+            setSiteInfoOpen(false)
+            void emitChromeAction({ type: 'open-shield-settings' })
           }}
           onSetDarkening={(mode) => {
             void emitChromeAction({

@@ -67,13 +67,19 @@ test('a connection reset no longer opens a dialog by itself: the error page has 
   const shell = read('src/components/BrowserShell/BrowserShell.tsx')
   const native = read('src-tauri/src/tab_error_page.rs')
 
-  // The page shows no prompt of its own any more: the native side only emits the request when the page's button asks.
-  assert.equal(native.split('emit_compatibility_request(').length - 1, 3, 'its definition, the message handler and nothing else')
+  // The page shows no prompt of its own: the native side only emits the request when the page's button asks.
+  assert.equal(native.split('emit_compatibility_request(').length - 1, 3, 'its definition, the one place that asks for it and nothing else')
   assert.doesNotMatch(native, /emit_compatibility_request\(\s+&app_for_handler/)
-  assert.match(native, /handle_compat_message\(&message_app, &message_label, &raw\)/)
-  // Only a message from the page Nebula built counts, and the address comes from Nebula, not from the message.
-  assert.match(native, /!source\.starts_with\("data:text\/html"\)\s+\|\| !top_level\.starts_with\("data:text\/html"\)/)
-  assert.match(native, /let Some\(\(url, status\)\) = compat_page_for\(code\)/)
+  // A page has no channel to the app (window.chrome.webview is masked from every page, error pages included), so the button is a
+  // navigation to an address that cannot exist, with the code of its page, seen and cancelled when it starts.
+  assert.doesNotMatch(native, /nebula-compat-retry|WebMessageReceived/, 'no message channel that a page could never use')
+  assert.match(native, /COMPAT_RETRY_URL: &str = "https:\/\/nebula-compat\.invalid\/retry\?code="/)
+  assert.match(native, /location\.href = \{compat_url_js\}/)
+  assert.match(native, /let Some\(\(url, status\)\) = compat_page_for\(code\)/, 'the failed address comes from Nebula, not from the address')
+  const privacy = read('src-tauri/src/webview_privacy.rs')
+  const at = privacy.indexOf('handle_compat_navigation(')
+  assert.ok(at > 0)
+  assert.match(privacy.slice(at, at + 400), /args\.SetCancel\(true\)\?;\s*return Ok\(\(\)\);/, 'the navigation is always cancelled')
 
   // The window turns the protections off, loads the site again, and decides from what the tab shows.
   assert.match(shell, /void runCompatibilityTrial\(\{/)

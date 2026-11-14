@@ -26,11 +26,14 @@ mod extension_window_profile;
 mod extension_worker;
 mod external_open;
 mod favicon_fetch;
+#[cfg(target_os = "windows")]
+mod fingerprint;
 mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
 mod http_response;
 mod layout_audit;
+mod legacy_blocker;
 mod local_document;
 mod main_webview_layout;
 mod media_session;
@@ -55,6 +58,11 @@ mod secure_password_vault;
 mod shell_isolation;
 mod shell_split;
 mod shell_state_store;
+mod shield;
+#[cfg(target_os = "windows")]
+mod shield_block_page;
+#[cfg(target_os = "windows")]
+mod shield_updates;
 mod site_fullscreen_window;
 mod site_ui;
 #[cfg(all(target_os = "windows", feature = "split-driver"))]
@@ -66,7 +74,6 @@ mod tab_error_page;
 mod tab_fullscreen;
 mod tab_metadata;
 mod tab_shortcuts;
-mod ublock_extension;
 mod ui_watchdog;
 mod wallpaper_media;
 mod weather_location;
@@ -825,6 +832,34 @@ async fn webview_profile_storage_usage(
         .map_err(|error| error.to_string())?
 }
 
+/// What Nebula's shield stopped for the page of a tab: the count, by kind, and the sites it stopped most. For the shield panel and
+/// the counter on its button.
+#[tauri::command]
+fn shield_page_summary(label: String) -> shield::PageSummary {
+    shield::page_summary(&label)
+}
+
+/// What the shield has stopped in total on this device, and the lists it is made of, for its page in the settings.
+#[derive(serde::Serialize)]
+struct ShieldStats {
+    totals: shield::Totals,
+    lists: Vec<shield::ListInfo>,
+}
+
+#[tauri::command]
+fn shield_stats() -> ShieldStats {
+    ShieldStats {
+        totals: shield::totals(),
+        lists: shield::list_info(),
+    }
+}
+
+/// Starts the count of what the shield stopped again from nothing.
+#[tauri::command]
+fn shield_reset_stats(app: tauri::AppHandle) {
+    shield::reset_totals(&app);
+}
+
 /// `label` is only kept so callers need no change: site permissions are always the
 /// browser profile's (through its owner), never those of the webview the label names.
 #[tauri::command]
@@ -869,7 +904,7 @@ fn webview_set_shortcut_bindings(
 }
 
 #[tauri::command]
-fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result<(), String> {
+async fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result<(), String> {
     use tauri::Manager;
 
     if !label.starts_with("nebula-tab-") {
@@ -894,6 +929,11 @@ fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
+
+    // The shield's scripts for the site are put in the tab first, and the navigation waits for them: see `prepare_navigation`.
+    if matches!(parsed.scheme(), "http" | "https") {
+        webview_privacy::prepare_navigation(&app, &label, parsed.as_str()).await;
+    }
 
     webview.navigate(parsed).map_err(|error| error.to_string())
 }
@@ -1974,6 +2014,9 @@ pub fn run() {
             tab_error_page::setup_tab_error_page(app.handle(), "main")
                 .map_err(std::io::Error::other)?;
 
+            // The shield's engine takes a moment to make; it is started now so that it is ready before the first page.
+            shield::start_at_launch(app.handle());
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -2065,8 +2108,11 @@ pub fn run() {
             webview_clear_browsing_data,
             webview_profile_storage_usage,
             webview_clear_site_permissions,
+            shield_page_summary,
+            shield_stats,
+            shield_reset_stats,
             webview_factory_reset_profiles,
-            ublock_extension::ublock_extension_info,
+            legacy_blocker::legacy_blocker_retire,
             extension_download::extension_download_checked,
             extension_install::extension_package_manage,
             extension_host::extension_host_list,
@@ -2076,9 +2122,6 @@ pub fn run() {
             extension_host::extension_host_click,
             extension_host::extension_host_browse,
             extension_runtime::extension_runtime_version,
-            ublock_extension::ublock_extension_install,
-            ublock_extension::ublock_extension_status,
-            ublock_extension::ublock_extension_ready,
             webview_setup_branding,
             webview_apply_browser_identity,
             webview_execute_script,

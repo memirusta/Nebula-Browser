@@ -93,7 +93,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "KALKAN",
         "title": "Korunuyorsun",
-        "body": "Nebula reklamları ve izleyicileri uBlock Origin Lite ile, çerez bannerlarını kendi kalkanıyla engeller. Bir site bozulursa o site için korumayı site bilgisinden kapatabilirsin.",
+        "body": "Nebula reklamları, izleyicileri ve çerez bannerlarını kendi kalkanıyla engeller. Bir site bozulursa o site için korumayı site bilgisinden kapatabilirsin.",
         "action": "Hiçbir şey yapman gerekmiyor."
       }
     ],
@@ -151,7 +151,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "SHIELD",
         "title": "You're protected",
-        "body": "Nebula blocks ads and trackers with uBlock Origin Lite and cookie banners with its own shield. If a site breaks, you can turn the protection off for that site from its site info.",
+        "body": "Nebula blocks ads, trackers and cookie banners with its own shield. If a site breaks, you can turn the protection off for that site from its site info.",
         "action": "Nothing for you to do."
       }
     ],
@@ -199,7 +199,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "ESCUDO",
         "title": "Tu navegación está protegida",
-        "body": "Nebula bloquea anuncios y rastreadores con uBlock Origin Lite y los banners de cookies con su propio escudo. Si un sitio falla, puedes desactivar la protección para ese sitio desde su información.",
+        "body": "Nebula bloquea anuncios, rastreadores y banners de cookies con su propio escudo. Si un sitio falla, puedes desactivar la protección para ese sitio desde su información.",
         "action": "No tienes que hacer nada."
       }
     ],
@@ -247,7 +247,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "SCHUTZ",
         "title": "Du bist geschützt",
-        "body": "Nebula blockiert Werbung und Tracker mit uBlock Origin Lite und Cookie-Banner mit einem eigenen Schutz. Funktioniert eine Website nicht richtig, kannst du den Schutz für sie in den Website-Infos ausschalten.",
+        "body": "Nebula blockiert Werbung, Tracker und Cookie-Banner mit einem eigenen Schutz. Funktioniert eine Website nicht richtig, kannst du den Schutz für sie in den Website-Infos ausschalten.",
         "action": "Du musst nichts tun."
       }
     ],
@@ -295,7 +295,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "PROTECTION",
         "title": "Ta navigation est protégée",
-        "body": "Nebula bloque les publicités et les traqueurs avec uBlock Origin Lite, et les bandeaux de cookies avec sa propre protection. Si un site ne fonctionne pas, tu peux désactiver la protection pour ce site depuis ses informations.",
+        "body": "Nebula bloque les publicités, les traqueurs et les bandeaux de cookies avec sa propre protection. Si un site ne fonctionne pas, tu peux désactiver la protection pour ce site depuis ses informations.",
         "action": "Tu n’as rien à faire."
       }
     ],
@@ -343,7 +343,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "PERLINDUNGAN",
         "title": "Kamu terlindungi",
-        "body": "Nebula memblokir iklan dan pelacak dengan uBlock Origin Lite, serta banner cookie dengan perlindungannya sendiri. Jika sebuah situs bermasalah, kamu dapat mematikan perlindungan untuk situs itu dari info situs.",
+        "body": "Nebula memblokir iklan, pelacak, dan banner cookie dengan perlindungannya sendiri. Jika sebuah situs bermasalah, kamu dapat mematikan perlindungan untuk situs itu dari info situs.",
         "action": "Kamu tidak perlu berbuat apa-apa."
       }
     ],
@@ -391,7 +391,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "ЗАЩИТА",
         "title": "Вы под защитой",
-        "body": "Nebula блокирует рекламу и трекеры с помощью uBlock Origin Lite, а баннеры cookie — собственной защитой. Если сайт работает неправильно, защиту для него можно отключить в сведениях о сайте.",
+        "body": "Nebula блокирует рекламу, трекеры и баннеры cookie собственной защитой. Если сайт работает неправильно, защиту для него можно отключить в сведениях о сайте.",
         "action": "Ничего делать не нужно."
       }
     ],
@@ -439,7 +439,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "PROTEZIONE",
         "title": "La tua navigazione è protetta",
-        "body": "Nebula blocca pubblicità e tracker con uBlock Origin Lite e i banner dei cookie con una protezione propria. Se un sito non funziona, puoi disattivare la protezione per quel sito dalle sue informazioni.",
+        "body": "Nebula blocca pubblicità, tracker e banner dei cookie con una protezione propria. Se un sito non funziona, puoi disattivare la protezione per quel sito dalle sue informazioni.",
         "action": "Non devi fare nulla."
       }
     ],
@@ -487,7 +487,7 @@ const COPY: Record<NebulaLocale, TutorialCopy> = {
         "target": "shield",
         "eyebrow": "保護",
         "title": "保護されています",
-        "body": "Nebula は uBlock Origin Lite で広告とトラッカーを、独自の保護で Cookie バナーをブロックします。サイトが正しく表示されないときは、サイト情報からそのサイトの保護をオフにできます。",
+        "body": "Nebula は広告、トラッカー、Cookie バナーを独自の保護でブロックします。サイトが正しく表示されないときは、サイト情報からそのサイトの保護をオフにできます。",
         "action": "操作は必要ありません。"
       }
     ],

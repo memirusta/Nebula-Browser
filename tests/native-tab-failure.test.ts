@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nativeTabFailureMessage } from '../src/core/nativeTabFailure.ts'
 
-test('native Rust errors identify protection startup failures and retain diagnostics', () => {
-  const result = nativeTabFailureMessage({ errorValue: 'Could not prepare writable uBlock extension: access denied' }, 'tr')
-  assert.match(result.message, /Reklam engelleme/)
+test('native Rust errors keep their diagnostics next to the general explanation', () => {
+  const result = nativeTabFailureMessage({ errorValue: 'Could not create the web view: access denied' }, 'tr')
+  assert.match(result.message, /Sayfa başlatılamadı/)
   assert.match(result.message, /access denied/)
 })
 

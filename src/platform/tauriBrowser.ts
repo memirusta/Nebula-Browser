@@ -9,6 +9,7 @@ import {
   shortcutIdForTabWebviewLabel,
   tabWebviewLabel,
 } from '../core/browserTab'
+import { EMPTY_SHIELD_PAGE_SUMMARY, type ShieldPageSummary } from '../core/shieldSummary'
 import { KeyedLifecycleQueue } from '../core/keyedLifecycleQueue'
 import { createCoalescedRestoreRepair, hasUsableWindowClientSize, restoreBrowsingSurfaces } from '../core/mainWebviewRestore'
 import { createLayoutAuditor, findLayoutFaults, type LayoutAudit } from '../core/layoutAudit'
@@ -44,9 +45,6 @@ import {
   browserWebviewPhysicalBounds,
 } from './windowClientBounds'
 
-// Native wait is 15 s (UBLOCK_READY_TIMEOUT); this one only covers the IPC round trip
-// on top of it, so a hung host cannot hold tab creation forever.
-const UBLOCK_READY_TIMEOUT_MS = 18_000
 const LAYOUT_DEBOUNCE_MS = 120
 const WEBVIEW_CREATE_TIMEOUT_MS = 15_000
 const INITIAL_PREWARM_DELAY_MS = 5_000
@@ -88,17 +86,6 @@ const BACKGROUND_ACTIVE_HOSTS = [
 
 const PREWARMED_TAB_PREFIX = 'nebula-tab-prewarmed-'
 
-export interface UblockExtensionInfo {
-  extensionRoot: string
-  version: string
-  sourceSha256: string
-}
-
-export interface UblockRuntimeStatus {
-  installed: boolean
-  enabled: boolean
-}
-
 export interface SiteCompatibilityRequest {
   tabLabel: string
   url: string
@@ -115,91 +102,29 @@ export function listenSiteCompatibilityRequests(
   )
 }
 
+export interface ShieldLeaveRequest {
+  tabLabel: string
+}
+
+/** The person pressed "go back" on the page of a site the shield stopped, in a tab that has no earlier page (see shield_block_page.rs). */
+export function listenShieldLeaveRequests(
+  onRequest: (request: ShieldLeaveRequest) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri) return Promise.resolve(() => {})
+  return listen<ShieldLeaveRequest>('nebula-shield-leave', ({ payload }) => onRequest(payload))
+}
+
 type ExtensionWebviewOptions = WebviewOptions & {
   browserExtensionsEnabled: boolean
 }
 
-let ublockInfoPromise: Promise<UblockExtensionInfo> | null = null
-let ublockProfileReadyPromise: Promise<void> | null = null
-
-/** Asks the host whether uBO Lite's background has finished starting. The host reads it
- * from the extension's own worker in the browser profile, so it does not depend on the
- * shell's page or on which environment the shell runs in. Bounded: failing to confirm
- * only loses the "rules are in place before the first page" guarantee. */
-async function waitForUblockRules(): Promise<void> {
-  try {
-    await Promise.race([
-      invoke<boolean>('ublock_extension_ready'),
-      new Promise<void>((resolve) => window.setTimeout(resolve, UBLOCK_READY_TIMEOUT_MS)),
-    ])
-  } catch {
-    // Not ready is not an error for the caller; the first navigation still works.
-  }
-}
-
-export function getUblockExtensionInfo(): Promise<UblockExtensionInfo> {
-  if (!ublockInfoPromise) {
-    ublockInfoPromise = invoke<UblockExtensionInfo>(
-      'ublock_extension_info',
-    ).catch((error) => {
-      ublockInfoPromise = null
-      throw error
-    })
-  }
-
-  return ublockInfoPromise
-}
-
-export function getUblockRuntimeStatus(
-  shortcutId: string,
-): Promise<UblockRuntimeStatus> {
-  return invoke<UblockRuntimeStatus>('ublock_extension_status', {
-    label: tabWebviewLabel(shortcutId),
-  })
-}
-
-async function ensureUblockProfile(label: string): Promise<void> {
-  if (!ublockProfileReadyPromise) {
-    ublockProfileReadyPromise = (async () => {
-      let status = await invoke<UblockRuntimeStatus>(
-        'ublock_extension_status',
-        { label },
-      )
-
-      let installedNow = false
-
-      if (!status.installed || !status.enabled) {
-        status = await invoke<UblockRuntimeStatus>(
-          'ublock_extension_install',
-          { label },
-        )
-        installedNow = true
-      }
-
-      if (!status.installed || !status.enabled) {
-        throw new Error(
-          'uBlock Origin Lite was not enabled for the browser profile',
-        )
-      }
-
-      if (installedNow) {
-        await waitForUblockRules()
-      } else {
-        void waitForUblockRules()
-      }
-    })().catch((error) => {
-      ublockProfileReadyPromise = null
-      throw error
-    })
-  }
-
-  return ublockProfileReadyPromise
-}
-
-/** Install/verify uBO while the home screen is visible so first navigation stays fast. */
-export async function prewarmUblockProfile(): Promise<void> {
-  if (!isTauri) return
-  await ensureUblockProfile(currentBrowserWindowLabel())
+/**
+ * Takes away the content blocker that earlier versions of Nebula installed in the browser profile (a bundled uBlock Origin Lite):
+ * Nebula blocks with its own shield now. Cheap when there is nothing to take away; a failure is tried again at the next start.
+ */
+export async function retireLegacyBlocker(): Promise<boolean> {
+  if (!isTauri) return false
+  return invoke<boolean>('legacy_blocker_retire')
 }
 
 export interface BrowserPrivacyOptions {
@@ -214,6 +139,13 @@ export interface BrowserPrivacyOptions {
   permissionPolicy: 'ask' | 'block'
   permissionExceptions: string
   cookieBannerBlocking: boolean
+  shield: boolean
+  shieldAds: boolean
+  shieldTrackers: boolean
+  shieldMalware: boolean
+  shieldMalwareUpdates: boolean
+  shieldFingerprint: boolean
+  shieldCustomRules: string
   passkeyList: boolean
   siteNotifications: boolean
   showNotificationContent: boolean
@@ -266,6 +198,13 @@ let privacyOptions: BrowserPrivacyOptions = {
   permissionPolicy: 'ask',
   permissionExceptions: '',
   cookieBannerBlocking: true,
+  shield: true,
+  shieldAds: true,
+  shieldTrackers: true,
+  shieldMalware: true,
+  shieldMalwareUpdates: false,
+  shieldFingerprint: true,
+  shieldCustomRules: '',
   passkeyList: true,
   siteNotifications: true,
   showNotificationContent: true,
@@ -404,6 +343,36 @@ export async function setBrowseForceDarkOptions(
     ],
     'Failed to apply webpage darkening to browser tabs or popup windows',
   )
+}
+
+/** What Nebula's shield stopped for the page of a tab: how many, of which kind, and which sites most (nothing when the shield is off or the tab is unknown). */
+export async function readShieldPageSummary(shortcutId: string): Promise<ShieldPageSummary> {
+  if (!isTauri) return EMPTY_SHIELD_PAGE_SUMMARY
+  const summary = await invoke<ShieldPageSummary>('shield_page_summary', { label: tabWebviewLabel(shortcutId) })
+  return {
+    total: Number.isFinite(summary?.total) ? summary.total : 0,
+    ads: Number.isFinite(summary?.ads) ? summary.ads : 0,
+    trackers: Number.isFinite(summary?.trackers) ? summary.trackers : 0,
+    top: Array.isArray(summary?.top) ? summary.top : [],
+  }
+}
+
+export interface ShieldStats {
+  /** What the shield stopped in total on this device; `sinceMs` is when the count began. */
+  totals: { ads: number; trackers: number; malware: number; since_ms: number }
+  /** The lists the shield is made of; `own` is for the ones Nebula writes itself. */
+  lists: { name: string; rules: number; own: boolean }[]
+}
+
+export async function readShieldStats(): Promise<ShieldStats | null> {
+  if (!isTauri) return null
+  return invoke<ShieldStats>('shield_stats')
+}
+
+/** Starts the count of what the shield stopped again from nothing. */
+export async function resetShieldStats(): Promise<void> {
+  if (!isTauri) return
+  await invoke('shield_reset_stats')
 }
 
 export async function setBrowsePrivacyOptions(
@@ -2025,16 +1994,6 @@ export async function prewarmBrowseWebview(): Promise<void> {
       )
       return
     }
-
-    await traceTransitionCall(
-      traceId,
-      'browser.prewarm.ensure-ublock',
-      { label: currentBrowserWindowLabel() },
-      () =>
-        ensureUblockProfile(
-          currentBrowserWindowLabel(),
-        ),
-    )
 
     const label =
       `${PREWARMED_TAB_PREFIX}${currentBrowserWindowId()}-${++prewarmSequence}`
@@ -3664,19 +3623,6 @@ async function getOrCreateTabWebview(
      * activation commit. This prevents WebView2's uninitialised creation
      * surface from ever appearing inside the visible client area.
      */
-
-    await traceTransitionCall(
-      traceId,
-      'browser.webview.ensure-ublock',
-      {
-        shortcutId,
-        label,
-      },
-      () =>
-        ensureUblockProfile(
-          currentBrowserWindowLabel(),
-        ),
-    )
 
     try {
       const webviewOptions:

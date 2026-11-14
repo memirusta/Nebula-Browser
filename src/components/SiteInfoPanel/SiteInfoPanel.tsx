@@ -27,6 +27,8 @@ interface SiteInfoPanelProps {
   ) => void
   onResetPermissions: () => void
   onClearSiteData: () => void
+  /** Shown inside another panel (the shield's, as its Site tab): no frame, no header, no protection switch (the other tab has it), and it does not close on a click outside. */
+  embedded?: boolean
 }
 
 type PermissionName = 'camera' | 'microphone' | 'location' | 'screen'
@@ -63,6 +65,7 @@ const COPY = {
     resetPermissions: 'İzinleri sıfırla',
     clearDataConfirm: 'Tekrar tıkla: verileri temizle',
     clearSiteData: 'Site verilerini temizle',
+    shieldBlocked: 'Bu sayfada engellenen',
   },
   en: {
     inUse: 'In use now',
@@ -95,6 +98,7 @@ const COPY = {
     resetPermissions: 'Reset permissions',
     clearDataConfirm: 'Click again to clear data',
     clearSiteData: 'Clear site data',
+    shieldBlocked: 'Blocked on this page',
   },
   es: {
     inUse: 'En uso ahora',
@@ -127,6 +131,7 @@ const COPY = {
     resetPermissions: 'Restablecer permisos',
     clearDataConfirm: 'Haz clic de nuevo para borrar los datos',
     clearSiteData: 'Borrar datos del sitio',
+    shieldBlocked: 'Bloqueado en esta página',
   },
   de: {
     inUse: 'Wird gerade verwendet',
@@ -159,6 +164,7 @@ const COPY = {
     resetPermissions: 'Berechtigungen zurücksetzen',
     clearDataConfirm: 'Zum Löschen der Daten erneut klicken',
     clearSiteData: 'Websitedaten löschen',
+    shieldBlocked: 'Auf dieser Seite blockiert',
   },
   fr: {
     inUse: 'Utilisé actuellement',
@@ -191,6 +197,7 @@ const COPY = {
     resetPermissions: 'Réinitialiser les autorisations',
     clearDataConfirm: 'Cliquez à nouveau pour effacer les données',
     clearSiteData: 'Effacer les données du site',
+    shieldBlocked: 'Bloqué sur cette page',
   },
   id: {
     inUse: 'Sedang digunakan',
@@ -223,6 +230,7 @@ const COPY = {
     resetPermissions: 'Atur ulang izin',
     clearDataConfirm: 'Klik lagi untuk menghapus data',
     clearSiteData: 'Hapus data situs',
+    shieldBlocked: 'Diblokir di halaman ini',
   },
   ru: {
     inUse: 'Используется сейчас',
@@ -255,6 +263,7 @@ const COPY = {
     resetPermissions: 'Сбросить разрешения',
     clearDataConfirm: 'Нажмите ещё раз, чтобы удалить данные',
     clearSiteData: 'Удалить данные сайта',
+    shieldBlocked: 'Заблокировано на этой странице',
   },
   it: {
     inUse: 'In uso ora',
@@ -287,6 +296,7 @@ const COPY = {
     resetPermissions: 'Reimposta autorizzazioni',
     clearDataConfirm: 'Fai di nuovo clic per cancellare i dati',
     clearSiteData: 'Cancella dati del sito',
+    shieldBlocked: 'Bloccati in questa pagina',
   },
   ja: {
     inUse: '現在使用中',
@@ -319,6 +329,7 @@ const COPY = {
     resetPermissions: '権限をリセット',
     clearDataConfirm: 'もう一度クリックしてデータを消去',
     clearSiteData: 'サイトデータを消去',
+    shieldBlocked: 'このページでブロックした数',
   },
 } as const
 
@@ -365,6 +376,7 @@ export function SiteInfoPanel({
   onSetNotificationPermission,
   onResetPermissions,
   onClearSiteData,
+  embedded = false,
 }: SiteInfoPanelProps) {
   const { locale } = useLocale()
   const copy = getLocaleCopy(COPY, locale)
@@ -372,8 +384,9 @@ export function SiteInfoPanel({
   const closeRef = useRef<HTMLButtonElement>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const secure = state.url?.startsWith('https://') === true
-  useDialogFocusTrap({ active: true, containerRef: panelRef, initialFocusRef: closeRef, onEscape: onClose })
+  useDialogFocusTrap({ active: !embedded, containerRef: panelRef, initialFocusRef: closeRef, onEscape: onClose })
   useEffect(() => {
+    if (embedded) return
     const onPointerDown = (event: PointerEvent) => {
       if (!panelRef.current?.contains(event.target as Node)) onClose()
     }
@@ -381,7 +394,7 @@ export function SiteInfoPanel({
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true)
     }
-  }, [onClose])
+  }, [embedded, onClose])
 
   const permissionLabel = (
     name: PermissionName,
@@ -404,14 +417,14 @@ export function SiteInfoPanel({
   return (
     <section
       ref={panelRef}
-      className={[styles.panel, floatingPanel.viewportBound].join(' ')}
-      style={{ '--panel-preferred-top': `${top}px`, '--panel-height': '1100px' } as CSSProperties}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="nebula-site-info-title"
-      tabIndex={-1}
+      className={embedded ? styles.embedded : [styles.panel, floatingPanel.viewportBound].join(' ')}
+      style={embedded ? undefined : ({ '--panel-preferred-top': `${top}px`, '--panel-height': '1100px' } as CSSProperties)}
+      role={embedded ? undefined : 'dialog'}
+      aria-modal={embedded ? undefined : 'true'}
+      aria-labelledby={embedded ? undefined : 'nebula-site-info-title'}
+      tabIndex={embedded ? undefined : -1}
     >
-      <header className={styles.header}>
+      {!embedded && <header className={styles.header}>
         <span className={styles.favicon} aria-hidden="true">
           {favicon ? <img src={favicon} alt="" /> : 'N'}
         </span>
@@ -428,7 +441,7 @@ export function SiteInfoPanel({
         >
           ×
         </button>
-      </header>
+      </header>}
 
       <div className={styles.securityRow}>
         <span className={styles.securityIcon} aria-hidden="true">
@@ -444,29 +457,41 @@ export function SiteInfoPanel({
         </span>
       </div>
 
-      <div className={styles.sectionHeader}>
-        <span>{copy.protection}</span>
-        <span className={state.protectionDisabled ? styles.warning : styles.good}>
-          {state.protectionDisabled ? copy.off : copy.on}
-        </span>
-      </div>
-      <button
-        type="button"
-        className={styles.protectionButton}
-        onClick={onToggleProtection}
-      >
-        <span className={styles.shield} aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.3 7 10 4.2-1.7 7-5.4 7-10V6l-7-3Z" /></svg>
-        </span>
-        <span>
-          <strong>
-            {state.protectionDisabled ? copy.enableProtection : copy.disableProtection}
-          </strong>
-          <small>
-            {copy.protectionHint}
-          </small>
-        </span>
-      </button>
+      {!embedded && (
+        <>
+        <div className={styles.sectionHeader}>
+          <span>{copy.protection}</span>
+          <span className={state.protectionDisabled ? styles.warning : styles.good}>
+            {state.protectionDisabled ? copy.off : copy.on}
+          </span>
+        </div>
+        <button
+          type="button"
+          className={styles.protectionButton}
+          onClick={onToggleProtection}
+        >
+          <span className={styles.shield} aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.3 7 10 4.2-1.7 7-5.4 7-10V6l-7-3Z" /></svg>
+          </span>
+          <span>
+            <strong>
+              {state.protectionDisabled ? copy.enableProtection : copy.disableProtection}
+            </strong>
+            <small>
+              {copy.protectionHint}
+            </small>
+          </span>
+        </button>
+
+        {state.shieldOn && typeof state.shieldBlocked === 'number' && (
+          <div className={styles.notificationRow}>
+            <span>{copy.shieldBlocked}</span>
+            <strong>{state.shieldBlocked}</strong>
+          </div>
+        )}
+
+        </>
+      )}
 
       <div className={styles.notificationRow}>
         <span>{copy.darkening}</span>

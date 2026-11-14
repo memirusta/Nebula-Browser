@@ -27,10 +27,10 @@ mod imp {
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
     };
     use webview2_com::{
-        ExecuteScriptCompletedHandler, NavigationCompletedEventHandler,
-        NavigationStartingEventHandler, NotificationReceivedEventHandler,
-        PermissionRequestedEventHandler, SetPermissionStateCompletedHandler,
-        WebResourceRequestedEventHandler,
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler, ExecuteScriptCompletedHandler,
+        NavigationCompletedEventHandler, NavigationStartingEventHandler,
+        NotificationReceivedEventHandler, PermissionRequestedEventHandler,
+        SetPermissionStateCompletedHandler, WebResourceRequestedEventHandler,
     };
     use windows::core::PCWSTR;
     use windows::Win32::System::Com::IStream;
@@ -58,6 +58,24 @@ mod imp {
         pub permission_exceptions: Vec<String>,
         #[serde(default)]
         pub cookie_banner_blocking: bool,
+        /// Nebula's own shield: the engine and the lists that ship with the app (see `shield.rs`).
+        #[serde(default)]
+        pub shield: bool,
+        /// Which kinds of lists the shield uses, and the person's own rules (see `shield::Config`).
+        #[serde(default = "default_true")]
+        pub shield_ads: bool,
+        #[serde(default = "default_true")]
+        pub shield_trackers: bool,
+        #[serde(default = "default_true")]
+        pub shield_malware: bool,
+        #[serde(default)]
+        pub shield_custom_rules: String,
+        /// The person let Nebula download the list of live malware addresses (see `shield_updates.rs`).
+        #[serde(default)]
+        pub shield_malware_updates: bool,
+        /// What a page can read about the machine is made slightly different for each site (see `fingerprint.rs`).
+        #[serde(default)]
+        pub shield_fingerprint: bool,
         /// Passkeys are listed in Nebula's own list (see `passkeys.rs`). A tab whose options are not known yet
         /// counts as on, see `passkey_list_enabled`.
         #[serde(default = "default_true")]
@@ -163,6 +181,218 @@ mod imp {
         "criteo.com",
         "criteo.net",
     ];
+
+    /// A kind of script the shield puts in a tab with `AddScriptToExecuteOnDocumentCreated`: what it was made for, and the ids to take
+    /// it away again.
+    ///
+    /// Registering is asynchronous: the id comes back after a moment. A navigation that starts before it has come back must not lose
+    /// it (the script would stay in the tab for every page after, and for the fingerprint protection that would be another site's
+    /// number), so each registration is numbered and a late id of a registration that is no longer the current one is taken away
+    /// the moment it arrives.
+    struct ScriptSlot {
+        tabs: Mutex<HashMap<String, SlotState>>,
+    }
+
+    #[derive(Default)]
+    struct SlotState {
+        generation: u64,
+        key: Option<String>,
+        ids: Vec<String>,
+    }
+
+    impl ScriptSlot {
+        fn new() -> Self {
+            Self {
+                tabs: Mutex::new(HashMap::new()),
+            }
+        }
+
+        /// A navigation of `label` begins and wants the script for `key` (or none, with `None`). Takes away what is there, unless it
+        /// is already the script for this key. Returns the number of the registration to make, if one is to be made.
+        unsafe fn begin(
+            &self,
+            core: &ICoreWebView2,
+            label: &str,
+            key: Option<&str>,
+        ) -> Option<u64> {
+            let (generation, taken) = {
+                let mut tabs = self.tabs.lock().ok()?;
+                let state = tabs.entry(label.to_string()).or_default();
+                if key.is_some() && state.key.as_deref() == key {
+                    return None;
+                }
+                state.generation += 1;
+                state.key = key.map(str::to_string);
+                (state.generation, std::mem::take(&mut state.ids))
+            };
+            for id in taken {
+                let _ = core.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(id));
+            }
+            key.map(|_| generation)
+        }
+
+        /// The id of a registration came back. Whether it is still the one that is wanted.
+        fn record(&self, label: &str, generation: u64, id: &str) -> bool {
+            let Ok(mut tabs) = self.tabs.lock() else {
+                return false;
+            };
+            let Some(state) = tabs.get_mut(label) else {
+                return false;
+            };
+            if state.generation != generation {
+                return false;
+            }
+            state.ids.push(id.to_string());
+            true
+        }
+
+        /// Registers `script` for the registration `generation` of `label`. `done` is told when the browser has taken it (or refused).
+        unsafe fn register(
+            &'static self,
+            core: &ICoreWebView2,
+            label: &str,
+            generation: u64,
+            script: &str,
+            done: Option<std::sync::mpsc::Sender<()>>,
+        ) {
+            let owner = label.to_string();
+            let for_removal = core.clone();
+            let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(
+                move |_result, id| {
+                    if let Some(done) = &done {
+                        let _ = done.send(());
+                    }
+                    if !id.is_empty() && !self.record(&owner, generation, &id) {
+                        let _ =
+                            for_removal.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(id));
+                    }
+                    Ok(())
+                },
+            ));
+            let script = HSTRING::from(script);
+            let _ = core.AddScriptToExecuteOnDocumentCreated(PCWSTR(script.as_ptr()), &handler);
+        }
+    }
+
+    /// The script of the page that is loading in a tab: the scriptlets and the hiding rules the lists have for that address. It is
+    /// made for each page, when the navigation starts, and taken away at the next one.
+    static PAGE_SCRIPTS: LazyLock<ScriptSlot> = LazyLock::new(ScriptSlot::new);
+
+    /// The fingerprint protection of the site a tab is on. It is the same script for every page of one site, so it stays for as long
+    /// as the person is on that site, and is replaced when they go to another.
+    static FINGERPRINT_SCRIPTS: LazyLock<ScriptSlot> = LazyLock::new(ScriptSlot::new);
+
+    /// Puts the shield's script for the page at `uri` in the tab, to run before the page's own scripts, and takes away the one of the
+    /// page before. Called at the start of a navigation, on the thread of the window.
+    unsafe fn put_page_script(
+        core: &ICoreWebView2,
+        label: &str,
+        uri: &str,
+        current: &PrivacyOptions,
+        done: Option<&std::sync::mpsc::Sender<()>>,
+    ) -> usize {
+        // A blank page, an error page or a page of the app itself is not a page of the web: what the tab has is left as it is, so that
+        // the way back to a site finds its script already in place (a script that was taken away and put in again for it could be
+        // too late for a page that loads at once).
+        let Ok(parsed) = url::Url::parse(uri) else {
+            return 0;
+        };
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return 0;
+        }
+        let engine = crate::shield::engine();
+        let host = parsed.host_str().map(str::to_ascii_lowercase);
+        let (Some(engine), Some(host), false) =
+            (engine, host, is_excepted(uri, &current.site_exceptions))
+        else {
+            PAGE_SCRIPTS.begin(core, label, None);
+            return 0;
+        };
+        // The lists speak of the host of a page (never of its path), so the script is the same for every page of a host: it stays for
+        // as long as the tab is on that host, and is made again when the engine has been made again.
+        let key = format!("{}:{host}", crate::shield::epoch());
+        if let Some(generation) = PAGE_SCRIPTS.begin(core, label, Some(&key)) {
+            if let Some(script) = engine.page_script(uri) {
+                PAGE_SCRIPTS.register(core, label, generation, &script, done.cloned());
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// Puts the fingerprint protection in the tab for the page at `uri`, in every frame of it, and takes away what an earlier site
+    /// had. Called at the start of a navigation, on the thread of the window.
+    unsafe fn put_fingerprint_script(
+        core: &ICoreWebView2,
+        label: &str,
+        uri: &str,
+        current: &PrivacyOptions,
+        done: Option<&std::sync::mpsc::Sender<()>>,
+    ) -> usize {
+        let wanted = if current.shield_fingerprint && !is_excepted(uri, &current.site_exceptions) {
+            crate::fingerprint::script_for(uri)
+        } else {
+            None
+        };
+        let generation =
+            FINGERPRINT_SCRIPTS.begin(core, label, wanted.as_ref().map(|(site, _)| site.as_str()));
+        if let (Some(generation), Some((_, script))) = (generation, wanted) {
+            FINGERPRINT_SCRIPTS.register(core, label, generation, &script, done.cloned());
+            return 1;
+        }
+        0
+    }
+
+    /// Before the shell navigates a tab to `url`: puts the shield's scripts for that site in the tab and waits until the browser has
+    /// them (a moment, and only when the tab is not already on that site). Put in at the start of the navigation, the script could
+    /// reach a page that is answered at once (a cached one, a nearby server) after the page was made, and that page would run
+    /// without it. The navigation that follows finds the scripts in place and leaves them.
+    pub async fn prepare_navigation(app: &AppHandle, label: &str, url: &str) {
+        let current = options(label);
+        if !current.shield {
+            return;
+        }
+        let Some(webview) = app.get_webview(label) else {
+            return;
+        };
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel::<usize>(1);
+        let (label_owned, url_owned) = (label.to_string(), url.to_string());
+        let sent = webview.with_webview(move |inner| unsafe {
+            let started = match inner.controller().CoreWebView2() {
+                Ok(core) => {
+                    put_page_script(&core, &label_owned, &url_owned, &current, Some(&done_tx))
+                        + put_fingerprint_script(
+                            &core,
+                            &label_owned,
+                            &url_owned,
+                            &current,
+                            Some(&done_tx),
+                        )
+                }
+                Err(_) => 0,
+            };
+            let _ = started_tx.send(started);
+        });
+        if sent.is_err() {
+            return;
+        }
+        // Waiting is for the blocking pool: the registrations are answered on the thread of the window.
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let Ok(started) = started_rx.recv_timeout(std::time::Duration::from_millis(800)) else {
+                return;
+            };
+            for _ in 0..started {
+                if done_rx
+                    .recv_timeout(std::time::Duration::from_millis(800))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        })
+        .await;
+    }
 
     fn options(label: &str) -> PrivacyOptions {
         OPTIONS
@@ -913,6 +1143,25 @@ mod imp {
         if next.private_mode {
             crate::notification_history::remember_private_tab(label)?;
         }
+        // The shield's engine is built in the background the first time a tab asks for the shield, and again when the lists or
+        // the person's rules change.
+        crate::shield::remember_choice(app, next.shield);
+        let keeps_malware_list = next.shield && next.shield_malware && next.shield_malware_updates;
+        // Before the configuration is made: what was downloaded earlier is part of it, and turning the setting off takes it away.
+        crate::shield_updates::set_enabled(app, keeps_malware_list);
+        if next.shield {
+            crate::shield::configure(&crate::shield::Config {
+                ads: next.shield_ads,
+                trackers: next.shield_trackers,
+                malware: next.shield_malware,
+                custom_rules: next.shield_custom_rules.clone(),
+                urlhaus: if keeps_malware_list {
+                    crate::shield_updates::current()
+                } else {
+                    None
+                },
+            });
+        }
         let previous = OPTIONS
             .lock()
             .map_err(|error| error.to_string())?
@@ -1005,6 +1254,7 @@ mod imp {
         let store_label = label.to_string();
         let notification_app = app.clone();
         let permission_app = app.clone();
+        let navigation_app = app.clone();
         let setup_error = Arc::new(Mutex::new(None::<String>));
         let inner_setup_error = Arc::clone(&setup_error);
 
@@ -1049,7 +1299,70 @@ mod imp {
                         let Some(args) = args else { return Ok(()) };
                         let uri = take_string(|value| args.Uri(value));
                         remember_top_level_uri(&navigation_label, &uri);
-                        if !options(&navigation_label).https_only {
+                        crate::shield::start_page(&navigation_label);
+                        // The error page's "try with protections off" button: the address it goes to is not opened; the window
+                        // is asked for the trial.
+                        if crate::tab_error_page::handle_compat_navigation(
+                            &navigation_app,
+                            &navigation_label,
+                            &uri,
+                        ) {
+                            args.SetCancel(true)?;
+                            return Ok(());
+                        }
+                        // "Go back" on the page of a stopped site that has no earlier page: the window closes the tab.
+                        if crate::shield_block_page::leave_requested(&uri) {
+                            args.SetCancel(true)?;
+                            let _ = tauri::Emitter::emit(
+                                &navigation_app,
+                                "nebula-shield-leave",
+                                serde_json::json!({ "tabLabel": navigation_label }),
+                            );
+                            return Ok(());
+                        }
+                        // "Continue anyway" on the page of a stopped site: the address it goes to is not opened; the choice is
+                        // remembered for the site in this tab and the site is opened instead.
+                        if let Some(site) = crate::shield_block_page::continue_target(&uri) {
+                            args.SetCancel(true)?;
+                            crate::shield::allow_site(&navigation_label, &site);
+                            if let Some(sender) = sender.as_ref() {
+                                sender.Navigate(&HSTRING::from(site))?;
+                            }
+                            return Ok(());
+                        }
+                        let current = options(&navigation_label);
+                        // A site the malware lists name is not opened: its place is taken by a page that says why, with a way
+                        // to go on for the day a list is wrong.
+                        if current.shield
+                            && current.shield_malware
+                            && (uri.starts_with("http://") || uri.starts_with("https://"))
+                            && !is_excepted(&uri, &current.site_exceptions)
+                            && !crate::shield::site_is_allowed(&navigation_label, &uri)
+                        {
+                            if let (Some(sender), Some(engine)) =
+                                (sender.as_ref(), crate::shield::engine())
+                            {
+                                if engine.guard_document(&uri).is_some() {
+                                    crate::shield::note_malware_page();
+                                    args.SetCancel(true)?;
+                                    crate::tab_error_page::show_blocked_site(sender, &uri);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        if current.shield {
+                            if let Some(sender) = sender.as_ref() {
+                                put_page_script(sender, &navigation_label, &uri, &current, None);
+                                put_fingerprint_script(
+                                    sender,
+                                    &navigation_label,
+                                    &uri,
+                                    &current,
+                                    None,
+                                );
+                            }
+                        }
+                        if !current.https_only {
                             return Ok(());
                         }
                         let Some(upgraded) = https_upgrade(&uri) else {
@@ -1075,7 +1388,7 @@ mod imp {
                         let Some(args) = args else { return Ok(()) };
                         let current = options(&resource_label);
                         let needs_resource_policy =
-                            current.block_trackers || current.strict_cookies;
+                            current.block_trackers || current.strict_cookies || current.shield;
                         let mut resource_context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
                         let is_document = args.ResourceContext(&mut resource_context).is_ok()
                             && resource_context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT;
@@ -1103,6 +1416,62 @@ mod imp {
                         }
 
                         let excepted = is_excepted(&uri, &current.site_exceptions);
+
+                        // Nebula's own shield: the lists that ship with the app, asked about every request but the page itself.
+                        // Until the engine is ready, requests go through.
+                        if current.shield && !excepted && !is_document {
+                            if let Some(engine) = crate::shield::engine() {
+                                let top_uri = remembered_top_level_uri(&resource_label)
+                                    .or_else(|| {
+                                        sender.as_ref().map(|core| take_string(|value| core.Source(value)))
+                                    })
+                                    .unwrap_or_default();
+                                let kind = crate::shield::request_type_for_context(resource_context.0);
+                                let decision = engine.decide(&uri, &top_uri, kind);
+                                if !matches!(decision, crate::shield::Decision::Allow) {
+                                    // A rule that names a stand-in (`$redirect=noop.js`) is answered with it, so that a page that
+                                    // waits for the script finds one; anything else gets the answer its kind can live with.
+                                    let stand_in = match &decision {
+                                        crate::shield::Decision::Redirect { resource, .. } => {
+                                            crate::shield::stand_in_body(resource)
+                                        }
+                                        _ => None,
+                                    };
+                                    let response = match stand_in {
+                                        Some((mime, body)) => {
+                                            let stream = windows::Win32::UI::Shell::SHCreateMemStream(Some(&body));
+                                            environment.CreateWebResourceResponse(
+                                                stream.as_ref(),
+                                                200,
+                                                &HSTRING::from("Redirected by Nebula Shield"),
+                                                &HSTRING::from(format!(
+                                                    "Content-Type: {mime}\r\nCache-Control: no-store\r\nX-Nebula-Shield: blocked"
+                                                )),
+                                            )?
+                                        }
+                                        None => {
+                                            let (status, reason, headers) =
+                                                crate::shield::stand_in_for(kind);
+                                            environment.CreateWebResourceResponse(
+                                                None::<&IStream>,
+                                                status,
+                                                &HSTRING::from(reason),
+                                                &HSTRING::from(headers),
+                                            )?
+                                        }
+                                    };
+                                    args.SetResponse(&response)?;
+                                    let block_kind = match &decision {
+                                        crate::shield::Decision::Block { kind, .. }
+                                        | crate::shield::Decision::Redirect { kind, .. } => *kind,
+                                        crate::shield::Decision::Allow => crate::shield::BlockKind::Ad,
+                                    };
+                                    crate::shield::note_blocked(&resource_label, block_kind, &uri);
+                                    return Ok(());
+                                }
+                            }
+                        }
+
                         if current.block_trackers
                             && !excepted
                             && is_tracker(&uri, &current.custom_block_list)
@@ -1358,6 +1727,7 @@ mod imp {
     }
 
     pub fn teardown(app: &AppHandle, label: &str) {
+        crate::shield::forget(label);
         let tokens = TOKENS
             .lock()
             .ok()
@@ -1399,6 +1769,33 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn the_id_of_a_script_that_is_no_longer_wanted_is_refused_when_it_arrives() {
+            let slot = ScriptSlot::new();
+            // A navigation began and wanted registration number 2 (it was number 1 for the page before it).
+            slot.tabs.lock().unwrap().insert(
+                "tab".to_string(),
+                SlotState {
+                    generation: 2,
+                    key: Some("example.com".to_string()),
+                    ids: Vec::new(),
+                },
+            );
+            assert!(
+                !slot.record("tab", 1, "late-id"),
+                "the page before it: take the script away"
+            );
+            assert!(slot.record("tab", 2, "current-id"));
+            assert!(
+                !slot.record("another-tab", 2, "x"),
+                "a tab it knows nothing of"
+            );
+            assert_eq!(
+                slot.tabs.lock().unwrap()["tab"].ids,
+                vec!["current-id".to_string()]
+            );
+        }
 
         #[test]
         fn upgrades_remote_http_but_not_local_network_addresses() {
@@ -1507,7 +1904,8 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 pub use imp::{
-    apply, notification_delivery_policy, passkey_list_enabled, teardown, PrivacyOptions,
+    apply, notification_delivery_policy, passkey_list_enabled, prepare_navigation, teardown,
+    PrivacyOptions,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1961,6 +2359,13 @@ pub struct PrivacyOptions {
     pub permission_policy: String,
     pub permission_exceptions: Vec<String>,
     pub cookie_banner_blocking: bool,
+    pub shield: bool,
+    pub shield_ads: bool,
+    pub shield_trackers: bool,
+    pub shield_malware: bool,
+    pub shield_custom_rules: String,
+    pub shield_malware_updates: bool,
+    pub shield_fingerprint: bool,
     pub site_notifications: bool,
     pub show_notification_content: bool,
     pub notification_allowed_sites: Vec<String>,
@@ -1978,6 +2383,9 @@ pub fn apply(
 
 #[cfg(not(target_os = "windows"))]
 pub fn teardown(_app: &tauri::AppHandle, _label: &str) {}
+
+#[cfg(not(target_os = "windows"))]
+pub async fn prepare_navigation(_app: &tauri::AppHandle, _label: &str, _url: &str) {}
 
 #[cfg(not(target_os = "windows"))]
 pub fn notification_delivery_policy(_label: &str, _origin: &str) -> NotificationDeliveryPolicy {

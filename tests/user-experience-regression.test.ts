@@ -153,10 +153,10 @@ test('tab performance housekeeping releases lifecycle keys and idle memory polli
   assert.match(browser, /browser\.prewarm\.skip-memory-pressure/)
   assert.match(browser, /browser\.prewarm\.discard-memory-pressure/)
   assert.match(browser, /const INITIAL_PREWARM_DELAY_MS = 5_000/)
-  assert.match(
-    main,
-    /prewarmUblockProfile\(\)[\s\S]*?scheduleInitialBrowseWebviewPrewarm\(\)/,
-  )
+  // The first prewarm no longer waits for a content blocker to be installed in the profile: it starts at once, and the blocker
+  // earlier versions installed is taken away beside it.
+  assert.match(main, /scheduleInitialBrowseWebviewPrewarm\(\)[\s\S]*?retireLegacyBlocker\(\)/)
+  assert.doesNotMatch(main, /prewarmUblockProfile/)
   assert.doesNotMatch(browser, /webview_set_memory_usage|setLowMemoryFallback/)
   assert.match(
     browser,
