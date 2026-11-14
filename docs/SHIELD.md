@@ -9,7 +9,7 @@ uygulamanın içinde, WebView2'nin kendi olaylarıyla çalışıyor. Bu belge na
 |---|---|---|
 | Motor | `src-tauri/src/shield.rs` | `adblock` (Brave'in adblock-rust'ı, MPL-2.0) ile her isteğe karar verir: geçir, engelle (sessiz yanıt), yönlendir (sahte kaynak). Sayfa script'ini ve sekme başı sayacı da burası üretir. |
 | Karar noktası | `src-tauri/src/webview_privacy.rs` | `WebResourceRequested` (her istek), `NavigationStarting` (her gezinti). Ayarlar `webview_apply_privacy` ile gelir. |
-| Listeler | `src-tauri/resources/shield/lists/` | EasyList, EasyPrivacy, uBlock filters/privacy/unbreak/badware, Peter Lowe. Uygulamaya `include_str!` ile gömülü. `MANIFEST.json` kaynağı, hash'i ve kural sayısını söyler. |
+| Listeler | `src-tauri/resources/shield/lists/` | EasyList, EasyPrivacy, uBlock filters/privacy/unbreak/badware, Peter Lowe. Uygulamaya `include_str!` ile gömülü. `MANIFEST.json` kaynağı, hash'i ve kural sayısını söyler. Bir de elle yazılan `nebula-tr.txt` var (aşağıya bak). |
 | Scriptlet'ler | `src-tauri/resources/shield/ubo-scriptlets.json` | uBlock Origin'in scriptlet'leri ve yönlendirme kaynakları (153 + 47). Listeler `+js(...)` ile çağırır. |
 | Zararlı site sayfası | `src-tauri/src/shield_block_page.rs` | Malware listesinde olan bir sitenin açılışını durdurur ve yerine 9 dilli bir sayfa koyar. |
 | URLhaus | `src-tauri/src/shield_updates.rs` | İsteğe bağlı: canlı zararlı adres listesini indirir (aşağıya bak). |
@@ -42,6 +42,13 @@ uygulamanın içinde, WebView2'nin kendi olaylarıyla çalışıyor. Bu belge na
 - **Worker'lar.** Parmak izi script'i worker'lara ulaşmaz; yazı tipleri, ekran ve saat dilimi kapsam dışı.
 - **Reklam gösterildi ölçülemiyor.** YouTube reklam medyasını reklam engelleyici olmadan da 403 ile reddettiği için ölçüm araçları yalnızca vekil
   sayılar (oyuncu yanıtındaki yerleşimler, reklam istekleri, engellenenler) verir.
+
+## Kendi listemiz: `nebula-tr`
+
+Listelerin geri kalanı İngilizce siteler için yazılmış: Türk bir sitede reklam engellenince sitenin reklama ayırdığı kutu boş bir bant olarak
+kalıyor (örnek: Hürriyet'te üstte 300 piksellik boşluk). `src-tauri/resources/shield/lists/nebula-tr.txt` bu kutuları gizleyen, elle yazılmış
+kuralları tutar. İndirilmez, `build-shield-lists.mjs` ona dokunmaz, "Reklamlar" anahtarına bağlıdır (kapatılırsa bu da kapanır). Kural, reklamın
+içinde olduğu gerçek sayfada görülüp eklenir ve seçici sayfanın izin verdiği kadar dardır. Şimdilik Hürriyet, Milliyet, Fanatik, CNN Türk, Sabah, Habertürk, Sözcü, NTV, Mynet ve Webtekno var.
 
 ## Ağa ne gider
 

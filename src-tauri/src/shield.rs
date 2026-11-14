@@ -42,7 +42,11 @@ pub const LISTS: &[(&str, &str)] = &[
         include_str!("../resources/shield/lists/ubo-badware.txt"),
     ),
     ("pgl", include_str!("../resources/shield/lists/pgl.txt")),
-    // Written by hand, not fetched: what the lists above do not have.
+    // Written by hand, not fetched: hiding rules for Turkish sites that the lists above (written for English ones) do not have.
+    (
+        "nebula-tr",
+        include_str!("../resources/shield/lists/nebula-tr.txt"),
+    ),
     (
         "nebula-youtube",
         include_str!("../resources/shield/lists/nebula-youtube.txt"),
@@ -118,7 +122,7 @@ impl Config {
     /// (`ubo-unbreak`) is always part of it: without it the other lists would break pages the person never asked to break.
     fn wants(&self, name: &str) -> bool {
         match name {
-            "easylist" | "ubo-filters" | "pgl" | "nebula-youtube" => self.ads,
+            "easylist" | "ubo-filters" | "pgl" | "nebula-tr" | "nebula-youtube" => self.ads,
             "easyprivacy" | "ubo-privacy" => self.trackers,
             "ubo-badware" => self.malware,
             _ => true,
@@ -730,6 +734,47 @@ mod tests {
             ),
             "{host}"
         );
+    }
+
+    #[test]
+    fn the_hiding_rules_for_turkish_sites_close_the_boxes_the_advertisements_leave_and_follow_the_advertising_switch(
+    ) {
+        let on = ShieldEngine::build(&Config::default());
+        let off = ShieldEngine::build(&Config {
+            ads: false,
+            ..Config::default()
+        });
+        for (page, selector) in [
+            (
+                "https://www.hurriyet.com.tr/",
+                "section.adv.masthead-header",
+            ),
+            (
+                "https://www.hurriyet.com.tr/gundem/x-1/",
+                ".medyanet-header",
+            ),
+            ("https://www.sabah.com.tr/", "div.advert.w300"),
+            ("https://www.haberturk.com/", ".masthead-top"),
+            ("https://www.milliyet.com.tr/", ".card-ads"),
+            ("https://www.fanatik.com.tr/", ".adRenderer.dfp"),
+            ("https://www.cnnturk.com/", "div.adv.adv-desktop"),
+            ("https://www.sozcu.com.tr/", "div.ad.masthead"),
+            ("https://www.ntv.com.tr/", ".js-gpt-ad"),
+            ("https://www.mynet.com/", "div.col-adv"),
+            ("https://www.webtekno.com/", "div.adv-col"),
+        ] {
+            let script = on.page_script(page).unwrap_or_default();
+            assert!(script.contains(selector), "{page} {selector}");
+            assert!(
+                off.page_script(page)
+                    .is_none_or(|script| !script.contains(selector)),
+                "{page}: with the advertising lists off it is not hidden"
+            );
+        }
+        // Another site gets none of them.
+        assert!(on
+            .page_script("https://www.example.com/")
+            .is_none_or(|script| !script.contains(".medyanet-header")));
     }
 
     #[test]
