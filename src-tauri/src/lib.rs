@@ -26,6 +26,8 @@ mod extension_window_profile;
 mod extension_worker;
 mod external_open;
 mod favicon_fetch;
+#[cfg(target_os = "windows")]
+mod fingerprint;
 mod force_dark_pages;
 mod google_oauth;
 mod google_sync;
@@ -880,7 +882,7 @@ fn webview_set_shortcut_bindings(
 }
 
 #[tauri::command]
-fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result<(), String> {
+async fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result<(), String> {
     use tauri::Manager;
 
     if !label.starts_with("nebula-tab-") {
@@ -905,6 +907,11 @@ fn webview_navigate(app: tauri::AppHandle, label: String, url: String) -> Result
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
+
+    // The shield's scripts for the site are put in the tab first, and the navigation waits for them: see `prepare_navigation`.
+    if matches!(parsed.scheme(), "http" | "https") {
+        webview_privacy::prepare_navigation(&app, &label, parsed.as_str()).await;
+    }
 
     webview.navigate(parsed).map_err(|error| error.to_string())
 }
@@ -1984,6 +1991,9 @@ pub fn run() {
 
             tab_error_page::setup_tab_error_page(app.handle(), "main")
                 .map_err(std::io::Error::other)?;
+
+            // The shield's engine takes a moment to make; it is started now so that it is ready before the first page.
+            shield::start_at_launch(app.handle());
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(

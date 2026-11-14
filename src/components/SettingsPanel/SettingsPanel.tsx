@@ -1727,6 +1727,13 @@ function CategoryContent({
               disabled={!privacy.shield || !privacy.shieldMalware}
               onChange={() => onUpdate('privacy', 'shieldMalwareUpdates', !privacy.shieldMalwareUpdates)}
             />
+            <SettingToggleRow
+              label={t('shieldFingerprint')}
+              hint={t('shieldFingerprintHint')}
+              checked={privacy.shieldFingerprint}
+              disabled={!privacy.shield}
+              onChange={() => onUpdate('privacy', 'shieldFingerprint', !privacy.shieldFingerprint)}
+            />
             <SettingTextAreaRow
               label={t('shieldCustomRules')}
               hint={t('shieldCustomRulesHint')}

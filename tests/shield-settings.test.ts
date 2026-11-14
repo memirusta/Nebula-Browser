@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import vm from 'node:vm'
 
 // The settings module imports its neighbours without file extensions, which Node cannot load here, so (like the other tests of
 // the settings) this reads the source.
@@ -8,8 +9,8 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 test('the shield is on by default, with every kind of list on and no rules of the person; saved values of the wrong kind fall back', () => {
   const settings = read('src/core/nebulaSettings.ts')
-  assert.match(settings, /shield: true,\s+shieldAds: true,\s+shieldTrackers: true,\s+shieldMalware: true,\s+shieldMalwareUpdates: false,\s+shieldCustomRules: '',/)
-  for (const key of ['shieldAds', 'shieldTrackers', 'shieldMalware', 'shieldMalwareUpdates']) {
+  assert.match(settings, /shield: true,\s+shieldAds: true,\s+shieldTrackers: true,\s+shieldMalware: true,\s+shieldMalwareUpdates: false,\s+shieldFingerprint: true,\s+shieldCustomRules: '',/)
+  for (const key of ['shieldAds', 'shieldTrackers', 'shieldMalware', 'shieldMalwareUpdates', 'shieldFingerprint']) {
     assert.ok(settings.includes(`${key}: typeof p?.${key} === 'boolean' ? p.${key} : d.privacy.${key}`), key)
   }
   assert.match(settings, /shieldCustomRules: typeof p\?\.shieldCustomRules === 'string' \? p\.shieldCustomRules\.slice\(0, 20000\)/, 'cut at a size the native side takes')
@@ -17,12 +18,12 @@ test('the shield is on by default, with every kind of list on and no rules of th
 
 test('what the person chose reaches the native side, and the count is a registered, allowed command', () => {
   const browser = read('src/platform/tauriBrowser.ts')
-  for (const key of ['shieldAds', 'shieldTrackers', 'shieldMalware', 'shieldMalwareUpdates', 'shieldCustomRules']) assert.match(browser, new RegExp(`${key}:`), key)
+  for (const key of ['shieldAds', 'shieldTrackers', 'shieldMalware', 'shieldMalwareUpdates', 'shieldFingerprint', 'shieldCustomRules']) assert.match(browser, new RegExp(`${key}:`), key)
   assert.match(browser, /invoke<number>\('shield_blocked_count'/)
   assert.match(read('src-tauri/src/lib.rs'), /^\s+shield_blocked_count,$/m, 'registered with the handler')
   assert.match(read('src-tauri/permissions/webview-commands.toml'), /"shield_blocked_count"/, 'and allowed')
   const native = read('src-tauri/src/webview_privacy.rs')
-  for (const field of ['shield_ads', 'shield_trackers', 'shield_malware', 'shield_malware_updates', 'shield_custom_rules']) assert.match(native, new RegExp(`pub ${field}:`), field)
+  for (const field of ['shield_ads', 'shield_trackers', 'shield_malware', 'shield_malware_updates', 'shield_fingerprint', 'shield_custom_rules']) assert.match(native, new RegExp(`pub ${field}:`), field)
 })
 
 test('the site panel asks for a count only when the shield is on for the site, and shows it only then', () => {
@@ -93,4 +94,53 @@ test('the shield\'s hiding style waits for a document element, because its scrip
   const engine = read('src-tauri/src/shield.rs')
   assert.match(engine, /new MutationObserver/)
   assert.match(engine, /watch\.observe\(document, \{ childList: true \}\)/)
+})
+
+test('the fingerprint protection is off by default, runs only with the shield and not on a site the person excepted, and its script compiles', () => {
+  const settings = read('src/core/nebulaSettings.ts')
+  assert.match(settings, /shieldFingerprint: true,/)
+  assert.match(read('src/components/SettingsPanel/SettingsPanel.tsx'), /checked=\{privacy\.shieldFingerprint\}\s+disabled=\{!privacy\.shield\}/)
+  const privacy = read('src-tauri/src/webview_privacy.rs')
+  // Put in the tab at the start of a navigation, inside the shield's own condition, and only for a site that is not excepted.
+  const call = privacy.lastIndexOf('put_fingerprint_script(')
+  assert.ok(call > 0)
+  assert.match(privacy.slice(call - 600, call), /if current\.shield \{/)
+  const put = privacy.slice(privacy.indexOf('unsafe fn put_fingerprint_script('))
+  assert.match(put.slice(0, 600), /current\.shield_fingerprint && !is_excepted\(uri, &current\.site_exceptions\)/)
+  // The script has one place for its number, runs once for a window, and never touches a challenge that decides who is a person.
+  const script = read('src-tauri/resources/shield/fingerprint.js')
+  assert.equal(script.split('__SEED__').length - 1, 1)
+  assert.match(script, /Symbol\.for\('nebula\.fingerprint'\)/)
+  for (const challenge of ['challenges.cloudflare.com', 'hcaptcha.com', 'recaptcha.net', 'arkoselabs.com']) assert.ok(script.includes(challenge), challenge)
+  assert.doesNotThrow(() => new vm.Script(script.replace('__SEED__', '12345')), 'the script is valid JavaScript')
+})
+
+test('the engine is started as the app starts, unless the person left the shield off, so the first page is protected too', () => {
+  assert.match(read('src-tauri/src/lib.rs'), /shield::start_at_launch\(app\.handle\(\)\);/)
+  const engine = read('src-tauri/src/shield.rs')
+  assert.match(engine, /pub fn start_at_launch[\s\S]*?off_marker\(app\)\.is_some_and\(\|marker\| marker\.exists\(\)\)[\s\S]*?configure\(&Config::default\(\)\)/)
+  // What the window says is remembered for the next start, from the same place that sets the engine up.
+  assert.match(read('src-tauri/src/webview_privacy.rs'), /crate::shield::remember_choice\(app, next\.shield\);/)
+})
+
+test('the page script is kept for a host, not made again for every address: a blank or app page leaves it alone, and a new engine replaces it', () => {
+  const privacy = read('src-tauri/src/webview_privacy.rs')
+  const put = privacy.slice(privacy.indexOf('unsafe fn put_page_script('), privacy.indexOf('unsafe fn put_fingerprint_script('))
+  assert.match(put, /if !matches!\(parsed\.scheme\(\), "http" \| "https"\) \{\s*return 0;\s*\}/, 'not a web page: the tab is left as it is')
+  assert.match(put, /let key = format!\("\{\}:\{host\}", crate::shield::epoch\(\)\);/, 'one script for a host, for as long as the engine is the same')
+  assert.match(put, /PAGE_SCRIPTS\.begin\(core, label, None\)/, 'an excepted site, or no engine yet, has none')
+  assert.match(read('src-tauri/src/shield.rs'), /EPOCH\.fetch_add\(1, Ordering::SeqCst\)/)
+})
+
+test('a navigation the shell starts waits until the scripts of the shield for the site are in the tab, so a page that is answered at once is not ahead of them', () => {
+  const lib = read('src-tauri/src/lib.rs')
+  const navigate = lib.slice(lib.indexOf('async fn webview_navigate('), lib.indexOf('async fn webview_close_tab('))
+  assert.match(navigate, /webview_privacy::prepare_navigation\(&app, &label, parsed\.as_str\(\)\)\.await;[\s\S]*webview\.navigate\(parsed\)/, 'prepared first, then the navigation')
+  assert.match(navigate, /matches!\(parsed\.scheme\(\), "http" \| "https"\)/, 'only for a web address')
+  const privacy = read('src-tauri/src/webview_privacy.rs')
+  const prepare = privacy.slice(privacy.indexOf('pub async fn prepare_navigation('))
+  assert.match(prepare.slice(0, 600), /if !current\.shield \{\s*return;\s*\}/, 'nothing with the shield off')
+  assert.match(prepare, /recv_timeout\(std::time::Duration::from_millis\(800\)\)/, 'bounded: a browser that does not answer does not hold a navigation back for long')
+  // The navigation itself puts nothing in again for what is in place: the host is the key.
+  assert.match(privacy, /put_page_script\(sender, &navigation_label, &uri, &current, None\)/)
 })

@@ -121,6 +121,34 @@ impl Config {
     }
 }
 
+/// The style rule an action of the engine is, when it is only a plain selector with a style (`{"selector":[{"type":"css-selector",
+/// "arg":".x"}],"action":{"type":"style","arg":"min-height: 0 !important"}}`). An action that needs the page to be looked at
+/// (`:has-text`, `:upward`, an XPath) is none: this page layer has no runtime to do that.
+fn style_rule_of(action: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(action).ok()?;
+    let selector = value.get("selector")?.as_array()?;
+    let [only] = selector.as_slice() else {
+        return None;
+    };
+    if only.get("type")?.as_str()? != "css-selector" {
+        return None;
+    }
+    let selector = only.get("arg")?.as_str()?;
+    let style = value.get("action")?;
+    if style.get("type")?.as_str()? != "style" {
+        return None;
+    }
+    let declarations = style.get("arg")?.as_str()?;
+    // A selector or a declaration that could close the rule and open another is not a plain one.
+    if [selector, declarations]
+        .iter()
+        .any(|text| text.contains('{') || text.contains('}'))
+    {
+        return None;
+    }
+    Some(format!("{selector} {{ {declarations} }}"))
+}
+
 pub struct ShieldEngine {
     engine: Engine,
     /// What decides whether a site may be opened at all: the malware lists, and nothing else. Without it a rule of an advertising
@@ -234,20 +262,28 @@ impl ShieldEngine {
             body.push_str(&resources.injected_script);
             body.push_str("\n} catch (e) {}\n");
         }
-        if !resources.hide_selectors.is_empty() {
-            let mut selectors: Vec<&str> = resources
-                .hide_selectors
+        // One rule for each selector, never one rule for the lot: a selector the browser does not understand makes the whole rule it
+        // is in void, and one such selector among many hid nothing at all on YouTube.
+        let mut selectors: Vec<&str> = resources
+            .hide_selectors
+            .iter()
+            .map(String::as_str)
+            .collect();
+        selectors.sort_unstable();
+        let mut rules: Vec<String> = selectors
+            .iter()
+            .map(|selector| format!("{selector} {{ display: none !important; }}"))
+            .collect();
+        // Rules that give an element a style of their own (`site##.banner:style(min-height: 0 !important)`) come from the engine
+        // as actions: the ones that are only a plain selector and a style are the same thing as a rule.
+        rules.extend(
+            resources
+                .procedural_actions
                 .iter()
-                .map(String::as_str)
-                .collect();
-            selectors.sort_unstable();
-            // One rule for each selector, never one rule for the lot: a selector the browser does not understand makes the whole
-            // rule it is in void, and one such selector among many hid nothing at all on YouTube.
-            let css = selectors
-                .iter()
-                .map(|selector| format!("{selector} {{ display: none !important; }}"))
-                .collect::<Vec<_>>()
-                .join("\n");
+                .filter_map(|action| style_rule_of(action)),
+        );
+        if !rules.is_empty() {
+            let css = rules.join("\n");
             let css = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".to_string());
             // The script runs before the page has a document element, so there may be nowhere to put the style yet: it waits for
             // the first one to appear. (Putting it at once and finding nothing to put it in hid nothing at all.)
@@ -290,6 +326,14 @@ static ENGINE: RwLock<Option<Arc<ShieldEngine>>> = RwLock::new(None);
 /// What the engine should be made of now, and whether a thread is busy making it.
 static WANTED: Mutex<Option<Config>> = Mutex::new(None);
 static BUILDING: AtomicBool = AtomicBool::new(false);
+/// Which engine is in use: a number that grows with every engine that is put in place. What was made with one engine (the script of a
+/// page) is out of date when the number has moved.
+static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The number of the engine in use (see `EPOCH`).
+pub fn epoch() -> u64 {
+    EPOCH.load(Ordering::SeqCst)
+}
 static BLOCKED: Mutex<Option<HashMap<String, u32>>> = Mutex::new(None);
 
 /// The engine, once it is ready. Until then (a fraction of a second after the first tab asks for the shield) requests are let
@@ -332,9 +376,19 @@ pub fn configure(config: &Config) {
             BUILDING.store(false, Ordering::SeqCst);
             return;
         };
-        let built = Arc::new(ShieldEngine::build(&config));
+        // An engine that cannot be made (a list the engine chokes on) must not leave the shield stuck as "being made" for good: the
+        // one in use stays, and the next change of settings tries again.
+        let Ok(built) = std::panic::catch_unwind(|| ShieldEngine::build(&config)) else {
+            if let Ok(mut wanted) = WANTED.lock() {
+                *wanted = None;
+            }
+            BUILDING.store(false, Ordering::SeqCst);
+            return;
+        };
+        let built = Arc::new(built);
         if let Ok(mut engine) = ENGINE.write() {
             *engine = Some(built);
+            EPOCH.fetch_add(1, Ordering::SeqCst);
         }
         let still_wanted = WANTED.lock().ok().and_then(|wanted| wanted.clone());
         if still_wanted.as_ref() == Some(&config) {
@@ -351,6 +405,49 @@ pub fn note_blocked(label: &str) {
             .get_or_insert_with(HashMap::new)
             .entry(label.to_string())
             .or_insert(0) += 1;
+    }
+}
+
+/// The file whose presence says the person turned the shield off. The settings live in the window (its local storage); the app
+/// side only needs to know, when it starts, whether to have the engine ready before the first page, and this is how it knows.
+fn off_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    Some(
+        app.path()
+            .app_local_data_dir()
+            .ok()?
+            .join("shield")
+            .join("off"),
+    )
+}
+
+/// Starts making the engine as the app starts, unless the shield was left off, so that it is ready before the first page: a link
+/// that starts the app would otherwise be loaded while the engine is still being made, and that page would not be protected. What
+/// is made is the usual engine; when the window then says something else is wanted (their own rules, a list off), it is made again.
+pub fn start_at_launch(app: &tauri::AppHandle) {
+    if off_marker(app).is_some_and(|marker| marker.exists()) {
+        return;
+    }
+    configure(&Config::default());
+}
+
+/// What the window says about the shield (on or off) is remembered for the next start.
+pub fn remember_choice(app: &tauri::AppHandle, on: bool) {
+    use std::sync::atomic::AtomicU8;
+    // 0: not known yet, 1: on, 2: off. The window says it with every tab and every change, so only a change is written.
+    static LAST: AtomicU8 = AtomicU8::new(0);
+    let now = if on { 1 } else { 2 };
+    if LAST.swap(now, Ordering::SeqCst) == now {
+        return;
+    }
+    let Some(marker) = off_marker(app) else {
+        return;
+    };
+    if on {
+        let _ = std::fs::remove_file(&marker);
+    } else if let Some(folder) = marker.parent() {
+        let _ = std::fs::create_dir_all(folder);
+        let _ = std::fs::write(&marker, b"");
     }
 }
 
@@ -841,6 +938,73 @@ mod tests {
         assert!(
             !site_is_allowed(tab, "https://bad.example/"),
             "closing the tab forgets it"
+        );
+    }
+
+    #[test]
+    fn what_youtubes_player_checks_for_a_blocker_gets_the_answer_a_page_without_one_would_give() {
+        let engine = ShieldEngine::bundled();
+        // The player loads this script to see whether advertising is blocked, and waits for an answer when it finds none. The lists
+        // do not say "block" for it but "answer with a script that says all is well" (a redirect rule of uBlock's main list, which
+        // is only in the list when its yearly pieces are put together).
+        let decision = engine.decide(
+            "https://static.doubleclick.net/instream/ad_status.js",
+            "https://www.youtube.com/watch?v=abc",
+            "script",
+        );
+        let Decision::Redirect { resource } = decision else {
+            panic!("expected a redirect, got {decision:?}");
+        };
+        let (mime, body) = stand_in_body(&resource).expect("a data address");
+        assert_eq!(mime, "application/javascript");
+        assert!(String::from_utf8_lossy(&body).contains("google_ad_status"));
+    }
+
+    #[test]
+    fn a_rule_that_gives_an_element_a_style_is_put_in_the_page_and_one_that_needs_the_page_looked_at_is_not(
+    ) {
+        let engine = ShieldEngine::from_lists([concat!(
+            "news.example##.slot:style(min-height: 0 !important)\n",
+            "news.example##.plain\n",
+            "news.example##.promo:has-text(Sponsored)\n",
+        )]);
+        let script = engine
+            .page_script("https://news.example/story")
+            .expect("rules for news.example");
+        assert!(
+            script.contains(".slot { min-height: 0 !important }"),
+            "{script}"
+        );
+        assert!(script.contains(".plain { display: none !important; }"));
+        // A selector that needs the page looked at is a rule of its own in the style: the browser cannot read it and drops that rule
+        // alone, which is why each selector has its own.
+        assert!(
+            script.contains(".promo:has-text(Sponsored) { display: none !important; }"),
+            "{script}"
+        );
+        assert_eq!(style_rule_of("not json"), None);
+        assert_eq!(
+            style_rule_of(r#"{"selector":[{"type":"css-selector","arg":".a"}],"action":{"type":"style","arg":"color: red"}}"#).as_deref(),
+            Some(".a { color: red }")
+        );
+        assert_eq!(
+            style_rule_of(
+                r#"{"selector":[{"type":"css-selector","arg":".a"},{"type":"has-text","arg":"x"}],"action":{"type":"style","arg":"color: red"}}"#
+            ),
+            None
+        );
+        assert_eq!(
+            style_rule_of(
+                r#"{"selector":[{"type":"css-selector","arg":".a"}],"action":{"type":"remove"}}"#
+            ),
+            None
+        );
+        assert_eq!(
+            style_rule_of(
+                r#"{"selector":[{"type":"css-selector","arg":".a"}],"action":{"type":"style","arg":"color: red } body { display: none"}}"#
+            ),
+            None,
+            "a declaration cannot open another rule"
         );
     }
 

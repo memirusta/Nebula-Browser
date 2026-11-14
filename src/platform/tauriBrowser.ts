@@ -143,6 +143,7 @@ export interface BrowserPrivacyOptions {
   shieldTrackers: boolean
   shieldMalware: boolean
   shieldMalwareUpdates: boolean
+  shieldFingerprint: boolean
   shieldCustomRules: string
   passkeyList: boolean
   siteNotifications: boolean
@@ -201,6 +202,7 @@ let privacyOptions: BrowserPrivacyOptions = {
   shieldTrackers: true,
   shieldMalware: true,
   shieldMalwareUpdates: false,
+  shieldFingerprint: true,
   shieldCustomRules: '',
   passkeyList: true,
   siteNotifications: true,

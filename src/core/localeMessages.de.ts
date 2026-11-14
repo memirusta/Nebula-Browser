@@ -262,6 +262,8 @@ export const DE_LOCALE_MESSAGES = {
   "shieldMalwareHint": "Die Filter von uBlock Origin gegen Schadseiten",
   "shieldMalwareUpdates": "Schadseiten-Liste aktuell halten",
   "shieldMalwareUpdatesHint": "Lädt alle 12 Stunden die Liste von URLhaus mit Adressen herunter, die gerade Schadsoftware verbreiten, von malware-filter.gitlab.io. Das ist das Einzige, was Nebula für den Schutz herunterlädt. Aus: Es wird nichts heruntergeladen und die Liste wird gelöscht",
+  "shieldFingerprint": "Fingerprinting verringern",
+  "shieldFingerprintHint": "Macht das, was eine Website über deinen Computer auslesen kann (wie ein Canvas gezeichnet wird, wie Audio summiert, wie viele Kerne), für jede Website etwas anders und für eine Website immer gleich. Viel zu klein, um es zu sehen oder zu hören. Standardmäßig an; wenn der Bildeditor, ein Spiel oder die Anmeldung einer Website Probleme macht, schalte den Schutz für diese Website im Website-Panel aus",
   "shieldCustomRules": "Eigene Regeln",
   "shieldCustomRulesHint": "Eine Regel pro Zeile in der üblichen Filtersyntax, zum Beispiel ||ads.example^ oder example.com##.banner. Zeilen mit ! sind Notizen. Wird übernommen, sobald du außerhalb des Felds klickst",
   "cookieBannerBlockingHint": "Entfernt bekannte Cookie- und Einwilligungsdialoge; Websiteausnahmen gelten ebenfalls für diesen Schutz",

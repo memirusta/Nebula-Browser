@@ -68,7 +68,15 @@ Credentials may still be transmitted to websites when you choose to sign in to t
 
 ## Third-party components
 
-Nebula includes and uses open-source and platform components, including Microsoft WebView2 and uBlock Origin Lite.
+Nebula includes and uses open-source and platform components, including Microsoft WebView2, the adblock-rust engine, and the filter lists and scripts of EasyList, EasyPrivacy, uBlock Origin and Peter Lowe's server list.
+
+### Nebula Shield
+
+Nebula blocks advertising, trackers and harmful sites with its own built-in shield. The filter lists it uses are part of the app and are only replaced when Nebula itself is updated; the shield does not download anything on its own.
+
+There is one optional exception. If you turn on "Keep the malware list up to date" in Settings, Nebula downloads URLhaus's list of addresses that are serving malware right now, at most every 12 hours, from `malware-filter.gitlab.io` (one fixed HTTPS address, no cookies, no identifier). That server can see your IP address, as any website can. The setting is off by default, and turning it off deletes what was downloaded.
+
+The shield can also make what a website can read about your computer (canvas, audio and WebGL output, the number of processor cores) slightly different for each site, to make you harder to recognise across sites. This setting is on by default and can be turned off in Settings > Privacy, or per site from the site panel.
 
 These components and external services may be subject to their own privacy policies and terms.
 
