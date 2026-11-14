@@ -6,6 +6,7 @@ Nebula's own blocker (the shield, `src-tauri/src/shield.rs`) is built from third
 is downloaded at run time.
 
 - **Engine:** `adblock` (adblock-rust) by Brave Software, MPL-2.0. https://github.com/brave/adblock-rust
+  - `cssparser`, `selectors`, `cssparser-macros` and `dtoa-short` (the Servo project), MPL-2.0, and `phf*` and `precomputed-hash`, MIT: what the engine reads hiding rules with.
 - **Filter lists** (`src-tauri/resources/shield/lists/`):
   - EasyList and EasyPrivacy, https://easylist.to/. Dual licensed under GPL-3.0-or-later and CC BY-SA 3.0 (https://easylist.to/pages/licence.html).
   - uBlock filters, Privacy, Unbreak and Badware (uBlockOrigin/uAssets), https://github.com/uBlockOrigin/uAssets. Licensed as set out in

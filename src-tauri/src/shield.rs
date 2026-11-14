@@ -58,6 +58,13 @@ pub const LISTS: &[(&str, &str)] = &[
 /// filter lists ask for them by name (`+js(json-prune, ...)`) and the engine turns that into the script put in a page.
 const SCRIPTLETS: &str = include_str!("../resources/shield/ubo-scriptlets.json");
 
+/// What runs, in a page, the hiding rules that need the page to be looked at (`:has-text`, `:upward`, `:xpath`, `:matches-css` ...): a
+/// function that is given the rules as data. See the file for what it does and does not do.
+const PROCEDURAL: &str = include_str!("../resources/shield/procedural.js");
+
+/// How many rules of that kind one page is given; a list that has more for one site is read as far as this.
+const PROCEDURAL_RULES_PER_PAGE: usize = 400;
+
 /// What the shield does with a request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Decision {
@@ -326,6 +333,28 @@ impl ShieldEngine {
                 .iter()
                 .filter_map(|action| style_rule_of(action)),
         );
+        // The rules that are more than a selector and a style (`:has-text`, `:upward`, `:xpath` ...): the page runs them (see
+        // `PROCEDURAL`). Sorted, so that the same page gets the same script every time.
+        let mut procedural: Vec<&String> = resources
+            .procedural_actions
+            .iter()
+            .filter(|action| style_rule_of(action).is_none())
+            .collect();
+        procedural.sort_unstable();
+        let procedural: Vec<serde_json::Value> = procedural
+            .into_iter()
+            .filter_map(|action| serde_json::from_str(action).ok())
+            .take(PROCEDURAL_RULES_PER_PAGE)
+            .collect();
+        if !procedural.is_empty() {
+            if let Ok(data) = serde_json::to_string(&procedural) {
+                body.push_str(&format!(
+                    "try {{ ({})({}); }} catch (e) {{}}\n",
+                    PROCEDURAL.trim_end(),
+                    data
+                ));
+            }
+        }
         if !rules.is_empty() {
             let css = rules.join("\n");
             let css = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".to_string());
@@ -1021,6 +1050,16 @@ mod tests {
             ("https://www.ntv.com.tr/", ".js-gpt-ad"),
             ("https://www.mynet.com/", "div.col-adv"),
             ("https://www.webtekno.com/", "div.adv-col"),
+            ("https://www.takvim.com.tr/", "div.advert"),
+            ("https://www.haber7.com/", ".subhead-ad"),
+            // The style is a string of the script: its quotes have a backslash.
+            ("https://www.sporx.com/", r#"div[id^=\"dfp_\"]"#),
+            ("https://www.donanimhaber.com/", ".reklam-kare"),
+            ("https://shiftdelete.net/", ".sd-ad"),
+            ("https://www.yenisafak.com/", ".banner-ad-gap-masthead"),
+            ("https://arsiv.mackolik.com/", "div.top-banner"),
+            ("https://www.transfermarkt.com.tr/", "div.werbung"),
+            ("https://www.transfermarkt.de/", "div.werbung"),
         ] {
             let script = on.page_script(page).unwrap_or_default();
             assert!(script.contains(selector), "{page} {selector}");
@@ -1287,7 +1326,7 @@ mod tests {
     }
 
     #[test]
-    fn a_rule_that_gives_an_element_a_style_is_put_in_the_page_and_one_that_needs_the_page_looked_at_is_not(
+    fn a_rule_that_gives_an_element_a_style_is_put_in_the_page_and_one_that_needs_the_page_looked_at_is_run_by_the_page(
     ) {
         let engine = ShieldEngine::from_lists([concat!(
             "news.example##.slot:style(min-height: 0 !important)\n",
@@ -1302,10 +1341,12 @@ mod tests {
             "{script}"
         );
         assert!(script.contains(".plain { display: none !important; }"));
-        // A selector that needs the page looked at is a rule of its own in the style: the browser cannot read it and drops that rule
-        // alone, which is why each selector has its own.
+        // A selector that needs the page looked at is not a style rule (the browser cannot read it): the page is given it as data.
+        assert!(!script.contains(".promo:has-text(Sponsored) {"), "{script}");
         assert!(
-            script.contains(".promo:has-text(Sponsored) { display: none !important; }"),
+            script.contains(
+                r#"{"arg":".promo","type":"css-selector"},{"arg":"Sponsored","type":"has-text"}"#
+            ),
             "{script}"
         );
         assert_eq!(style_rule_of("not json"), None);
@@ -1496,6 +1537,32 @@ mod tests {
         assert!(lists
             .iter()
             .any(|list| list.name == "easylist" && !list.own));
+    }
+
+    #[test]
+    fn a_hiding_rule_that_needs_the_page_to_be_looked_at_is_given_to_the_page_as_data_and_a_plain_one_is_not(
+    ) {
+        let rules = "news.example##.card:has-text(Sponsored)\n\
+                     news.example##div.row:upward(2)\n\
+                     news.example##.plain\n\
+                     news.example##.tall:style(min-height: 0 !important)\n\
+                     other.example##.x:has-text(y)\n";
+        let engine = ShieldEngine::from_lists([rules]);
+        let script = engine
+            .page_script("https://news.example/story")
+            .expect("rules for this site");
+        assert!(script.contains("\"has-text\""), "{script}");
+        assert!(script.contains("\"Sponsored\""));
+        assert!(script.contains("\"upward\""));
+        // The function that runs them is in the page, and what is only a selector (or a selector and a style) is still a style rule.
+        assert!(script.contains("const matcherOf"));
+        assert!(script.contains(".plain { display: none !important; }"));
+        assert!(script.contains(".tall { min-height: 0 !important }"));
+        assert!(!script.contains("\"y\""), "another site's rule is not here");
+        // A page that has no such rule is not given the function.
+        let only_plain = ShieldEngine::from_lists(["news.example##.plain\n"]);
+        let script = only_plain.page_script("https://news.example/").unwrap();
+        assert!(!script.contains("const matcherOf"), "{script}");
     }
 
     #[test]
