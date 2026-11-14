@@ -54,7 +54,9 @@ test('the lists that ship hold no directive, are the put-together ones, and are 
   }
   assert.deepEqual(manifest.lists.map((list) => list.file), LISTS.map((list) => list.file))
   for (const entry of manifest.lists) {
-    const text = read(`src-tauri/resources/shield/lists/${entry.file}`)
+    // The manifest hashes the text as it was written, with a line feed at the end of a line; a checkout that turns line ends into
+    // carriage return and line feed (as on Windows) must not make a file that was not edited look edited.
+    const text = read(`src-tauri/resources/shield/lists/${entry.file}`).replace(/\r\n/g, '\n')
     assert.doesNotMatch(text, /^!#/m, `${entry.file} still has a directive`)
     // The manifest says what was written; an edited or half-updated file is seen here.
     assert.equal(createHash('sha256').update(text).digest('hex'), entry.written, entry.file)
