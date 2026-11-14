@@ -502,9 +502,10 @@ mod imp {
         if !matches!(parsed.scheme(), "http" | "https") {
             return None;
         }
-        let host = parsed.host_str()?.to_ascii_lowercase();
-        let registrable_domain = psl::domain_str(&host).unwrap_or(&host).to_string();
-        Some((parsed.scheme().to_string(), registrable_domain))
+        // The site of an address of numbers is the address (a list of public suffixes reads 10.0.0.1 as "0.1", and so would take
+        // two different machines of a network for one site and send cookies between them).
+        let site = crate::fingerprint::site_of(uri)?;
+        Some((parsed.scheme().to_string(), site))
     }
 
     fn same_site(top_uri: &str, request_uri: &str) -> bool {
@@ -577,6 +578,8 @@ mod imp {
   const restore = () => {
     existing?.observer?.disconnect?.();
     existing?.observers?.forEach?.((observer) => observer.disconnect());
+    existing?.hiddenWatch?.disconnect?.();
+    existing?.hideStyle?.remove?.();
     restoreHiddenElements();
 
     if (existing?.htmlOverflow !== undefined) {
@@ -712,6 +715,46 @@ mod imp {
     }
   };
 
+  // A page may put its own style back on what was hidden (the consent walls of some providers set `display: block` on their
+  // container again and again), so the hiding does not rest on the element's style alone: a rule of the page's style sheet
+  // hides what is marked, and a watch puts the element's own style back when the page changes it.
+  const hiddenByStyle = (element) =>
+    element.style.getPropertyValue('display') === 'none' &&
+    element.style.getPropertyPriority('display') === 'important';
+
+  const ensureHidingRule = () => {
+    if (state.hideStyle?.isConnected) return;
+    try {
+      const style = document.createElement('style');
+      style.textContent = '[data-nebula-cookie-hidden]{display:none!important}';
+      (document.head || document.documentElement).appendChild(style);
+      state.hideStyle = style;
+    } catch (_) {}
+  };
+
+  const keepHidden = (element) => {
+    try {
+      if (!state.hiddenWatch) {
+        state.hiddenWatch = new MutationObserver((records) => {
+          for (const record of records) {
+            const target = record.target;
+            if (
+              target instanceof HTMLElement &&
+              target.hasAttribute('data-nebula-cookie-hidden') &&
+              !hiddenByStyle(target)
+            ) {
+              target.style.setProperty('display', 'none', 'important');
+            }
+          }
+        });
+      }
+      state.hiddenWatch.observe(element, {
+        attributes: true,
+        attributeFilter: ['style']
+      });
+    } catch (_) {}
+  };
+
   // The reason is kept on the element (data-nebula-cookie-reason) so a wrongly hidden dialog can be traced.
   const hideElement = (element, reason) => {
     if (!(element instanceof HTMLElement)) return false;
@@ -724,6 +767,8 @@ mod imp {
     );
     element.setAttribute('data-nebula-cookie-hidden', '');
     element.style.setProperty('display', 'none', 'important');
+    ensureHidingRule();
+    keepHidden(element);
     return true;
   };
 
@@ -1883,6 +1928,36 @@ mod imp {
             assert!(same_site(target, target));
             assert!(same_site(target, "https://api.example.com/bootstrap"));
             assert!(!same_site(target, "https://tracker.example.net/pixel"));
+        }
+
+        #[test]
+        fn two_machines_of_a_network_are_not_one_site_but_a_site_and_its_subdomain_are() {
+            assert!(!same_site("https://10.0.0.1/", "https://192.0.0.1/"));
+            assert!(same_site("https://10.0.0.1/a", "https://10.0.0.1:8443/b"));
+            assert!(!same_site("https://[::1]/", "https://[::2]/"));
+            assert!(same_site(
+                "https://news.example.com/",
+                "https://cdn.example.com/x.js"
+            ));
+            assert!(
+                !same_site("https://example.com/", "http://example.com/"),
+                "the scheme counts"
+            );
+        }
+
+        #[test]
+        fn a_consent_wall_that_puts_its_own_style_back_is_hidden_by_a_rule_and_watched() {
+            let script = cookie_shield_script(true);
+            // Transfermarkt's wall (Sourcepoint) is a known root; it sets display: block on its container again, so the hiding is a
+            // rule of the page's style sheet on what is marked, and a watch on the element's style.
+            assert!(script.contains(r#"[id^="sp_message_container_"]"#));
+            assert!(script.contains("[data-nebula-cookie-hidden]{display:none!important}"));
+            assert!(script.contains("attributeFilter: ['style']"));
+            assert!(
+                script.contains("hiddenWatch?.disconnect?.()"),
+                "taken away with the rest"
+            );
+            assert!(script.contains("hideStyle?.remove?.()"));
         }
 
         #[test]
