@@ -50,6 +50,32 @@ kalıyor (örnek: Hürriyet'te üstte 300 piksellik boşluk). `src-tauri/resourc
 kuralları tutar. İndirilmez, `build-shield-lists.mjs` ona dokunmaz, "Reklamlar" anahtarına bağlıdır (kapatılırsa bu da kapanır). Kural, reklamın
 içinde olduğu gerçek sayfada görülüp eklenir ve seçici sayfanın izin verdiği kadar dardır. Şimdilik Hürriyet, Milliyet, Fanatik, CNN Türk, Sabah, Habertürk, Sözcü, NTV, Mynet ve Webtekno var.
 
+## Arayüz
+
+- **Semi-Lunar'daki kalkan düğmesi.** Menünün solunda; eskiden orada duran site kilidinin yerini aldı (tek düğme, tek panel). Üzerinde bu
+  sayfada engellenenlerin sayısı var (99'dan sonra "99+"). Shield bu site için ya da ayarlardan kapalıysa üstü çarpılı kalkan görünür, sayı
+  çıkmaz. Bağlantı güvenli değilse (HTTP) kilidin uyarısı sürer: kalkanın köşesinde turuncu "!" ve turuncu renk. Sayı 1,5 sn'de bir sorulur ve
+  yalnızca değişince arayüze iletilir (`BrowserShell` → `nebula-site-info-state` olayı, `shieldSummary`).
+- **Panel (`ShieldPanel`), iki sekme.** *Shield* sekmesi: büyük sayaç, reklam/izleyici dağılımı, sayfada en çok engellenen 5 site (adres, kayıt
+  edilebilir alan adına indirilir), "bu sitede korumalar" anahtarı (site istisnasıdır: reklam, izleyici ve zararlı site denetiminin hepsini bu
+  site için kapatır), parmak izi ve zararlı site denetimi durumu, Ayarlar'daki Shield bölümüne bağlantı (`open-shield-settings`). *Site*
+  sekmesi: eski site paneli (`SiteInfoPanel` `embedded` kipinde): bağlantı güvenliği, sayfa koyulaştırma, izinler, bildirimler, site verisini
+  temizle. Açılışta Shield sekmesi gelir; sekmeler ok tuşlarıyla gezilir.
+- **Kategori ayrımı.** Engelleyen kuralın hangi listeden geldiği motorda bilinmez; izleyici listelerinin (EasyPrivacy, uBlock privacy) kurallarının
+  8 baytlık özetleri tutulur ve engelleyen kuralın özeti onlardaysa "izleyici", değilse "reklam" sayılır (`shield::BlockKind`). Kişinin kendi
+  kuralları reklam sayılır.
+- **Ayarlar > Gizlilik > Nebula Shield.** Gizlilik sayfasının ilk ve en büyük alanı: kendi başlığı ve çerçevesi olan bir bölüm, içinde kartlar.
+  Koruma ile ilgili her şey burada: genel bakış (toplam sayaçlar, ana anahtar), neleri engellesin (reklam, izleyici, parmak izi), zararlı
+  siteler, tarayıcı korumaları (izleme önleme düzeyi, izleyici engelleme, katı çerez, yalnız HTTPS, GPC/DNT, çerez bandı kalkanı), site
+  istisnaları (istisna listesi ve açık site için düğme), kendi kuralların (Shield kuralları ve eski adres listesi) ve listeler (kaynak, kural
+  sayısı, "Nebula yazdı" etiketi). Gizlilik'te Shield'ın dışında yalnızca izinler (kamera vb.), gizli mod, veriler ve sıfırlama kaldı.
+  Tarayıcı korumaları, istisnalar ve eski adres listesi satırları `SettingsPanel.tsx`'te tanımlı kalır (durumu orada) ve `ShieldSettings`e
+  bölüm olarak verilir.
+- **Toplam sayaçlar.** Engellenen reklam, izleyici ve durdurulan zararlı sayfa sayıları bu cihazda `shield/stats.json` dosyasında tutulur
+  (`%LOCALAPPDATA%\com.nebula.browser\shield\stats.json`); hiçbir yere gönderilmez. Dosya en fazla 20 sn'de bir ve yalnızca değiştiyse yazılır,
+  önce yanına yazılıp sonra yerine konur. Ayarlardaki "Sayacı sıfırla" düğmesi sayıyı sıfırlar. Uygulama kapanırken son 20 sn'ye kadar
+  bir kısmı yazılmamış olabilir.
+
 ## Ağa ne gider
 
 Shield çalışırken kendiliğinden hiçbir şey indirmez. Listeler ve scriptlet'ler uygulamayla gelir. **Tek istisna** Ayarlar > Gizlilik > Nebula Shield >

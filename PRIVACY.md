@@ -76,6 +76,8 @@ Nebula blocks advertising, trackers and harmful sites with its own built-in shie
 
 There is one optional exception. If you turn on "Keep the malware list up to date" in Settings, Nebula downloads URLhaus's list of addresses that are serving malware right now, at most every 12 hours, from `malware-filter.gitlab.io` (one fixed HTTPS address, no cookies, no identifier). That server can see your IP address, as any website can. The setting is off by default, and turning it off deletes what was downloaded.
 
+Nebula keeps a count of what the shield has stopped (advertisements, trackers and harmful pages) in a small file on this device. It is shown in Settings > Privacy and is never sent anywhere; you can reset it there.
+
 The shield can also make what a website can read about your computer (canvas, audio and WebGL output, the number of processor cores) slightly different for each site, to make you harder to recognise across sites. This setting is on by default and can be turned off in Settings > Privacy, or per site from the site panel.
 
 These components and external services may be subject to their own privacy policies and terms.
