@@ -1,0 +1,10 @@
+! Title: Nebula, YouTube
+! Description: YouTube's player is asked for by the page (the first load and every video you open from inside the page) and the answer says
+!   where the advertisements go. The lists the shield ships cut these out of the answer of the /player request. YouTube now also gives the
+!   same answer, inside a larger one, from /youtubei/v1/get_watch (a list whose first item holds "playerResponse"), and uBlock Origin's
+!   rule for that one only works where a browser lets an extension rewrite a response (Firefox). Here the page's own fetch is the place.
+! Written and kept by Nebula, not fetched. Part of the "Advertisements" switch.
+
+www.youtube.com##+js(trusted-rpfr, '"adPlacements"', '"no_ads"', get_watch?)
+www.youtube.com##+js(trusted-rpfr, '"adSlots"', '"no_ads"', get_watch?)
+www.youtube.com##+js(trusted-rpfr, '"playerAds"', '"no_playerAds"', get_watch?)

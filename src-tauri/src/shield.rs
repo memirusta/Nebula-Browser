@@ -42,6 +42,11 @@ pub const LISTS: &[(&str, &str)] = &[
         include_str!("../resources/shield/lists/ubo-badware.txt"),
     ),
     ("pgl", include_str!("../resources/shield/lists/pgl.txt")),
+    // Written by hand, not fetched: what the lists above do not have.
+    (
+        "nebula-youtube",
+        include_str!("../resources/shield/lists/nebula-youtube.txt"),
+    ),
 ];
 
 /// uBlock Origin's scriptlets, as `scripts/build-shield-resources.mjs` writes them. They are the page half of the shield: the
@@ -113,7 +118,7 @@ impl Config {
     /// (`ubo-unbreak`) is always part of it: without it the other lists would break pages the person never asked to break.
     fn wants(&self, name: &str) -> bool {
         match name {
-            "easylist" | "ubo-filters" | "pgl" => self.ads,
+            "easylist" | "ubo-filters" | "pgl" | "nebula-youtube" => self.ads,
             "easyprivacy" | "ubo-privacy" => self.trackers,
             "ubo-badware" => self.malware,
             _ => true,
@@ -725,6 +730,23 @@ mod tests {
             ),
             "{host}"
         );
+    }
+
+    #[test]
+    fn the_answer_of_youtubes_get_watch_request_is_cleaned_like_the_one_of_the_player_request_and_follows_the_advertising_switch(
+    ) {
+        let on = ShieldEngine::build(&Config::default());
+        let off = ShieldEngine::build(&Config {
+            ads: false,
+            ..Config::default()
+        });
+        let page = "https://www.youtube.com/watch?v=abc";
+        let script = on.page_script(page).unwrap_or_default();
+        assert!(script.contains("get_watch?"), "{script}");
+        assert!(script.contains("no_playerAds"), "{script}");
+        assert!(off
+            .page_script(page)
+            .is_none_or(|script| !script.contains("get_watch?")));
     }
 
     #[test]
