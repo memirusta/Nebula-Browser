@@ -1,0 +1,77 @@
+{
+  "environment": {
+    "env_chromium": true,
+    "env_edge": true,
+    "env_firefox": false,
+    "env_safari": false,
+    "env_mobile": false,
+    "env_legacy": false,
+    "env_experimental": false,
+    "ext_ublock": false,
+    "ext_ubol": false,
+    "ext_abp": false,
+    "ext_devbuild": false,
+    "adguard": false,
+    "cap_html_filtering": false,
+    "cap_user_stylesheet": true,
+    "cap_ipaddress": true
+  },
+  "lists": [
+    {
+      "file": "easylist.txt",
+      "url": "https://easylist.to/easylist/easylist.txt",
+      "fetched": "1ed2d8c2dbe63ce64f1ecd0d6fc6d7d6e335aa155224b9c7ffb9e52f93aa4dc0",
+      "written": "1ed2d8c2dbe63ce64f1ecd0d6fc6d7d6e335aa155224b9c7ffb9e52f93aa4dc0",
+      "bytes": 2053799,
+      "rules": 77787
+    },
+    {
+      "file": "easyprivacy.txt",
+      "url": "https://easylist.to/easylist/easyprivacy.txt",
+      "fetched": "19503feb87faa0d6cef0a14e1d7cf844cdb7feea5233fedd8fc0e8f7595a6a5a",
+      "written": "19503feb87faa0d6cef0a14e1d7cf844cdb7feea5233fedd8fc0e8f7595a6a5a",
+      "bytes": 1516555,
+      "rules": 56631
+    },
+    {
+      "file": "ubo-filters.txt",
+      "url": "https://ublockorigin.github.io/uAssets/filters/filters.min.txt",
+      "fetched": "300c9e92de832e172d77b289efa5d6f425421731560e9cfdc96cdfd5c45131ce",
+      "written": "e02ee8c3b25030dd7efdb8a82058306da83435ddbc216bb3b2d1eba7d4858cfa",
+      "bytes": 1800717,
+      "rules": 23509
+    },
+    {
+      "file": "ubo-privacy.txt",
+      "url": "https://ublockorigin.github.io/uAssets/filters/privacy.min.txt",
+      "fetched": "d25a59585304317fadca04bd1f98dda669866b498614be222fb8706054e7bc80",
+      "written": "3dbe55112bbdb96148306f69c00c3667b8472501c95c8f333104ae97e1da629d",
+      "bytes": 136970,
+      "rules": 1847
+    },
+    {
+      "file": "ubo-unbreak.txt",
+      "url": "https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt",
+      "fetched": "d54ee7a92982d18b4f94d32038eef714967c9a2454ef55185638f953313c30c4",
+      "written": "175f2d7d1fa76d818137722fa30e48f76a5d96545e436e0555d9496858ca9a1e",
+      "bytes": 176129,
+      "rules": 2553
+    },
+    {
+      "file": "ubo-badware.txt",
+      "url": "https://ublockorigin.github.io/uAssets/filters/badware.min.txt",
+      "fetched": "fc9e16eb6c39d8082d0324eae0f4ece154c93dbdac487c806da2282614948bb5",
+      "written": "1aba779bd6a6655383f3ae601665b415b552464cd1ac370c66e3f3f81facf5e6",
+      "bytes": 160715,
+      "rules": 4870
+    },
+    {
+      "file": "pgl.txt",
+      "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=1&mimetype=plaintext",
+      "fetched": "c08137c853da39c043a0d0d5a5b17e047d88ab18448f648a6d0802b749c401d9",
+      "written": "c08137c853da39c043a0d0d5a5b17e047d88ab18448f648a6d0802b749c401d9",
+      "bytes": 70453,
+      "rules": 3562
+    }
+  ]
+}
